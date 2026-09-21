@@ -4,16 +4,17 @@ Jeu de cartes à collectionner où chaque carte est un article du Wikipédia FR.
 
 ## Prérequis
 
-- Node.js 22 (`.nvmrc`) et pnpm 10 (`corepack enable`)
-- Docker (Postgres local)
+- Node.js 22 (`.nvmrc`)
+- pnpm 10 : `npm install -g pnpm@10.28.0` (sous Windows, `corepack enable` demande les droits admin)
+- Docker Desktop lancé (Postgres local, exposé sur le port 5433)
 - Python 3.11+ (pipeline d'import, `tools/import`)
 
 ## Démarrer
 
 ```sh
-corepack enable
+npm install -g pnpm@10.28.0
 pnpm install
-cp .env.example .env
+cp .env.example .env   # Windows : copy .env.example .env
 pnpm db:up
 pnpm db:migrate
 pnpm dev
