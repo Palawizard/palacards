@@ -1,0 +1,8 @@
+**/node_modules
+**/.next
+**/dist
+.git
+docs
+data
+tools/import/data
+.env

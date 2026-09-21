@@ -1,0 +1,26 @@
+{
+  "name": "palacards",
+  "private": true,
+  "description": "PalaCards — jeu de cartes à collectionner basé sur les articles du Wikipédia FR",
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "predev": "pnpm --filter \"./packages/*\" build",
+    "dev": "pnpm --parallel --filter @palacards/api --filter @palacards/web dev",
+    "dev:api": "pnpm --filter @palacards/api dev",
+    "dev:web": "pnpm --filter @palacards/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "db:up": "docker compose -f docker-compose.dev.yml up -d",
+    "db:down": "docker compose -f docker-compose.dev.yml down",
+    "db:generate": "pnpm --filter @palacards/db generate",
+    "db:migrate": "pnpm --filter @palacards/db migrate"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

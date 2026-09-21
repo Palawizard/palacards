@@ -1,0 +1,70 @@
+# ---------------------------------------------------------------
+# Documentation privée : JAMAIS commitée (voir .githooks/pre-commit)
+# ---------------------------------------------------------------
+/docs/
+AGENTS.md
+CLAUDE.md
+CLAUDE.local.md
+GEMINI.md
+.claude/
+.agents/
+.codex/
+.cursor/
+.cursorrules
+.windsurfrules
+.github/copilot-instructions.md
+
+# Dépendances
+node_modules/
+.pnpm-store/
+
+# Builds
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Données Docker de prod
+/data/
+
+# Environnement / secrets
+.env
+.env.*
+!.env.example
+
+# Données Wikipédia (dumps, intermédiaires, exports)
+tools/import/data/
+*.bz2
+*.sql.gz
+*.parquet
+*.duckdb
+*.duckdb.wal
+cards*.csv
+cards*.csv.gz
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Tests / couverture
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / éditeurs
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
