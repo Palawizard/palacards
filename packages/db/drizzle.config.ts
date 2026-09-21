@@ -12,6 +12,6 @@ export default defineConfig({
   schema: "./src/schema.ts",
   out: "./migrations",
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "postgres://palacards:change-me@localhost:5432/palacards",
+    url: process.env.DATABASE_URL ?? "postgres://palacards:change-me@localhost:5433/palacards",
   },
 });
