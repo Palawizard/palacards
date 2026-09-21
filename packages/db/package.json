@@ -16,7 +16,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo \"(pas de tests db pour l'instant)\"",
     "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
+    "migrate": "tsc -p tsconfig.json && node --env-file-if-exists=../../.env dist/migrate.js",
     "studio": "drizzle-kit studio"
   },
   "dependencies": {
