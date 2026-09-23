@@ -11,6 +11,8 @@ const nextConfig: NextConfig = {
   // Servi sous www.palawi.fr/palacards/
   basePath: "/palacards",
   output: "standalone",
+  // Build séparé pour les E2E (API de test sur un autre port), sans écraser .next.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   transpilePackages: ["@palacards/game", "@palacards/shared"],
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "",

@@ -1,28 +1,17 @@
 import { notFound } from "next/navigation";
-import { CARDS_PER_PACK, MAX_STORED_PACKS } from "@palacards/game";
-import { ServerStatus } from "@/components/ServerStatus";
 import { NAV } from "@/lib/nav";
 
-export function generateStaticParams() {
-  return NAV.map((item) => ({ section: item.slug }));
-}
+// Pages pas encore construites : elles arrivent phase par phase (voir docs/PLAN-V1.md).
+const ITEMS = NAV.flatMap((g) => g.items);
 
 export default async function SectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;
-  const item = NAV.find((n) => n.slug === section);
+  const item = ITEMS.find((n) => n.href === `/${section}`);
   if (!item) notFound();
-
   return (
-    <div className="mx-auto flex max-w-3xl flex-col items-center gap-6 pt-10 text-center">
-      <h1 className="text-4xl font-bold">{item.label}</h1>
-      <p className="text-muted">{item.description}</p>
-      {item.slug === "pulls" && (
-        <p className="text-sm text-muted">
-          {CARDS_PER_PACK} cartes par paquet · stock max {MAX_STORED_PACKS}
-        </p>
-      )}
-      <p className="rounded-lg border border-dashed border-line px-4 py-2 text-sm text-muted">Page à construire</p>
-      <ServerStatus />
+    <div>
+      <h1 className="page-title">{item.label}</h1>
+      <p className="hatnote mt-2">Cette page arrive bientôt.</p>
     </div>
   );
 }
