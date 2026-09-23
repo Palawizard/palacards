@@ -1,4 +1,5 @@
 import type { Rarity } from "@palacards/game";
+import type { CardDTO } from "./dto.js";
 
 /** État du stock de paquets, calculé à la lecture. */
 export interface PackState {
@@ -72,6 +73,24 @@ export interface BattleQuestionDTO {
   choices: string[];
   deadline: string;
   timeLimitMs: number;
+  /** Temps restant au moment de l'envoi : le client en déduit son échéance sans dépendre de son horloge. */
+  remainingMs: number;
+  answered: boolean;
+  yourCard: CardDTO;
+  /** Carte adverse, révélée seulement après la réponse (ses stats trahiraient « plus lu » / « plus long »). */
+  theirCard: CardDTO | null;
+}
+
+/** Réponse à `POST /battles/:id/rounds/:round/answer`. */
+export interface BattleAnswerDTO {
+  battleId: number;
+  round: number;
+  correctIndex: number;
+  yourChoice: number | null;
+  correct: boolean;
+  yourPower: number;
+  timeLeftMs: number;
+  theirCard: CardDTO;
 }
 
 export interface BattleRoundResultDTO {
@@ -91,5 +110,4 @@ export interface ClientToServerEvents {
   "auction:watch": (auctionId: number) => void;
   "auction:unwatch": (auctionId: number) => void;
   "battle:join": (battleId: number) => void;
-  "battle:answer": (a: { battleId: number; round: number; choice: number }) => void;
 }

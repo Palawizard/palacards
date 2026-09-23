@@ -4,3 +4,4 @@ export * from "./economy.js";
 export * from "./collection.js";
 export * from "./market.js";
 export * from "./guild.js";
+export * from "./battle.js";

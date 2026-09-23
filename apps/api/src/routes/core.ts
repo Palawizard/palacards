@@ -52,6 +52,7 @@ export async function me(
     unreadNotifications: notif?.n ?? 0,
     unreadMessages: await unreadMessages(ctx, user.id),
     season: await activeSeason(ctx.db),
+    elo: p.elo,
   };
 }
 
