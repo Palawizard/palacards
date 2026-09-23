@@ -11,3 +11,8 @@ export function createDb(url: string, options: { max?: number } = {}) {
 }
 
 export type Db = ReturnType<typeof createDb>["db"];
+
+// Opérateurs réexportés : l'API les importe d'ici pour partager la même instance de drizzle-orm.
+export { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, notInArray, or, sql } from "drizzle-orm";
+export type { SQL } from "drizzle-orm";
+export { ensureActiveSeason, fillSyntheticCards, migrateDatabase, recreateDatabase } from "./setup.js";

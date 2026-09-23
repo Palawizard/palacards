@@ -13,15 +13,19 @@
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
+    "@fastify/rate-limit": "11.2.0",
     "@palacards/db": "workspace:*",
     "@palacards/game": "workspace:*",
+    "@palacards/shared": "workspace:*",
+    "better-auth": "1.7.5",
     "fastify": "5.12.5",
+    "pg-boss": "12.33.7",
     "socket.io": "4.8.3",
-    "zod": "4.6.5",
-    "@palacards/shared": "workspace:*"
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "22.20.4",
+    "postgres": "3.4.9",
     "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
