@@ -161,6 +161,10 @@ describe("collection et recyclage", () => {
     expect(fav.body.items.map((c: { instanceId: number }) => c.instanceId)).toEqual([id]);
     const tagged = await p.get("/collection?tag=top");
     expect(tagged.body.total).toBe(1);
+    // Tous les tris répondent.
+    for (const sort of ["date", "atk", "def", "views", "rarity", "title"]) {
+      expect((await p.get(`/collection?sort=${sort}`)).status).toBe(200);
+    }
   });
 });
 
