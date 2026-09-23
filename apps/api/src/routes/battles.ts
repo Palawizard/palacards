@@ -9,6 +9,7 @@ import {
   battleDetail,
   battleRoom,
   challenge,
+  isParticipant,
   listBattles,
   liveBattles,
   refuseChallenge,
@@ -52,10 +53,12 @@ export function battleRoutes(api: FastifyInstance, ctx: Ctx) {
     socket.on("battle:join", (raw) => {
       const r = id.safeParse(raw);
       if (!r.success) return;
-      void battleDetail(ctx, socket.data.userId, r.data)
-        .then(() => {
+      const userId = socket.data.userId;
+      void isParticipant(ctx, userId, r.data)
+        .then((ok) => {
+          if (!ok) return;
           void socket.join(battleRoom(r.data));
-          return liveBattles.rejoin(ctx, socket.data.userId, r.data);
+          liveBattles.join(ctx, userId, r.data);
         })
         .catch(() => {});
     });

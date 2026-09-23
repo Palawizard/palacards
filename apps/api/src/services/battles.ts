@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, or, schema, sql } from "@palacards/db";
 import {
   ANSWER_GRACE_MS,
   ASYNC_BATTLE_TTL_MS,
+  BATTLE_REWARDED_PER_PAIR_PER_DAY,
   BATTLE_ROUNDS,
   battleOver,
   battleResult,
@@ -19,14 +20,14 @@ import {
   type QuizCard,
   type Rarity,
 } from "@palacards/game";
-import type { BattleQuestionDTO, BattleRoundResultDTO } from "@palacards/shared";
+import type { BattleAnswerDTO, BattleQuestionDTO, BattleRoundResultDTO, CardDTO } from "@palacards/shared";
 import { randomBytes } from "node:crypto";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { instancesByIds } from "./cards.js";
 import { afterCommit, Effects } from "./notifications.js";
 import { bumpObjective } from "./guilds.js";
-import { activeSeason, lockPlayers, movePw, pushWallet, type DbOrTx, type Player } from "./players.js";
+import { lockPlayers, movePw, pushWallet, type DbOrTx, type Player } from "./players.js";
 import { findUserByName } from "./profiles.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
@@ -108,24 +109,32 @@ export async function acceptChallenge(ctx: Ctx, userId: string, battleId: number
     const battle = await lockBattle(tx, battleId);
     if (battle.opponentId !== userId) throw forbidden("Ce défi ne t'est pas adressé.");
     if (battle.status !== "pending") throw conflict("battle_closed", "Ce défi n'est plus en attente.");
+    if (battle.mode === "live" && !ctx.rt.isOnline(battle.challengerId)) {
+      throw conflict("opponent_offline", "Ton adversaire n'est pas connecté : réessaie quand il sera en ligne.");
+    }
     await snapshotDeck(tx, battleId, userId, deck);
     const [started] = await tx.update(b).set({ status: "active", startedAt: ctx.now() }).where(eq(b.id, battleId)).returning();
     return started!;
   });
-  // Les résumés des 10 cartes servent aux questions « Qui suis-je ? » : on les charge une fois ici.
   await afterCommit(ctx, async () => {
-    const decks = await ctx.db.select().from(schema.battleDecks).where(eq(schema.battleDecks.battleId, battleId));
-    const titles = await ctx.db
-      .select({ id: schema.cards.id, season: schema.cards.season, title: schema.cards.title })
-      .from(schema.cards)
-      .where(inArray(schema.cards.id, decks.map((d) => d.cardId)));
-    const titleBy = new Map(titles.map((t) => [`${t.season}:${t.id}`, t.title]));
-    await ctx.wiki.load(decks.flatMap((d) => (titleBy.get(`${d.season}:${d.cardId}`) ? [{ cardId: d.cardId, title: titleBy.get(`${d.season}:${d.cardId}`)! }] : [])));
     ctx.rt.toUser(battle.challengerId, "battle:update", { battleId });
     ctx.rt.toUser(battle.opponentId, "battle:update", { battleId });
-    if (battle.mode === "live") live.maybeStart(ctx, battleId);
+    // Les résumés des 10 cartes servent aux questions « Qui suis-je ? » : chargés en arrière-plan,
+    // sans bloquer la réponse (une manche sans résumé se rabat sur « plus lu » / « plus long »).
+    void loadSummaries(ctx, battleId)
+      .catch((err: unknown) => ctx.log.warn({ err, battleId }, "résumés du duel"))
+      .finally(() => {
+        if (battle.mode === "live") live.maybeStart(ctx, battleId);
+      });
   });
   return { id: battleId };
+}
+
+async function loadSummaries(ctx: Ctx, battleId: number) {
+  const rows = await ctx.db.execute<{ id: number; title: string }>(sql`
+    select c.id, c.title from battle_decks d join cards c on c.season = d.season and c.id = d.card_id where d.battle_id = ${battleId}
+  `);
+  await ctx.wiki.load(rows.map((r) => ({ cardId: r.id, title: r.title })));
 }
 
 export async function refuseChallenge(ctx: Ctx, userId: string, battleId: number) {
@@ -153,9 +162,8 @@ async function quizCard(db: DbOrTx, d: DeckRow): Promise<QuizCard & { rarity: Ra
   return { cardId: d.cardId, title: row?.title ?? "?", views12m: Number(row?.views_12m ?? 0), pageLen: row?.page_len ?? 0, extract: row?.extract ?? null, rarity: d.rarity };
 }
 
-/** Leurres « Qui suis-je ? » : titres de la même rareté, choisis par la graine (via l'index de tirage). */
-async function decoys(db: DbOrTx, seed: string, round: number, rarity: Rarity): Promise<string[]> {
-  const season = await activeSeason(db);
+/** Leurres « Qui suis-je ? » : titres de la saison et de la rareté de la carte visée, choisis par la graine (index de tirage). */
+async function decoys(db: DbOrTx, seed: string, round: number, season: number, rarity: Rarity): Promise<string[]> {
   const key = seededRandom(`${seed}:${round}:decoys`)();
   const rows = await db.execute<{ title: string }>(sql`
     (select title from cards where season = ${season} and rarity = ${rarity}::rarity and rand_key >= ${key} order by rand_key limit 8)
@@ -182,7 +190,8 @@ async function ensureRound(tx: Tx, battle: Battle, round: number): Promise<Quest
   const o = all.find((d) => d.userId === battle.opponentId && d.slot === round)!;
   const qa = await quizCard(tx, a);
   const qo = await quizCard(tx, o);
-  const question = makeQuestion(battle.seed, round, qa, qo, await decoys(tx, battle.seed, round, qa.extract ? qa.rarity : qo.rarity));
+  const target = qa.extract ? a : o;
+  const question = makeQuestion(battle.seed, round, qa, qo, await decoys(tx, battle.seed, round, target.season, target.rarity));
   await tx.insert(schema.battleRounds).values({ battleId: battle.id, round, question }).onConflictDoNothing();
   const [stored] = await tx
     .select()
@@ -202,13 +211,14 @@ async function roundCards(db: DbOrTx, battle: Battle, userId: string, round: num
   const mine = all.find((d) => d.userId === userId && d.slot === round)!;
   const theirs = all.find((d) => d.userId !== userId && d.slot === round)!;
   const cards = await instancesByIds(db, [mine.instanceId, theirs.instanceId]);
-  const fallback = async (d: DeckRow) => {
+  const fallback = async (d: DeckRow): Promise<CardDTO> => {
     const q = await quizCard(db, d);
     return { instanceId: d.instanceId, cardId: d.cardId, season: d.season, title: q.title, rarity: d.rarity, atk: d.atk, def: d.def, level: 1, thumbUrl: null, pageUrl: null };
   };
   // Stats figées au moment du défi (le deck ne bouge plus même si la carte a changé depuis).
+  // Jamais de vues : elles donneraient la réponse à « plus lu ».
   const view = async (d: DeckRow) => {
-    const c = cards.find((x) => x.instanceId === d.instanceId) ?? (await fallback(d));
+    const { views12m: _views, ...c } = cards.find((x) => x.instanceId === d.instanceId) ?? (await fallback(d));
     return { ...c, atk: d.atk, def: d.def };
   };
   return { mine: await view(mine), theirs: await view(theirs) };
@@ -256,12 +266,12 @@ export async function serveQuestion(ctx: Ctx, userId: string, battleId: number, 
     remainingMs: Math.max(0, res.servedAt.getTime() + QUESTION_TIME_MS - ctx.now().getTime()),
     answered: res.answered,
     yourCard: cards.mine,
-    theirCard: cards.theirs,
+    theirCard: res.answered ? cards.theirs : null,
   };
 }
 
 /** Enregistre la réponse d'un joueur ; le temps est mesuré par le serveur depuis l'envoi de la question. */
-export async function answerQuestion(ctx: Ctx, userId: string, battleId: number, round: number, choice: number) {
+export async function answerQuestion(ctx: Ctx, userId: string, battleId: number, round: number, choice: number): Promise<BattleAnswerDTO> {
   const res = await ctx.db.transaction(async (tx) => {
     const battle = await lockBattle(tx, battleId);
     const side = sideOf(battle, userId);
@@ -290,7 +300,17 @@ export async function answerQuestion(ctx: Ctx, userId: string, battleId: number,
       .where(and(eq(schema.battleAnswers.battleId, battleId), eq(schema.battleAnswers.round, round), eq(schema.battleAnswers.userId, userId)));
     return { battle, side, question, correct, power, timeLeft, valid };
   });
-  const result = { battleId, round, correctIndex: res.question.answer, yourChoice: res.valid ? choice : null, correct: res.correct, yourPower: res.power, timeLeftMs: res.timeLeft };
+  const { theirs } = await roundCards(ctx.db, res.battle, userId, round);
+  const result = {
+    battleId,
+    round,
+    correctIndex: res.question.answer,
+    yourChoice: res.valid ? choice : null,
+    correct: res.correct,
+    yourPower: res.power,
+    timeLeftMs: res.timeLeft,
+    theirCard: theirs,
+  };
   await afterCommit(ctx, async () => {
     if (res.battle.mode === "live") await live.onAnswer(ctx, battleId, round);
     else await maybeFinishAsync(ctx, battleId);
@@ -361,6 +381,18 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
   const c = players.get(battle.challengerId)!;
   const o = players.get(battle.opponentId)!;
   const elo = eloUpdate(c.elo, o.elo, result === 1 ? 1 : result === 2 ? 0 : 0.5);
+  // Anti-farm : plafond de duels récompensés par paire et par jour (Paris), rien pour qui n'a répondu à aucune manche.
+  const [today] = await tx.execute<{ n: number }>(sql`
+    select count(*)::int as n from battles
+    where status = 'finished' and id <> ${battle.id}
+      and ((challenger_id = ${battle.challengerId} and opponent_id = ${battle.opponentId}) or (challenger_id = ${battle.opponentId} and opponent_id = ${battle.challengerId}))
+      and finished_at >= (date_trunc('day', ${ctx.now().toISOString()}::timestamptz at time zone 'Europe/Paris') at time zone 'Europe/Paris')
+  `);
+  const rewarded = (today?.n ?? 0) < BATTLE_REWARDED_PER_PAIR_PER_DAY;
+  const answered = await tx.execute<{ user_id: string }>(sql`
+    select distinct user_id from battle_answers where battle_id = ${battle.id} and choice is not null
+  `);
+  const played = new Set(answered.map((r) => r.user_id));
   for (const [p, rating] of [
     [c, elo.r1],
     [o, elo.r2],
@@ -370,7 +402,7 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
       .set({ elo: rating, eloPeak: Math.max(p.eloPeak, rating) })
       .where(eq(schema.players.userId, p.userId));
     const outcome = result === 0 ? "draw" : (result === 1) === (p === c) ? "win" : "loss";
-    await movePw(tx, p, battleReward(outcome), "battle", battle.id);
+    if (rewarded && played.has(p.userId)) await movePw(tx, p, battleReward(outcome), "battle", battle.id);
   }
   const winnerId = result === 1 ? battle.challengerId : result === 2 ? battle.opponentId : null;
   for (const r of outcomes) {
@@ -457,29 +489,47 @@ interface LiveState {
   round: number;
   startedAt: Date;
   timer: ReturnType<typeof setTimeout> | null;
-  lastActivity: number;
 }
 
+// ponytail: état en mémoire d'un seul processus API ; plusieurs instances demanderaient un verrou partagé (pg-boss / advisory lock).
 const live = (() => {
   const states = new Map<number, LiveState>();
+  /** Joueurs présents sur l'écran du duel (`battle:join`) : le direct ne démarre qu'avec les deux. */
+  const ready = new Map<number, Set<string>>();
 
-  async function pushQuestion(ctx: Ctx, battle: Battle, round: number) {
-    for (const userId of [battle.challengerId, battle.opponentId]) {
-      try {
-        ctx.rt.toUser(userId, "battle:question", await serveQuestion(ctx, userId, battle.id, round));
-      } catch (err) {
-        ctx.log.warn({ err, battleId: battle.id }, "question en direct");
-      }
-    }
+  function stop(battleId: number) {
+    const s = states.get(battleId);
+    if (s?.timer) clearTimeout(s.timer);
+    states.delete(battleId);
+    ready.delete(battleId);
+  }
+
+  /** Exécute une étape du moteur : une erreur termine le duel proprement au lieu de le laisser bloqué. */
+  function run(ctx: Ctx, battleId: number, step: () => Promise<void>) {
+    step().catch(async (err: unknown) => {
+      ctx.log.error({ err, battleId }, "duel en direct");
+      stop(battleId);
+      await forceFinish(ctx, battleId).catch((e: unknown) => ctx.log.error({ err: e, battleId }, "fin forcée du duel"));
+    });
   }
 
   async function startRound(ctx: Ctx, battleId: number, round: number) {
     const [battle] = await ctx.db.select().from(b).where(eq(b.id, battleId));
-    if (!battle || battle.status !== "active") return;
-    const state: LiveState = { round, startedAt: ctx.now(), timer: null, lastActivity: Date.now() };
+    if (!battle || battle.status !== "active") return stop(battleId);
+    // La question est générée avant le départ du chrono : les deux joueurs ont le même temps.
+    await ctx.db.transaction((tx) => ensureRound(tx, battle, round));
+    const state: LiveState = { round, startedAt: ctx.now(), timer: null };
     states.set(battleId, state);
-    state.timer = setTimeout(() => void resolveRound(ctx, battleId, round), QUESTION_TIME_MS + ANSWER_GRACE_MS);
-    await pushQuestion(ctx, battle, round);
+    state.timer = setTimeout(() => run(ctx, battleId, () => resolveRound(ctx, battleId, round)), QUESTION_TIME_MS + ANSWER_GRACE_MS);
+    await Promise.all(
+      [battle.challengerId, battle.opponentId].map(async (userId) => {
+        try {
+          ctx.rt.toUser(userId, "battle:question", await serveQuestion(ctx, userId, battleId, round));
+        } catch (err) {
+          ctx.log.warn({ err, battleId }, "question en direct");
+        }
+      }),
+    );
   }
 
   /** Résout la manche (tout le monde a répondu, ou le temps est écoulé) et enchaîne. */
@@ -503,7 +553,7 @@ const live = (() => {
       const done = scored.over ? await finish(ctx, tx, fx, battle, scored.outcomes, scored.s1, scored.s2) : null;
       return { battle, scored, answers, question, done };
     });
-    if (!res) return;
+    if (!res) return stop(battleId);
     const last = res.scored.outcomes.find((o) => o.round === round);
     for (const userId of [res.battle.challengerId, res.battle.opponentId]) {
       const isC = userId === res.battle.challengerId;
@@ -523,11 +573,30 @@ const live = (() => {
       ctx.rt.toUser(userId, "battle:round", payload);
     }
     if (res.done) {
-      states.delete(battleId);
+      stop(battleId);
       await afterFinish(ctx, fx, res.battle, res.done.players, res.done.winnerId);
     } else {
-      setTimeout(() => void startRound(ctx, battleId, round + 1), LIVE_PAUSE_MS);
+      setTimeout(() => run(ctx, battleId, () => startRound(ctx, battleId, round + 1)), LIVE_PAUSE_MS);
     }
+  }
+
+  /**
+   * Démarre (ou reprend après un redémarrage du serveur) quand les deux joueurs sont sur l'écran du duel :
+   * on repart de la première manche incomplète, avec un chrono neuf.
+   */
+  async function maybeStart(ctx: Ctx, battleId: number) {
+    if (states.has(battleId)) return;
+    const [battle] = await ctx.db.select().from(b).where(eq(b.id, battleId));
+    if (!battle || battle.status !== "active" || battle.mode !== "live") return;
+    const here = ready.get(battleId);
+    const present = (id: string) => here?.has(id) && ctx.rt.isOnline(id);
+    if (!present(battle.challengerId) || !present(battle.opponentId) || states.has(battleId)) return;
+    const scored = await scoreRounds(ctx.db, battle, BATTLE_ROUNDS);
+    const next = scored.outcomes.length + 1;
+    states.set(battleId, { round: 0, startedAt: ctx.now(), timer: null });
+    // Réponses entamées mais jamais données avant l'interruption : le chrono repart de zéro.
+    await ctx.db.execute(sql`delete from battle_answers where battle_id = ${battleId} and round = ${next} and answered_at is null`);
+    setTimeout(() => run(ctx, battleId, () => startRound(ctx, battleId, next)), 1_500);
   }
 
   return {
@@ -536,42 +605,28 @@ const live = (() => {
       const s = states.get(battleId);
       return s && s.round === round ? s.startedAt : null;
     },
-    /** Démarre dès que les deux joueurs sont connectés (sinon au premier `battle:join`). */
-    maybeStart(ctx: Ctx, battleId: number) {
-      if (states.has(battleId)) return;
-      void ctx.db
-        .select()
-        .from(b)
-        .where(eq(b.id, battleId))
-        .then(([battle]) => {
-          if (!battle || battle.status !== "active" || battle.mode !== "live" || states.has(battleId)) return;
-          if (!ctx.rt.isOnline(battle.challengerId) || !ctx.rt.isOnline(battle.opponentId)) return;
-          states.set(battleId, { round: 0, startedAt: ctx.now(), timer: null, lastActivity: Date.now() });
-          setTimeout(() => void startRound(ctx, battleId, 1), 1_500);
-        });
-    },
-    /** Reconnexion : renvoie la question en cours (le chrono, lui, continue). */
-    async rejoin(ctx: Ctx, userId: string, battleId: number) {
+    maybeStart: (ctx: Ctx, battleId: number) => run(ctx, battleId, () => maybeStart(ctx, battleId)),
+    /** Un joueur ouvre l'écran du duel (ou se reconnecte) : renvoie la question en cours, le chrono continue. */
+    join(ctx: Ctx, userId: string, battleId: number) {
+      const set = ready.get(battleId) ?? new Set<string>();
+      set.add(userId);
+      ready.set(battleId, set);
       const state = states.get(battleId);
       if (state && state.round > 0) {
-        try {
-          ctx.rt.toUser(userId, "battle:question", await serveQuestion(ctx, userId, battleId, state.round));
-        } catch {
-          // manche en cours de résolution
-        }
-      } else this.maybeStart(ctx, battleId);
+        serveQuestion(ctx, userId, battleId, state.round)
+          .then((q) => ctx.rt.toUser(userId, "battle:question", q))
+          .catch(() => {}); // manche en cours de résolution
+      } else if (!state) this.maybeStart(ctx, battleId);
     },
     async onAnswer(ctx: Ctx, battleId: number, round: number) {
       const state = states.get(battleId);
       if (!state || state.round !== round) return;
-      state.lastActivity = Date.now();
       const [row] = await ctx.db.execute<{ n: number }>(sql`
         select count(*)::int as n from battle_answers where battle_id = ${battleId} and round = ${round} and answered_at is not null
       `);
-      if ((row?.n ?? 0) >= 2) await resolveRound(ctx, battleId, round);
+      if ((row?.n ?? 0) >= 2) run(ctx, battleId, () => resolveRound(ctx, battleId, round));
     },
     isRunning: (battleId: number) => states.has(battleId),
-    staleSince: (battleId: number) => states.get(battleId)?.lastActivity ?? null,
   };
 })();
 
@@ -583,12 +638,19 @@ export async function sweepBattles(ctx: Ctx) {
   const rows = await ctx.db.select().from(b).where(inArray(b.status, ["pending", "active"]));
   for (const battle of rows) {
     try {
+      const age = now - (battle.startedAt ?? battle.createdAt).getTime();
       if (battle.status === "pending" && now - battle.createdAt.getTime() > CHALLENGE_TTL_MS) {
         await ctx.db.update(b).set({ status: "cancelled", finishedAt: ctx.now() }).where(and(eq(b.id, battle.id), eq(b.status, "pending")));
-      } else if (battle.status === "active" && battle.mode === "async" && now - (battle.startedAt ?? battle.createdAt).getTime() > ASYNC_BATTLE_TTL_MS) {
+      } else if (battle.status === "active" && battle.mode === "async" && age > ASYNC_BATTLE_TTL_MS) {
         await forceFinish(ctx, battle.id);
-      } else if (battle.status === "active" && battle.mode === "live" && !live.isRunning(battle.id) && now - (battle.startedAt ?? battle.createdAt).getTime() > LIVE_STALE_MS) {
-        await forceFinish(ctx, battle.id);
+      } else if (battle.status === "active" && battle.mode === "live" && !live.isRunning(battle.id) && age > LIVE_STALE_MS) {
+        // Jamais commencé (un joueur n'est pas venu) : annulé sans récompense ; interrompu en cours : terminé.
+        const [played] = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from battle_answers where battle_id = ${battle.id} and answered_at is not null`);
+        if ((played?.n ?? 0) === 0) {
+          await ctx.db.update(b).set({ status: "cancelled", finishedAt: ctx.now() }).where(and(eq(b.id, battle.id), eq(b.status, "active")));
+          ctx.rt.toUser(battle.challengerId, "battle:update", { battleId: battle.id });
+          ctx.rt.toUser(battle.opponentId, "battle:update", { battleId: battle.id });
+        } else await forceFinish(ctx, battle.id);
       }
     } catch (err) {
       ctx.log.error({ err, battleId: battle.id }, "rattrapage de duel");
@@ -599,6 +661,14 @@ export async function sweepBattles(ctx: Ctx) {
 // ---------------------------------------------------------------------------
 // Lecture
 // ---------------------------------------------------------------------------
+
+export async function isParticipant(ctx: Ctx, userId: string, battleId: number) {
+  const [row] = await ctx.db
+    .select({ id: b.id })
+    .from(b)
+    .where(and(eq(b.id, battleId), or(eq(b.challengerId, userId), eq(b.opponentId, userId))));
+  return !!row;
+}
 
 export async function listBattles(ctx: Ctx, userId: string) {
   const rows = await ctx.db

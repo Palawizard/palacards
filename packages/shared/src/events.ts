@@ -77,6 +77,19 @@ export interface BattleQuestionDTO {
   remainingMs: number;
   answered: boolean;
   yourCard: CardDTO;
+  /** Carte adverse, révélée seulement après la réponse (ses stats trahiraient « plus lu » / « plus long »). */
+  theirCard: CardDTO | null;
+}
+
+/** Réponse à `POST /battles/:id/rounds/:round/answer`. */
+export interface BattleAnswerDTO {
+  battleId: number;
+  round: number;
+  correctIndex: number;
+  yourChoice: number | null;
+  correct: boolean;
+  yourPower: number;
+  timeLeftMs: number;
   theirCard: CardDTO;
 }
 
