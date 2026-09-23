@@ -36,14 +36,14 @@ docker/         Dockerfiles et init Postgres
 
 ## Scripts
 
-| Commande | Effet |
-| --- | --- |
-| `pnpm dev` | Front + API en mode dev |
-| `pnpm test` | Tests Vitest |
-| `pnpm typecheck` | Vérification TypeScript |
-| `pnpm build` | Build de production |
-| `pnpm db:up` / `pnpm db:down` | Postgres local |
-| `pnpm db:generate` / `pnpm db:migrate` | Migrations Drizzle |
+| Commande                               | Effet                   |
+| -------------------------------------- | ----------------------- |
+| `pnpm dev`                             | Front + API en mode dev |
+| `pnpm test`                            | Tests Vitest            |
+| `pnpm typecheck`                       | Vérification TypeScript |
+| `pnpm build`                           | Build de production     |
+| `pnpm db:up` / `pnpm db:down`          | Postgres local          |
+| `pnpm db:generate` / `pnpm db:migrate` | Migrations Drizzle      |
 
 ## Branches
 

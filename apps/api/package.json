@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",
@@ -16,7 +17,8 @@
     "@palacards/game": "workspace:*",
     "fastify": "5.12.5",
     "socket.io": "4.8.3",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "@palacards/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "22.20.4",
