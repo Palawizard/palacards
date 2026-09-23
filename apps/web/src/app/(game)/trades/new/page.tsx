@@ -15,7 +15,19 @@ import { useMe } from "@/lib/game";
 import { useDebounced } from "@/lib/use-debounced";
 
 /** Liste de cartes cochables (une collection), avec recherche. */
-function Picker({ source, selected, onToggle, emptyText }: { source: string | null; selected: Set<number>; onToggle: (c: CardDTO) => void; emptyText: string }) {
+function Picker({
+  source,
+  selected,
+  onToggle,
+  emptyText,
+  allowed,
+}: {
+  source: string | null;
+  selected: Set<number>;
+  onToggle: (c: CardDTO) => void;
+  emptyText: string;
+  allowed: Set<number>;
+}) {
   const [q, setQ] = useState("");
   const query = useDebounced(q);
   const url = source ? `${source}${source.includes("?") ? "&" : "?"}limit=60${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ""}` : null;
@@ -38,7 +50,7 @@ function Picker({ source, selected, onToggle, emptyText }: { source: string | nu
         ) : (
           data.items.map((c) => {
             const on = selected.has(c.instanceId!);
-            const locked = !!c.locked && !on;
+            const locked = !!c.locked && !on && !allowed.has(c.instanceId!);
             return (
               <li key={c.instanceId}>
                 <button
@@ -78,7 +90,9 @@ function Composer() {
   const counterOf = parent?.find((t) => String(t.id) === counterId);
 
   const [to, setTo] = useState(params.get("to") ?? "");
-  const partner = useDebounced(counterOf ? counterOf.from.name : to.trim(), 400);
+  const partner = useDebounced(counterOf ? counterOf.from.username : to.trim(), 400);
+  // Contre-offre : les cartes de l'offre reçue sont réservées par elle, mais libérées à l'envoi.
+  const allowed = new Set(counterOf ? [...counterOf.give, ...counterOf.want].map((c) => c.instanceId!) : []);
   const [give, setGive] = useState<Set<number>>(() => new Set(params.get("give") ? [Number(params.get("give"))] : []));
   const [want, setWant] = useState<Set<number>>(new Set());
   const [givePw, setGivePw] = useState("");
@@ -142,7 +156,7 @@ function Composer() {
           <h2 className="section-title mt-0">
             Tu donnes <span className="tnum text-base text-faint">({give.size})</span>
           </h2>
-          <Picker source="/collection?sort=rarity" selected={give} onToggle={toggle(setGive)} emptyText="" />
+          <Picker source="/collection?sort=rarity" selected={give} onToggle={toggle(setGive)} emptyText="" allowed={allowed} />
           <label className="flex items-center gap-2 text-sm">
             <span className="text-muted">+ points wiki</span>
             <input inputMode="numeric" className="field tnum h-9 min-h-0 w-28 text-right" value={givePw} onChange={(e) => setGivePw(e.target.value.replace(/\D/g, ""))} placeholder="0" />
@@ -154,6 +168,7 @@ function Composer() {
             Tu demandes <span className="tnum text-base text-faint">({want.size})</span>
           </h2>
           <Picker
+            allowed={allowed}
             source={partnerOk ? `/players/${encodeURIComponent(partner)}/collection` : null}
             selected={want}
             onToggle={toggle(setWant)}

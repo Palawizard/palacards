@@ -11,7 +11,7 @@ import { Thumb } from "@/components/market";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { countdown, fmt, relative } from "@/lib/format";
-import { useMe } from "@/lib/game";
+import { useMe, useSocketEvent } from "@/lib/game";
 import { useNow } from "@/lib/use-now";
 
 const BOXES = [
@@ -89,14 +89,20 @@ function TradeItem({ trade, meId, now, onChanged }: { trade: TradeDTO; meId: str
       <p className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
         <span>
           {incoming ? "De " : "À "}
-          <Link href={`/u/${other.name.toLowerCase()}`} className="article-link font-semibold">
+          <Link href={`/u/${other.username}`} className="article-link font-semibold">
             {other.name}
           </Link>
           <span className="text-faint"> · {relative(trade.createdAt)}</span>
           {trade.parentId && <span className="text-faint"> · contre-offre</span>}
         </span>
         <span className="tnum text-xs text-faint">
-          {trade.status === "pending" ? `expire dans ${countdown(new Date(trade.expiresAt).getTime() - now)}` : STATUS[trade.status]}
+          {trade.status === "pending"
+            ? `expire dans ${countdown(new Date(trade.expiresAt).getTime() - now)}`
+            : trade.status === "countered"
+              ? incoming
+                ? "Tu as fait une contre-offre"
+                : "Contre-offre reçue"
+              : STATUS[trade.status]}
         </span>
       </p>
       {trade.message && <p className="rounded-md bg-panel-2 px-3 py-2 text-sm italic text-muted">« {trade.message} »</p>}
@@ -137,6 +143,9 @@ function Trades() {
   const { me } = useMe();
   const now = useNow(1000);
   const { data, error, mutate } = useSWR<TradeDTO[]>(`/trades?box=${box}`, { refreshInterval: 30_000 });
+  useSocketEvent("notification:new", (n) => {
+    if (n.type.startsWith("trade_")) void mutate();
+  });
 
   return (
     <div className="flex flex-col gap-5">

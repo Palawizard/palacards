@@ -4,7 +4,7 @@ import type { TradeDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { instancesByIds } from "./cards.js";
-import { Effects } from "./notifications.js";
+import { afterCommit, Effects } from "./notifications.js";
 import { lockPlayers, logMovement, moveLocked, movePw, ownedCount, pushWallet, transferInstances, type Player } from "./players.js";
 import { findUserByName } from "./profiles.js";
 
@@ -92,9 +92,11 @@ export async function proposeTrade(ctx: Ctx, fromId: string, offer: TradeOffer) 
   const target = await findUserByName(ctx.db, offer.toUsername);
   const fx = new Effects();
   const res = await ctx.db.transaction((tx) => createTrade(tx, fx, fromId, target.id, offer, ctx.now(), null));
-  await ctx.jobs.sendAt(TRADE_EXPIRE_JOB, { tradeId: res.trade.id }, res.trade.expiresAt);
-  pushWallet(ctx, res.from);
-  await fx.flush(ctx);
+  await afterCommit(ctx, async () => {
+    await ctx.jobs.sendAt(TRADE_EXPIRE_JOB, { tradeId: res.trade.id }, res.trade.expiresAt);
+    pushWallet(ctx, res.from);
+    await fx.flush(ctx);
+  });
   return { id: res.trade.id };
 }
 
@@ -112,10 +114,12 @@ export async function counterTrade(ctx: Ctx, userId: string, tradeId: number, of
     const created = await createTrade(tx, fx, userId, trade.fromId, offer, now, trade.id);
     return { ...created, previousFrom: players.get(trade.fromId)! };
   });
-  await ctx.jobs.sendAt(TRADE_EXPIRE_JOB, { tradeId: res.trade.id }, res.trade.expiresAt);
-  pushWallet(ctx, res.from);
-  pushWallet(ctx, res.previousFrom);
-  await fx.flush(ctx);
+  await afterCommit(ctx, async () => {
+    await ctx.jobs.sendAt(TRADE_EXPIRE_JOB, { tradeId: res.trade.id }, res.trade.expiresAt);
+    pushWallet(ctx, res.from);
+    pushWallet(ctx, res.previousFrom);
+    await fx.flush(ctx);
+  });
   return { id: res.trade.id };
 }
 
@@ -163,9 +167,11 @@ export async function acceptTrade(ctx: Ctx, userId: string, tradeId: number) {
     await fx.notify(tx, trade.fromId, "trade_accepted", { tradeId, byId: userId });
     return { from, to };
   });
-  pushWallet(ctx, res.from);
-  pushWallet(ctx, res.to);
-  await fx.flush(ctx);
+  await afterCommit(ctx, async () => {
+    pushWallet(ctx, res.from);
+    pushWallet(ctx, res.to);
+    await fx.flush(ctx);
+  });
   return { ok: true };
 }
 
@@ -194,8 +200,10 @@ export async function closeTrade(ctx: Ctx, tradeId: number, action: { by: string
     }
     return from;
   });
-  if (res) pushWallet(ctx, res);
-  await fx.flush(ctx);
+  await afterCommit(ctx, async () => {
+    if (res) pushWallet(ctx, res);
+    await fx.flush(ctx);
+  });
 }
 
 
@@ -212,17 +220,22 @@ export async function listTrades(ctx: Ctx, userId: string, box: "received" | "se
   const cards = await instancesByIds(ctx.db, [...new Set(items.map((i) => i.instanceId))]);
   const cardBy = new Map(cards.map((c) => [c.instanceId, c]));
   const users = await ctx.db
-    .select({ id: schema.user.id, name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
+    .select({
+      id: schema.user.id,
+      username: schema.user.username,
+      name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
+    })
     .from(schema.user)
     .where(inArray(schema.user.id, [...new Set(trades.flatMap((x) => [x.fromId, x.toId]))]));
-  const nameBy = new Map(users.map((u) => [u.id, u.name]));
+  const userBy = new Map(users.map((u) => [u.id, u]));
+  const person = (id: string) => ({ id, name: userBy.get(id)?.name ?? "?", username: userBy.get(id)?.username ?? "" });
   return trades.map((x) => {
     const side = (s: "from" | "to") =>
       items.filter((i) => i.tradeId === x.id && i.side === s).flatMap((i) => (cardBy.get(i.instanceId) ? [cardBy.get(i.instanceId)!] : []));
     return {
       id: x.id,
-      from: { id: x.fromId, name: nameBy.get(x.fromId) ?? "?" },
-      to: { id: x.toId, name: nameBy.get(x.toId) ?? "?" },
+      from: person(x.fromId),
+      to: person(x.toId),
       give: side("from"),
       want: side("to"),
       fromPw: x.fromPw,
@@ -243,5 +256,11 @@ export async function sweepTrades(ctx: Ctx) {
     .select({ id: t.id })
     .from(t)
     .where(and(eq(t.status, "pending"), sql`${t.expiresAt} <= ${ctx.now()}`));
-  for (const { id } of due) await closeTrade(ctx, id, { kind: "expire" });
+  for (const { id } of due) {
+    try {
+      await closeTrade(ctx, id, { kind: "expire" });
+    } catch (err) {
+      ctx.log.error({ err, tradeId: id }, "expiration d'échange en échec");
+    }
+  }
 }

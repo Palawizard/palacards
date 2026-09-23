@@ -72,8 +72,8 @@ export interface AuctionDTO {
 
 export interface TradeDTO {
   id: number;
-  from: { id: string; name: string };
-  to: { id: string; name: string };
+  from: { id: string; name: string; username: string };
+  to: { id: string; name: string; username: string };
   give: CardDTO[];
   want: CardDTO[];
   fromPw: number;

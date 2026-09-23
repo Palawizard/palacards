@@ -70,10 +70,10 @@ describe("marché", () => {
     const listed = await seller.post("/market", { instanceId: await giveCard(seller), startPrice: 10, buyout: null, durationMs: 10 * 60_000 });
     const id = listed.body.id;
     await a.post(`/market/${id}/bid`, { amount: 10 });
-    // Fin dans 20 s : une offre maintenant doit repousser la fin à ~60 s.
+    // Fin dans 20 s : une offre maintenant prolonge la vente de 60 s (fin à ~80 s).
     await ctx.db.update(schema.auctions).set({ endsAt: new Date(Date.now() + 20_000) }).where(eq(schema.auctions.id, id));
     const res = await b.post(`/market/${id}/bid`, { amount: 11 });
-    expect(new Date(res.body.endsAt).getTime()).toBeGreaterThan(Date.now() + 55_000);
+    expect(new Date(res.body.endsAt).getTime()).toBeGreaterThan(Date.now() + 75_000);
     expect((await wallet(a)).locked).toBe(0);
     expect((await wallet(b)).locked).toBe(11);
     const notif = await a.get("/notifications");

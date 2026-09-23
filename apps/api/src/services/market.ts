@@ -12,7 +12,7 @@ import type { AuctionDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { instancesByIds } from "./cards.js";
-import { Effects } from "./notifications.js";
+import { afterCommit, Effects } from "./notifications.js";
 import {
   lockPlayers,
   logMovement,
@@ -52,6 +52,7 @@ function pushAuction(ctx: Ctx, auction: Auction, bidderName: string | null) {
     id: auction.id,
     currentBid: auction.currentBid,
     currentBidder: bidderName,
+    currentBidderId: auction.currentBidderId,
     bidCount: auction.bidCount,
     endsAt: auction.endsAt.toISOString(),
     status: auction.status,
@@ -82,7 +83,6 @@ export async function createAuction(
       .for("update");
     if (!inst) throw notFound("Cette carte n'est plus dans ta collection.");
     if (inst.lockedBy) throw conflict("card_locked", "Cette carte est déjà engagée dans une vente ou un échange.");
-    await movePw(tx, seller, -ECONOMY.auctionListingFee, "market_fee", inst.id);
     await tx
       .update(schema.cardInstances)
       .set({ lockedBy: "auction", pinnedSlot: null })
@@ -101,7 +101,9 @@ export async function createAuction(
         createdAt: now,
       })
       .returning();
-    // Wishlist : prévient les joueurs qui attendent cet article.
+    await movePw(tx, seller, -ECONOMY.auctionListingFee, "market_fee", auction!.id);
+    // Wishlist : prévient les joueurs qui attendent cet article (une fois par jour et par article,
+    // pour qu'une mise en vente annulée en boucle ne spamme personne).
     const [card] = await tx
       .select({ title: schema.cards.title })
       .from(schema.cards)
@@ -109,7 +111,14 @@ export async function createAuction(
     const wishers = await tx
       .select({ userId: schema.wishlist.userId })
       .from(schema.wishlist)
-      .where(and(eq(schema.wishlist.cardId, inst.cardId), sql`${schema.wishlist.userId} <> ${sellerId}`));
+      .where(
+        and(
+          eq(schema.wishlist.cardId, inst.cardId),
+          sql`${schema.wishlist.userId} <> ${sellerId}`,
+          sql`not exists (select 1 from notifications n where n.user_id = ${schema.wishlist.userId} and n.type = 'wishlist_listed'
+                          and n.payload->>'cardId' = ${String(inst.cardId)} and n.created_at > now() - interval '1 day')`,
+        ),
+      );
     for (const w of wishers) {
       await fx.notify(tx, w.userId, "wishlist_listed", {
         auctionId: auction!.id,
@@ -120,9 +129,11 @@ export async function createAuction(
     }
     return { auction: auction!, seller };
   });
-  await ctx.jobs.sendAt(AUCTION_CLOSE_JOB, { auctionId: res.auction.id }, res.auction.endsAt);
-  pushWallet(ctx, res.seller);
-  await fx.flush(ctx);
+  await afterCommit(ctx, async () => {
+    await ctx.jobs.sendAt(AUCTION_CLOSE_JOB, { auctionId: res.auction.id }, res.auction.endsAt);
+    pushWallet(ctx, res.seller);
+    await fx.flush(ctx);
+  });
   return { id: res.auction.id };
 }
 
@@ -139,6 +150,7 @@ export async function cancelAuction(ctx: Ctx, sellerId: string, auctionId: numbe
     id: auctionId,
     currentBid: null,
     currentBidder: null,
+    currentBidderId: null,
     bidCount: 0,
     endsAt: ctx.now().toISOString(),
     status: "cancelled",
@@ -179,10 +191,11 @@ async function settle(tx: Tx, fx: Effects, auction: Auction, players: Map<string
 }
 
 export async function placeBid(ctx: Ctx, bidderId: string, auctionId: number, amount: number) {
-  const now = ctx.now();
   const fx = new Effects();
   const res = await ctx.db.transaction(async (tx) => {
     const auction = await lockAuction(tx, auctionId);
+    // Heure lue sous verrou : une offre en attente ne peut pas passer après la vraie fin.
+    const now = ctx.now();
     if (auction.status !== "open" || auction.endsAt <= now) throw conflict("auction_closed", "Cette vente est terminée.");
     if (auction.sellerId === bidderId) throw forbidden("Tu ne peux pas enchérir sur ta propre vente.");
     if (!Number.isInteger(amount) || amount < 1) throw badRequest("bid_too_low", "Offre invalide.");
@@ -232,12 +245,14 @@ export async function placeBid(ctx: Ctx, bidderId: string, auctionId: number, am
       .returning();
     return { auction: updated!, players, rescheduled: endsAt.getTime() !== auction.endsAt.getTime() };
   });
-  // Prolongation anti-snipe : un nouveau job de clôture ; l'ancien ne fera rien (échéance repoussée).
-  if (res.rescheduled) await ctx.jobs.sendAt(AUCTION_CLOSE_JOB, { auctionId }, res.auction.endsAt);
-  for (const p of res.players.values()) pushWallet(ctx, p);
-  const names = await usernames(ctx.db, [res.auction.currentBidderId]);
-  pushAuction(ctx, res.auction, res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null);
-  await fx.flush(ctx);
+  await afterCommit(ctx, async () => {
+    // Prolongation anti-snipe : un nouveau job de clôture ; l'ancien ne fera rien (échéance repoussée).
+    if (res.rescheduled) await ctx.jobs.sendAt(AUCTION_CLOSE_JOB, { auctionId }, res.auction.endsAt);
+    for (const p of res.players.values()) pushWallet(ctx, p);
+    const names = await usernames(ctx.db, [res.auction.currentBidderId]);
+    pushAuction(ctx, res.auction, res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null);
+    await fx.flush(ctx);
+  });
   return { status: res.auction.status, currentBid: res.auction.currentBid, endsAt: res.auction.endsAt.toISOString() };
 }
 
@@ -253,10 +268,10 @@ export async function buyNow(ctx: Ctx, buyerId: string, auctionId: number) {
  * ou si l'anti-snipe a repoussé la fin (un autre job est programmé).
  */
 export async function closeAuctionIfDue(ctx: Ctx, auctionId: number) {
-  const now = ctx.now();
   const fx = new Effects();
   const res = await ctx.db.transaction(async (tx) => {
     const auction = await lockAuction(tx, auctionId);
+    const now = ctx.now();
     if (auction.status !== "open" || auction.endsAt > now) return null;
     if (!auction.currentBidderId || auction.currentBid === null) {
       await tx.update(a).set({ status: "expired", closedAt: now }).where(eq(a.id, auctionId));
@@ -269,10 +284,12 @@ export async function closeAuctionIfDue(ctx: Ctx, auctionId: number) {
     return { auction: sold, players };
   });
   if (!res) return false;
-  for (const p of res.players.values()) pushWallet(ctx, p);
-  const names = await usernames(ctx.db, [res.auction.currentBidderId]);
-  pushAuction(ctx, res.auction, res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null);
-  await fx.flush(ctx);
+  await afterCommit(ctx, async () => {
+    for (const p of res.players.values()) pushWallet(ctx, p);
+    const names = await usernames(ctx.db, [res.auction.currentBidderId]);
+    pushAuction(ctx, res.auction, res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null);
+    await fx.flush(ctx);
+  });
   return true;
 }
 
@@ -282,7 +299,13 @@ export async function sweepAuctions(ctx: Ctx) {
     .select({ id: a.id })
     .from(a)
     .where(and(eq(a.status, "open"), sql`${a.endsAt} <= ${ctx.now()}`));
-  for (const { id } of due) await closeAuctionIfDue(ctx, id);
+  for (const { id } of due) {
+    try {
+      await closeAuctionIfDue(ctx, id);
+    } catch (err) {
+      ctx.log.error({ err, auctionId: id }, "clôture de vente en échec");
+    }
+  }
   return due.length;
 }
 

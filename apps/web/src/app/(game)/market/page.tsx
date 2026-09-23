@@ -12,7 +12,7 @@ import { Card, CardGrid } from "@/components/Card";
 import { AuctionRow } from "@/components/market";
 import { Empty, ErrorBox, RarityFilter, Select } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
-import { useSocket, useSocketEvent } from "@/lib/game";
+import { useConnection, useSocket, useSocketEvent } from "@/lib/game";
 import { useNow } from "@/lib/use-now";
 import { useDebounced } from "@/lib/use-debounced";
 
@@ -82,6 +82,7 @@ function Market() {
   const [changed, setChanged] = useState<Set<number>>(new Set());
   const now = useNow(1000);
   const socket = useSocket();
+  const connection = useConnection();
 
   const key = useMemo(() => {
     if (tab === "wishlist") return null;
@@ -99,7 +100,7 @@ function Market() {
     const list = ids.split(",").map(Number);
     list.forEach((id) => socket.emit("auction:watch", id));
     return () => list.forEach((id) => socket.emit("auction:unwatch", id));
-  }, [socket, ids]);
+  }, [socket, ids, connection]);
 
   useSocketEvent("auction:update", (u) => {
     if (u.status !== "open") {
@@ -110,7 +111,15 @@ function Market() {
       (list) =>
         list?.map((a) =>
           a.id === u.id
-            ? { ...a, currentBid: u.currentBid, currentBidder: u.currentBidder, bidCount: u.bidCount, endsAt: u.endsAt, minBid: minNextBid(a.startPrice, u.currentBid) }
+            ? {
+                ...a,
+                currentBid: u.currentBid,
+                currentBidder: u.currentBidder,
+                currentBidderId: u.currentBidderId,
+                bidCount: u.bidCount,
+                endsAt: u.endsAt,
+                minBid: minNextBid(a.startPrice, u.currentBid),
+              }
             : a,
         ),
       { revalidate: false },
@@ -125,7 +134,7 @@ function Market() {
       <div>
         <h1 className="page-title">Marché</h1>
         <p className="hatnote mt-2">
-          Enchères en direct. Une offre dans la dernière minute repousse la fin à une minute. Les points de ton offre sont
+          Enchères en direct. Une offre dans la dernière minute prolonge la vente de 60 secondes. Les points de ton offre sont
           bloqués et te sont rendus si quelqu’un surenchérit.
         </p>
       </div>
