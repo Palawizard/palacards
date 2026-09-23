@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, schema, sql, type SQL } from "@palacards/db";
-import { ECONOMY, RARITIES, rarityRank, type Rarity } from "@palacards/game";
+import { ECONOMY, LEVEL_BONUS, RARITIES, rarityRank, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
@@ -41,8 +41,8 @@ export async function listCollection(ctx: Ctx, ownerId: string, query: Collectio
 
   const order: SQL[] = {
     date: [sql`${ci.obtainedAt} desc`],
-    atk: [sql`${ci.atk} * (1 + 0.04 * (${ci.level} - 1)) desc`],
-    def: [sql`${ci.def} * (1 + 0.04 * (${ci.level} - 1)) desc`],
+    atk: [sql`${ci.atk} * (1 + ${LEVEL_BONUS} * (${ci.level} - 1)) desc`],
+    def: [sql`${ci.def} * (1 + ${LEVEL_BONUS} * (${ci.level} - 1)) desc`],
     views: [sql`${c.views12m} desc`],
     rarity: [sql`${ci.rarity} desc`, sql`${c.views12m} desc`],
     title: [sql`${c.title} asc`],
@@ -119,23 +119,25 @@ export async function completion(ctx: Ctx, ownerId: string) {
   };
 }
 
-async function ownedInstance(ctx: Ctx, ownerId: string, instanceId: number) {
-  const [row] = await ctx.db
-    .select({ id: ci.id })
-    .from(ci)
-    .where(and(eq(ci.id, instanceId), eq(ci.ownerId, ownerId)));
-  if (!row) throw notFound("Carte introuvable dans ta collection.");
-}
-
 export async function setFavorite(ctx: Ctx, ownerId: string, instanceId: number, favorite: boolean) {
-  await ownedInstance(ctx, ownerId, instanceId);
-  await ctx.db.update(ci).set({ favorite }).where(eq(ci.id, instanceId));
+  // Condition sur le propriétaire dans la même requête : pas de fenêtre entre vérification et écriture.
+  const rows = await ctx.db
+    .update(ci)
+    .set({ favorite })
+    .where(and(eq(ci.id, instanceId), eq(ci.ownerId, ownerId)))
+    .returning({ id: ci.id });
+  if (!rows.length) throw notFound("Carte introuvable dans ta collection.");
 }
 
 export async function setTags(ctx: Ctx, ownerId: string, instanceId: number, tags: string[]) {
-  await ownedInstance(ctx, ownerId, instanceId);
   const clean = [...new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean))];
   await ctx.db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ id: ci.id })
+      .from(ci)
+      .where(and(eq(ci.id, instanceId), eq(ci.ownerId, ownerId)))
+      .for("update");
+    if (!row) throw notFound("Carte introuvable dans ta collection.");
     await tx.delete(schema.userTags).where(eq(schema.userTags.instanceId, instanceId));
     if (clean.length) await tx.insert(schema.userTags).values(clean.map((tag) => ({ instanceId, tag })));
   });

@@ -83,6 +83,8 @@ export function SwrProvider({ children }: { children: ReactNode }) {
   return (
     <SWRConfig
       value={{
+        // Cache propre à la session : rien ne survit à une déconnexion (sortie des pages de jeu).
+        provider: () => new Map(),
         fetcher,
         revalidateOnFocus: true,
         shouldRetryOnError: (err) => !(err instanceof ApiError && err.status < 500),

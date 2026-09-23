@@ -39,13 +39,15 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
   const inflight = new Map<number, Promise<CardMedia>>();
 
   async function limited<T>(fn: () => Promise<T>): Promise<T> {
+    // Le créneau libéré passe directement au suivant : jamais plus de 5 appels simultanés.
     if (active >= MAX_PARALLEL) await new Promise<void>((r) => queue.push(r));
-    active++;
+    else active++;
     try {
       return await fn();
     } finally {
-      active--;
-      queue.shift()?.();
+      const next = queue.shift();
+      if (next) next();
+      else active--;
     }
   }
 

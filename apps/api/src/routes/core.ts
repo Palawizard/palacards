@@ -64,7 +64,8 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       z.object({
         animationSpeed: z.enum(["normal", "fast", "instant"]).optional(),
         avatar: z.string().trim().min(1).max(4).nullable().optional(),
-      }),
+      })
+        .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
       req.body,
     );
     await ctx.db.update(schema.players).set(body).where(eq(schema.players.userId, req.user.id));
@@ -90,11 +91,10 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
         sort: z.enum(["date", "atk", "def", "views", "rarity", "title"]).default("date"),
         page: intParam.min(0).default(0),
         limit: intParam.min(1).max(120).default(60),
-        user: z.string().optional(),
       }),
       req.query,
     );
-    return listCollection(ctx, q.user ?? req.user.id, q);
+    return listCollection(ctx, req.user.id, q);
   });
   api.get("/collection/summary", auth, async (req) => completion(ctx, req.user.id));
   api.post("/collection/:id/favorite", auth, async (req) => {
@@ -124,7 +124,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/cards", auth, async (req) => {
     const q = parse(
       z.object({
-        q: z.string().max(100).optional(),
+        q: z.string().trim().min(3, "3 caractères minimum pour chercher").max(100).optional(),
         rarity: rarityList,
         minAtk: intParam.optional(),
         maxAtk: intParam.optional(),

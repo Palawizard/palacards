@@ -257,6 +257,7 @@ export function PackOpener({ packs, season }: { packs: PackState; season: number
                       />
                     </div>
                     <div
+                      inert={!revealed[i]}
                       className={`grid grid-cols-2 gap-1.5 transition-opacity duration-200 ${revealed[i] ? "opacity-100" : "pointer-events-none opacity-0"}`}
                     >
                       {decision === "recycled" ? (

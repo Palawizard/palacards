@@ -108,10 +108,12 @@ export default function CollectionPage() {
 
   async function recycle(ids: number[]) {
     try {
-      const res = await api<{ gain: number }>("/collection/recycle", { body: { instanceIds: ids } });
-      toast.success(
-        `${ids.length} carte${ids.length > 1 ? "s" : ""} recyclée${ids.length > 1 ? "s" : ""} : +${fmt(res.gain)} PW`,
-      );
+      // Lots de 500 : la limite d'une requête côté serveur.
+      let gain = 0;
+      for (let i = 0; i < ids.length; i += 500) {
+        gain += (await api<{ gain: number }>("/collection/recycle", { body: { instanceIds: ids.slice(i, i + 500) } })).gain;
+      }
+      toast.success(`${ids.length} carte${ids.length > 1 ? "s" : ""} recyclée${ids.length > 1 ? "s" : ""} : +${fmt(gain)} PW`);
       setSelected(new Map());
       setSelecting(false);
       refresh();
@@ -250,13 +252,9 @@ export default function CollectionPage() {
             <CardSkeletons />
           ) : items.length === 0 ? (
             <Empty
-              title={
-                total === 0 && !params.includes("rarity") && !query
-                  ? "Ta collection est vide"
-                  : "Aucune carte ne correspond"
-              }
+              title={summary.data?.totalCards === 0 ? "Ta collection est vide" : "Aucune carte ne correspond"}
             >
-              {total === 0 ? (
+              {summary.data?.totalCards === 0 ? (
                 <>
                   Ouvre un paquet pour tirer tes premiers articles.{" "}
                   <Link href="/pulls" className="article-link">

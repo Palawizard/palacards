@@ -88,6 +88,15 @@ export async function instancesByIds(db: DbOrTx, ids: number[]): Promise<CardDTO
   });
 }
 
+/** Tags de plusieurs exemplaires. */
+export async function tagsOf(db: DbOrTx, instanceIds: number[]): Promise<Map<number, string[]>> {
+  const out = new Map<number, string[]>();
+  if (!instanceIds.length) return out;
+  const rows = await db.select().from(schema.userTags).where(inArray(schema.userTags.instanceId, instanceIds));
+  for (const r of rows) out.set(r.instanceId, [...(out.get(r.instanceId) ?? []), r.tag]);
+  return out;
+}
+
 /** Charge en arrière-plan les images manquantes et les pousse au joueur au fil de l'eau. */
 export function loadMediaInBackground(ctx: Ctx, userId: string, cards: { cardId: number; title: string }[]) {
   void ctx.wiki
@@ -146,7 +155,8 @@ export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Pr
   if (query.minDef !== undefined) where.push(sql`c.def >= ${query.minDef}`);
   if (query.maxDef !== undefined) where.push(sql`c.def <= ${query.maxDef}`);
   const ownedExpr = sql`exists (select 1 from card_instances o where o.owner_id = ${userId} and o.card_id = c.id)`;
-  if (query.owned === "yes") where.push(ownedExpr);
+  // « Possédées » : on part des exemplaires du joueur (petit ensemble) plutôt que de toute la saison.
+  if (query.owned === "yes") where.push(sql`c.id in (select o.card_id from card_instances o where o.owner_id = ${userId})`);
   if (query.owned === "no") where.push(sql`not ${ownedExpr}`);
 
   const q = query.q?.trim();
@@ -251,6 +261,10 @@ export async function cardSheet(ctx: Ctx, userId: string, cardId: number) {
   const mine = await selectInstances(ctx.db)
     .where(and(eq(ci.cardId, cardId), eq(ci.ownerId, userId)))
     .orderBy(desc(ci.level), desc(ci.atk));
+  const tags = await tagsOf(
+    ctx.db,
+    mine.map((r) => r.instanceId),
+  );
   const [wish] = await ctx.db
     .select({ n: sql<number>`1` })
     .from(schema.wishlist)
@@ -275,7 +289,7 @@ export async function cardSheet(ctx: Ctx, userId: string, cardId: number) {
     extract: media?.extract ?? null,
     inActiveSeason: card.season === season,
     owners: owners.map((o) => ({ userId: o.user_id, username: o.username, copies: o.copies, bestLevel: o.best_level })),
-    mine: mine.map((r) => toCardDTO(r)),
+    mine: mine.map((r) => toCardDTO(r, { tags: tags.get(r.instanceId) ?? [] })),
     wishlisted: Boolean(wish),
   };
 }

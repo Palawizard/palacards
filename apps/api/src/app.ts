@@ -32,7 +32,11 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
-  await app.register(rateLimit, { global: false });
+  await app.register(rateLimit, {
+    global: false,
+    // Clé = session (le cookie), sinon l'IP : X-Forwarded-For est falsifiable par le client.
+    keyGenerator: (req) => /palawi_palacards_session=([^;]+)/.exec(req.headers.cookie ?? "")?.[1] ?? req.ip,
+  });
 
   const apiPrefix = `${config.BASE_PATH}/api`;
   const database = config.DATABASE_URL ? createDb(config.DATABASE_URL) : undefined;
