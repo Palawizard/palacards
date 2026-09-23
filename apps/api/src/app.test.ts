@@ -3,7 +3,7 @@ import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
 
 describe("API", async () => {
-  const { app } = await buildApp(loadConfig({ BASE_PATH: "/palacards" }));
+  const { app } = await buildApp(loadConfig({ BASE_PATH: "/palacards", LOG_LEVEL: "warn" }));
   afterAll(() => app.close());
 
   it("répond sur /palacards/api/health sans base configurée", async () => {
