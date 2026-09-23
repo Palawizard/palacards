@@ -9,7 +9,6 @@ import {
   real,
   smallint,
   text,
-  timestamp,
 } from "drizzle-orm/pg-core";
 
 export const rarityEnum = pgEnum("rarity", ["C", "PC", "R", "SR", "UR", "L"]);
@@ -32,12 +31,23 @@ export const cards = pgTable(
     randKey: real("rand_key")
       .notNull()
       .default(sql`random()`),
-    thumbUrl: text("thumb_url"),
-    extract: text("extract"),
-    summaryFetchedAt: timestamp("summary_fetched_at", { withTimezone: true }),
   },
   (t) => [primaryKey({ columns: [t.season, t.id] }), index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey)],
 );
+
+/**
+ * Table de chargement de l'import (COPY du CSV), vidée par `finish_card_load(season)`
+ * qui contrôle les effectifs puis insère les cartes de la saison dans `cards`.
+ */
+export const cardsNext = pgTable("cards_next", {
+  id: bigint("id", { mode: "number" }).notNull(),
+  title: text("title").notNull(),
+  rarity: rarityEnum("rarity").notNull(),
+  atk: smallint("atk").notNull(),
+  def: smallint("def").notNull(),
+  views12m: bigint("views_12m", { mode: "number" }).notNull(),
+  pageLen: integer("page_len").notNull(),
+});
 
 // Les autres tables (users, card_instances, ledger, auctions, ...) arrivent en phase 1+.
 // Voir docs/ pour le schéma complet.
