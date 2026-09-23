@@ -1,8 +1,9 @@
-import { existsSync, createReadStream } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { createReadStream, existsSync } from "node:fs";
 import { pipeline } from "node:stream/promises";
+import { fileURLToPath } from "node:url";
 import { createGunzip } from "node:zlib";
 import postgres from "postgres";
+import { ensureActiveSeason, fillSyntheticCards } from "./setup.js";
 
 // `pnpm db:seed` : charge un échantillon de vraies cartes (≈ 20 000) dans la base de dev,
 // pour jouer sans l'import complet. L'échantillon est produit par :
@@ -23,7 +24,7 @@ const sql = postgres(url, { max: 1, onnotice: () => {} });
 try {
   const [existing] = await sql<{ n: number }[]>`select count(*)::int as n from cards where season = ${SEASON}`;
   if (existing && existing.n > 0) {
-    console.log(`La saison ${SEASON} a déjà ${existing.n} cartes : rien à faire.`);
+    console.log(`La saison ${SEASON} a déjà ${existing.n} cartes : rien à charger.`);
   } else {
     const counts = await sql.begin(async (tx) => {
       await tx`truncate cards_next`;
@@ -35,25 +36,14 @@ try {
         await pipeline(createReadStream(sampleFile), createGunzip(), writable);
       } else {
         console.warn("Échantillon réel absent : génération de cartes synthétiques (voir tools/import).");
-        await tx`
-          insert into cards_next (id, title, rarity, atk, def, views_12m, page_len)
-          select gs, 'Carte synthétique n° ' || gs,
-                 (case when gs <= greatest(1, floor(1000 * ${SYNTHETIC_COUNT}::numeric / 2700000 + 0.5)) then 'L'
-                       when gs <= floor(10000 * ${SYNTHETIC_COUNT}::numeric / 2700000 + 0.5) then 'UR'
-                       when gs <= floor(50000 * ${SYNTHETIC_COUNT}::numeric / 2700000 + 0.5) then 'SR'
-                       when gs <= floor(250000 * ${SYNTHETIC_COUNT}::numeric / 2700000 + 0.5) then 'R'
-                       when gs <= floor(1000000 * ${SYNTHETIC_COUNT}::numeric / 2700000 + 0.5) then 'PC'
-                       else 'C' end)::rarity,
-                 100 + floor(random() * 9899), 100 + floor(random() * 9899),
-                 ${SYNTHETIC_COUNT} - gs, 1000 + floor(random() * 100000)
-          from generate_series(1, ${SYNTHETIC_COUNT}) gs
-        `;
+        await fillSyntheticCards(tx, SYNTHETIC_COUNT);
       }
       return tx<{ rarity: string; cards: string }[]>`select * from finish_card_load(${SEASON})`;
     });
     await sql`analyze cards`;
     console.log(`Saison ${SEASON} chargée :`, counts.map((c) => `${c.rarity} ${c.cards}`).join(", "));
   }
+  await ensureActiveSeason(sql, SEASON);
 } catch (err) {
   console.error("Échec du seed :", err);
   process.exitCode = 1;

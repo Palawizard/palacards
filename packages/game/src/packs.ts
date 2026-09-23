@@ -90,3 +90,16 @@ export function msUntilNextPack(stored: number, updatedAt: Date, now: Date): num
   const elapsed = Math.max(0, now.getTime() - updatedAt.getTime());
   return PACK_REGEN_MS - (elapsed % PACK_REGEN_MS);
 }
+
+/**
+ * Retire un paquet gratuit du stock (null si vide). Garde la progression du minuteur,
+ * sauf si le stock était plein : la régénération était en pause, elle repart de maintenant.
+ */
+export function consumeFreePack(stored: number, updatedAt: Date, now: Date): { stored: number; updatedAt: Date } | null {
+  const available = availablePacks(stored, updatedAt, now);
+  if (available <= 0) return null;
+  if (available >= MAX_STORED_PACKS) return { stored: MAX_STORED_PACKS - 1, updatedAt: now };
+  const elapsed = Math.max(0, now.getTime() - updatedAt.getTime());
+  const ticks = Math.floor(elapsed / PACK_REGEN_MS);
+  return { stored: available - 1, updatedAt: new Date(updatedAt.getTime() + ticks * PACK_REGEN_MS) };
+}
