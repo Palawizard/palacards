@@ -6,7 +6,10 @@ const schema = z.object({
   BASE_PATH: z
     .string()
     .default("/palacards")
-    .refine((v) => v === "" || (v.startsWith("/") && !v.endsWith("/")), "BASE_PATH doit commencer par / et ne pas finir par /"),
+    .refine(
+      (v) => v === "" || (v.startsWith("/") && !v.endsWith("/")),
+      "BASE_PATH doit commencer par / et ne pas finir par /",
+    ),
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   DATABASE_URL: z.string().optional(),
 });

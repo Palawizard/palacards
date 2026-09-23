@@ -8,14 +8,16 @@
     "build": "next build",
     "start": "next start --port 3000",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"(pas de tests web pour l'instant)\""
+    "test": "echo \"(pas de tests web pour l'instant)\"",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@palacards/game": "workspace:*",
     "next": "16.3.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "socket.io-client": "4.8.3"
+    "socket.io-client": "4.8.3",
+    "@palacards/shared": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
@@ -23,6 +25,8 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "tailwindcss": "4.3.3",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.6"
   }
 }
