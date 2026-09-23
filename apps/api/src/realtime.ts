@@ -1,7 +1,7 @@
 import type { ClientToServerEvents, ServerToClientEvents } from "@palacards/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { Server as HttpServer } from "node:http";
-import { Server } from "socket.io";
+import { Server, type Socket } from "socket.io";
 import { getSessionUser, type Auth } from "./auth.js";
 import type { Config } from "./config.js";
 
@@ -11,6 +11,7 @@ interface SocketData {
 }
 
 export type Io = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
+export type GameSocket = Socket<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
 type Emit = Parameters<Io["emit"]>;
 
 export const userRoom = (userId: string) => `user:${userId}`;
@@ -25,7 +26,7 @@ export function createRealtime(server: HttpServer, config: Config, auth: Auth | 
     cors: { origin: config.WEB_ORIGIN, credentials: true },
   });
   const online = new Map<string, number>();
-  const onConnect: ((socket: Parameters<Parameters<Io["on"]>[1]>[0]) => void)[] = [];
+  const onConnect: ((socket: GameSocket) => void)[] = [];
   const presenceListeners: ((userId: string, isOnline: boolean) => void)[] = [];
 
   io.use(async (socket, next) => {

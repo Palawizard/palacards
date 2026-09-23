@@ -11,6 +11,8 @@ import { registerErrorHandler } from "./errors.js";
 import { createJobs } from "./jobs.js";
 import { createRealtime } from "./realtime.js";
 import { coreRoutes } from "./routes/core.js";
+import { economyRoutes } from "./routes/economy.js";
+import { registerJobs } from "./services/jobs-handlers.js";
 import { testRoutes } from "./routes/test.js";
 import { createWiki } from "./services/wiki.js";
 
@@ -57,6 +59,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
       now: options.now ?? (() => new Date()),
       random: secureRandom,
     };
+    registerJobs(ctx);
   }
 
   await app.register(
@@ -102,6 +105,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
       });
 
       coreRoutes(api, ctx);
+      economyRoutes(api, ctx);
       if (config.GAME_TEST_MODE) testRoutes(api, ctx);
     },
     { prefix: apiPrefix },
