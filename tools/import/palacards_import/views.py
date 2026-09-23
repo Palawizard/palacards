@@ -85,6 +85,17 @@ def aggregate(lines: Iterable[bytes]) -> dict[int, int]:
     return totals
 
 
+def progress(chunks: Iterable[bytes], size: int, label: str) -> Iterator[bytes]:
+    """Affiche l'avancement de la lecture (le bloc fr.wikipedia finit vers 55 % du fichier)."""
+    read = 0
+    step = 256 * CHUNK
+    for chunk in chunks:
+        read += len(chunk)
+        if read // step != (read - len(chunk)) // step:
+            print(f"  {label} : {read / size:6.1%} lus", flush=True)
+        yield chunk
+
+
 def write_month(month: str, totals: dict[int, int]) -> None:
     out = paths.WORK / f"views-{month}.parquet"
     table = pa.table({"page_id": pa.array(list(totals), pa.int64()), "views": pa.array(list(totals.values()), pa.int64())})
@@ -109,7 +120,8 @@ def run(months: int = 12, today: dt.date | None = None) -> None:
         print(f"  {month} : lecture en flux de {month_url(month)}")
         with http.get(month_url(month), stream=True, timeout=120) as r:
             r.raise_for_status()
-            totals = aggregate(iter_lines(r.iter_content(CHUNK)))
+            size = int(r.headers.get("Content-Length", 0)) or 1
+            totals = aggregate(iter_lines(progress(r.iter_content(CHUNK), size, month)))
         if not totals:
             raise SystemExit(f"Aucune ligne fr.wikipedia dans {month_url(month)}")
         write_month(month, totals)
