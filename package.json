@@ -4,7 +4,7 @@
   "description": "PalaCards — jeu de cartes à collectionner basé sur les articles du Wikipédia FR",
   "packageManager": "pnpm@10.28.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
