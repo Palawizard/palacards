@@ -9,6 +9,7 @@ import { api, ApiError } from "@/lib/api";
 import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { RaritySigil } from "./Card";
+import { ConfirmDialog } from "./ui";
 
 const DURATIONS = [
   { ms: 10 * 60_000, label: "10 minutes" },
@@ -62,6 +63,7 @@ export function AuctionRow({
   const { me } = useMe();
   const [amount, setAmount] = useState(String(auction.minBid));
   const [busy, setBusy] = useState(false);
+  const [confirmBuy, setConfirmBuy] = useState(false);
   const left = new Date(auction.endsAt).getTime() - now;
   const mine = me?.id === auction.sellerId;
   const leading = me?.id === auction.currentBidderId;
@@ -158,9 +160,20 @@ export function AuctionRow({
               </button>
             </form>
             {auction.buyout !== null && (
-              <button type="button" className="btn btn-sm" disabled={busy} onClick={() => run(`/market/${auction.id}/buy`, undefined, "Achat effectué !")}>
-                Acheter {fmt(auction.buyout)}
-              </button>
+              <>
+                <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setConfirmBuy(true)}>
+                  Acheter {fmt(auction.buyout)}
+                </button>
+                <ConfirmDialog
+                  open={confirmBuy}
+                  title={`Acheter ${auction.card.title} ?`}
+                  confirmLabel={`Acheter pour ${fmt(auction.buyout)} PW`}
+                  onConfirm={() => run(`/market/${auction.id}/buy`, undefined, "Achat effectué !")}
+                  onClose={() => setConfirmBuy(false)}
+                >
+                  Achat immédiat au prix fixé par le vendeur. La carte arrive tout de suite dans ta collection.
+                </ConfirmDialog>
+              </>
             )}
           </>
         ) : null}

@@ -33,12 +33,14 @@ describe("enchères", () => {
     expect(minNextBid(50, 101)).toBe(107);
   });
 
-  it("anti-snipe : une offre dans la dernière minute repousse la fin à maintenant + 60 s", () => {
+  it("anti-snipe : une offre dans la dernière minute prolonge la vente de 60 s", () => {
     const end = new Date("2026-01-01T12:00:00Z");
     const early = new Date(end.getTime() - 5 * 60_000);
     expect(antiSnipeEnd(end, early)).toEqual(end);
     const late = new Date(end.getTime() - 10_000);
-    expect(antiSnipeEnd(end, late).getTime()).toBe(late.getTime() + ECONOMY.auctionAntiSnipeMs);
+    expect(antiSnipeEnd(end, late).getTime()).toBe(end.getTime() + ECONOMY.auctionAntiSnipeMs);
+    const edge = new Date(end.getTime() - 60_000);
+    expect(antiSnipeEnd(end, edge).getTime()).toBe(end.getTime() + ECONOMY.auctionAntiSnipeMs);
   });
 
   it("taxe de 5 % arrondie en défaveur du vendeur", () => {

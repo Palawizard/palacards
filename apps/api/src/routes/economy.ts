@@ -79,7 +79,8 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   ctx.rt.onConnection((socket) => {
     socket.on("auction:watch", (raw) => {
       const r = id.safeParse(raw);
-      if (r.success) void socket.join(auctionRoom(r.data));
+      // Plafond de salles par connexion : pas d'abonnement illimité.
+      if (r.success && socket.rooms.size < 300) void socket.join(auctionRoom(r.data));
     });
     socket.on("auction:unwatch", (raw) => {
       const r = id.safeParse(raw);

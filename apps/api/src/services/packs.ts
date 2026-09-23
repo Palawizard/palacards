@@ -5,6 +5,7 @@ import type { Ctx } from "../context.js";
 import { conflict } from "../errors.js";
 import { instancesByIds, loadMediaInBackground } from "./cards.js";
 import { schedulePacksFull } from "./economy.js";
+import { afterCommit } from "./notifications.js";
 import { activeSeason, getPlayer, lockPlayer, logMovement, ownedCount, packState, type DbOrTx } from "./players.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
@@ -107,7 +108,7 @@ export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
   const cards = await instancesByIds(ctx.db, result.ids);
   const packs = packState(result.state, now);
   ctx.rt.toUser(userId, "packs:update", packs);
-  await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
+  await afterCommit(ctx, () => schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt));
   loadMediaInBackground(
     ctx,
     userId,

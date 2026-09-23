@@ -33,13 +33,13 @@ export function minNextBid(startPrice: number, currentBid: number | null): numbe
 }
 
 /**
- * Anti-snipe : une offre dans la dernière minute repousse la fin à « maintenant + 60 s ».
+ * Anti-snipe (docs/07-economie.md) : une offre dans la dernière minute prolonge la vente de 60 s.
  * Renvoie la nouvelle échéance (inchangée si l'offre arrive plus tôt).
  */
 export function antiSnipeEnd(endsAt: Date, now: Date): Date {
   const window = ECONOMY.auctionAntiSnipeMs;
   if (endsAt.getTime() - now.getTime() > window) return endsAt;
-  return new Date(Math.max(endsAt.getTime(), now.getTime() + window));
+  return new Date(endsAt.getTime() + window);
 }
 
 /** Taxe de 5 % détruite sur une vente (arrondie en défaveur du vendeur). */

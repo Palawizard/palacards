@@ -36,6 +36,18 @@ const groupOf = (type: NotificationType) =>
   Object.entries(NOTIFICATION_GROUPS).find(([, types]) => types.includes(type))?.[0] ?? "other";
 
 /**
+ * Exécute les effets d'après commit (jobs, sockets, notifications) sans faire échouer
+ * une opération déjà enregistrée : une erreur est journalisée, les jobs de rattrapage prennent le relais.
+ */
+export async function afterCommit(ctx: Ctx, fn: () => Promise<void>) {
+  try {
+    await fn();
+  } catch (err) {
+    ctx.log.error({ err }, "effet après commit en échec");
+  }
+}
+
+/**
  * Effets à déclencher après le commit : notifications (insérées dans la transaction,
  * poussées par socket seulement si elle aboutit) et autres événements temps réel.
  */
