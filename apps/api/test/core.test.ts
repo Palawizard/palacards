@@ -1,7 +1,7 @@
 import { eq, schema, sql } from "@palacards/db";
 import { ECONOMY, MAX_STORED_PACKS } from "@palacards/game";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { makeApp, signUp, uniqueName } from "./helpers.js";
+import { achievementPw, makeApp, signUp, uniqueName } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -136,7 +136,7 @@ describe("collection et recyclage", () => {
     const res = await p.post("/collection/recycle", { instanceIds: [first!.instanceId] });
     expect(res.status).toBe(200);
     expect(res.body.gain).toBe(ECONOMY.recycleValue[first!.rarity]);
-    expect(res.body.balance).toBe(ECONOMY.startingBalance + res.body.gain);
+    expect(res.body.balance).toBe(ECONOMY.startingBalance + res.body.gain + (await achievementPw(ctx, p.userId)));
     const again = await p.post("/collection/recycle", { instanceIds: [first!.instanceId] });
     expect(again.status).toBe(404);
   });

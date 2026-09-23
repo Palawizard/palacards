@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, schema, sql, type SQL } from "@palacards/db";
-import { ECONOMY, LEVEL_BONUS, RARITIES, rarityRank, type Rarity } from "@palacards/game";
+import { ECONOMY, effectiveStats, LEVEL_BONUS, MAX_LEVEL, RARITIES, rarityRank, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
@@ -236,4 +236,33 @@ export async function duplicateIds(
     .filter((r) => best.get(r.cardId)?.id !== r.id && !r.lockedBy && !r.favorite && r.pinned === null)
     .filter((r) => !rarities || rarities.includes(r.rarity));
   return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + ECONOMY.recycleValue[r.rarity], 0) };
+}
+
+/**
+ * Fusion : un doublon du même article est consommé et la carte cible gagne un niveau (+4 % d'ATK et de DEF,
+ * max 5). Une transaction : joueur puis exemplaires verrouillés, ligne de ledger pour l'exemplaire détruit.
+ */
+export async function fuse(ctx: Ctx, ownerId: string, targetId: number, sourceId: number) {
+  if (targetId === sourceId) throw badRequest("same_card", "Choisis un autre exemplaire à fusionner.");
+  const res = await ctx.db.transaction(async (tx) => {
+    await lockPlayer(tx, ownerId);
+    const rows = await tx
+      .select()
+      .from(ci)
+      .where(and(inArray(ci.id, [targetId, sourceId]), eq(ci.ownerId, ownerId)))
+      .orderBy(ci.id)
+      .for("update");
+    const target = rows.find((r) => r.id === targetId);
+    const source = rows.find((r) => r.id === sourceId);
+    if (!target || !source) throw notFound("Cette carte n'est plus dans ta collection.");
+    if (target.cardId !== source.cardId) throw badRequest("different_cards", "On ne fusionne que deux exemplaires du même article.");
+    if (target.lockedBy || source.lockedBy) throw conflict("card_locked", "Une carte est engagée dans une vente ou un échange.");
+    if (target.level >= MAX_LEVEL) throw conflict("max_level", `Cette carte est déjà au niveau ${MAX_LEVEL}.`);
+    const level = target.level + 1;
+    await tx.delete(ci).where(eq(ci.id, sourceId));
+    await tx.update(ci).set({ level }).where(eq(ci.id, targetId));
+    await logMovement(tx, ownerId, "card", -1, await ownedCount(tx, ownerId), "fusion", `${sourceId}>${targetId}`);
+    return { level, ...effectiveStats(target.atk, target.def, level) };
+  });
+  return { instanceId: targetId, ...res };
 }

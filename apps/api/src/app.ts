@@ -14,6 +14,8 @@ import { coreRoutes } from "./routes/core.js";
 import { economyRoutes } from "./routes/economy.js";
 import { socialRoutes } from "./routes/social.js";
 import { battleRoutes } from "./routes/battles.js";
+import { progressionRoutes } from "./routes/progression.js";
+import { progressionIdle, registerProgressionHooks } from "./services/progression.js";
 import { wirePresence } from "./services/social.js";
 import { registerJobs } from "./services/jobs-handlers.js";
 import { testRoutes } from "./routes/test.js";
@@ -64,6 +66,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
     };
     registerJobs(ctx);
     wirePresence(ctx);
+    registerProgressionHooks();
   }
 
   await app.register(
@@ -112,6 +115,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
       economyRoutes(api, ctx);
       socialRoutes(api, ctx);
       battleRoutes(api, ctx);
+      progressionRoutes(api, ctx);
       if (config.GAME_TEST_MODE) testRoutes(api, ctx);
     },
     { prefix: apiPrefix },
@@ -122,6 +126,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
   });
   app.addHook("onClose", async () => {
     await jobs.stop();
+    await progressionIdle();
     rt.io.close();
     await database?.client.end({ timeout: 5 });
   });
