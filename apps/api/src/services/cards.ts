@@ -43,6 +43,7 @@ type InstanceRow = {
   views12m: number;
   favorite: boolean;
   locked: "auction" | "trade" | null;
+  pinnedSlot: number | null;
   thumbUrl: string | null;
   pageUrl: string | null;
   obtainedAt: Date;
@@ -62,6 +63,7 @@ export function toCardDTO(r: InstanceRow, extra: Partial<CardDTO> = {}): CardDTO
     views12m: r.views12m,
     favorite: r.favorite,
     locked: r.locked,
+    pinnedSlot: r.pinnedSlot,
     thumbUrl: r.thumbUrl,
     pageUrl: r.pageUrl ?? articleUrl(r.title),
     obtainedAt: r.obtainedAt.toISOString(),

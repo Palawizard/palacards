@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or, schema, sql } from "@palacards/db";
+import { and, desc, eq, inArray, lte, or, schema, sql } from "@palacards/db";
 import { TRADE_MAX_CARDS_PER_SIDE, TRADE_TTL_MS } from "@palacards/game";
 import type { TradeDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
@@ -255,7 +255,7 @@ export async function sweepTrades(ctx: Ctx) {
   const due = await ctx.db
     .select({ id: t.id })
     .from(t)
-    .where(and(eq(t.status, "pending"), sql`${t.expiresAt} <= ${ctx.now()}`));
+    .where(and(eq(t.status, "pending"), lte(t.expiresAt, ctx.now())));
   for (const { id } of due) {
     try {
       await closeTrade(ctx, id, { kind: "expire" });

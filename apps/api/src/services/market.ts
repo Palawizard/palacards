@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, schema, sql, type SQL } from "@palacards/db";
+import { and, desc, eq, inArray, lte, schema, sql, type SQL } from "@palacards/db";
 import {
   antiSnipeEnd,
   ECONOMY,
@@ -298,7 +298,7 @@ export async function sweepAuctions(ctx: Ctx) {
   const due = await ctx.db
     .select({ id: a.id })
     .from(a)
-    .where(and(eq(a.status, "open"), sql`${a.endsAt} <= ${ctx.now()}`));
+    .where(and(eq(a.status, "open"), lte(a.endsAt, ctx.now())));
   for (const { id } of due) {
     try {
       await closeAuctionIfDue(ctx, id);
