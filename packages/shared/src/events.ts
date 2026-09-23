@@ -44,6 +44,7 @@ export interface ServerToClientEvents {
     id: number;
     currentBid: number | null;
     currentBidder: string | null;
+    currentBidderId: string | null;
     bidCount: number;
     endsAt: string;
     status: string;

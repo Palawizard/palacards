@@ -30,6 +30,19 @@ export default function PullsPage() {
   const { me, mutateMe } = useMe();
   const { remaining, full } = usePackCountdown(me?.packs);
   const [saving, setSaving] = useState(false);
+  const [buying, setBuying] = useState(false);
+
+  async function buyBonus() {
+    setBuying(true);
+    try {
+      await api("/packs/buy", { method: "POST" });
+      toast.success("Paquet bonus ajouté à ton stock.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Achat impossible.");
+    } finally {
+      setBuying(false);
+    }
+  }
 
   async function setSpeed(value: (typeof SPEEDS)[number]["value"]) {
     if (!me || me.animationSpeed === value) return;
@@ -89,6 +102,18 @@ export default function PullsPage() {
                   {s.label}
                 </button>
               ))}
+            </div>
+            <div className="border-t border-line p-3">
+              <button
+                type="button"
+                className="btn btn-sm w-full"
+                disabled={buying || !me || me.wallet.available < ECONOMY.bonusPackPrice}
+                onClick={buyBonus}
+                title={me && me.wallet.available < ECONOMY.bonusPackPrice ? "Pas assez de points wiki" : undefined}
+              >
+                Acheter un paquet bonus · {ECONOMY.bonusPackPrice} PW
+              </button>
+              <p className="mt-1.5 text-xs text-faint">Hors plafond de stock, ouvert après tes paquets gratuits.</p>
             </div>
           </div>
 

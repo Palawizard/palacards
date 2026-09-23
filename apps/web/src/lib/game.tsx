@@ -5,13 +5,17 @@ import { useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useEffectEvent, useState, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
 import useSWR, { SWRConfig, type KeyedMutator } from "swr";
-import { API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
+import { toast } from "sonner";
+import { api, API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
+import { describe } from "./notifications";
 import { pushMedia } from "./media";
 
 type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
 interface GameContextValue {
   socket: GameSocket | null;
+  /** Incrémenté à chaque (re)connexion : les abonnements aux salles doivent être refaits. */
+  connection: number;
   me: MeDTO | undefined;
   mutateMe: KeyedMutator<MeDTO>;
 }
@@ -29,6 +33,7 @@ export const useMe = () => {
   return { me, mutateMe };
 };
 export const useSocket = () => useGame().socket;
+export const useConnection = () => useGame().connection;
 
 /** Écoute un événement temps réel tant que le composant est monté. */
 export function useSocketEvent<E extends keyof ServerToClientEvents>(event: E, handler: ServerToClientEvents[E]) {
@@ -53,6 +58,7 @@ export function useSocketEvent<E extends keyof ServerToClientEvents>(event: E, h
 export function GameProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [socket, setSocket] = useState<GameSocket | null>(null);
+  const [connection, setConnection] = useState(0);
   const { data: me, mutate: mutateMe, error } = useSWR<MeDTO>("/me", fetcher);
 
   useEffect(() => {
@@ -63,20 +69,42 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const s: GameSocket = io(API_URL || undefined, { path: SOCKET_PATH, withCredentials: true });
     s.on("wallet:update", (wallet) => void mutateMe((m) => (m ? { ...m, wallet } : m), { revalidate: false }));
     s.on("packs:update", (packs) => void mutateMe((m) => (m ? { ...m, packs } : m), { revalidate: false }));
-    s.on(
-      "notification:new",
-      (n) => void mutateMe((m) => (m ? { ...m, unreadNotifications: n.unread } : m), { revalidate: false }),
-    );
+    s.on("notification:new", (n) => {
+      void mutateMe((m) => (m ? { ...m, unreadNotifications: n.unread } : m), { revalidate: false });
+      const { text, href } = describe(n);
+      toast(text, { action: { label: "Voir", onClick: () => router.push(href) } });
+    });
     s.on("message:new", () => void mutateMe());
     s.on("card:media", pushMedia);
-    // Exposé aux composants une fois connecté (aucun événement n'arrive avant).
-    s.on("connect", () => setSocket(s));
+    // Exposé aux composants une fois connecté ; après une coupure, on relit l'état manqué.
+    s.on("connect", () => {
+      setSocket(s);
+      setConnection((c) => c + 1);
+      void mutateMe();
+    });
     return () => {
       s.disconnect();
     };
-  }, [mutateMe]);
+  }, [mutateMe, router]);
 
-  return <GameContext.Provider value={{ socket, me, mutateMe }}>{children}</GameContext.Provider>;
+  // Bonus de connexion du jour, réclamé une fois par chargement (le serveur l'accorde une fois par jour).
+  // Aussi au retour sur l'onglet et après une reconnexion : un onglet ouvert passé minuit le touche.
+  const loggedIn = !!me;
+  useEffect(() => {
+    if (!loggedIn) return;
+    const claim = () =>
+      api<{ claimed: boolean; reward?: number; streak?: number }>("/daily", { method: "POST" })
+        .then((r) => {
+          if (r.claimed) toast.success(`Bonus du jour : +${r.reward} PW${r.streak && r.streak > 1 ? ` (série de ${r.streak} jours)` : ""}`);
+        })
+        .catch(() => {});
+    void claim();
+    const onVisible = () => document.visibilityState === "visible" && void claim();
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loggedIn, connection]);
+
+  return <GameContext.Provider value={{ socket, connection, me, mutateMe }}>{children}</GameContext.Provider>;
 }
 
 export function SwrProvider({ children }: { children: ReactNode }) {

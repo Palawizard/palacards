@@ -1,7 +1,7 @@
 import { schema } from "@palacards/db";
 import { availablePacks, MAX_STORED_PACKS, msUntilNextPack, PITY_THRESHOLD } from "@palacards/game";
 import type { PackState, Wallet } from "@palacards/shared";
-import { eq, sql } from "@palacards/db";
+import { eq, inArray, sql } from "@palacards/db";
 import type { Ctx } from "../context.js";
 import { GameError } from "../errors.js";
 
@@ -36,8 +36,9 @@ export type LedgerReason =
   | "achievement"
   | "bonus_pack"
   | "market_fee"
-  | "market_bid_won"
+  | "market_purchase"
   | "market_sale"
+  | "market_tax"
   | "trade"
   | "admin"
   | "guild_objective"
@@ -65,6 +66,30 @@ export async function movePw(tx: Tx, player: Player, delta: number, reason: Ledg
   });
   player.balance = balance;
   return player;
+}
+
+/**
+ * Bloque (delta > 0) ou débloque (delta < 0) des PW d'un joueur verrouillé : enchères en cours,
+ * échanges proposés. Pas de ligne de ledger : le solde total ne bouge pas.
+ */
+export async function moveLocked(tx: Tx, player: Player, delta: number) {
+  if (delta === 0) return player;
+  const locked = player.lockedBalance + delta;
+  if (locked < 0) throw new GameError(500, "locked_negative", "Solde bloqué incohérent.");
+  if (locked > player.balance) throw new GameError(409, "insufficient_funds", "Pas assez de points wiki disponibles.");
+  await tx.update(schema.players).set({ lockedBalance: locked }).where(eq(schema.players.userId, player.userId));
+  player.lockedBalance = locked;
+  return player;
+}
+
+/** Donne des exemplaires à un nouveau propriétaire (vente, échange) : verrous, épingle, favori et tags remis à zéro. */
+export async function transferInstances(tx: Tx, instanceIds: number[], newOwner: string, source: "market" | "trade") {
+  if (instanceIds.length === 0) return;
+  await tx
+    .update(schema.cardInstances)
+    .set({ ownerId: newOwner, lockedBy: null, pinnedSlot: null, favorite: false, source, obtainedAt: new Date() })
+    .where(inArray(schema.cardInstances.id, instanceIds));
+  await tx.delete(schema.userTags).where(inArray(schema.userTags.instanceId, instanceIds));
 }
 
 /** Trace un mouvement de cartes ou de paquets (sans solde de PW) dans le ledger. */
