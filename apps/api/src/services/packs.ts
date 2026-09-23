@@ -5,7 +5,7 @@ import type { Ctx } from "../context.js";
 import { conflict } from "../errors.js";
 import { instancesByIds, loadMediaInBackground } from "./cards.js";
 import { schedulePacksFull } from "./economy.js";
-import { checkObjectiveFor } from "./guilds.js";
+import { bumpObjective } from "./guilds.js";
 import { afterCommit } from "./notifications.js";
 import { activeSeason, getPlayer, lockPlayer, logMovement, ownedCount, packState, type DbOrTx } from "./players.js";
 
@@ -111,7 +111,10 @@ export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
   ctx.rt.toUser(userId, "packs:update", packs);
   await afterCommit(ctx, async () => {
     await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
-    await checkObjectiveFor(ctx, userId);
+    await bumpObjective(ctx, userId, {
+      open_packs: 1,
+      pull_sr: result.drawn.filter((d) => d.rarity === "SR" || d.rarity === "UR" || d.rarity === "L").length,
+    });
   });
   loadMediaInBackground(
     ctx,

@@ -4,7 +4,7 @@ import type { CardDTO, Page } from "@palacards/shared";
 import { ArrowLeft, Paperclip, Send, Shield, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
@@ -65,34 +65,73 @@ function CardPicker({ onPick, onClose }: { onPick: (c: CardDTO) => void; onClose
   );
 }
 
-function Thread({ channel, to, title, onSent }: { channel: string | null; to: string | null; title: string; onSent: (ch: string) => void }) {
+function Thread({
+  channel,
+  to,
+  title,
+  onSent,
+  onRead,
+}: {
+  channel: string | null;
+  to: string | null;
+  title: string;
+  onSent: (ch: string) => void;
+  onRead: () => void;
+}) {
   const { me } = useMe();
-  const { data, error, mutate } = useSWR<{ items: Message[] }>(channel ? `/messages/history?channel=${encodeURIComponent(channel)}` : null);
+  const { data, error, mutate } = useSWR<{ items: Message[]; nextCursor: string | null }>(
+    channel ? `/messages/history?channel=${encodeURIComponent(channel)}` : null,
+  );
+  const [older, setOlder] = useState<{ items: Message[]; cursor: string | null } | null>(null);
   const [body, setBody] = useState("");
   const [card, setCard] = useState<CardDTO | null>(null);
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
 
+  // Défile en bas seulement si on y était déjà (on ne dérange pas qui relit plus haut).
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-    if (channel && data) void api("/messages/read", { body: { channel } }).catch(() => {});
-  }, [data, channel]);
+    if (atBottom.current) end.current?.scrollIntoView({ block: "end" });
+  }, [data]);
+  // Marque la conversation comme lue, puis rafraîchit les compteurs (après la réponse du serveur).
+  const lastId = data?.items[data.items.length - 1]?.id;
+  useEffect(() => {
+    if (!channel || lastId === undefined) return;
+    void api("/messages/read", { body: { channel } })
+      .then(onRead)
+      .catch(() => {});
+  }, [channel, lastId, onRead]);
 
   useSocketEvent("message:new", (msg) => {
-    if (msg.channel === channel) void mutate((d) => (d && !d.items.some((x) => x.id === msg.id) ? { items: [...d.items, msg] } : d), { revalidate: false });
+    if (msg.channel === channel) {
+      void mutate((d) => (d && !d.items.some((x) => x.id === msg.id) ? { ...d, items: [...d.items, msg] } : d), { revalidate: false });
+    }
   });
+
+  async function loadOlder() {
+    const cursor = older ? older.cursor : data?.nextCursor;
+    if (!channel || !cursor) return;
+    const page = await api<{ items: Message[]; nextCursor: string | null }>(
+      `/messages/history?channel=${encodeURIComponent(channel)}&before=${cursor}`,
+    );
+    setOlder((o) => ({ items: [...page.items, ...(o?.items ?? [])], cursor: page.nextCursor }));
+  }
+  const items = [...(older?.items ?? []), ...(data?.items ?? [])];
+  const moreCursor = older ? older.cursor : data?.nextCursor;
 
   async function send(e: { preventDefault(): void }) {
     e.preventDefault();
-    if (!body.trim() && !card) return;
+    if (busy || (!body.trim() && !card)) return;
     setBusy(true);
+    atBottom.current = true;
     try {
       const msg = await api<Message>("/messages", { body: { ...(channel ? { channel } : { to }), body: body.trim(), instanceId: card?.instanceId ?? undefined } });
       setBody("");
       setCard(null);
       if (!channel) onSent(msg.channel);
-      else void mutate((d) => (d && !d.items.some((x) => x.id === msg.id) ? { items: [...d.items, msg] } : d), { revalidate: false });
+      else void mutate((d) => (d && !d.items.some((x) => x.id === msg.id) ? { ...d, items: [...d.items, msg] } : d), { revalidate: false });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Envoi impossible.");
     } finally {
@@ -103,16 +142,29 @@ function Thread({ channel, to, title, onSent }: { channel: string | null; to: st
   return (
     <div className="flex min-h-[60dvh] flex-col">
       <h2 className="border-b border-line pb-1 font-serif text-xl">Discussion : {title}</h2>
-      <div className="flex-1 overflow-y-auto py-3" aria-live="polite">
+      <div
+        ref={list}
+        className="max-h-[65dvh] flex-1 overflow-y-auto py-3"
+        aria-live="polite"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+        }}
+      >
+        {moreCursor && (
+          <button type="button" className="btn btn-sm btn-ghost mb-3" onClick={loadOlder}>
+            Messages plus anciens
+          </button>
+        )}
         {error ? (
           <ErrorBox error={error} retry={() => mutate()} />
         ) : channel && !data ? (
           <div className="h-40 animate-pulse rounded bg-panel" />
-        ) : !data?.items.length ? (
+        ) : !items.length ? (
           <p className="text-sm text-muted">Commence la discussion.</p>
         ) : (
           <ol className="flex flex-col gap-3">
-            {data.items.map((msg) => {
+            {items.map((msg) => {
               const mine = msg.senderId === me?.id;
               return (
                 <li key={msg.id} className={`border-l border-line pl-3 ${mine ? "ml-6 sm:ml-12" : ""}`}>
@@ -163,7 +215,7 @@ function Thread({ channel, to, title, onSent }: { channel: string | null; to: st
             maxLength={1000}
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) void send(e);
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) void send(e);
             }}
             placeholder="Écrire un message"
             aria-label="Message"
@@ -190,9 +242,10 @@ function Messages() {
   useEffect(() => {
     if (current && current.channel !== channel) router.replace(`/messages?channel=${encodeURIComponent(current.channel)}`);
   }, [current, channel, router]);
-  useEffect(() => {
-    if (current?.unread) void mutate().then(() => mutateMe());
-  }, [current?.channel, current?.unread, mutate, mutateMe]);
+  const onRead = useCallback(() => {
+    void mutate();
+    void mutateMe();
+  }, [mutate, mutateMe]);
 
   const open = !!channel || !!to;
   return (
@@ -255,6 +308,7 @@ function Messages() {
                 channel={current?.channel ?? (channel || null)}
                 to={to}
                 title={current?.title ?? to ?? ""}
+                onRead={onRead}
                 onSent={(ch) => {
                   void mutate();
                   router.replace(`/messages?channel=${encodeURIComponent(ch)}`);

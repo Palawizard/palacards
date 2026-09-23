@@ -485,6 +485,8 @@ export const guildObjectives = pgTable(
     weekStart: date("week_start").notNull(),
     kind: text("kind").notNull(),
     target: integer("target").notNull(),
+    /** Compteur incrémenté au fil des événements (tirages, paquets, victoires) des membres de la semaine. */
+    progress: integer("progress").notNull().default(0),
     completedAt: tstz("completed_at"),
   },
   (t) => [uniqueIndex("guild_objectives_week_uq").on(t.guildId, t.weekStart)],

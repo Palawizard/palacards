@@ -152,7 +152,12 @@ async function channelAccess(ctx: Ctx, userId: string, channel: string): Promise
   if (dm) {
     const [, a, b] = dm;
     if (userId !== a && userId !== b) throw forbidden("Conversation privée.");
-    return { kind: "dm", other: userId === a ? b! : a! };
+    const other = userId === a ? b! : a!;
+    // Un seul canal par paire (ids triés), vers un joueur qui existe, jamais vers soi-même.
+    if (other === userId || channel !== dmChannel(a!, b!)) throw badRequest("invalid_channel", "Conversation inconnue.");
+    const [exists] = await ctx.db.select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.id, other));
+    if (!exists) throw notFound("Ce joueur n'existe pas.");
+    return { kind: "dm", other };
   }
   const g = /^guild:(\d+)$/.exec(channel);
   if (g) {

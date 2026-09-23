@@ -143,6 +143,7 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
 function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => void }) {
   const { me } = useMe();
   const [leaving, setLeaving] = useState(false);
+  const [pending, setPending] = useState<{ m: Member; action: "kick" | "transfer" } | null>(null);
   const myRole = guild.myRole ?? "member";
   const pct = Math.round((guild.objective.progress / guild.objective.target) * 100);
   const act = (m: Member, action: "promote" | "demote" | "kick" | "transfer", ok: string) =>
@@ -220,13 +221,13 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
                       <button type="button" className="btn btn-sm" onClick={() => act(m, "demote", `${m.displayName} redevient membre.`)}>
                         Rétrograder
                       </button>
-                      <button type="button" className="btn btn-sm" onClick={() => act(m, "transfer", `${m.displayName} est le nouveau chef.`)}>
+                      <button type="button" className="btn btn-sm" onClick={() => setPending({ m, action: "transfer" })}>
                         Nommer chef
                       </button>
                     </>
                   )}
                   {(myRole === "leader" ? m.role !== "leader" : myRole === "officer" && m.role === "member") && (
-                    <button type="button" className="btn btn-sm btn-danger" onClick={() => act(m, "kick", `${m.displayName} a été exclu.`)}>
+                    <button type="button" className="btn btn-sm btn-danger" onClick={() => setPending({ m, action: "kick" })}>
                       Exclure
                     </button>
                   )}
@@ -242,6 +243,19 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
           Quitter la guilde
         </button>
       </div>
+      <ConfirmDialog
+        open={!!pending}
+        danger={pending?.action === "kick"}
+        title={pending?.action === "kick" ? `Exclure ${pending.m.displayName} ?` : `Nommer ${pending?.m.displayName ?? ""} chef ?`}
+        confirmLabel={pending?.action === "kick" ? "Exclure" : "Nommer chef"}
+        onConfirm={() =>
+          pending &&
+          act(pending.m, pending.action, pending.action === "kick" ? `${pending.m.displayName} a été exclu.` : `${pending.m.displayName} est le nouveau chef.`)
+        }
+        onClose={() => setPending(null)}
+      >
+        {pending?.action === "kick" ? "Il pourra revenir plus tard s’il le souhaite." : "Tu deviendras officier et ne pourras plus reprendre la tête toi-même."}
+      </ConfirmDialog>
       <ConfirmDialog
         open={leaving}
         danger
