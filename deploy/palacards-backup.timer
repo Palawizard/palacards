@@ -1,0 +1,10 @@
+[Unit]
+Description=Sauvegarde de PalaCards tous les jours à 4 h
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

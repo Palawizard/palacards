@@ -1,0 +1,10 @@
+[Unit]
+Description=Sauvegarde quotidienne de PalaCards (pg_dump sans les cartes)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=STACK_DIR=/opt/dockpanel/stacks/palacards
+Environment=BACKUP_DIR=/mnt/nas/backups/palacards
+ExecStart=/opt/dockpanel/stacks/palacards/deploy/backup.sh

@@ -13,6 +13,7 @@ import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { instancesByIds } from "./cards.js";
 import { afterCommit, Effects } from "./notifications.js";
+import { emit } from "./progression.js";
 import {
   lockPlayers,
   logMovement,
@@ -165,6 +166,13 @@ export async function cancelAuction(ctx: Ctx, sellerId: string, auctionId: numbe
  * Règle une vente dans la transaction : le gagnant paie (ses fonds bloqués sont libérés d'abord),
  * le vendeur reçoit le prix moins la taxe de 5 % (détruite), la carte change de main.
  */
+/** Succès d'une vente conclue : « vendre » pour le vendeur, collection pour l'acheteur. */
+function emitSale(ctx: Ctx, auction: Pick<Auction, "status" | "sellerId" | "currentBidderId" | "currentBid">) {
+  if (auction.status !== "sold" || !auction.currentBidderId) return;
+  void emit(ctx, auction.sellerId, { type: "sale", price: auction.currentBid ?? 0 });
+  void emit(ctx, auction.currentBidderId, "collection");
+}
+
 async function settle(tx: Tx, fx: Effects, auction: Auction, players: Map<string, Player>, winnerId: string, price: number, lockedAmount: number, now: Date) {
   const winner = players.get(winnerId)!;
   const seller = players.get(auction.sellerId)!;
@@ -252,6 +260,7 @@ export async function placeBid(ctx: Ctx, bidderId: string, auctionId: number, am
     const names = await usernames(ctx.db, [res.auction.currentBidderId]);
     pushAuction(ctx, res.auction, res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null);
     await fx.flush(ctx);
+    emitSale(ctx, res.auction);
   });
   return { status: res.auction.status, currentBid: res.auction.currentBid, endsAt: res.auction.endsAt.toISOString() };
 }
@@ -289,6 +298,7 @@ export async function closeAuctionIfDue(ctx: Ctx, auctionId: number) {
     const names = await usernames(ctx.db, [res.auction.currentBidderId]);
     pushAuction(ctx, res.auction, res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null);
     await fx.flush(ctx);
+    emitSale(ctx, res.auction);
   });
   return true;
 }

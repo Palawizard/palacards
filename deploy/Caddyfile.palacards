@@ -1,0 +1,11 @@
+# Extrait à ajouter au site www.palawi.fr de la stack Caddy (vm-apps, derrière palawi-gateway / Cloudflare Tunnel).
+# L'API et le temps réel d'abord (plus spécifiques), puis le front. Caddy gère le passage en WebSocket tout seul.
+handle /palacards/api/* {
+	reverse_proxy palacards-api:4000
+}
+handle /palacards/socket.io/* {
+	reverse_proxy palacards-api:4000
+}
+handle /palacards* {
+	reverse_proxy palacards-web:3000
+}
