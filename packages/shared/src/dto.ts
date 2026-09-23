@@ -45,3 +45,43 @@ export interface MeDTO {
   unreadMessages: number;
   season: number;
 }
+
+export interface ReferencePriceDTO {
+  median: number;
+  min: number;
+  max: number;
+  count: number;
+}
+
+export interface AuctionDTO {
+  id: number;
+  card: CardDTO;
+  sellerId: string;
+  seller: string;
+  startPrice: number;
+  buyout: number | null;
+  currentBid: number | null;
+  currentBidder: string | null;
+  currentBidderId: string | null;
+  minBid: number;
+  bidCount: number;
+  endsAt: string;
+  status: string;
+  reference: ReferencePriceDTO | null;
+}
+
+export interface TradeDTO {
+  id: number;
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  give: CardDTO[];
+  want: CardDTO[];
+  fromPw: number;
+  toPw: number;
+  message: string | null;
+  status: string;
+  parentId: number | null;
+  createdAt: string;
+  expiresAt: string;
+  resolvedAt: string | null;
+}
