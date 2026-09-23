@@ -2,7 +2,7 @@
 
 import { ECONOMY, RARITY_LABELS } from "@palacards/game";
 import type { CardDTO, ReferencePriceDTO } from "@palacards/shared";
-import { ExternalLink, Gavel, Heart, Repeat, Star, Tag } from "lucide-react";
+import { ExternalLink, Gavel, Heart, Pin, Repeat, Star, Tag } from "lucide-react";
 import Link from "next/link";
 import { use, useState } from "react";
 import { toast } from "sonner";
@@ -68,6 +68,21 @@ function InstanceRow({ card, onChanged }: { card: CardDTO; onChanged: () => void
         <button type="button" className="btn btn-sm" onClick={() => setEditing((v) => !v)} aria-expanded={editing}>
           <Tag aria-hidden className="size-4" />
           Tags{card.tags?.length ? ` (${card.tags.length})` : ""}
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm"
+          aria-pressed={!!card.pinnedSlot}
+          disabled={!!card.locked && !card.pinnedSlot}
+          onClick={() =>
+            run(
+              () => api(`/collection/${card.instanceId}/pin`, { body: { slot: card.pinnedSlot ? null : "auto" } }),
+              card.pinnedSlot ? "Retirée de ta vitrine." : "Épinglée dans ta vitrine.",
+            )
+          }
+        >
+          <Pin aria-hidden className="size-4" />
+          {card.pinnedSlot ? "Désépingler" : "Épingler"}
         </button>
         <button type="button" className="btn btn-sm" disabled={!!card.locked} onClick={() => setSelling((v) => !v)} aria-expanded={selling}>
           <Gavel aria-hidden className="size-4" />
