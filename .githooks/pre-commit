@@ -2,7 +2,7 @@
 # Refuse tout commit contenant la doc privée ou les fichiers d'instructions pour agents IA.
 # Activé automatiquement par `pnpm install` (script prepare -> core.hooksPath=.githooks).
 
-forbidden=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^docs/|(^|/)(AGENTS|CLAUDE|CLAUDE\.local|GEMINI)\.md$|(^|/)\.(claude|agents|codex|cursor)/|(^|/)\.(cursorrules|windsurfrules)$|^\.github/copilot-instructions\.md$')
+forbidden=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^docs/|(^|/)(AGENTS|CLAUDE|CLAUDE\.local|GEMINI|PRODUCT|DESIGN)\.md$|(^|/)\.(claude|agents|codex|cursor)/|(^|/)\.(cursorrules|windsurfrules)$|^\.github/copilot-instructions\.md$')
 
 if [ -n "$forbidden" ]; then
   echo "pre-commit : ces fichiers ne doivent jamais être commités (doc privée / instructions agents) :" >&2
