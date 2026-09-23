@@ -17,7 +17,8 @@
     "test": "echo \"(pas de tests db pour l'instant)\"",
     "generate": "drizzle-kit generate",
     "migrate": "tsc -p tsconfig.json && node --env-file-if-exists=../../.env dist/migrate.js",
-    "studio": "drizzle-kit studio"
+    "studio": "drizzle-kit studio",
+    "lint": "eslint ."
   },
   "dependencies": {
     "drizzle-orm": "0.45.3",

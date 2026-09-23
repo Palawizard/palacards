@@ -29,15 +29,14 @@ export const cards = pgTable(
     def: smallint("def").notNull(),
     views12m: bigint("views_12m", { mode: "number" }).notNull(),
     pageLen: integer("page_len").notNull(),
-    randKey: real("rand_key").notNull().default(sql`random()`),
+    randKey: real("rand_key")
+      .notNull()
+      .default(sql`random()`),
     thumbUrl: text("thumb_url"),
     extract: text("extract"),
     summaryFetchedAt: timestamp("summary_fetched_at", { withTimezone: true }),
   },
-  (t) => [
-    primaryKey({ columns: [t.season, t.id] }),
-    index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey),
-  ],
+  (t) => [primaryKey({ columns: [t.season, t.id] }), index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey)],
 );
 
 // Les autres tables (users, card_instances, ledger, auctions, ...) arrivent en phase 1+.

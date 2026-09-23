@@ -26,7 +26,9 @@ export function ServerStatus() {
     };
   }, []);
 
-  const dot = (ok: boolean) => <span className={`inline-block size-2 rounded-full ${ok ? "bg-accent" : "bg-red-500"}`} />;
+  const dot = (ok: boolean) => (
+    <span className={`inline-block size-2 rounded-full ${ok ? "bg-accent" : "bg-red-500"}`} />
+  );
 
   return (
     <div className="flex flex-col gap-1 rounded-xl border border-line bg-panel px-4 py-3 text-xs text-muted">

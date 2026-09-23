@@ -11,7 +11,7 @@ const nextConfig: NextConfig = {
   // Servi sous www.palawi.fr/palacards/
   basePath: "/palacards",
   output: "standalone",
-  transpilePackages: ["@palacards/game"],
+  transpilePackages: ["@palacards/game", "@palacards/shared"],
   env: {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "",
   },
