@@ -13,20 +13,23 @@
   },
   "dependencies": {
     "@palacards/game": "workspace:*",
+    "@palacards/shared": "workspace:*",
+    "better-auth": "1.7.5",
+    "motion": "13.4.2",
     "next": "16.3.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "socket.io-client": "4.8.3",
-    "@palacards/shared": "workspace:*"
+    "swr": "2.5.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "22.20.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
-    "tailwindcss": "4.3.3",
-    "typescript": "5.9.3",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.3.6"
+    "eslint-config-next": "16.3.6",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3"
   }
 }
