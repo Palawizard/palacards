@@ -84,10 +84,17 @@ describe("guildes", () => {
     const chief = await signUp(app);
     const { body } = await chief.post("/guilds", { name: uniqueName("Objectif "), tag: "OB" + String(Date.now()).slice(-3), emblem: "🔭" });
     const detail = await chief.get("/guilds/mine");
-    // Objectif forcé à une cible atteignable.
-    await ctx.db.update(schema.guildObjectives).set({ kind: "open_packs", target: 1 }).where(eq(schema.guildObjectives.guildId, body.id));
+    // Objectif « ouvrir des paquets » à un paquet de la fin : le prochain tirage le termine.
+    await ctx.db
+      .update(schema.guildObjectives)
+      .set({ kind: "open_packs", target: 60, progress: 59 })
+      .where(eq(schema.guildObjectives.guildId, body.id));
     await chief.post("/packs/open");
     await Promise.all([checkObjective(ctx, body.id), checkObjective(ctx, body.id)]);
+    // Recycler les cartes tirées ne fait pas reculer l'objectif.
+    const [obj] = await ctx.db.select().from(schema.guildObjectives).where(eq(schema.guildObjectives.guildId, body.id));
+    expect(obj!.progress).toBe(60);
+    expect(obj!.completedAt).not.toBeNull();
     const [p] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
     expect(p!.bonusPacks).toBe(1);
     const [rows] = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective'`);

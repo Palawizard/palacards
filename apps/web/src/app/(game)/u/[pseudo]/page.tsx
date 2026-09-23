@@ -130,9 +130,15 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
             {p.guild && (
               <>
                 {" · "}
-                <Link href="/guild" className="article-link">
-                  {p.guild.emblem} {p.guild.name} [{p.guild.tag}]
-                </Link>
+                {p.isMe ? (
+                  <Link href="/guild" className="article-link">
+                    {p.guild.emblem} {p.guild.name} [{p.guild.tag}]
+                  </Link>
+                ) : (
+                  <span>
+                    {p.guild.emblem} {p.guild.name} [{p.guild.tag}]
+                  </span>
+                )}
               </>
             )}
           </p>
