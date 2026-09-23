@@ -37,8 +37,15 @@ export async function recreateDatabase(adminUrl: string, name: string): Promise<
  * du pool complet (plafonds de rang × count / 2,7 M), prêtes pour `finish_card_load`.
  */
 export async function fillSyntheticCards(sql: Sql, count: number): Promise<void> {
-  const tiers = (ceil: number) => (count >= 2_000_000 ? ceil : Math.max(1, Math.floor((ceil * count) / 2_700_000 + 0.5)));
-  const [l, ur, sr, r, pc] = [1_000, 10_000, 50_000, 250_000, 1_000_000].map(tiers) as [number, number, number, number, number];
+  const tiers = (ceil: number) =>
+    count >= 2_000_000 ? ceil : Math.max(1, Math.floor((ceil * count) / 2_700_000 + 0.5));
+  const [l, ur, sr, r, pc] = [1_000, 10_000, 50_000, 250_000, 1_000_000].map(tiers) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
   await sql`
     insert into cards_next (id, title, rarity, atk, def, views_12m, page_len)
     select gs, 'Carte synthétique n° ' || gs,

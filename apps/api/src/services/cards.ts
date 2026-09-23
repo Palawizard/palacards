@@ -134,7 +134,13 @@ function decodeCursor(raw: string): Cursor {
 export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Promise<Page<CardDTO>> {
   const season = await activeSeason(ctx.db);
   const where: SQL[] = [sql`c.season = ${season}`];
-  if (query.rarity?.length) where.push(sql`c.rarity in (${sql.join(query.rarity.map((r) => sql`${r}::rarity`), sql`, `)})`);
+  if (query.rarity?.length)
+    where.push(
+      sql`c.rarity in (${sql.join(
+        query.rarity.map((r) => sql`${r}::rarity`),
+        sql`, `,
+      )})`,
+    );
   if (query.minAtk !== undefined) where.push(sql`c.atk >= ${query.minAtk}`);
   if (query.maxAtk !== undefined) where.push(sql`c.atk <= ${query.maxAtk}`);
   if (query.minDef !== undefined) where.push(sql`c.def >= ${query.minDef}`);
@@ -149,7 +155,9 @@ export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Pr
   if (q) {
     // Pertinence : similarité de mots (trigrammes), bornée aux titres qui contiennent la recherche ou s'en approchent.
     const needle = sql`lower(f_unaccent(${q}))`;
-    where.push(sql`(lower(f_unaccent(c.title)) like '%' || ${needle} || '%' or ${needle} <% lower(f_unaccent(c.title)))`);
+    where.push(
+      sql`(lower(f_unaccent(c.title)) like '%' || ${needle} || '%' or ${needle} <% lower(f_unaccent(c.title)))`,
+    );
     sortExpr = sql`round(word_similarity(${needle}, lower(f_unaccent(c.title)))::numeric, 4)`;
   } else if (query.sort === "title") {
     sortExpr = sql`c.title`;
@@ -159,7 +167,9 @@ export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Pr
   }
   if (query.cursor) {
     const cur = decodeCursor(query.cursor);
-    where.push(desc_ ? sql`(${sortExpr}, c.id) < (${cur.v}, ${cur.id})` : sql`(${sortExpr}, c.id) > (${cur.v}, ${cur.id})`);
+    where.push(
+      desc_ ? sql`(${sortExpr}, c.id) < (${cur.v}, ${cur.id})` : sql`(${sortExpr}, c.id) > (${cur.v}, ${cur.id})`,
+    );
   }
   const dir = desc_ ? sql`desc` : sql`asc`;
   const rows = await ctx.db.execute<{
@@ -182,26 +192,30 @@ export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Pr
     order by ${sortExpr} ${dir}, c.id ${dir}
     limit ${query.limit + 1}
   `);
-  const items = rows.slice(0, query.limit).map(
-    (r): CardDTO => ({
-      instanceId: null,
-      cardId: Number(r.id),
-      season: r.season,
-      title: r.title,
-      rarity: r.rarity,
-      atk: r.atk,
-      def: r.def,
-      level: 1,
-      views12m: Number(r.views_12m),
-      thumbUrl: r.thumb_url,
-      pageUrl: r.page_url ?? articleUrl(r.title),
-      owned: r.owned,
-    }),
-  );
+  const items = rows.slice(0, query.limit).map((r): CardDTO => ({
+    instanceId: null,
+    cardId: Number(r.id),
+    season: r.season,
+    title: r.title,
+    rarity: r.rarity,
+    atk: r.atk,
+    def: r.def,
+    level: 1,
+    views12m: Number(r.views_12m),
+    thumbUrl: r.thumb_url,
+    pageUrl: r.page_url ?? articleUrl(r.title),
+    owned: r.owned,
+  }));
   const last = rows[query.limit - 1];
   const nextCursor =
     rows.length > query.limit && last
-      ? encodeCursor({ v: typeof last.sort_value === "string" && !q && query.sort === "title" ? last.sort_value : Number(last.sort_value), id: Number(last.id) })
+      ? encodeCursor({
+          v:
+            typeof last.sort_value === "string" && !q && query.sort === "title"
+              ? last.sort_value
+              : Number(last.sort_value),
+          id: Number(last.id),
+        })
       : null;
   return { items, nextCursor };
 }

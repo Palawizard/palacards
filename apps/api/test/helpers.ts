@@ -43,7 +43,11 @@ export interface Client {
   put: (url: string, body?: unknown) => Promise<{ status: number; body: any }>; // eslint-disable-line @typescript-eslint/no-explicit-any -- idem
 }
 
-export async function signUp(app: FastifyInstance, username = uniqueName(), password = "motdepasse123"): Promise<Client> {
+export async function signUp(
+  app: FastifyInstance,
+  username = uniqueName(),
+  password = "motdepasse123",
+): Promise<Client> {
   const res = await app.inject({
     method: "POST",
     url: "/palacards/api/auth/sign-up/email",

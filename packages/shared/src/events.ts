@@ -7,6 +7,9 @@ export interface PackState {
   max: number;
   /** Millisecondes avant le prochain paquet gratuit (0 si le stock est plein). */
   nextInMs: number;
+  /** Paquets ouverts depuis la dernière UR/L, et seuil de la pity. */
+  pity: number;
+  pityThreshold: number;
 }
 
 export interface CardMedia {
@@ -37,9 +40,24 @@ export interface ServerToClientEvents {
   "wallet:update": (wallet: Wallet) => void;
   "card:media": (media: CardMedia) => void;
   "notification:new": (n: NotificationDTO & { unread: number }) => void;
-  "auction:update": (a: { id: number; currentBid: number | null; currentBidder: string | null; bidCount: number; endsAt: string; status: string }) => void;
+  "auction:update": (a: {
+    id: number;
+    currentBid: number | null;
+    currentBidder: string | null;
+    bidCount: number;
+    endsAt: string;
+    status: string;
+  }) => void;
   "presence:update": (p: { userId: string; online: boolean }) => void;
-  "message:new": (m: { id: number; channel: string; senderId: string; sender: string; body: string; card: { cardId: number; season: number; title: string; rarity: Rarity } | null; createdAt: string }) => void;
+  "message:new": (m: {
+    id: number;
+    channel: string;
+    senderId: string;
+    sender: string;
+    body: string;
+    card: { cardId: number; season: number; title: string; rarity: Rarity } | null;
+    createdAt: string;
+  }) => void;
   "battle:update": (b: { battleId: number }) => void;
   "battle:question": (q: BattleQuestionDTO) => void;
   "battle:round": (r: BattleRoundResultDTO) => void;

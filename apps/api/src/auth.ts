@@ -95,7 +95,11 @@ export interface SessionUser {
   isAdmin: boolean;
 }
 
-export async function getSessionUser(auth: Auth, config: Config, headers: IncomingHttpHeaders): Promise<SessionUser | null> {
+export async function getSessionUser(
+  auth: Auth,
+  config: Config,
+  headers: IncomingHttpHeaders,
+): Promise<SessionUser | null> {
   const s = await auth.api.getSession({ headers: fromNodeHeaders(headers) });
   if (!s) return null;
   const uname = (s.user.username ?? s.user.name).toLowerCase();
