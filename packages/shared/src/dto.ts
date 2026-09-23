@@ -46,6 +46,7 @@ export interface MeDTO {
   unreadNotifications: number;
   unreadMessages: number;
   season: number;
+  elo: number;
 }
 
 export interface ReferencePriceDTO {

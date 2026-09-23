@@ -41,8 +41,8 @@ export async function listCollection(ctx: Ctx, ownerId: string, query: Collectio
 
   const order: SQL[] = {
     date: [sql`${ci.obtainedAt} desc`],
-    atk: [sql`${ci.atk} * (1 + ${LEVEL_BONUS} * (${ci.level} - 1)) desc`],
-    def: [sql`${ci.def} * (1 + ${LEVEL_BONUS} * (${ci.level} - 1)) desc`],
+    atk: [sql`${ci.atk} * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)) desc`],
+    def: [sql`${ci.def} * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)) desc`],
     views: [sql`${c.views12m} desc`],
     rarity: [sql`${ci.rarity} desc`, sql`${c.views12m} desc`],
     title: [sql`${c.title} asc`],
