@@ -26,7 +26,8 @@ export function cleanUrl(url: string | undefined): string | null {
   }
 }
 
-export const articleUrl = (title: string) => `https://fr.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
+export const articleUrl = (title: string) =>
+  `https://fr.wikipedia.org/wiki/${encodeURIComponent(title.replace(/ /g, "_"))}`;
 
 /**
  * Résumés et images Wikipédia : chargés à la demande (jamais en masse), au plus 5 requêtes
@@ -79,7 +80,13 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
         .values({ pageId: cardId, extract: media.extract, thumbUrl: media.thumbUrl, pageUrl: media.pageUrl, status })
         .onConflictDoUpdate({
           target: schema.wikiSummaries.pageId,
-          set: { extract: media.extract, thumbUrl: media.thumbUrl, pageUrl: media.pageUrl, status, fetchedAt: sql`now()` },
+          set: {
+            extract: media.extract,
+            thumbUrl: media.thumbUrl,
+            pageUrl: media.pageUrl,
+            status,
+            fetchedAt: sql`now()`,
+          },
         });
     }
     return media;
@@ -93,12 +100,16 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
       .select()
       .from(schema.wikiSummaries)
       .where(inArray(schema.wikiSummaries.pageId, [...new Set(cardIds)]));
-    for (const r of rows) out.set(r.pageId, { cardId: r.pageId, thumbUrl: r.thumbUrl, extract: r.extract, pageUrl: r.pageUrl });
+    for (const r of rows)
+      out.set(r.pageId, { cardId: r.pageId, thumbUrl: r.thumbUrl, extract: r.extract, pageUrl: r.pageUrl });
     return out;
   }
 
   /** Charge les médias manquants (dédoublonné), et appelle `onLoaded` pour chacun. */
-  async function load(cards: { cardId: number; title: string }[], onLoaded?: (m: CardMedia) => void): Promise<CardMedia[]> {
+  async function load(
+    cards: { cardId: number; title: string }[],
+    onLoaded?: (m: CardMedia) => void,
+  ): Promise<CardMedia[]> {
     if (config.WIKIMEDIA_DISABLED || cards.length === 0) return [];
     const have = await cached(cards.map((c) => c.cardId));
     const missing = cards.filter((c, i) => !have.has(c.cardId) && cards.findIndex((d) => d.cardId === c.cardId) === i);

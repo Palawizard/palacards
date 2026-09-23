@@ -29,11 +29,15 @@ export async function listCollection(ctx: Ctx, ownerId: string, query: Collectio
   if (query.rarity?.length) where.push(inArray(ci.rarity, query.rarity));
   if (query.season) where.push(eq(ci.season, query.season));
   if (query.favorites) where.push(eq(ci.favorite, true));
-  if (query.tag) where.push(sql`exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag = ${query.tag})`);
+  if (query.tag)
+    where.push(sql`exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag = ${query.tag})`);
   if (query.duplicates) {
-    where.push(sql`(select count(*) from card_instances d where d.owner_id = ${ownerId} and d.card_id = ${ci.cardId}) > 1`);
+    where.push(
+      sql`(select count(*) from card_instances d where d.owner_id = ${ownerId} and d.card_id = ${ci.cardId}) > 1`,
+    );
   }
-  if (query.q?.trim()) where.push(sql`lower(f_unaccent(${c.title})) like '%' || lower(f_unaccent(${query.q.trim()})) || '%'`);
+  if (query.q?.trim())
+    where.push(sql`lower(f_unaccent(${c.title})) like '%' || lower(f_unaccent(${query.q.trim()})) || '%'`);
 
   const order: SQL[] = {
     date: [sql`${ci.obtainedAt} desc`],
@@ -154,7 +158,8 @@ export async function recycle(ctx: Ctx, ownerId: string, instanceIds: number[]) 
       .orderBy(ci.id)
       .for("update");
     if (rows.length !== ids.length) throw notFound("Certaines cartes ne sont plus dans ta collection.");
-    if (rows.some((r) => r.lockedBy)) throw conflict("card_locked", "Une carte est engagée dans une vente ou un échange.");
+    if (rows.some((r) => r.lockedBy))
+      throw conflict("card_locked", "Une carte est engagée dans une vente ou un échange.");
     const gain = rows.reduce((sum, r) => sum + ECONOMY.recycleValue[r.rarity], 0);
     await tx.delete(ci).where(inArray(ci.id, ids));
     await logMovement(tx, ownerId, "card", -ids.length, await ownedCount(tx, ownerId), "recycle", ids.join(","));
@@ -166,9 +171,23 @@ export async function recycle(ctx: Ctx, ownerId: string, instanceIds: number[]) 
 }
 
 /** Exemplaires en double (on garde le meilleur de chaque article : rareté, niveau, puis stats). */
-export async function duplicateIds(ctx: Ctx, ownerId: string, rarities?: Rarity[]): Promise<number[]> {
+export async function duplicateIds(
+  ctx: Ctx,
+  ownerId: string,
+  rarities?: Rarity[],
+): Promise<{ instanceIds: number[]; gain: number }> {
   const rows = await ctx.db
-    .select({ id: ci.id, cardId: ci.cardId, rarity: ci.rarity, level: ci.level, atk: ci.atk, def: ci.def, lockedBy: ci.lockedBy, favorite: ci.favorite, pinned: ci.pinnedSlot })
+    .select({
+      id: ci.id,
+      cardId: ci.cardId,
+      rarity: ci.rarity,
+      level: ci.level,
+      atk: ci.atk,
+      def: ci.def,
+      lockedBy: ci.lockedBy,
+      favorite: ci.favorite,
+      pinned: ci.pinnedSlot,
+    })
     .from(ci)
     .where(eq(ci.ownerId, ownerId));
   const best = new Map<number, (typeof rows)[number]>();
@@ -182,8 +201,8 @@ export async function duplicateIds(ctx: Ctx, ownerId: string, rarities?: Rarity[
     const cur = best.get(r.cardId);
     if (!cur || better(r, cur)) best.set(r.cardId, r);
   }
-  return rows
+  const dups = rows
     .filter((r) => best.get(r.cardId)?.id !== r.id && !r.lockedBy && !r.favorite && r.pinned === null)
-    .filter((r) => !rarities || rarities.includes(r.rarity))
-    .map((r) => r.id);
+    .filter((r) => !rarities || rarities.includes(r.rarity));
+  return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + ECONOMY.recycleValue[r.rarity], 0) };
 }

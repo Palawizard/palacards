@@ -12,7 +12,10 @@ const schema = z.object({
   BASE_PATH: z
     .string()
     .default("/palacards")
-    .refine((v) => v === "" || (v.startsWith("/") && !v.endsWith("/")), "BASE_PATH doit commencer par / et ne pas finir par /"),
+    .refine(
+      (v) => v === "" || (v.startsWith("/") && !v.endsWith("/")),
+      "BASE_PATH doit commencer par / et ne pas finir par /",
+    ),
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   DATABASE_URL: z.string().optional(),
   /** Origine publique de l'API, sans chemin (dev : http://localhost:4000, prod : https://www.palawi.fr). */
@@ -43,7 +46,7 @@ export type Config = z.infer<typeof schema>;
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const config = schema.parse(env);
   if (config.NODE_ENV === "production" && !config.BETTER_AUTH_SECRET) {
-    throw new Error("BETTER_AUTH_SECRET est obligatoire en production")
+    throw new Error("BETTER_AUTH_SECRET est obligatoire en production");
   }
   if (config.NODE_ENV === "production" && config.GAME_TEST_MODE) {
     throw new Error("GAME_TEST_MODE est interdit en production");

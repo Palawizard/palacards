@@ -66,7 +66,11 @@ describe("paquets", () => {
     expect(["R", "SR", "UR", "L"]).toContain(res.body.cards[4].rarity);
     expect(res.body.packs.available).toBe(MAX_STORED_PACKS - 1);
     const ledger = await ctx.db.select().from(schema.ledger).where(eq(schema.ledger.userId, p.userId));
-    expect(ledger.map((l) => `${l.kind}:${l.delta}`).sort()).toEqual(["card:5", "pack:-1", `pw:${ECONOMY.startingBalance}`]);
+    expect(ledger.map((l) => `${l.kind}:${l.delta}`).sort()).toEqual([
+      "card:5",
+      "pack:-1",
+      `pw:${ECONOMY.startingBalance}`,
+    ]);
   });
 
   it("refuse d'ouvrir sans paquet, puis utilise un paquet bonus hors plafond", async () => {
@@ -139,7 +143,10 @@ describe("collection et recyclage", () => {
 
   it("refuse de recycler une carte verrouillée ou d'un autre joueur", async () => {
     const [, second] = cards;
-    await ctx.db.update(schema.cardInstances).set({ lockedBy: "auction" }).where(eq(schema.cardInstances.id, second!.instanceId));
+    await ctx.db
+      .update(schema.cardInstances)
+      .set({ lockedBy: "auction" })
+      .where(eq(schema.cardInstances.id, second!.instanceId));
     expect((await p.post("/collection/recycle", { instanceIds: [second!.instanceId] })).status).toBe(409);
     const other = await signUp(app);
     expect((await other.post("/collection/recycle", { instanceIds: [cards[2]!.instanceId] })).status).toBe(404);

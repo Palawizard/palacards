@@ -9,6 +9,7 @@ import { cardSheet, catalog } from "../services/cards.js";
 import { completion, duplicateIds, listCollection, recycle, setFavorite, setTags } from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
+import { getProfile } from "../services/profiles.js";
 
 const rarityList = z
   .string()
@@ -33,7 +34,10 @@ export async function unreadMessages(ctx: Ctx, userId: string): Promise<number> 
   return row?.n ?? 0;
 }
 
-export async function me(ctx: Ctx, user: { id: string; username: string; displayName: string; isAdmin: boolean }): Promise<MeDTO> {
+export async function me(
+  ctx: Ctx,
+  user: { id: string; username: string; displayName: string; isAdmin: boolean },
+): Promise<MeDTO> {
   const p = await getPlayer(ctx.db, user.id);
   const [notif] = await ctx.db
     .select({ n: sql<number>`count(*)::int` })
@@ -55,13 +59,22 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   const auth = { preHandler: requireUser(ctx) };
 
   api.get("/me", auth, async (req) => me(ctx, req.user));
+  api.patch("/me/settings", auth, async (req) => {
+    const body = parse(
+      z.object({
+        animationSpeed: z.enum(["normal", "fast", "instant"]).optional(),
+        avatar: z.string().trim().min(1).max(4).nullable().optional(),
+      }),
+      req.body,
+    );
+    await ctx.db.update(schema.players).set(body).where(eq(schema.players.userId, req.user.id));
+    return me(ctx, req.user);
+  });
 
   // --- Paquets ---
   api.get("/packs", auth, async (req) => getPackState(ctx, req.user.id));
-  api.post(
-    "/packs/open",
-    { ...auth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
-    async (req) => openPack(ctx, req.user.id),
+  api.post("/packs/open", { ...auth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) =>
+    openPack(ctx, req.user.id),
   );
 
   // --- Collection ---
@@ -96,13 +109,15 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     return { tags: await setTags(ctx, req.user.id, id, tags) };
   });
   api.post("/collection/recycle", auth, async (req) => {
-    const { instanceIds } = parse(z.object({ instanceIds: z.array(z.number().int().positive()).min(1).max(500) }), req.body);
+    const { instanceIds } = parse(
+      z.object({ instanceIds: z.array(z.number().int().positive()).min(1).max(500) }),
+      req.body,
+    );
     return recycle(ctx, req.user.id, instanceIds);
   });
   api.get("/collection/duplicates", auth, async (req) => {
     const { rarity } = parse(z.object({ rarity: rarityList }), req.query);
-    const ids = await duplicateIds(ctx, req.user.id, rarity);
-    return { instanceIds: ids };
+    return duplicateIds(ctx, req.user.id, rarity);
   });
 
   // --- Catalogue et fiche carte ---
@@ -127,5 +142,11 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/cards/:id", auth, async (req) => {
     const { id } = parse(idParams, req.params);
     return cardSheet(ctx, req.user.id, id);
+  });
+
+  // --- Profils ---
+  api.get("/players/:username", auth, async (req) => {
+    const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
+    return getProfile(ctx, req.user.id, username);
   });
 }

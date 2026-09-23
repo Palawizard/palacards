@@ -73,7 +73,11 @@ export const seasons = pgTable(
     startedAt: tstz("started_at"),
     endsAt: tstz("ends_at"),
   },
-  (t) => [uniqueIndex("seasons_one_active").on(t.status).where(sql`${t.status} = 'active'`)],
+  (t) => [
+    uniqueIndex("seasons_one_active")
+      .on(t.status)
+      .where(sql`${t.status} = 'active'`),
+  ],
 );
 
 /** Résumé et image Wikipédia d'un article (cache de l'API REST), indépendant de la saison. */
@@ -253,7 +257,10 @@ export const ledger = pgTable(
     refId: text("ref_id"),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
-  (t) => [index("ledger_user_created_idx").on(t.userId, t.createdAt), check("ledger_delta_nonzero", sql`${t.delta} <> 0`)],
+  (t) => [
+    index("ledger_user_created_idx").on(t.userId, t.createdAt),
+    check("ledger_delta_nonzero", sql`${t.delta} <> 0`),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -521,7 +528,10 @@ export const battleDecks = pgTable(
     atk: integer("atk").notNull(),
     def: integer("def").notNull(),
   },
-  (t) => [primaryKey({ columns: [t.battleId, t.userId, t.slot] }), check("battle_decks_slot", sql`${t.slot} BETWEEN 1 AND 5`)],
+  (t) => [
+    primaryKey({ columns: [t.battleId, t.userId, t.slot] }),
+    check("battle_decks_slot", sql`${t.slot} BETWEEN 1 AND 5`),
+  ],
 );
 
 /** Question d'une manche. La bonne réponse ne quitte jamais le serveur avant la réponse du joueur. */

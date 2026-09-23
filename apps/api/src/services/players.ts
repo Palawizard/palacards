@@ -1,5 +1,5 @@
 import { schema } from "@palacards/db";
-import { availablePacks, MAX_STORED_PACKS, msUntilNextPack } from "@palacards/game";
+import { availablePacks, MAX_STORED_PACKS, msUntilNextPack, PITY_THRESHOLD } from "@palacards/game";
 import type { PackState, Wallet } from "@palacards/shared";
 import { eq, sql } from "@palacards/db";
 import type { Ctx } from "../context.js";
@@ -96,12 +96,17 @@ export async function ownedCount(tx: DbOrTx, userId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-export function packState(p: Pick<Player, "packsStored" | "packsUpdatedAt" | "bonusPacks">, now: Date): PackState {
+export function packState(
+  p: Pick<Player, "packsStored" | "packsUpdatedAt" | "bonusPacks" | "pityCounter">,
+  now: Date,
+): PackState {
   return {
     available: availablePacks(p.packsStored, p.packsUpdatedAt, now),
     bonus: p.bonusPacks,
     max: MAX_STORED_PACKS,
     nextInMs: msUntilNextPack(p.packsStored, p.packsUpdatedAt, now),
+    pity: p.pityCounter,
+    pityThreshold: PITY_THRESHOLD,
   };
 }
 
