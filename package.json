@@ -4,7 +4,7 @@
   "description": "PalaCards — jeu de cartes à collectionner basé sur les articles du Wikipédia FR",
   "packageManager": "pnpm@10.28.0",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.12"
   },
   "scripts": {
     "prepare": "git config core.hooksPath .githooks || true",
@@ -22,7 +22,8 @@
     "lint": "pnpm -r lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "db:seed": "pnpm --filter @palacards/db seed"
+    "db:seed": "pnpm --filter @palacards/db seed",
+    "e2e": "pnpm --filter @palacards/e2e e2e"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

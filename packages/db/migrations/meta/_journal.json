@@ -22,6 +22,20 @@
       "when": 1790192023834,
       "tag": "0002_card_load",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790192407423,
+      "tag": "0003_game_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790194862264,
+      "tag": "0004_catalog_indexes",
+      "breakpoints": true
     }
   ]
 }

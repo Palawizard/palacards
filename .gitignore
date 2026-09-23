@@ -71,3 +71,12 @@ desktop.ini
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Artefacts de conception Impeccable (locaux)
+.impeccable/
+**/.impeccable/
+
+# Playwright
+playwright-report/
+test-results/
+.next-e2e/
