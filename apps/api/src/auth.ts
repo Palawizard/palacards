@@ -48,7 +48,13 @@ export function createAuth(db: Db, config: Config) {
           throw new APIError("BAD_REQUEST", { message: `Pseudo invalide : ${parsed.error.issues[0]?.message}` });
         }
         const name = parsed.data;
-        if (!ctx.body.email) ctx.body.email = `${name.toLowerCase()}@palacards.local`;
+        const technical = `${name.toLowerCase()}@palacards.local`;
+        const email = typeof ctx.body.email === "string" ? ctx.body.email.trim().toLowerCase() : "";
+        // Les adresses @palacards.local sont réservées : chacune correspond à un seul pseudo.
+        if (email.endsWith("@palacards.local") && email !== technical) {
+          throw new APIError("BAD_REQUEST", { message: "Adresse email réservée." });
+        }
+        ctx.body.email = email || technical;
         ctx.body.name = name;
       }),
     },

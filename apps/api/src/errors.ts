@@ -1,5 +1,8 @@
 import type { FastifyError, FastifyInstance } from "fastify";
-import type { z } from "zod";
+import { z } from "zod";
+
+// Messages de validation en français (affichés tels quels par le front).
+z.config(z.locales.fr());
 
 /** Erreur métier : code stable pour le front, message en français affichable tel quel. */
 export class GameError extends Error {

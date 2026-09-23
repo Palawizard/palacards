@@ -127,8 +127,15 @@ function UserMenu() {
     const close = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) setOpen(false);
     };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", escape);
+    };
   }, [open]);
   if (!me) return null;
   return (
@@ -146,6 +153,7 @@ function UserMenu() {
       <div
         role="menu"
         data-open={open}
+        inert={!open}
         className="absolute right-0 top-11 z-50 w-52 origin-top-right rounded-md border border-line-strong bg-panel p-1 text-sm shadow-[0_12px_30px_-10px_rgb(0_0_0/0.8)] transition-[opacity,transform] duration-150 ease-[var(--ease-out)] data-[open=false]:pointer-events-none data-[open=false]:scale-95 data-[open=false]:opacity-0"
       >
         <p className="border-b border-line px-2.5 py-2 font-semibold">{me.displayName}</p>

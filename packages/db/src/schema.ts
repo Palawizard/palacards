@@ -4,6 +4,7 @@ import {
   boolean,
   check,
   date,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -43,11 +44,19 @@ export const cards = pgTable(
     def: smallint("def").notNull(),
     views12m: bigint("views_12m", { mode: "number" }).notNull(),
     pageLen: integer("page_len").notNull(),
-    randKey: real("rand_key")
+    randKey: doublePrecision("rand_key")
       .notNull()
       .default(sql`random()`),
   },
-  (t) => [primaryKey({ columns: [t.season, t.id] }), index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey)],
+  (t) => [
+    primaryKey({ columns: [t.season, t.id] }),
+    index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey),
+    // Tris du catalogue paginé par curseur (keyset).
+    index("cards_views_idx").on(t.season, t.views12m, t.id),
+    index("cards_atk_idx").on(t.season, t.atk, t.id),
+    index("cards_def_idx").on(t.season, t.def, t.id),
+    index("cards_title_idx").on(t.season, t.title, t.id),
+  ],
 );
 
 /**

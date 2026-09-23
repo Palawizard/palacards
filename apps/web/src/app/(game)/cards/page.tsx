@@ -4,10 +4,11 @@ import type { Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import { Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useDeferredValue, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
 import { CardSkeletons, Empty, ErrorBox, LoadMore, RarityFilter, Select } from "@/components/ui";
+import { useDebounced } from "@/lib/use-debounced";
 
 const SORTS = [
   { value: "views", label: "Les plus lues" },
@@ -25,7 +26,7 @@ function Catalog() {
   const router = useRouter();
   const search = useSearchParams();
   const [q, setQ] = useState(search.get("q") ?? "");
-  const query = useDeferredValue(q);
+  const query = useDebounced(q);
   const [rarity, setRarity] = useState<Rarity[]>([]);
   const [sort, setSort] = useState<(typeof SORTS)[number]["value"]>("views");
   const [owned, setOwned] = useState<(typeof OWNED)[number]["value"]>("");
@@ -34,7 +35,7 @@ function Catalog() {
 
   const params = useMemo(() => {
     const p = new URLSearchParams({ sort, limit: "48" });
-    if (query.trim().length >= 2) p.set("q", query.trim());
+    if (query.trim().length >= 3) p.set("q", query.trim());
     if (rarity.length) p.set("rarity", rarity.join(","));
     if (owned) p.set("owned", owned);
     if (/^\d+$/.test(minAtk)) p.set("minAtk", minAtk);
@@ -52,7 +53,7 @@ function Catalog() {
   const loadMore = useCallback(() => {
     if (!list.isValidating) void list.setSize((s) => s + 1);
   }, [list]);
-  const searching = query.trim().length >= 2;
+  const searching = query.trim().length >= 3;
 
   return (
     <div className="flex flex-col gap-6">
@@ -140,10 +141,16 @@ function Catalog() {
   );
 }
 
+/** Remonte le catalogue quand la recherche de l'en-tête change l'URL. */
+function CatalogFromUrl() {
+  const q = useSearchParams().get("q") ?? "";
+  return <Catalog key={q} />;
+}
+
 export default function CardsPage() {
   return (
     <Suspense fallback={<CardSkeletons />}>
-      <Catalog />
+      <CatalogFromUrl />
     </Suspense>
   );
 }
