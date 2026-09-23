@@ -1,13 +1,14 @@
 "use client";
 
 import { ECONOMY, RARITY_LABELS } from "@palacards/game";
-import type { CardDTO } from "@palacards/shared";
-import { ExternalLink, Star, Tag } from "lucide-react";
+import type { CardDTO, ReferencePriceDTO } from "@palacards/shared";
+import { ExternalLink, Gavel, Heart, Repeat, Star, Tag } from "lucide-react";
 import Link from "next/link";
 import { use, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Card, RaritySigil } from "@/components/Card";
+import { ReferenceLine, SellForm } from "@/components/market";
 import { ConfirmDialog, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { compact, fmt, relative } from "@/lib/format";
@@ -24,6 +25,7 @@ export interface CardSheet {
 
 function InstanceRow({ card, onChanged }: { card: CardDTO; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
+  const [selling, setSelling] = useState(false);
   const [tags, setTags] = useState((card.tags ?? []).join(", "));
   const [confirm, setConfirm] = useState(false);
 
@@ -67,6 +69,14 @@ function InstanceRow({ card, onChanged }: { card: CardDTO; onChanged: () => void
           <Tag aria-hidden className="size-4" />
           Tags{card.tags?.length ? ` (${card.tags.length})` : ""}
         </button>
+        <button type="button" className="btn btn-sm" disabled={!!card.locked} onClick={() => setSelling((v) => !v)} aria-expanded={selling}>
+          <Gavel aria-hidden className="size-4" />
+          Vendre
+        </button>
+        <Link href={`/trades/new?give=${card.instanceId}`} className={`btn btn-sm ${card.locked ? "pointer-events-none opacity-45" : ""}`} aria-disabled={!!card.locked}>
+          <Repeat aria-hidden className="size-4" />
+          Échanger
+        </Link>
         <button
           type="button"
           className="btn btn-sm btn-danger"
@@ -76,6 +86,17 @@ function InstanceRow({ card, onChanged }: { card: CardDTO; onChanged: () => void
           Recycler +{ECONOMY.recycleValue[card.rarity]}
         </button>
       </div>
+      {selling && (
+        <div className="w-full sm:basis-full">
+          <SellForm
+            card={card}
+            onDone={() => {
+              setSelling(false);
+              onChanged();
+            }}
+          />
+        </div>
+      )}
       {editing && (
         <form
           className="flex w-full gap-2 sm:basis-full"
@@ -128,6 +149,61 @@ function InstanceRow({ card, onChanged }: { card: CardDTO; onChanged: () => void
   );
 }
 
+function WishButton({ cardId, wishlisted, onChanged }: { cardId: number; wishlisted: boolean; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      className={`btn w-full ${wishlisted ? "border-accent text-accent" : ""}`}
+      aria-pressed={wishlisted}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await api(`/wishlist/${cardId}`, { method: wishlisted ? "DELETE" : "PUT" });
+          toast.success(wishlisted ? "Retirée de ta wishlist." : "Ajoutée à ta wishlist : tu seras prévenu à sa mise en vente.");
+          onChanged();
+        } catch (err) {
+          toast.error(err instanceof ApiError ? err.message : "Action impossible.");
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <Heart aria-hidden className={`size-4 ${wishlisted ? "fill-current" : ""}`} />
+      {wishlisted ? "Dans ma wishlist" : "Ajouter à ma wishlist"}
+    </button>
+  );
+}
+
+function PriceHistory({ cardId }: { cardId: number }) {
+  const { data } = useSWR<{ reference: ReferencePriceDTO | null; sales: { price: number; soldAt: string; rarity: string }[] }>(
+    `/cards/${cardId}/prices`,
+  );
+  return (
+    <section className="infobox text-sm">
+      <h2 className="infobox-head">Historique des prix</h2>
+      <p className="px-3 pt-2 text-xs">
+        <ReferenceLine reference={data?.reference ?? null} />
+      </p>
+      {data?.sales.length ? (
+        <table className="tnum mt-1 w-full">
+          <tbody>
+            {data.sales.slice(0, 10).map((s, i) => (
+              <tr key={i} className="border-t border-line">
+                <td className="px-3 py-1.5 text-muted">{new Date(s.soldAt).toLocaleDateString("fr-FR")}</td>
+                <td className="px-3 py-1.5 text-right">{fmt(s.price)} PW</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="px-3 pb-3 pt-1 text-xs text-faint">Jamais vendue au marché.</p>
+      )}
+    </section>
+  );
+}
+
 export default function CardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { data, error, mutate } = useSWR<CardSheet>(`/cards/${id}`);
@@ -175,6 +251,8 @@ export default function CardPage({ params }: { params: Promise<{ id: string }> }
               ))}
             </tbody>
           </table>
+          <WishButton cardId={card.cardId} wishlisted={data.wishlisted} onChanged={() => mutate()} />
+          <PriceHistory cardId={card.cardId} />
         </aside>
 
         <div className="min-w-0">

@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
+import { closeAuctionIfDue } from "../services/market.js";
 import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet } from "../services/players.js";
 
 /**
@@ -60,6 +61,16 @@ export function testRoutes(api: FastifyInstance, ctx: Ctx) {
       return rows.map((r) => r.id);
     });
     return { instanceIds: ids };
+  });
+
+  /** Termine une enchère tout de suite (échéance dans le passé, puis clôture normale). */
+  api.post("/test/end-auction", auth, async (req) => {
+    const { auctionId } = parse(z.object({ auctionId: z.number().int().positive() }), req.body);
+    await ctx.db
+      .update(schema.auctions)
+      .set({ endsAt: new Date(Date.now() - 1000) })
+      .where(eq(schema.auctions.id, auctionId));
+    return { closed: await closeAuctionIfDue(ctx, auctionId) };
   });
 
   api.post("/test/grant-pw", auth, async (req) => {
