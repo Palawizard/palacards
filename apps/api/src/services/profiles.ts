@@ -52,6 +52,9 @@ export interface ProfileDTO {
   totalCards: number;
   showcase: CardDTO[];
   isMe: boolean;
+  relation: "self" | "friends" | "incoming" | "outgoing" | "none";
+  online: boolean;
+  guild: { id: number; name: string; tag: string; emblem: string; role: string } | null;
 }
 
 export async function findUserByName(db: DbOrTx, username: string) {
@@ -63,6 +66,18 @@ export async function findUserByName(db: DbOrTx, username: string) {
   return u;
 }
 
+/** Relation d'amitié vue par `viewerId`. */
+async function friendRelation(ctx: Ctx, viewerId: string, otherId: string): Promise<ProfileDTO["relation"]> {
+  if (viewerId === otherId) return "self";
+  const [a, b] = viewerId < otherId ? [viewerId, otherId] : [otherId, viewerId];
+  const [row] = await ctx.db.execute<{ status: string; requested_by: string }>(
+    sql`select status, requested_by from friendships where user_a = ${a} and user_b = ${b}`,
+  );
+  if (!row) return "none";
+  if (row.status === "accepted") return "friends";
+  return row.requested_by === viewerId ? "outgoing" : "incoming";
+}
+
 export async function getProfile(ctx: Ctx, viewerId: string, username: string): Promise<ProfileDTO> {
   const u = await findUserByName(ctx.db, username);
   const [p] = await ctx.db.execute<{ avatar: string | null; elo: number; elo_peak: number; total: number }>(sql`
@@ -70,6 +85,9 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
     from players p where p.user_id = ${u.id}
   `);
   const score = await collectionScore(ctx.db, u.id);
+  const [guild] = await ctx.db.execute<{ id: string; name: string; tag: string; emblem: string; role: string }>(sql`
+    select g.id, g.name, g.tag, g.emblem, m.role from guild_members m join guilds g on g.id = m.guild_id where m.user_id = ${u.id}
+  `);
   const pinned = await selectInstances(ctx.db)
     .where(sql`${schema.cardInstances.ownerId} = ${u.id} and ${schema.cardInstances.pinnedSlot} is not null`)
     .orderBy(schema.cardInstances.pinnedSlot);
@@ -86,5 +104,8 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
     totalCards: p?.total ?? 0,
     showcase: pinned.map((r) => toCardDTO(r)),
     isMe: u.id === viewerId,
+    relation: await friendRelation(ctx, viewerId, u.id),
+    online: ctx.rt.isOnline(u.id),
+    guild: guild ? { id: Number(guild.id), name: guild.name, tag: guild.tag, emblem: guild.emblem, role: guild.role } : null,
   };
 }

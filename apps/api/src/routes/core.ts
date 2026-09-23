@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import { cardSheet, catalog } from "../services/cards.js";
-import { completion, duplicateIds, listCollection, recycle, setFavorite, setTags } from "../services/collection.js";
+import { completion, duplicateIds, listCollection, recycle, setFavorite, setPinned, setTags } from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
 import { getProfile } from "../services/profiles.js";
@@ -101,6 +101,12 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     const { id } = parse(idParams, req.params);
     const { favorite } = parse(z.object({ favorite: z.boolean() }), req.body);
     await setFavorite(ctx, req.user.id, id, favorite);
+    return { ok: true };
+  });
+  api.post("/collection/:id/pin", auth, async (req) => {
+    const { id } = parse(idParams, req.params);
+    const { slot } = parse(z.object({ slot: z.union([z.number().int().min(1).max(5), z.literal("auto")]).nullable() }), req.body);
+    await setPinned(ctx, req.user.id, id, slot);
     return { ok: true };
   });
   api.put("/collection/:id/tags", auth, async (req) => {

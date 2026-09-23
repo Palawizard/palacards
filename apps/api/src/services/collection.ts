@@ -144,6 +144,35 @@ export async function setTags(ctx: Ctx, ownerId: string, instanceId: number, tag
   return clean;
 }
 
+/** Épingle un exemplaire dans la vitrine du profil (emplacement 1 à 5), ou le retire (null). */
+export async function setPinned(ctx: Ctx, ownerId: string, instanceId: number, wanted: number | null | "auto") {
+  await ctx.db.transaction(async (tx) => {
+    await lockPlayer(tx, ownerId);
+    let slot = wanted === "auto" ? null : wanted;
+    if (wanted === "auto") {
+      const used = await tx
+        .select({ slot: ci.pinnedSlot })
+        .from(ci)
+        .where(and(eq(ci.ownerId, ownerId), sql`${ci.pinnedSlot} is not null`));
+      const taken = new Set(used.map((u) => u.slot));
+      slot = [1, 2, 3, 4, 5].find((s) => !taken.has(s)) ?? null;
+      if (slot === null) throw conflict("showcase_full", "Ta vitrine est pleine : retire d'abord une carte.");
+    }
+    const [inst] = await tx
+      .select({ id: ci.id, lockedBy: ci.lockedBy })
+      .from(ci)
+      .where(and(eq(ci.id, instanceId), eq(ci.ownerId, ownerId)))
+      .for("update");
+    if (!inst) throw notFound("Carte introuvable dans ta collection.");
+    if (slot !== null && inst.lockedBy) throw conflict("card_locked", "Une carte en vente ou en échange ne peut pas être épinglée.");
+    if (slot !== null) {
+      // L'emplacement est libéré s'il était pris par une autre carte.
+      await tx.update(ci).set({ pinnedSlot: null }).where(and(eq(ci.ownerId, ownerId), eq(ci.pinnedSlot, slot)));
+    }
+    await tx.update(ci).set({ pinnedSlot: slot }).where(eq(ci.id, instanceId));
+  });
+}
+
 /**
  * Recycle des exemplaires en points wiki. Une transaction : joueur verrouillé, exemplaires
  * verrouillés (FOR UPDATE), refus si l'un est engagé dans une enchère ou un échange, ledger.

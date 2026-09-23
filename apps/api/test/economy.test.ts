@@ -121,6 +121,26 @@ describe("marché", () => {
   });
 });
 
+describe("rattrapage", () => {
+  it("clôture les ventes échues et expire les échanges échus", async () => {
+    const seller = await signUp(app);
+    const other = await signUp(app);
+    const listed = await seller.post("/market", { instanceId: await giveCard(seller), startPrice: 5, buyout: null, durationMs: HOUR });
+    await ctx.db.update(schema.auctions).set({ endsAt: new Date(Date.now() - 5000) }).where(eq(schema.auctions.id, listed.body.id));
+    const trade = await seller.post("/trades", { to: other.username, givePw: 3 });
+    await ctx.db.update(schema.trades).set({ expiresAt: new Date(Date.now() - 5000) }).where(eq(schema.trades.id, trade.body.id));
+    const { sweepAuctions } = await import("../src/services/market.js");
+    const { sweepTrades } = await import("../src/services/trades.js");
+    expect(await sweepAuctions(ctx)).toBeGreaterThanOrEqual(1);
+    await sweepTrades(ctx);
+    const [auction] = await ctx.db.select().from(schema.auctions).where(eq(schema.auctions.id, listed.body.id));
+    const [t] = await ctx.db.select().from(schema.trades).where(eq(schema.trades.id, trade.body.id));
+    expect(auction!.status).toBe("expired");
+    expect(t!.status).toBe("expired");
+    expect((await wallet(seller)).locked).toBe(0);
+  });
+});
+
 describe("échanges", () => {
   it("échange cartes et PW des deux côtés, avec verrouillage pendant la proposition", async () => {
     const a = await signUp(app);
