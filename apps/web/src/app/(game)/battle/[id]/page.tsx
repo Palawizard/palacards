@@ -1,7 +1,7 @@
 "use client";
 
 import { BATTLE_ROUNDS } from "@palacards/game";
-import type { BattleQuestionDTO, BattleRoundResultDTO, CardDTO } from "@palacards/shared";
+import type { BattleAnswerDTO, BattleQuestionDTO, BattleRoundResultDTO, CardDTO } from "@palacards/shared";
 import { Check, X } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
@@ -41,13 +41,8 @@ interface BattleDetail {
   theirDeck: (CardDTO & { slot: number })[];
   rounds: RoundRecap[];
 }
-interface AnswerResult {
-  correctIndex: number;
-  yourChoice: number | null;
-  correct: boolean;
-  yourPower: number;
-  timeLeftMs: number;
-}
+/** Résultat de la manche : réponse HTTP, ou résumé reçu par socket en direct (sans la carte adverse). */
+type AnswerResult = Omit<BattleAnswerDTO, "battleId" | "theirCard"> & { theirCard?: CardDTO };
 
 const TYPE_LABEL: Record<string, string> = { who_am_i: "Qui suis-je ?", most_viewed: "Le plus lu", longest: "Le plus long" };
 
@@ -76,19 +71,31 @@ function QuestionPanel({
   result: AnswerResult | null;
   onAnswer: (choice: number) => void;
 }) {
+  const locked = !!result || q.answered;
+  const theirCard = result?.theirCard ?? q.theirCard;
   return (
     <section aria-label={`Manche ${q.round}`} className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-3 sm:mx-auto sm:w-[30rem]">
+      {/* Mobile : la question d'abord (le chrono tourne), les cartes ensuite. */}
+      <div className="order-2 mx-auto grid w-full max-w-[22rem] grid-cols-2 gap-3 sm:order-1 sm:max-w-[30rem]">
         <div className="flex flex-col gap-1">
           <span className="text-center text-xs text-faint">Ta carte</span>
           <Card card={q.yourCard} href={null} />
         </div>
         <div className="flex flex-col gap-1">
           <span className="text-center text-xs text-faint">Sa carte</span>
-          <Card card={q.theirCard} href={null} />
+          {theirCard ? (
+            <Card card={theirCard} href={null} />
+          ) : (
+            // Carte adverse face cachée : ses stats trahiraient la réponse.
+            <div className="pc-card grid place-items-center" aria-label="Carte adverse, révélée après ta réponse">
+              <span aria-hidden className="font-serif text-[length:max(1.5rem,22cqi)] text-faint">
+                ?
+              </span>
+            </div>
+          )}
         </div>
       </div>
-      <div className="infobox">
+      <div className="infobox order-1 sm:order-2">
         <h2 className="infobox-head flex items-baseline justify-between">
           <span>{TYPE_LABEL[q.type] ?? "Question"}</span>
           <span className="tnum text-sm text-faint">
@@ -97,7 +104,7 @@ function QuestionPanel({
         </h2>
         <div className="flex flex-col gap-4 p-4">
           <p className={q.type === "who_am_i" ? "font-serif text-lg leading-relaxed" : "text-lg font-semibold"}>{q.prompt}</p>
-          {!result && <Countdown endsAt={endsAt} total={q.timeLimitMs} />}
+          {!locked && <Countdown endsAt={endsAt} total={q.timeLimitMs} />}
           <div className="grid gap-2 sm:grid-cols-2">
             {q.choices.map((choice, i) => {
               const isCorrect = result && i === result.correctIndex;
@@ -106,7 +113,7 @@ function QuestionPanel({
                 <button
                   key={i}
                   type="button"
-                  disabled={!!result}
+                  disabled={locked}
                   onClick={() => onAnswer(i)}
                   className={`btn min-h-12 justify-start whitespace-normal text-left font-serif text-base font-normal ${
                     isCorrect ? "border-accent bg-accent/15 text-text" : isMine ? "border-danger bg-danger/10" : ""
@@ -118,6 +125,11 @@ function QuestionPanel({
               );
             })}
           </div>
+          {!result && q.answered && (
+            <p className="text-sm text-muted" role="status">
+              Réponse enregistrée, en attente de la fin de la manche…
+            </p>
+          )}
           {result && (
             <p className="tnum text-sm" role="status">
               {result.yourChoice === null ? "Temps écoulé." : result.correct ? "Bonne réponse !" : "Raté."} Puissance de ta carte : <strong>{fmt(result.yourPower)}</strong>
@@ -205,16 +217,20 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
   const [liveScore, setLiveScore] = useState<{ you: number; them: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const answering = useRef(false);
+  /** Manche affichée : une réponse arrivée après le passage à la manche suivante est ignorée. */
+  const shownRound = useRef(0);
+  const timedOut = useRef(0);
 
   useEffect(() => {
     if (socket) socket.emit("battle:join", battleId);
   }, [socket, battleId, connection]);
 
   function showQuestion(q: BattleQuestionDTO) {
+    shownRound.current = q.round;
     setQuestion(q);
     setEndsAt(Date.now() + q.remainingMs);
     setResult(null);
-    answering.current = false;
+    answering.current = q.answered;
   }
 
   useSocketEvent("battle:question", (q) => {
@@ -223,7 +239,9 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
   useSocketEvent("battle:round", (r: BattleRoundResultDTO) => {
     if (r.battleId !== battleId) return;
     setLiveScore(r.score);
-    setResult((prev) => prev ?? { correctIndex: r.correctIndex, yourChoice: r.yourChoice, correct: r.yourChoice === r.correctIndex, yourPower: r.yourPower, timeLeftMs: 0 });
+    if (r.round === shownRound.current) {
+      setResult((prev) => prev ?? { round: r.round, correctIndex: r.correctIndex, yourChoice: r.yourChoice, correct: r.yourChoice === r.correctIndex, yourPower: r.yourPower, timeLeftMs: 0 });
+    }
     toast(r.winnerId === null ? "Manche nulle." : r.winnerId === battle?.opponent.id ? `Manche perdue (${fmt(r.yourPower)} contre ${fmt(r.theirPower)}).` : `Manche gagnée (${fmt(r.yourPower)} contre ${fmt(r.theirPower)}) !`);
     if (r.finished) void mutate();
   });
@@ -242,23 +260,29 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
     }
   }
 
-  async function answer(choice: number) {
+  async function answer(choice: number, auto = false) {
     if (!question || answering.current) return;
+    const round = question.round;
     answering.current = true;
     try {
-      const res = await api<AnswerResult>(`/battles/${battleId}/rounds/${question.round}/answer`, { body: { choice } });
-      setResult(res);
+      const res = await api<BattleAnswerDTO>(`/battles/${battleId}/rounds/${round}/answer`, { body: { choice } });
+      if (shownRound.current === round) setResult(res);
       if (battle?.mode === "async") void mutate();
     } catch (err) {
-      answering.current = false;
-      toast.error(err instanceof ApiError ? err.message : "Réponse non enregistrée.");
+      // Envoi automatique refusé (manche déjà close) : on resynchronise au lieu de réessayer en boucle.
+      if (auto || (err instanceof ApiError && err.status === 409)) void mutate();
+      else answering.current = false;
+      if (!auto) toast.error(err instanceof ApiError ? err.message : "Réponse non enregistrée.");
     }
   }
 
-  // Temps écoulé sans réponse : on envoie « pas de réponse » pour passer à la suite.
+  // Temps écoulé sans réponse : on envoie « pas de réponse » une seule fois pour passer à la suite.
   const now = useNow(500);
   useEffect(() => {
-    if (question && !result && endsAt && now > endsAt + 300 && battle?.mode === "async" && !answering.current) void answer(-1);
+    if (!question || result || !endsAt || now <= endsAt + 300 || battle?.mode !== "async") return;
+    if (answering.current || timedOut.current === question.round) return;
+    timedOut.current = question.round;
+    void answer(-1, true);
   });
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
@@ -305,6 +329,9 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
         </div>
       )}
 
+      <p className="sr-only" aria-live="polite">
+        {question && battle.status === "active" ? `Manche ${question.round} : ${TYPE_LABEL[question.type] ?? "question"}. ${question.prompt}` : ""}
+      </p>
       {question && battle.status === "active" && <QuestionPanel q={question} endsAt={endsAt} result={result} onAnswer={answer} />}
 
       {question && result && battle.mode === "async" && battle.status === "active" && (

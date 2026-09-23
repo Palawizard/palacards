@@ -57,6 +57,20 @@ describe("questions", () => {
     }
   });
 
+  it("met l'autre carte de la manche parmi les leurres de « Qui suis-je ? »", () => {
+    for (let r = 1; r <= 30; r++) {
+      const q = makeQuestion(`k-${r}`, r, eiffel, mont, decoys);
+      if (q.type === "who_am_i") expect(q.choices).toContain("Mont Blanc");
+    }
+  });
+
+  it("ne pose jamais une question à deux choix identiques (même article des deux côtés)", () => {
+    const twin = card({ title: "Paris", views12m: 5, pageLen: 9, extract: null });
+    const q = makeQuestion("t", 1, twin, { ...twin, cardId: 2 }, ["Lyon", "Nice", "Lille", "Brest"]);
+    expect(new Set(q.choices).size).toBe(q.choices.length);
+    expect(q.choices[q.answer]).toBe("Paris");
+  });
+
   it("se replie sur « plus lu » sans résumé ni leurres", () => {
     const q = makeQuestion("x", 1, card({ title: "A", views12m: 5, pageLen: 1 }), card({ title: "B", views12m: 9, pageLen: 1 }), []);
     expect(q.type).toBe("most_viewed");
