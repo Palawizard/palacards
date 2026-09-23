@@ -16,6 +16,8 @@ export interface CardDTO {
   views12m?: number;
   favorite?: boolean;
   locked?: "auction" | "trade" | null;
+  /** Emplacement dans la vitrine du profil (1 à 5). */
+  pinnedSlot?: number | null;
   tags?: string[];
   thumbUrl: string | null;
   pageUrl: string | null;
