@@ -6,7 +6,7 @@ Jeu de cartes à collectionner où chaque carte est un article du Wikipédia FR 
 
 - Node.js 22 (`.nvmrc`)
 - pnpm 10 : `npm install -g pnpm@10.28.0` (sous Windows, `corepack enable` demande les droits admin)
-- Docker Desktop lancé (Postgres local, exposé sur le port 5433)
+- Docker Desktop lancé (Postgres local, exposé sur `127.0.0.1:5433`)
 - Python 3.11+ (pipeline d'import, `tools/import`)
 
 ## Démarrer
@@ -24,7 +24,7 @@ pnpm dev
 - Front : http://localhost:3000/palacards/pulls
 - API : http://localhost:4000/palacards/api/health
 
-Pour jouer à plusieurs en local, ouvre un second navigateur (ou une fenêtre privée) et crée un autre compte. Le pseudo listé dans `ADMIN_USERNAMES` (`.env`) a accès à la page Admin.
+Pour jouer à plusieurs en local, ouvre un second navigateur (ou une fenêtre privée) et crée un autre compte. Pour accéder à la page Admin, donne-toi le rôle : `pnpm --filter @palacards/api admin:grant <pseudo>` (en prod : `docker compose exec api node dist/cli/admin.js grant <pseudo>`).
 
 ## Structure
 
@@ -56,9 +56,37 @@ deploy/         Caddy, sauvegarde (timer systemd), restauration, chargement des 
 
 La première exécution de `pnpm e2e` demande les navigateurs Playwright : `pnpm --filter @palacards/e2e exec playwright install chromium`.
 
+`pnpm typecheck` et `pnpm test` construisent d'abord `packages/*` (comme `pnpm dev`) : ils marchent sur un clone neuf.
+
+## Import des cartes (`tools/import`)
+
+```sh
+cd tools/import
+python -m venv .venv && . .venv/bin/activate   # Windows : .venv\Scripts\activate
+pip install -e ".[dev]"                        # installation éditable : données dans tools/import/data/
+palacards-import all --limit 20000             # échantillon (lu en flux), repris par `pnpm db:seed`
+pytest -q
+```
+
+Installer en mode éditable (`-e`) : les données vont alors dans `tools/import/data/` et le `.env` racine est lu. Variables (environnement ou `.env`) : `PALACARDS_DATA` pour mettre les dumps et intermédiaires (plusieurs dizaines de Go pour un import complet) ailleurs, `PALACARDS_ENV_FILE` pour lire un autre fichier `.env`, `WIKIMEDIA_USER_AGENT` (obligatoire). Hors dépôt, sans `PALACARDS_DATA`, les données vont dans `./data` du dossier courant.
+
 ## Production
 
-`docker compose build && docker compose up -d --wait` avec `docker-compose.yml` (Postgres, migrations, API, front ; healthchecks et limites mémoire). Les cartes se chargent avec `deploy/load-cards.sh`, les sauvegardes quotidiennes avec `deploy/backup.sh` (timer systemd fourni).
+Sur vm-apps, dans `/opt/dockpanel/stacks/palacards/` (`docker-compose.yml` : Postgres, migrations, API, front ; healthchecks et limites mémoire) :
+
+```sh
+docker compose build
+docker compose run --rm migrate                         # migrations (service one-shot)
+docker compose up -d --wait --no-deps postgres api web  # `up --wait` échoue sur le conteneur migrate terminé
+```
+
+- `.env` : `POSTGRES_PASSWORD` doit pouvoir figurer tel quel dans une URL, car `docker-compose.yml` en construit `DATABASE_URL` (pas de `@ : / ? # %`…) : `openssl rand -hex 32`.
+- Caddy (déjà en Docker sur vm-apps, derrière Cloudflare Tunnel) : `deploy/Caddyfile.palacards`, à importer dans le site `www.palawi.fr`. Caddy doit être sur le réseau Docker externe déclaré dans `docker-compose.yml` (`caddy` par défaut).
+- Cartes : `deploy/load-cards.sh` ; sauvegardes quotidiennes : `deploy/backup.sh` (timer systemd fourni) ; restauration : `deploy/restore.sh` (recharge aussi la saison suivante déjà importée).
+
+## CI
+
+`.github/workflows/ci.yml` (push et PR vers `dev` et `main`) : build, typecheck, lint, tests Vitest et Playwright sur un Postgres 17 de service, plus `pytest` du pipeline d'import. Pas encore de `pnpm format:check` : le dépôt n'est pas formaté avec Prettier.
 
 ## Branches
 

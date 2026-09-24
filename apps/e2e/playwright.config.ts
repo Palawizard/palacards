@@ -22,7 +22,12 @@ export default defineConfig({
   workers: 1,
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [
+    ["list"],
+    ["html", { open: "never" }],
+    // GitHub Actions : échecs en annotations sur la page du run, et recopiés dans son résumé.
+    ...(process.env.GITHUB_STEP_SUMMARY ? ([["github"], ["./summary-reporter.ts"]] as const) : []),
+  ],
   use: { baseURL: `${WEB}/palacards/`, trace: "retain-on-failure", locale: "fr-FR" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
@@ -39,7 +44,6 @@ export default defineConfig({
         DATABASE_URL: e2eDatabaseUrl(),
         GAME_TEST_MODE: "1",
         WIKIMEDIA_DISABLED: "1",
-        ADMIN_USERNAMES: "patron",
         LOG_LEVEL: "warn",
       },
     },

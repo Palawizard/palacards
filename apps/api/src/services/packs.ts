@@ -98,18 +98,22 @@ export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
 
     for (const hook of afterPackHooks) await hook(tx, userId, roll.rarities);
 
+    // Réponse lue dans la transaction : une fois le paquet consommé, plus rien ne peut faire échouer la requête.
+    const state = { ...p, ...update } as typeof p;
     return {
-      ids,
+      cards: await instancesByIds(tx, ids, userId),
+      packs: packState(state, now),
       drawn,
       usedBonus,
       pityTriggered: p.pityCounter >= PITY_THRESHOLD,
-      state: { ...p, ...update } as typeof p,
+      state,
     };
   });
 
-  const cards = await instancesByIds(ctx.db, result.ids);
-  const packs = packState(result.state, now);
-  ctx.rt.toUser(userId, "packs:update", packs);
+  // Effets secondaires après le commit : une erreur est journalisée, jamais renvoyée au joueur.
+  await afterCommit(ctx, async () => {
+    ctx.rt.toUser(userId, "packs:update", result.packs);
+  });
   await afterCommit(ctx, async () => {
     await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
     await bumpObjective(ctx, userId, {
@@ -119,10 +123,12 @@ export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
     // Succès en arrière-plan : l'ouverture du paquet ne les attend pas.
     void emit(ctx, userId, { type: "pack_opened", rarities: result.drawn.map((d) => d.rarity) }, "collection");
   });
-  loadMediaInBackground(
-    ctx,
-    userId,
-    result.drawn.map((d) => ({ cardId: d.id, title: d.title })),
+  await afterCommit(ctx, async () =>
+    loadMediaInBackground(
+      ctx,
+      userId,
+      result.drawn.map((d) => ({ cardId: d.id, title: d.title })),
+    ),
   );
-  return { cards, packs, usedBonus: result.usedBonus, pityTriggered: result.pityTriggered };
+  return { cards: result.cards, packs: result.packs, usedBonus: result.usedBonus, pityTriggered: result.pityTriggered };
 }

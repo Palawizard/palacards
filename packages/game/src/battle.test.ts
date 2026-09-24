@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  BATTLE_REWARDED_PER_PAIR_PER_DAY,
   battleOver,
+  battleRated,
   battleResult,
   battleReward,
   eloUpdate,
@@ -77,6 +79,33 @@ describe("questions", () => {
     expect(q.choices[q.answer]).toBe("B");
   });
 
+  it("manche rejouée : change de type de question quand c'est possible", () => {
+    const a = card({ title: "A", views12m: 5, pageLen: 10 });
+    const b = card({ title: "B", views12m: 9, pageLen: 1 });
+    for (const seed of ["s1", "s2", "s3", "s4", "s5", "s6"]) {
+      const first = makeQuestion(seed, 2, a, b, []);
+      const again = makeQuestion(`${seed}:bis`, 2, a, b, [], first);
+      expect(again.type).not.toBe(first.type);
+      expect(again.choices[again.answer]).toBe(again.type === "longest" ? "A" : "B");
+    }
+    // Un seul type possible : on le garde (rien d'autre à poser).
+    const only = makeQuestion("x", 1, card({ title: "A", views12m: 5, pageLen: 1 }), card({ title: "B", views12m: 9, pageLen: 1 }), []);
+    expect(makeQuestion("y", 1, card({ title: "A", views12m: 5, pageLen: 1 }), card({ title: "B", views12m: 9, pageLen: 1 }), [], only).type).toBe("most_viewed");
+  });
+
+  it("manche rejouée en « Qui suis-je ? » : l'autre article devient la cible", () => {
+    const extract = (t: string) => `${t} est un lieu très connu, décrit ici par une phrase assez longue pour servir de résumé.`;
+    const a = card({ title: "Alpha", views12m: 1, pageLen: 1, extract: extract("Alpha") });
+    const b = card({ title: "Bravo", views12m: 1, pageLen: 1, extract: extract("Bravo") });
+    const first = makeQuestion("seed", 1, a, b, decoys);
+    expect(first.type).toBe("who_am_i");
+    const again = makeQuestion("seed:bis", 1, a, b, decoys, first);
+    expect(again.type).toBe("who_am_i");
+    expect(again.choices[again.answer]).not.toBe(first.choices[first.answer]);
+    // Sans question à éviter, la génération ne change pas (même graine → même question).
+    expect(makeQuestion("seed", 1, a, b, decoys)).toEqual(first);
+  });
+
   it("masque le titre dans le résumé et le tronque", () => {
     const masked = maskExtract("Albert Einstein est un physicien. Einstein a publié la relativité.", "Albert Einstein");
     expect(masked).not.toMatch(/einstein/i);
@@ -111,6 +140,21 @@ describe("combat", () => {
     expect(eloUpdate(1000, 1000, 0.5)).toEqual({ r1: 1000, r2: 1000 });
     const upset = eloUpdate(1000, 1400, 1);
     expect(upset.r1 - 1000).toBe(29);
+  });
+
+  it("Elo : plafond quotidien par paire et rien si le perdant n'a pas joué", () => {
+    const base = { pairFinishedToday: 0, result: 1 as const, answered1: true, answered2: true };
+    expect(battleRated(base)).toBe(true);
+    expect(battleRated({ ...base, pairFinishedToday: BATTLE_REWARDED_PER_PAIR_PER_DAY - 1 })).toBe(true);
+    expect(battleRated({ ...base, pairFinishedToday: BATTLE_REWARDED_PER_PAIR_PER_DAY })).toBe(false);
+    // Perdant absent (abandon, compte secondaire inactif) : pas d'Elo.
+    expect(battleRated({ ...base, answered2: false })).toBe(false);
+    expect(battleRated({ ...base, result: 2, answered1: false })).toBe(false);
+    // Gagnant absent mais perdant actif : le perdant a vraiment joué et perdu.
+    expect(battleRated({ ...base, answered1: false })).toBe(true);
+    // Nul : il faut que les deux aient joué.
+    expect(battleRated({ ...base, result: 0, answered2: false })).toBe(false);
+    expect(battleRated({ ...base, result: 0 })).toBe(true);
   });
 
   it("récompense victoire, défaite et nul", () => {

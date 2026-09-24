@@ -35,8 +35,12 @@ export interface CollectionQuery {
   limit: number;
 }
 
-/** Collection d'un joueur, filtrée et triée (pagination par page : quelques milliers de cartes au plus). */
-export async function listCollection(ctx: Ctx, ownerId: string, query: CollectionQuery): Promise<Page<CardDTO>> {
+/**
+ * Collection d'un joueur, filtrée et triée (pagination par page : quelques milliers de cartes au plus).
+ * Vue par un autre joueur (`viewerId` ≠ `ownerId`) : ni vues ni tri par vues (« Plus lu » en duel).
+ */
+export async function listCollection(ctx: Ctx, ownerId: string, query: CollectionQuery, viewerId: string): Promise<Page<CardDTO>> {
+  const byViews = viewerId === ownerId ? sql`${c.views12m} desc` : sql`${c.title} asc`;
   const where: SQL[] = [eq(ci.ownerId, ownerId)];
   if (query.rarity?.length) where.push(inArray(ci.rarity, query.rarity));
   if (query.season) where.push(eq(ci.season, query.season));
@@ -55,8 +59,8 @@ export async function listCollection(ctx: Ctx, ownerId: string, query: Collectio
     date: [sql`${ci.obtainedAt} desc`],
     atk: [sql`${ci.atk} * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)) desc`],
     def: [sql`${ci.def} * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)) desc`],
-    views: [sql`${c.views12m} desc`],
-    rarity: [sql`${ci.rarity} desc`, sql`${c.views12m} desc`],
+    views: [byViews],
+    rarity: [sql`${ci.rarity} desc`, byViews],
     title: [sql`${c.title} asc`],
   }[query.sort];
 
@@ -89,7 +93,7 @@ export async function listCollection(ctx: Ctx, ownerId: string, query: Collectio
       toCardDTO(r, {
         tags: tags.filter((t) => t.instanceId === r.instanceId).map((t) => t.tag),
         copies: copiesBy.get(r.cardId) ?? 1,
-      }),
+      }, viewerId),
     ),
     nextCursor: rows.length > query.limit ? String(query.page + 1) : null,
     total: countRow?.n ?? 0,

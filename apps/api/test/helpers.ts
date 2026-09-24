@@ -3,6 +3,7 @@ import { buildApp, type BuildOptions } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import type { Ctx } from "../src/context.js";
 import { progressionIdle } from "../src/services/progression.js";
+import { setAdminRole } from "../src/services/roles.js";
 import { sql } from "@palacards/db";
 
 try {
@@ -24,7 +25,6 @@ export async function makeApp(options: BuildOptions = {}) {
     DATABASE_URL: testDatabaseUrl(),
     WIKIMEDIA_DISABLED: "1",
     LOG_LEVEL: "warn",
-    ADMIN_USERNAMES: "admin",
     NODE_ENV: "test",
     GAME_TEST_MODE: "1",
   });
@@ -78,6 +78,13 @@ export async function signUp(
     post: (url, body) => call("POST", url, body ?? {}),
     put: (url, body) => call("PUT", url, body ?? {}),
   };
+}
+
+/** Inscrit un joueur et lui donne le rôle admin (comme la CLI). */
+export async function signUpAdmin(app: FastifyInstance, ctx: Ctx, username = uniqueName("admin")): Promise<Client> {
+  const client = await signUp(app, username);
+  await setAdminRole(ctx.db, username, true);
+  return client;
 }
 
 /** PW gagnés par les succès (traités en arrière-plan) : attend leur fin puis lit le ledger. */

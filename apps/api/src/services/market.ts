@@ -167,9 +167,18 @@ export async function cancelAuction(ctx: Ctx, sellerId: string, auctionId: numbe
  * le vendeur reçoit le prix moins la taxe de 5 % (détruite), la carte change de main.
  */
 /** Succès d'une vente conclue : « vendre » pour le vendeur, collection pour l'acheteur. */
-function emitSale(ctx: Ctx, auction: Pick<Auction, "status" | "sellerId" | "currentBidderId" | "currentBid">) {
+function emitSale(ctx: Ctx, auction: Pick<Auction, "id" | "status" | "sellerId" | "currentBidderId" | "currentBid">) {
   if (auction.status !== "sold" || !auction.currentBidderId) return;
-  void emit(ctx, auction.sellerId, { type: "sale", price: auction.currentBid ?? 0 });
+  const sellerId = auction.sellerId;
+  const price = auction.currentBid ?? 0;
+  void (async () => {
+    // Enchérisseurs distincts : « Coup de marteau » en exige deux, pour ne pas se farmer en vendant à un ami.
+    const [row] = await ctx.db
+      .select({ n: sql<number>`count(distinct ${schema.bids.bidderId})::int` })
+      .from(schema.bids)
+      .where(eq(schema.bids.auctionId, auction.id));
+    await emit(ctx, sellerId, { type: "sale", price, bidders: row?.n ?? 0 });
+  })().catch((err: unknown) => ctx.log.error({ err, auctionId: auction.id }, "succès de vente non évalué"));
   void emit(ctx, auction.currentBidderId, "collection");
 }
 
@@ -331,9 +340,11 @@ function lotOf(auction: Auction): number {
 }
 
 async function toDTOs(ctx: Ctx, rows: Auction[]): Promise<AuctionDTO[]> {
+  // Jamais de vues sur le marché (public) : elles donneraient la réponse de « Plus lu » en duel.
   const cards = await instancesByIds(
     ctx.db,
     rows.flatMap((r) => (r.instanceId === null ? [] : [r.instanceId])),
+    null,
   );
   const cardBy = new Map(cards.map((c) => [c.instanceId, c]));
   const names = await usernames(ctx.db, [...rows.map((r) => r.sellerId), ...rows.map((r) => r.currentBidderId)]);

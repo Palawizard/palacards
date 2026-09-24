@@ -195,23 +195,36 @@ export async function checkObjective(ctx: Ctx, guildId: number) {
     if (!locked || locked.completedAt || locked.progress < (await effectiveTarget(tx, guildId, locked))) return [];
     await tx.update(schema.guildObjectives).set({ completedAt: ctx.now() }).where(eq(schema.guildObjectives.id, obj.id));
     const members = await tx.select({ userId: gm.userId }).from(gm).where(eq(gm.guildId, guildId));
-    const already = await tx.execute<{ user_id: string }>(sql`
-      select distinct user_id from ledger
-      where reason = 'guild_objective' and created_at >= (${obj.weekStart}::timestamp at time zone 'Europe/Paris')
-    `);
-    const skip = new Set(already.map((r) => r.user_id));
-    const players = await lockPlayers(
-      tx,
-      members.map((x) => x.userId).filter((id) => !skip.has(id)),
-    );
-    for (const p of players.values()) {
+    // Joueurs verrouillés AVANT de relire le ledger : un joueur passé dans une autre guilde dont
+    // l'objectif se valide en même temps attend ici la fin de l'autre transaction, puis la voit.
+    const lockedPlayers = await lockPlayers(tx, members.map((x) => x.userId));
+    const ids = [...lockedPlayers.keys()];
+    // Relus sous verrou (adhésion et départ verrouillent aussi le joueur) : membres encore présents,
+    // et déjà récompensés cette semaine, quelle que soit la guilde.
+    const still = ids.length ? await tx.select({ userId: gm.userId }).from(gm).where(and(eq(gm.guildId, guildId), inArray(gm.userId, ids))) : [];
+    const already = ids.length
+      ? await tx
+          .selectDistinct({ userId: schema.ledger.userId })
+          .from(schema.ledger)
+          .where(
+            and(
+              inArray(schema.ledger.userId, ids),
+              eq(schema.ledger.reason, "guild_objective"),
+              sql`${schema.ledger.createdAt} >= (${obj.weekStart}::timestamp at time zone 'Europe/Paris')`,
+            ),
+          )
+      : [];
+    const keep = new Set(still.map((r) => r.userId));
+    for (const r of already) keep.delete(r.userId);
+    const players = [...lockedPlayers.values()].filter((p) => keep.has(p.userId));
+    for (const p of players) {
       const bonusPacks = p.bonusPacks + GUILD_OBJECTIVE_REWARD_PACKS;
       await tx.update(schema.players).set({ bonusPacks }).where(eq(schema.players.userId, p.userId));
       await logMovement(tx, p.userId, "bonus_pack", GUILD_OBJECTIVE_REWARD_PACKS, bonusPacks, "guild_objective", obj.id);
       await fx.notify(tx, p.userId, "guild_objective", { guildId, kind: obj.kind });
       p.bonusPacks = bonusPacks;
     }
-    return [...players.values()];
+    return players;
   });
   for (const p of rewarded) ctx.rt.toUser(p.userId, "packs:update", packState(p, ctx.now()));
   await fx.flush(ctx);

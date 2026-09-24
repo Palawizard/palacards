@@ -19,15 +19,18 @@ test("ami → message en temps réel → guilde", async ({ browser }) => {
   await alice.page.goto(`messages?to=${bob.name}`);
   await alice.page.getByLabel("Message", { exact: true }).fill("Salut, tu échanges ta Tour Eiffel ?");
   await alice.page.getByRole("button", { name: "Envoyer" }).click();
-  await expect(alice.page.getByText("Salut, tu échanges ta Tour Eiffel ?")).toBeVisible();
+  // exact : l'aperçu de la conversation (« Toi : … ») contient aussi le texte.
+  await expect(alice.page.getByText("Salut, tu échanges ta Tour Eiffel ?", { exact: true })).toBeVisible();
   await expect(bob.page.getByRole("link", { name: new RegExp(alice.name, "i") })).toBeVisible();
   await bob.page.getByRole("link", { name: new RegExp(alice.name, "i") }).first().click();
-  await expect(bob.page.getByText("Salut, tu échanges ta Tour Eiffel ?")).toBeVisible();
+  await expect(bob.page.getByText("Salut, tu échanges ta Tour Eiffel ?", { exact: true })).toBeVisible();
 
   // Alice fonde une guilde, Bob la rejoint.
   await alice.page.goto("guild");
   await alice.page.getByLabel("Nom").fill(`Club ${alice.name}`);
-  await alice.page.getByLabel("Blason (2 à 5 lettres)").fill("CLUB");
+  // Blason aléatoire : il doit rester unique si la base E2E sert plusieurs fois (--repeat-each).
+  const crest = Array.from({ length: 5 }, () => String.fromCharCode(65 + Math.floor(Math.random() * 26))).join("");
+  await alice.page.getByLabel("Blason (2 à 5 lettres)").fill(crest);
   await alice.page.getByRole("button", { name: "Fonder" }).click();
   await expect(alice.page.getByText("Objectif de la semaine")).toBeVisible();
   await bob.page.goto("guild");

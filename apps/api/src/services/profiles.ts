@@ -102,7 +102,8 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
     collectionScore: score.score,
     uniqueCards: score.uniqueCards,
     totalCards: p?.total ?? 0,
-    showcase: pinned.map((r) => toCardDTO(r)),
+    // Vues seulement sur sa propre vitrine (« Plus lu » en duel).
+    showcase: pinned.map((r) => toCardDTO(r, {}, viewerId)),
     isMe: u.id === viewerId,
     relation: await friendRelation(ctx, viewerId, u.id),
     online: ctx.rt.isOnline(u.id),
