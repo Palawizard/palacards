@@ -93,14 +93,21 @@ export async function progressionIdle() {
   while (pending.size) await Promise.allSettled([...pending]);
 }
 
-/** Événement « collection » : articles uniques, Légendaires différentes, part des UR de la saison. */
+/**
+ * Événement « collection » : articles uniques, Légendaires différentes, part des UR de la saison.
+ * Anti-farm : seuls comptent les exemplaires que le joueur a tirés lui-même et toujours détenus
+ * (`source = 'pack'` ; un transfert par échange ou vente la réécrit en `trade` / `market`, un don
+ * admin vaut `admin`). Sinon des amis se prêteraient gratuitement leurs cartes pour débloquer
+ * les succès de collection chacun à leur tour.
+ */
 export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameEvent> {
   const season = await activeSeason(db);
   const [row] = await db.execute<{ unique_cards: number; unique_l: number; unique_ur: number; total_ur: number }>(sql`
+    with pulled as (select card_id, rarity, season from card_instances where owner_id = ${userId} and source = 'pack')
     select
-      (select count(distinct card_id)::int from card_instances where owner_id = ${userId}) as unique_cards,
-      (select count(distinct card_id)::int from card_instances where owner_id = ${userId} and rarity = 'L') as unique_l,
-      (select count(distinct card_id)::int from card_instances where owner_id = ${userId} and rarity = 'UR' and season = ${season}) as unique_ur,
+      (select count(distinct card_id)::int from pulled) as unique_cards,
+      (select count(distinct card_id)::int from pulled where rarity = 'L') as unique_l,
+      (select count(distinct card_id)::int from pulled where rarity = 'UR' and season = ${season}) as unique_ur,
       (select count(*)::int from cards where season = ${season} and rarity = 'UR') as total_ur
   `);
   return {

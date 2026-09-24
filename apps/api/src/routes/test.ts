@@ -4,6 +4,7 @@ import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import { closeAuctionIfDue } from "../services/market.js";
+import { setAdminRole } from "../services/roles.js";
 import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet } from "../services/players.js";
 
 /**
@@ -80,5 +81,11 @@ export function testRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     pushWallet(ctx, p);
     return { balance: p.balance };
+  });
+
+  /** Donne le rôle admin au joueur connecté (en prod : CLI `node dist/cli/admin.js grant <pseudo>`). */
+  api.post("/test/make-admin", auth, async (req) => {
+    await setAdminRole(ctx.db, req.user.username, true);
+    return { ok: true };
   });
 }

@@ -12,7 +12,7 @@ export const ELO_START = 1_000;
 /** Un défi non accepté expire au bout de 48 h ; un duel asynchrone doit être fini en 72 h. */
 export const CHALLENGE_TTL_MS = 48 * 60 * 60_000;
 export const ASYNC_BATTLE_TTL_MS = 72 * 60 * 60_000;
-/** Anti-farm : au-delà de ce nombre de duels terminés dans la journée entre deux joueurs, plus de PW (l'Elo compte toujours). */
+/** Anti-farm : au-delà de ce nombre de duels terminés dans la journée entre deux joueurs, plus de PW ni d'Elo. */
 export const BATTLE_REWARDED_PER_PAIR_PER_DAY = 3;
 
 // ---------------------------------------------------------------------------
@@ -97,18 +97,30 @@ export function maskExtract(extract: string, title: string, maxLength = 260): st
  * Question d'une manche, identique pour les deux joueurs : dépend seulement de la graine,
  * des deux cartes et des titres leurres fournis par le serveur.
  */
-export function makeQuestion(seed: string, round: number, a: QuizCard, b: QuizCard, decoys: string[]): Question {
+export function makeQuestion(
+  seed: string,
+  round: number,
+  a: QuizCard,
+  b: QuizCard,
+  decoys: string[],
+  /** Question déjà vue (manche rejouée) : on prend un autre type quand c'est possible. */
+  avoid?: Question,
+): Question {
   const rand = seededRandom(`${seed}:${round}`);
   const withExtract = [a, b].filter((c) => c.extract && c.extract.length > 60);
   const sameArticle = a.title === b.title;
-  const types: QuestionType[] = [];
+  let types: QuestionType[] = [];
   if (withExtract.length && decoys.length >= 3) types.push("who_am_i");
   if (!sameArticle && a.views12m !== b.views12m) types.push("most_viewed");
   if (!sameArticle && a.pageLen !== b.pageLen) types.push("longest");
+  if (avoid && types.some((t) => t !== avoid.type)) types = types.filter((t) => t !== avoid.type);
   const type = types.length ? types[Math.floor(rand() * types.length)]! : "who_am_i";
 
   if (type === "who_am_i" && (withExtract.length || decoys.length >= 3)) {
-    const target = withExtract.length ? withExtract[Math.floor(rand() * withExtract.length)]! : a;
+    // Manche rejouée : l'autre article devient la cible quand il a lui aussi un résumé.
+    const seenTitle = avoid?.type === "who_am_i" ? avoid.choices[avoid.answer] : undefined;
+    const targets = withExtract.some((c) => c.title !== seenTitle) ? withExtract.filter((c) => c.title !== seenTitle) : withExtract;
+    const target = targets.length ? targets[Math.floor(rand() * targets.length)]! : a;
     // L'autre carte de la manche figure parmi les leurres : la réponse n'est jamais « la seule carte connue ».
     const other = target === a ? b : a;
     const pool = [...(other.title !== target.title ? [other.title] : []), ...shuffle(decoys, rand)].filter(
@@ -169,6 +181,25 @@ export function eloUpdate(r1: number, r2: number, outcome: 1 | 0.5 | 0): { r1: n
   const expected1 = 1 / (1 + 10 ** ((r2 - r1) / 400));
   const delta = Math.round(ELO_K * (outcome - expected1));
   return { r1: r1 + delta, r2: r2 - delta };
+}
+
+/**
+ * Le duel compte-t-il pour l'Elo ? (anti-farm avec des comptes secondaires)
+ * - seulement les `BATTLE_REWARDED_PER_PAIR_PER_DAY` premiers duels de la paire dans la journée, comme les PW ;
+ * - jamais si le perdant n'a répondu à aucune manche (abandon, absence) : rien ne se gagne sur un compte inactif.
+ *   Pour un nul, il suffit qu'un des deux n'ait pas répondu.
+ * `result` : 1 le joueur 1 gagne, 2 le joueur 2, 0 nul ; `answered1/2` : le joueur a donné au moins une réponse.
+ */
+export function battleRated(input: {
+  pairFinishedToday: number;
+  result: 1 | 2 | 0;
+  answered1: boolean;
+  answered2: boolean;
+}): boolean {
+  if (input.pairFinishedToday >= BATTLE_REWARDED_PER_PAIR_PER_DAY) return false;
+  if (input.result === 1) return input.answered2;
+  if (input.result === 2) return input.answered1;
+  return input.answered1 && input.answered2;
 }
 
 /** Récompense en PW d'un duel terminé. */

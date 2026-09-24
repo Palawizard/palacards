@@ -219,7 +219,8 @@ export async function listTrades(ctx: Ctx, userId: string, box: "received" | "se
   const trades = await ctx.db.select().from(t).where(where).orderBy(desc(t.createdAt)).limit(100);
   if (!trades.length) return [];
   const items = await ctx.db.select().from(schema.tradeItems).where(inArray(schema.tradeItems.tradeId, trades.map((x) => x.id)));
-  const cards = await instancesByIds(ctx.db, [...new Set(items.map((i) => i.instanceId))]);
+  // Vues seulement sur ses propres cartes (« Plus lu » en duel).
+  const cards = await instancesByIds(ctx.db, [...new Set(items.map((i) => i.instanceId))], userId);
   const cardBy = new Map(cards.map((c) => [c.instanceId, c]));
   const users = await ctx.db
     .select({

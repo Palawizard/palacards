@@ -39,8 +39,19 @@ describe("succès", () => {
     expect(applyEvent(new Map(), { type: "card_level", level: 5 }).find((u) => u.key === "level_5")?.unlocked).toBe(true);
   });
 
+  it("ne fait dépendre de l'état de la collection que les succès « tirés de ses propres paquets »", () => {
+    // L'API ne compte dans l'événement « collection » que les exemplaires tirés par le joueur :
+    // tout succès qui en dépend doit l'annoncer (anti-farm par échanges entre amis).
+    const ev = { type: "collection", uniqueCards: 1_000, uniqueLegendary: 10, uniqueUR: 1, totalUR: 10 } as const;
+    const keys = applyEvent(new Map(), ev).map((u) => u.key).sort();
+    expect(keys).toEqual(["collection_1000", "legend_10", "ur_10pct"]);
+    for (const key of keys) expect(ACHIEVEMENTS.find((a) => a.key === key)!.description).toMatch(/tirée?s de ses propres paquets/);
+  });
+
   it("ne compte que les ventes à plus de 1 000 PW pour le coup de marteau", () => {
-    expect(applyEvent(new Map(), { type: "sale", price: 1_000 }).find((u) => u.key === "big_sale")).toBeUndefined();
-    expect(applyEvent(new Map(), { type: "sale", price: 1_001 }).find((u) => u.key === "big_sale")?.unlocked).toBe(true);
+    expect(applyEvent(new Map(), { type: "sale", price: 1_000, bidders: 2 }).find((u) => u.key === "big_sale")).toBeUndefined();
+    expect(applyEvent(new Map(), { type: "sale", price: 1_001, bidders: 2 }).find((u) => u.key === "big_sale")?.unlocked).toBe(true);
+    // Vente à un seul ami (ou achat immédiat sans enchère) : pas de « Coup de marteau ».
+    expect(applyEvent(new Map(), { type: "sale", price: 5_000, bidders: 1 }).find((u) => u.key === "big_sale")).toBeUndefined();
   });
 });

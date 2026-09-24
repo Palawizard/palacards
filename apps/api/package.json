@@ -10,7 +10,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "lint": "eslint .",
-    "bench": "tsx bench/run.ts"
+    "bench": "tsx bench/run.ts",
+    "admin:grant": "tsx --env-file-if-exists=../../.env src/cli/admin.ts grant",
+    "admin:revoke": "tsx --env-file-if-exists=../../.env src/cli/admin.ts revoke",
+    "admin:list": "tsx --env-file-if-exists=../../.env src/cli/admin.ts list"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",

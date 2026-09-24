@@ -2,7 +2,7 @@ import { eq, schema, sql } from "@palacards/db";
 import { ELO_START } from "@palacards/game";
 import type { Ctx } from "../context.js";
 import { conflict } from "../errors.js";
-import { activeSeason } from "./players.js";
+import { activeSeason, PLAYER_LOCK_ORDER } from "./players.js";
 import { collectionScoresSql } from "./profiles.js";
 
 export const SEASON_ROLLOVER_JOB = "season-rollover";
@@ -66,8 +66,10 @@ export async function rolloverSeason(ctx: Ctx, options: { onlyIfDue?: boolean; e
       left join guild_members m on m.user_id = p.user_id
       on conflict (season, user_id) do nothing
     `);
-    // Joueurs verrouillés dans l'ordre des duels (id croissant) : pas d'interblocage avec un duel en cours.
-    await tx.execute(sql`select user_id from players order by user_id for update`);
+    // Joueurs verrouillés dans le même ordre que `lockPlayers` (duels, marché, échanges…) : id croissant
+    // octet par octet (collation "C"), pas celui de la collation de la base (en_US mélange majuscules et
+    // minuscules) ; sinon deux ordres opposés sur des ids à casse mixte peuvent s'interbloquer.
+    await tx.execute(sql`select user_id from players order by ${PLAYER_LOCK_ORDER} for update`);
     await tx.update(schema.players).set({ elo: ELO_START });
     await tx.update(schema.seasons).set({ status: "archived", endsAt: ctx.now() }).where(eq(schema.seasons.id, current.id));
     // Fin au 1er du mois suivant (heure de Paris) ; une bascule forcée à moins de 7 jours de cette date

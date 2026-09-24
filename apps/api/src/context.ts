@@ -32,9 +32,21 @@ declare module "fastify" {
 
 const knownPlayers = new Set<string>();
 
+/** Session lue une seule fois par requête (clé de limitation de débit, puis `requireUser`). */
+const sessionOfRequest = new WeakMap<object, Promise<SessionUser | null>>();
+
+export function sessionUser(auth: Auth, req: FastifyRequest): Promise<SessionUser | null> {
+  let pending = sessionOfRequest.get(req.raw);
+  if (!pending) {
+    pending = getSessionUser(auth, req.headers);
+    sessionOfRequest.set(req.raw, pending);
+  }
+  return pending;
+}
+
 export function requireUser(ctx: Pick<Ctx, "auth" | "config" | "db">) {
   return async (req: FastifyRequest, _reply: FastifyReply) => {
-    const user = await getSessionUser(ctx.auth, ctx.config, req.headers);
+    const user = await sessionUser(ctx.auth, req);
     if (!user) throw new GameError(401, "unauthorized", "Connecte-toi pour continuer.");
     if (!knownPlayers.has(user.id)) {
       await ensurePlayer(ctx.db, user.id);

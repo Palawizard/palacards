@@ -36,18 +36,14 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   expect((await apiCall<{ animationSpeed: string }>(page, "GET", "/me")).animationSpeed).toBe("normal");
 });
 
-test("admin : don de PW réservé aux pseudos configurés", async ({ browser }) => {
+test("admin : don de PW réservé aux comptes admin", async ({ browser }) => {
   const player = await newPlayer(browser, "don");
   await player.page.goto("admin");
   await expect(player.page.getByText("Page réservée aux admins.")).toBeVisible();
 
-  const context = await browser.newContext({ locale: "fr-FR" });
-  const admin = await context.newPage();
-  await admin.goto("register");
-  await admin.getByLabel("Pseudo").fill("patron");
-  await admin.getByLabel("Mot de passe").fill("motdepasse123");
-  await admin.getByRole("button", { name: "Créer mon compte" }).click();
-  await expect(admin).toHaveURL(/\/palacards\/pulls$/);
+  // Le rôle admin est en base : la route de test fait ce que fait la CLI en prod.
+  const { page: admin } = await newPlayer(browser, "patron");
+  await apiCall(admin, "POST", "/test/make-admin");
   await admin.goto("admin");
   await expect(admin.getByRole("heading", { name: "Masse monétaire" })).toBeVisible();
   await admin.getByLabel("Pseudo").fill(player.name);

@@ -22,9 +22,16 @@ export function createAuth(db: Db, config: Config, events: { onSessionsRevoked?:
     baseURL: config.BETTER_AUTH_URL,
     basePath: `${config.BASE_PATH}/api/auth`,
     trustedOrigins: [config.WEB_ORIGIN],
-    // Le profil (pseudo, avatar) passe par nos routes, qui protègent les pseudos admin : pas de modification directe.
+    // Le profil (pseudo, avatar) passe par nos routes : pas de modification directe.
     disabledPaths: ["/update-user", "/change-email"],
     database: drizzleAdapter(db, { provider: "pg", schema }),
+    user: {
+      additionalFields: {
+        // Rôle admin stocké en base, jamais modifiable par l'utilisateur (`input: false` : ignoré à l'inscription).
+        // Seule la CLI (`src/cli/admin.ts`) le change.
+        isAdmin: { type: "boolean", required: false, defaultValue: false, input: false },
+      },
+    },
     emailAndPassword: { enabled: true, minPasswordLength: 8, maxPasswordLength: 128, autoSignIn: true },
     session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
     advanced: {
@@ -114,18 +121,14 @@ export interface SessionUser {
   isAdmin: boolean;
 }
 
-export async function getSessionUser(
-  auth: Auth,
-  config: Config,
-  headers: IncomingHttpHeaders,
-): Promise<SessionUser | null> {
+/** Utilisateur de la session (relu en base à chaque appel : un rôle retiré prend effet tout de suite). */
+export async function getSessionUser(auth: Auth, headers: IncomingHttpHeaders): Promise<SessionUser | null> {
   const s = await auth.api.getSession({ headers: fromNodeHeaders(headers) });
   if (!s) return null;
-  const uname = (s.user.username ?? s.user.name).toLowerCase();
   return {
     id: s.user.id,
-    username: uname,
+    username: (s.user.username ?? s.user.name).toLowerCase(),
     displayName: s.user.displayUsername ?? s.user.name,
-    isAdmin: config.ADMIN_USERNAMES.includes(uname),
+    isAdmin: s.user.isAdmin === true,
   };
 }

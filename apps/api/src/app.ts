@@ -3,10 +3,10 @@ import rateLimit from "@fastify/rate-limit";
 import { createDb } from "@palacards/db";
 import { MAX_STORED_PACKS, PACK_REGEN_MS } from "@palacards/game";
 import { fromNodeHeaders } from "better-auth/node";
-import Fastify from "fastify";
-import { createAuth } from "./auth.js";
+import Fastify, { type FastifyRequest } from "fastify";
+import { createAuth, SESSION_COOKIE, type Auth } from "./auth.js";
 import type { Config } from "./config.js";
-import { secureRandom, type Ctx } from "./context.js";
+import { secureRandom, sessionUser, type Ctx } from "./context.js";
 import { registerErrorHandler } from "./errors.js";
 import { createJobs } from "./jobs.js";
 import { createRealtime } from "./realtime.js";
@@ -27,6 +27,25 @@ export interface BuildOptions {
   now?: () => Date;
 }
 
+/**
+ * Clé de limitation de débit : l'utilisateur de la session validée (un cookie inventé ne donne pas
+ * un nouveau compteur), sinon l'IP réelle. `cf-connecting-ip` n'est lu que derrière le proxy (TRUST_PROXY),
+ * sinon n'importe quel client pourrait le falsifier ; `req.ip` suit déjà `trustProxy`.
+ */
+export async function rateLimitKey(config: Pick<Config, "TRUST_PROXY">, auth: Auth | undefined, req: FastifyRequest): Promise<string> {
+  if (auth && req.headers.cookie?.includes(`${SESSION_COOKIE}=`)) {
+    try {
+      const user = await sessionUser(auth, req);
+      if (user) return `user:${user.id}`;
+    } catch {
+      // session illisible (base indisponible…) : repli sur l'IP
+    }
+  }
+  const cf = req.headers["cf-connecting-ip"];
+  if (config.TRUST_PROXY && typeof cf === "string" && cf) return `ip:${cf}`;
+  return `ip:${req.ip}`;
+}
+
 export async function buildApp(config: Config, options: BuildOptions = {}) {
   const app = Fastify({
     logger: { level: config.LOG_LEVEL },
@@ -39,20 +58,19 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
-  await app.register(rateLimit, {
-    // Plafond global (lectures comprises : catalogue, fiches, résumés Wikipédia) ; routes sensibles plus strictes.
-    global: true,
-    max: 300,
-    timeWindow: "1 minute",
-    // Clé = session (le cookie), sinon l'IP : X-Forwarded-For est falsifiable par le client.
-    keyGenerator: (req) => /palawi_palacards_session=([^;]+)/.exec(req.headers.cookie ?? "")?.[1] ?? req.ip,
-  });
-
   const apiPrefix = `${config.BASE_PATH}/api`;
   const database = config.DATABASE_URL ? createDb(config.DATABASE_URL) : undefined;
   // Le temps réel a besoin de l'auth (handshake) et l'auth coupe les sockets à la révocation d'une session.
   const late: { rt?: { disconnectUser(userId: string): void } } = {};
   const auth = database ? createAuth(database.db, config, { onSessionsRevoked: (userId) => late.rt?.disconnectUser(userId) }) : undefined;
+
+  await app.register(rateLimit, {
+    // Plafond global (lectures comprises : catalogue, fiches, résumés Wikipédia) ; routes sensibles plus strictes.
+    global: true,
+    max: 300,
+    timeWindow: "1 minute",
+    keyGenerator: (req) => rateLimitKey(config, auth, req),
+  });
   const rt = createRealtime(app.server, config, auth, app.log);
   late.rt = rt;
   const jobs = createJobs(options.jobs ? config.DATABASE_URL : undefined, app.log);

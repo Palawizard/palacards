@@ -10,11 +10,27 @@ export type DbOrTx = Ctx["db"] | Tx;
 export type Player = typeof schema.players.$inferSelect;
 
 /**
- * Verrouille des joueurs (`SELECT … FOR UPDATE`) dans un ordre déterministe (id croissant)
- * pour éviter les interblocages quand une opération touche plusieurs joueurs.
+ * Ordre de verrouillage des joueurs côté SQL (verrous en masse, ex. bascule de saison) : id croissant
+ * octet par octet (collation "C"), identique à `lockOrder`. Jamais la collation de la base (en_US),
+ * qui classe `a` < `B` alors que l'ordre des unités de code JS donne `B` < `a`.
+ */
+export const PLAYER_LOCK_ORDER = sql`user_id collate "C"`;
+
+/**
+ * Ordre de verrouillage côté JS : unités de code UTF-16 croissantes (tri par défaut de `Array#sort`),
+ * égal à l'ordre de la collation "C" pour les ids Better Auth (ASCII alphanumériques).
+ */
+export function lockOrder(userIds: string[]): string[] {
+  return [...new Set(userIds)].sort();
+}
+
+/**
+ * Verrouille des joueurs (`SELECT … FOR UPDATE`) dans un ordre déterministe (`lockOrder`, id croissant
+ * au sens de la collation "C", comme `PLAYER_LOCK_ORDER`) pour éviter les interblocages quand une
+ * opération touche plusieurs joueurs.
  */
 export async function lockPlayers(tx: Tx, userIds: string[]): Promise<Map<string, Player>> {
-  const ids = [...new Set(userIds)].sort();
+  const ids = lockOrder(userIds);
   const out = new Map<string, Player>();
   for (const id of ids) {
     const [p] = await tx.select().from(schema.players).where(eq(schema.players.userId, id)).for("update");
