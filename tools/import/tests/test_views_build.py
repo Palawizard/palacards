@@ -77,7 +77,10 @@ def test_build_rarity_stats_and_bonus(tmp_path):
     )
     views = tmp_path / "views.parquet"
     # page i a n - i vues : la page 1 est la plus lue ; la page 2 est une homonymie.
-    pq.write_table(pa.table({"page_id": pa.array(ids, pa.int64()), "views": pa.array([n - i for i in ids], pa.int64())}), views)
+    pq.write_table(
+        pa.table({"page_id": pa.array(ids, pa.int64()), "views": pa.array([n - i for i in ids], pa.int64())}),
+        views,
+    )
     flags = tmp_path / "flags.parquet"
     pq.write_table(
         pa.table(
@@ -91,7 +94,9 @@ def test_build_rarity_stats_and_bonus(tmp_path):
         flags,
     )
     out = tmp_path / "cards.csv.gz"
-    counts = build(duckdb.connect(), articles.as_posix(), views.as_posix(), flags.as_posix(), out.as_posix(), sample=True)
+    counts = build(
+        duckdb.connect(), articles.as_posix(), views.as_posix(), flags.as_posix(), out.as_posix(), sample=True
+    )
     assert sum(counts.values()) == n - 1
     assert counts["L"] == 1 and counts["UR"] == 9 and counts["SR"] == 40
 
@@ -103,6 +108,94 @@ def test_build_rarity_stats_and_bonus(tmp_path):
     assert all(100 <= int(r["atk"]) <= 9999 and 100 <= int(r["def"]) <= 9999 for r in rows.values())
     assert int(rows[n]["atk"]) == 9999  # article le plus long
     assert int(rows[1]["atk"]) == 100
-    # Même qualité brute que la page 3 + 2100, mais la page 3 est AdQ : bonus de 1500.
-    assert int(rows[3]["def"]) - int(rows[2103]["def"]) == 1_500
-    assert int(rows[4]["def"]) - int(rows[2104]["def"]) == 800
+
+    # Bonus AdQ / BA : même article sans label -> DEF plus basse de 1500 / 800 (au plafond près).
+    flags_off = tmp_path / "flags-off.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "page_id": pa.array([2, 3, 4], pa.int64()),
+                "disambiguation": [True, False, False],
+                "featured": [False, False, False],
+                "good": [False, False, False],
+            }
+        ),
+        flags_off,
+    )
+    out_off = tmp_path / "cards-off.csv.gz"
+    build(
+        duckdb.connect(),
+        articles.as_posix(),
+        views.as_posix(),
+        flags_off.as_posix(),
+        out_off.as_posix(),
+        sample=True,
+    )
+    with gzip.open(out_off, "rt", encoding="utf-8") as f:
+        off = {int(r["id"]): int(r["def"]) for r in csv.DictReader(f)}
+    assert int(rows[3]["def"]) == min(9_999, off[3] + 1_500)
+    assert int(rows[4]["def"]) == min(9_999, off[4] + 800)
+
+
+def write_pool(tmp_path, arts: list[tuple[int, int, int, int, int, int]]):
+    """arts : (page_id, page_len, refs, sections, images, links) ; vues décroissantes par page_id."""
+    articles = tmp_path / "articles.parquet"
+    cols = list(zip(*arts))
+    pq.write_table(
+        pa.table(
+            {
+                "page_id": pa.array(cols[0], pa.int64()),
+                "title": [f"Article {i}" for i in cols[0]],
+                "page_len": pa.array(cols[1], pa.int32()),
+                "refs": pa.array(cols[2], pa.int32()),
+                "sections": pa.array(cols[3], pa.int32()),
+                "images": pa.array(cols[4], pa.int32()),
+                "links": pa.array(cols[5], pa.int32()),
+            }
+        ),
+        articles,
+    )
+    views = tmp_path / "views.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "page_id": pa.array(cols[0], pa.int64()),
+                "views": pa.array([10_000 - i for i in cols[0]], pa.int64()),
+            }
+        ),
+        views,
+    )
+    flags = tmp_path / "flags.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "page_id": pa.array([], pa.int64()),
+                "disambiguation": pa.array([], pa.bool_()),
+                "featured": pa.array([], pa.bool_()),
+                "good": pa.array([], pa.bool_()),
+            }
+        ),
+        flags,
+    )
+    out = tmp_path / "cards.csv.gz"
+    build(
+        duckdb.connect(), articles.as_posix(), views.as_posix(), flags.as_posix(), out.as_posix(), sample=True
+    )
+    with gzip.open(out, "rt", encoding="utf-8") as f:
+        return {int(r["id"]): r for r in csv.DictReader(f)}
+
+
+def test_def_is_quality_density_not_size(tmp_path):
+    # 1 : article énorme mais peu sourcé ; 2 : article moyen très sourcé ; 3 : ébauche avec 1 source.
+    arts = [
+        (1, 200_000, 20, 10, 2, 300),
+        (2, 20_000, 120, 12, 10, 150),
+        (3, 800, 1, 1, 0, 5),
+    ] + [(i, 5_000 + i * 37, i % 13, i % 6, i % 4, i % 40) for i in range(4, 400)]
+    rows = write_pool(tmp_path, arts)
+    atk = {i: int(rows[i]["atk"]) for i in (1, 2, 3)}
+    dfn = {i: int(rows[i]["def"]) for i in (1, 2, 3)}
+    assert atk[1] > atk[2] > atk[3]  # ATK = taille
+    assert dfn[2] > dfn[1]  # plus sourcé à taille égale ou moindre : meilleure défense
+    assert dfn[1] < 5_000  # la taille seule ne donne plus une DEF maximale
+    assert dfn[3] < dfn[2]  # le lissage empêche une ébauche d'être « parfaite »

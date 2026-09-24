@@ -2,9 +2,13 @@
 
 Règles (docs/05-cartes.md) :
 - rareté = rang en vues sur 12 mois (1 = le plus lu), paliers de `packages/game/src/rarity.ts` ;
-- ATK = 100 + floor(9899 × pct(page_len)) ;
-- Q = 0,35·pct(refs) + 0,25·pct(sections) + 0,2·pct(images) + 0,2·pct(liens)
-  DEF = min(9999, 100 + floor(9899 × pct(Q)) + bonus), bonus +1500 AdQ, +800 BA.
+- ATK = 100 + floor(9899 × pct(page_len)) : la taille de l'article ;
+- DEF = densité de qualité, indépendante de la taille (sinon ATK et DEF mesurent la même chose et
+  une carte connue a 9 999 partout) : chaque critère est rapporté à la taille en Ko, lissée par
+  DENSITY_SMOOTHING_KB pour qu'une ébauche de 3 lignes avec une source ne soit pas « parfaite »,
+    d(x) = x / (page_len / 1000 + DENSITY_SMOOTHING_KB)
+    Q = 0,55·pct(d(refs)) + 0,20·pct(d(images)) + 0,15·pct(d(sections)) + 0,10·pct(d(liens))
+    DEF = min(9999, 100 + floor(9899 × pct(Q)) + bonus), bonus +1500 AdQ, +800 BA.
 Sous 2 M articles (échantillon), les paliers sont mis à l'échelle du pool (mêmes proportions),
 exactement comme le contrôle du chargement (finish_card_load).
 """
@@ -23,6 +27,8 @@ FULL_POOL_SIZE = 2_700_000
 # En dessous, les paliers sont mis à l'échelle (même seuil que finish_card_load, migration 0002).
 SCALE_BELOW = 2_000_000
 FEATURED_BONUS = 1_500
+# Ko ajoutés à la taille pour calculer les densités (lissage des très petits articles).
+DENSITY_SMOOTHING_KB = 5.0
 GOOD_BONUS = 800
 CSV_COLUMNS = ["id", "title", "rarity", "atk", "def", "views_12m", "page_len"]
 
@@ -41,7 +47,8 @@ def scaled_ceilings(pool_size: int) -> dict[str, int]:
     if pool_size >= SCALE_BELOW:
         return dict(RANK_CEILINGS)
     return {
-        r: max(1, (2 * c * pool_size + FULL_POOL_SIZE) // (2 * FULL_POOL_SIZE)) for r, c in RANK_CEILINGS.items()
+        r: max(1, (2 * c * pool_size + FULL_POOL_SIZE) // (2 * FULL_POOL_SIZE))
+        for r, c in RANK_CEILINGS.items()
     }
 
 
@@ -80,11 +87,11 @@ def build(
             SELECT *,
                    row_number() OVER (ORDER BY views_12m DESC, page_id) AS rank,
                    percent_rank() OVER (ORDER BY page_len) AS p_len,
-                   0.35 * percent_rank() OVER (ORDER BY refs)
-                 + 0.25 * percent_rank() OVER (ORDER BY sections)
-                 + 0.20 * percent_rank() OVER (ORDER BY images)
-                 + 0.20 * percent_rank() OVER (ORDER BY links) AS q
-            FROM pool
+                   0.55 * percent_rank() OVER (ORDER BY refs / kb)
+                 + 0.20 * percent_rank() OVER (ORDER BY images / kb)
+                 + 0.15 * percent_rank() OVER (ORDER BY sections / kb)
+                 + 0.10 * percent_rank() OVER (ORDER BY links / kb) AS q
+            FROM (SELECT *, page_len / 1000.0 + {DENSITY_SMOOTHING_KB} AS kb FROM pool)
         )
         SELECT page_id AS id, title, {rarity_case(ceilings)} AS rarity,
                (100 + floor(9899 * p_len))::INTEGER AS atk,
@@ -94,7 +101,11 @@ def build(
         FROM ranked
         """
     )
-    con.execute(f"COPY (SELECT {', '.join(CSV_COLUMNS)} FROM scored ORDER BY id) TO {sql_str(out)} (HEADER, DELIMITER ',')")
+    con.execute(
+        f"COPY (SELECT {', '.join(CSV_COLUMNS)} FROM scored ORDER BY id) TO {sql_str(out)} (HEADER, DELIMITER ',')"
+    )
+    corr = con.execute("SELECT corr(atk, def) FROM scored").fetchone()[0]
+    print(f"  corrélation ATK/DEF : {corr:.2f}" if corr is not None else "  corrélation ATK/DEF : n/a")
     return dict(con.execute("SELECT rarity, count(*) FROM scored GROUP BY rarity").fetchall())
 
 
