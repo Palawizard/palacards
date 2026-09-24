@@ -86,6 +86,18 @@ describe("duels asynchrones", () => {
     expect(late.body).toMatchObject({ yourChoice: null, correct: false, timeLeftMs: 0 });
   });
 
+  it("coupe le catalogue pendant qu'une question attend la réponse du joueur", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const { body } = await a.post("/battles", { opponent: b.username, mode: "async", deck: await deckOf(a) });
+    await b.post(`/battles/${body.id}/accept`, { deck: await deckOf(b) });
+    await a.post(`/battles/${body.id}/rounds/1/question`);
+    expect((await a.get("/cards?q=carte")).body.error).toBe("duel_question");
+    expect((await b.get("/cards?q=carte")).status).toBe(200);
+    await a.post(`/battles/${body.id}/rounds/1/answer`, { choice: 0 });
+    expect((await a.get("/cards?q=carte")).status).toBe(200);
+  });
+
   it("plafonne les duels récompensés par paire et par jour", async () => {
     const a = await signUp(app);
     const b = await signUp(app);

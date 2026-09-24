@@ -175,6 +175,15 @@
     padding: 0 0.7rem;
     font-size: 0.85rem;
   }
+  /* Écrans tactiles : cibles d'au moins 44 px pour les boutons, 36 px pour les puces de filtre. */
+  @media (pointer: coarse) {
+    .btn-sm {
+      min-height: 2.75rem;
+    }
+    .chip {
+      min-height: 2.25rem;
+    }
+  }
   @media (hover: hover) and (pointer: fine) {
     .btn:hover:not(:disabled) {
       border-color: var(--color-faint);

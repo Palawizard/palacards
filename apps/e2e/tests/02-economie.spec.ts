@@ -54,7 +54,8 @@ test("mise en vente → enchère d'un 2e joueur → fin d'enchère → échange"
 
   await seller.page.goto("trades");
   await expect(seller.page.getByText("Tu reçois")).toBeVisible();
-  await seller.page.getByRole("button", { name: "Accepter" }).click();
+  await seller.page.getByRole("button", { name: "Accepter", exact: true }).click();
+  await seller.page.getByRole("dialog").getByRole("button", { name: "Accepter l’échange" }).click();
   await expect(seller.page.getByText("Échange conclu !")).toBeVisible();
   const sellerCards = await apiCall<{ items: { cardId: number }[] }>(seller.page, "GET", "/collection?limit=100");
   expect(sellerCards.items.some((c) => c.cardId === card.cardId)).toBe(true);

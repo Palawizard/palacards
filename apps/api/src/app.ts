@@ -40,15 +40,21 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });
   await app.register(rateLimit, {
-    global: false,
+    // Plafond global (lectures comprises : catalogue, fiches, résumés Wikipédia) ; routes sensibles plus strictes.
+    global: true,
+    max: 300,
+    timeWindow: "1 minute",
     // Clé = session (le cookie), sinon l'IP : X-Forwarded-For est falsifiable par le client.
     keyGenerator: (req) => /palawi_palacards_session=([^;]+)/.exec(req.headers.cookie ?? "")?.[1] ?? req.ip,
   });
 
   const apiPrefix = `${config.BASE_PATH}/api`;
   const database = config.DATABASE_URL ? createDb(config.DATABASE_URL) : undefined;
-  const auth = database ? createAuth(database.db, config) : undefined;
+  // Le temps réel a besoin de l'auth (handshake) et l'auth coupe les sockets à la révocation d'une session.
+  const late: { rt?: { disconnectUser(userId: string): void } } = {};
+  const auth = database ? createAuth(database.db, config, { onSessionsRevoked: (userId) => late.rt?.disconnectUser(userId) }) : undefined;
   const rt = createRealtime(app.server, config, auth, app.log);
+  late.rt = rt;
   const jobs = createJobs(options.jobs ? config.DATABASE_URL : undefined, app.log);
 
   let ctx: Ctx | undefined;

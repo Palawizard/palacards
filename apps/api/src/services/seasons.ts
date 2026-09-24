@@ -6,6 +6,8 @@ import { activeSeason } from "./players.js";
 import { collectionScoresSql } from "./profiles.js";
 
 export const SEASON_ROLLOVER_JOB = "season-rollover";
+/** Purge des vieilles cartes : job à part, long (jusqu'à 2,7 M lignes), jamais relancé en parallèle. */
+export const CARDS_PURGE_JOB = "cards-purge";
 
 /** État des saisons (page Admin) : saison active, prochaine saison déjà chargée ou non. */
 export async function seasonStatus(ctx: Ctx) {

@@ -47,15 +47,20 @@ export const cards = pgTable(
     randKey: doublePrecision("rand_key")
       .notNull()
       .default(sql`random()`),
+    // Titre normalisé (minuscules, sans accents) calculé une fois : la recherche n'appelle plus unaccent ligne à ligne.
+    searchTitle: text("search_title").generatedAlwaysAs(sql`lower(f_unaccent(title))`),
   },
   (t) => [
     primaryKey({ columns: [t.season, t.id] }),
+    index("cards_search_trgm_idx").using("gin", sql`${t.searchTitle} gin_trgm_ops`),
     index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey),
     // Tris du catalogue paginé par curseur (keyset).
     index("cards_views_idx").on(t.season, t.views12m, t.id),
     index("cards_atk_idx").on(t.season, t.atk, t.id),
     index("cards_def_idx").on(t.season, t.def, t.id),
     index("cards_title_idx").on(t.season, t.title, t.id),
+    // Recherches par article toutes saisons confondues (fiche carte, wishlist, résumés) : la PK commence par la saison.
+    index("cards_id_idx").on(t.id),
   ],
 );
 
@@ -228,6 +233,8 @@ export const cardInstances = pgTable(
   (t) => [
     foreignKey({ columns: [t.season, t.cardId], foreignColumns: [cards.season, cards.id] }),
     index("card_instances_owner_card_idx").on(t.ownerId, t.cardId),
+    // Contrôle de la clé étrangère à la purge des vieilles cartes, et détenteurs d'un article.
+    index("card_instances_card_season_idx").on(t.cardId, t.season),
     index("card_instances_owner_obtained_idx").on(t.ownerId, t.obtainedAt),
     uniqueIndex("card_instances_pinned_uq")
       .on(t.ownerId, t.pinnedSlot)
@@ -300,6 +307,7 @@ export const auctions = pgTable(
   },
   (t) => [
     index("auctions_status_ends_idx").on(t.status, t.endsAt),
+    index("auctions_instance_idx").on(t.instanceId),
     uniqueIndex("auctions_open_instance_uq")
       .on(t.instanceId)
       .where(sql`${t.status} = 'open'`),
@@ -370,7 +378,7 @@ export const tradeItems = pgTable(
       .references(() => cardInstances.id, { onDelete: "cascade" }),
     side: text("side", { enum: ["from", "to"] }).notNull(),
   },
-  (t) => [primaryKey({ columns: [t.tradeId, t.instanceId] })],
+  (t) => [primaryKey({ columns: [t.tradeId, t.instanceId] }), index("trade_items_instance_idx").on(t.instanceId)],
 );
 
 export const wishlist = pgTable(
@@ -573,7 +581,13 @@ export const battleAnswers = pgTable(
     timeLeftMs: integer("time_left_ms"),
     power: real("power"),
   },
-  (t) => [primaryKey({ columns: [t.battleId, t.round, t.userId] })],
+  (t) => [
+    primaryKey({ columns: [t.battleId, t.round, t.userId] }),
+    // Questions en attente de réponse d'un joueur (catalogue coupé pendant une question).
+    index("battle_answers_pending_idx")
+      .on(t.userId, t.servedAt)
+      .where(sql`${t.answeredAt} IS NULL`),
+  ],
 );
 
 // ---------------------------------------------------------------------------

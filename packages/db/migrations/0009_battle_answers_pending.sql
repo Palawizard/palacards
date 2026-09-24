@@ -1,0 +1,1 @@
+CREATE INDEX "battle_answers_pending_idx" ON "battle_answers" USING btree ("user_id","served_at") WHERE "battle_answers"."answered_at" IS NULL;
