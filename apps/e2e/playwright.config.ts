@@ -25,8 +25,8 @@ export default defineConfig({
   reporter: [
     ["list"],
     ["html", { open: "never" }],
-    // GitHub Actions : échecs recopiés dans le résumé du run.
-    ...(process.env.GITHUB_STEP_SUMMARY ? ([["./summary-reporter.ts"]] as const) : []),
+    // GitHub Actions : échecs en annotations sur la page du run, et recopiés dans son résumé.
+    ...(process.env.GITHUB_STEP_SUMMARY ? ([["github"], ["./summary-reporter.ts"]] as const) : []),
   ],
   use: { baseURL: `${WEB}/palacards/`, trace: "retain-on-failure", locale: "fr-FR" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
