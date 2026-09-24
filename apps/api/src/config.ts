@@ -18,10 +18,10 @@ const schema = z.object({
     ),
   WEB_ORIGIN: z.string().default("http://localhost:3000"),
   DATABASE_URL: z.string().optional(),
-  /** Origine publique de l'API, sans chemin (dev : http://localhost:4000, prod : https://www.palawi.fr). */
+  /** Origine publique de l'API, sans chemin (dev : http://localhost:4000, prod : https://palawi.fr). */
   BETTER_AUTH_URL: z.url().default("http://localhost:4000"),
   BETTER_AUTH_SECRET: z.string().min(32, "BETTER_AUTH_SECRET : 32 caractères minimum").optional(),
-  WIKIMEDIA_USER_AGENT: z.string().default("PalaCards/0.1 (https://www.palawi.fr/palacards/)"),
+  WIKIMEDIA_USER_AGENT: z.string().default("PalaCards/0.1 (https://palawi.fr/palacards/)"),
   /** Désactive les appels Wikimedia (tests). */
   WIKIMEDIA_DISABLED: bool,
   /** Routes /api/test/* pour les E2E (jamais en prod). */
