@@ -1,6 +1,6 @@
 # Stack de production sur vm-apps : /opt/dockpanel/stacks/palacards/
 # Caddy route /palacards/api/* et /palacards/socket.io/* -> palacards-api, /palacards/* -> palacards-web
-# (deploy/Caddyfile.palacards), par nom de conteneur sur le réseau externe `caddy` ci-dessous.
+# (deploy/Caddyfile.palacards), par nom de conteneur sur le réseau externe `caddy` ci-dessous (nom réel : CADDY_NETWORK du .env).
 # Démarrage / mise à jour (le service one-shot `migrate` fait échouer `up --wait`) :
 #   docker compose build
 #   docker compose run --rm migrate
@@ -112,5 +112,5 @@ networks:
     external: true
     # Réseau Docker de la stack Caddy de vm-apps (/opt/dockpanel/stacks/caddy) : Caddy doit y être
     # branché pour joindre palacards-api et palacards-web par leur nom (deploy/Caddyfile.palacards).
-    # Adapter `name` au nom réel du réseau (docker network ls).
-    name: caddy
+    # Nom réel du réseau (docker network ls) : CADDY_NETWORK dans le .env (`web` sur vm-apps).
+    name: ${CADDY_NETWORK:-caddy}

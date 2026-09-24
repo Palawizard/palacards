@@ -1,6 +1,6 @@
 # PalaCards
 
-Jeu de cartes à collectionner où chaque carte est un article du Wikipédia FR (~2,7 M cartes). Paquets, collection, catalogue, marché aux enchères, échanges, amis, messages, guildes, duels quiz, succès, classements et saisons mensuelles. Auto-hébergé, pour jouer entre potes sur `www.palawi.fr/palacards/`.
+Jeu de cartes à collectionner où chaque carte est un article du Wikipédia FR (~2,7 M cartes). Paquets, collection, catalogue, marché aux enchères, échanges, amis, messages, guildes, duels quiz, succès, classements et saisons mensuelles. Auto-hébergé, pour jouer entre potes sur `palawi.fr/palacards/`.
 
 ## Prérequis
 
@@ -24,7 +24,7 @@ pnpm dev
 - Front : http://localhost:3000/palacards/pulls
 - API : http://localhost:4000/palacards/api/health
 
-Pour jouer à plusieurs en local, ouvre un second navigateur (ou une fenêtre privée) et crée un autre compte. Pour accéder à la page Admin, donne-toi le rôle : `pnpm --filter @palacards/api admin:grant <pseudo>` (en prod : `docker compose exec api node dist/cli/admin.js grant <pseudo>`).
+Pour jouer à plusieurs en local, ouvre un second navigateur (ou une fenêtre privée) et crée un autre compte. Pseudo : 3 à 20 caractères, lettres sans accent, chiffres, `_` et `.` uniquement (pas d'espace ni de `-`). Pour accéder à la page Admin, donne-toi le rôle : `pnpm --filter @palacards/api admin:grant <pseudo>` (en prod : `docker compose exec api node dist/cli/admin.js grant <pseudo>`).
 
 ## Structure
 
@@ -81,8 +81,9 @@ docker compose up -d --wait --no-deps postgres api web  # `up --wait` échoue su
 ```
 
 - `.env` : `POSTGRES_PASSWORD` doit pouvoir figurer tel quel dans une URL, car `docker-compose.yml` en construit `DATABASE_URL` (pas de `@ : / ? # %`…) : `openssl rand -hex 32`.
-- Caddy (déjà en Docker sur vm-apps, derrière Cloudflare Tunnel) : `deploy/Caddyfile.palacards`, à importer dans le site `www.palawi.fr`. Caddy doit être sur le réseau Docker externe déclaré dans `docker-compose.yml` (`caddy` par défaut).
-- Cartes : `deploy/load-cards.sh` ; sauvegardes quotidiennes : `deploy/backup.sh` (timer systemd fourni) ; restauration : `deploy/restore.sh` (recharge aussi la saison suivante déjà importée).
+- Caddy (déjà en Docker sur vm-apps, derrière Cloudflare Tunnel) : snippet `deploy/Caddyfile.palacards`, importé dans le site `palawi.fr` (`www.palawi.fr` redirige vers l'apex). Sur vm-apps, seul le Caddyfile est monté dans le conteneur : le snippet y est collé, et le fichier s'édite en place (pas de `sed -i` ni de `mv`, voir l'en-tête du snippet).
+- Réseau Docker partagé avec Caddy : `CADDY_NETWORK` dans le `.env` (`caddy` par défaut, `web` sur vm-apps).
+- Cartes : `deploy/load-cards.sh` ; sauvegardes quotidiennes : `deploy/backup.sh` (timer systemd fourni) ; restauration : `deploy/restore.sh` (recharge aussi la saison suivante déjà importée ; avec `PG_CONTAINER=<postgres de test>`, test de restauration sans arrêter l'API ni le front de prod).
 
 ## CI
 
