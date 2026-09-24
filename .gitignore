@@ -80,3 +80,6 @@ desktop.ini
 playwright-report/
 test-results/
 .next-e2e/
+
+# CSV de cartes déposé sur le serveur (deploy/load-cards.sh)
+/import/
