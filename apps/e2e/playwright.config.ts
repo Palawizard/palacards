@@ -39,6 +39,7 @@ export default defineConfig({
         DATABASE_URL: e2eDatabaseUrl(),
         GAME_TEST_MODE: "1",
         WIKIMEDIA_DISABLED: "1",
+        ADMIN_USERNAMES: "patron",
         LOG_LEVEL: "warn",
       },
     },

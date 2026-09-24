@@ -1,13 +1,14 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
 import { RARITIES } from "@palacards/game";
-import type { MeDTO } from "@palacards/shared";
+import { avatarSchema, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import { cardSheet, catalog } from "../services/cards.js";
-import { completion, duplicateIds, listCollection, recycle, setFavorite, setPinned, setTags } from "../services/collection.js";
+import { completion, duplicateIds, fuse, listCollection, recycle, setFavorite, setPinned, setTags } from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
+import { emit } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
 import { getProfile } from "../services/profiles.js";
 
@@ -64,7 +65,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     const body = parse(
       z.object({
         animationSpeed: z.enum(["normal", "fast", "instant"]).optional(),
-        avatar: z.string().trim().min(1).max(4).nullable().optional(),
+        avatar: avatarSchema.nullable().optional(),
       })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
       req.body,
@@ -121,6 +122,13 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       req.body,
     );
     return recycle(ctx, req.user.id, instanceIds);
+  });
+  api.post("/collection/:id/fuse", auth, async (req) => {
+    const { id } = parse(z.object({ id: z.coerce.number().int().positive() }), req.params);
+    const { sourceId } = parse(z.object({ sourceId: z.number().int().positive() }), req.body);
+    const res = await fuse(ctx, req.user.id, id, sourceId);
+    void emit(ctx, req.user.id, { type: "card_level", level: res.level });
+    return res;
   });
   api.get("/collection/duplicates", auth, async (req) => {
     const { rarity } = parse(z.object({ rarity: rarityList }), req.query);

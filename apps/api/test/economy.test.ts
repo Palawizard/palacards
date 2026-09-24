@@ -2,7 +2,7 @@ import { eq, schema, sql } from "@palacards/db";
 import { ECONOMY, saleTax } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { closeAuctionIfDue } from "../src/services/market.js";
-import { makeApp, signUp, type Client } from "./helpers.js";
+import { achievementPw, makeApp, signUp, type Client } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -40,7 +40,7 @@ describe("marché", () => {
     const instanceId = await giveCard(seller);
     const listed = await seller.post("/market", { instanceId, startPrice: 20, buyout: null, durationMs: HOUR });
     expect(listed.status).toBe(200);
-    expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee);
+    expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee + (await achievementPw(ctx, seller.userId)));
     // Carte verrouillée : ni recyclage ni seconde vente.
     expect((await seller.post("/collection/recycle", { instanceIds: [instanceId] })).status).toBe(409);
     expect((await seller.post("/market", { instanceId, startPrice: 5, buyout: null, durationMs: HOUR })).status).toBe(409);
@@ -53,8 +53,9 @@ describe("marché", () => {
     expect(await closeAuctionIfDue(ctx, listed.body.id)).toBe(true);
     expect(await closeAuctionIfDue(ctx, listed.body.id)).toBe(false); // idempotent
 
-    expect(await wallet(bidder)).toEqual({ balance: ECONOMY.startingBalance - 40, locked: 0, available: ECONOMY.startingBalance - 40 });
-    expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee + 40 - saleTax(40));
+    const bonus = { bidder: await achievementPw(ctx, bidder.userId), seller: await achievementPw(ctx, seller.userId) };
+    expect(await wallet(bidder)).toEqual({ balance: ECONOMY.startingBalance - 40 + bonus.bidder, locked: 0, available: ECONOMY.startingBalance - 40 + bonus.bidder });
+    expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee + 40 - saleTax(40) + bonus.seller);
     const [inst] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, instanceId));
     expect(inst).toMatchObject({ ownerId: bidder.userId, lockedBy: null, source: "market" });
     const prices = await bidder.get(`/cards/${inst!.cardId}/prices`);
@@ -121,6 +122,43 @@ describe("marché", () => {
   });
 });
 
+describe("après le marché et pendant un échange", () => {
+  it("recycle ou fusionne une carte achetée ou retirée de la vente", async () => {
+    const seller = await signUp(app);
+    const buyer = await signUp(app);
+    const instanceId = await giveCard(seller);
+    const listed = await seller.post("/market", { instanceId, startPrice: 10, buyout: 20, durationMs: HOUR });
+    expect((await buyer.post(`/market/${listed.body.id}/buy`)).status).toBe(200);
+    expect((await buyer.post("/collection/recycle", { instanceIds: [instanceId] })).status).toBe(200);
+    // Vente annulée puis fusion de l'exemplaire (plus faible) dans une nouvelle copie.
+    const other = await giveCard(seller);
+    const cancelled = await seller.post("/market", { instanceId: other, startPrice: 10, buyout: null, durationMs: HOUR });
+    expect((await seller.post(`/market/${cancelled.body.id}/cancel`)).status).toBe(200);
+    const [row] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, other));
+    const copy = await seller.post("/test/grant-card", { cardId: row!.cardId, count: 1 });
+    await ctx.db.update(schema.cardInstances).set({ level: 2 }).where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
+    expect((await seller.post(`/collection/${copy.body.instanceIds[0]}/fuse`, { sourceId: other })).status).toBe(200);
+  });
+
+  it("refuse de détruire une carte demandée dans un échange en attente", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const wanted = await giveCard(b);
+    const trade = await a.post("/trades", { to: b.username, want: [wanted], givePw: 10 });
+    expect(trade.status).toBe(200);
+    expect((await b.post("/collection/recycle", { instanceIds: [wanted] })).body.error).toBe("card_requested");
+    const [row] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, wanted));
+    const copy = await b.post("/test/grant-card", { cardId: row!.cardId, count: 1 });
+    await ctx.db.update(schema.cardInstances).set({ level: 2 }).where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
+    expect((await b.post(`/collection/${copy.body.instanceIds[0]}/fuse`, { sourceId: wanted })).body.error).toBe("card_requested");
+    // Le recyclage groupé des doublons l'épargne aussi.
+    expect((await b.get("/collection/duplicates")).body.instanceIds ?? []).not.toContain(wanted);
+    // Refuser l'échange la libère.
+    expect((await b.post(`/trades/${trade.body.id}/decline`)).status).toBe(200);
+    expect((await b.post("/collection/recycle", { instanceIds: [wanted] })).status).toBe(200);
+  });
+});
+
 describe("rattrapage", () => {
   it("clôture les ventes échues et expire les échanges échus", async () => {
     const seller = await signUp(app);
@@ -159,8 +197,9 @@ describe("échanges", () => {
     const [ib] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, cb));
     expect(ia).toMatchObject({ ownerId: b.userId, lockedBy: null });
     expect(ib!.ownerId).toBe(a.userId);
-    expect(await wallet(a)).toEqual({ balance: ECONOMY.startingBalance - 25, locked: 0, available: ECONOMY.startingBalance - 25 });
-    expect((await wallet(b)).balance).toBe(ECONOMY.startingBalance + 25);
+    const bonusA = await achievementPw(ctx, a.userId);
+    expect(await wallet(a)).toEqual({ balance: ECONOMY.startingBalance - 25 + bonusA, locked: 0, available: ECONOMY.startingBalance - 25 + bonusA });
+    expect((await wallet(b)).balance).toBe(ECONOMY.startingBalance + 25 + (await achievementPw(ctx, b.userId)));
     await expectLedgerConsistent(a);
     await expectLedgerConsistent(b);
   });

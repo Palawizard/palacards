@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectionScore, effectiveStats, MAX_LEVEL } from "./collection.js";
+import { collectionScore, effectiveStats, isBetterCopy, MAX_LEVEL } from "./collection.js";
 
 describe("effectiveStats", () => {
   it("+4 % par niveau au-delà du premier", () => {
@@ -28,5 +28,16 @@ describe("collectionScore", () => {
 
   it("vaut 0 sans carte", () => {
     expect(collectionScore([])).toBe(0);
+  });
+});
+
+describe("isBetterCopy", () => {
+  const base = { id: 1, rarity: "UR" as const, level: 1, atk: 500, def: 500 };
+  it("classe par rareté, puis niveau, puis stats, puis ancienneté", () => {
+    expect(isBetterCopy({ ...base, rarity: "L", id: 9 }, { ...base, level: 5 })).toBe(true);
+    expect(isBetterCopy({ ...base, level: 2, atk: 1 }, base)).toBe(true);
+    expect(isBetterCopy({ ...base, atk: 501, id: 9 }, base)).toBe(true);
+    expect(isBetterCopy(base, { ...base, id: 2 })).toBe(true);
+    expect(isBetterCopy({ ...base, id: 2 }, base)).toBe(false);
   });
 });

@@ -16,6 +16,7 @@ import {
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { Effects } from "./notifications.js";
+import { emit } from "./progression.js";
 import { activeSeason, lockPlayers, logMovement, packState, type DbOrTx } from "./players.js";
 import { collectionScoresSql } from "./profiles.js";
 import { syncGuildRoom } from "./social.js";
@@ -63,6 +64,7 @@ export async function createGuild(ctx: Ctx, userId: string, input: { name: strin
     });
   syncGuildRoom(ctx, userId, guild.id, true);
   await ensureObjective(ctx, guild.id);
+  void emit(ctx, userId, { type: "guild_joined" });
   return { id: guild.id };
 }
 
@@ -82,6 +84,7 @@ export async function joinGuild(ctx: Ctx, userId: string, guildId: number) {
       .onConflictDoUpdate({ target: [schema.messageReads.userId, schema.messageReads.channel], set: { lastReadAt: ctx.now() } });
   });
   syncGuildRoom(ctx, userId, guildId, true);
+  void emit(ctx, userId, { type: "guild_joined" });
 }
 
 /** Quitter : le chef passe la main au plus ancien officier (sinon membre) ; une guilde vide est dissoute. */

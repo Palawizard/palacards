@@ -43,6 +43,13 @@
       "when": 1790197100365,
       "tag": "0005_guild_objective_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790233932096,
+      "tag": "0006_auction_instance_set_null",
+      "breakpoints": true
     }
   ]
 }

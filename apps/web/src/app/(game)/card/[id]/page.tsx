@@ -1,8 +1,8 @@
 "use client";
 
-import { ECONOMY, RARITY_LABELS } from "@palacards/game";
+import { ECONOMY, isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITY_LABELS } from "@palacards/game";
 import type { CardDTO, ReferencePriceDTO } from "@palacards/shared";
-import { ExternalLink, Gavel, Heart, Pin, Repeat, Star, Tag } from "lucide-react";
+import { ChevronsUp, ExternalLink, Gavel, Heart, Pin, Repeat, Star, Tag } from "lucide-react";
 import Link from "next/link";
 import { use, useState } from "react";
 import { toast } from "sonner";
@@ -23,8 +23,26 @@ export interface CardSheet {
   wishlisted: boolean;
 }
 
-function InstanceRow({ card, onChanged }: { card: CardDTO; onChanged: () => void }) {
+/** Stat au niveau suivant (les stats affichées incluent déjà le bonus du niveau actuel). */
+const nextLevelStat = (value: number, level: number) => Math.round((value / (1 + LEVEL_BONUS * (level - 1))) * (1 + LEVEL_BONUS * level));
+
+const rank = (c: CardDTO) => ({ id: c.instanceId ?? 0, rarity: c.rarity, level: c.level, atk: c.atk, def: c.def });
+
+/**
+ * Exemplaire à sacrifier pour une fusion : le plus faible des doublons libres (ni favori, ni épinglé, ni engagé).
+ * On ne fusionne que dans le meilleur exemplaire (même règle que le serveur), jamais l'inverse.
+ */
+function fusionSource(target: CardDTO, siblings: CardDTO[]): CardDTO | null {
+  const others = siblings.filter((c) => c.instanceId !== target.instanceId);
+  if (others.some((c) => isBetterCopy(rank(c), rank(target)))) return null;
+  const free = others.filter((c) => !c.locked && !c.favorite && !c.pinnedSlot);
+  return free.sort((a, b) => (isBetterCopy(rank(a), rank(b)) ? 1 : -1))[0] ?? null;
+}
+
+function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: CardDTO[]; onChanged: () => void }) {
   const [editing, setEditing] = useState(false);
+  const [fusing, setFusing] = useState(false);
+  const source = card.level < MAX_LEVEL && !card.locked ? fusionSource(card, siblings) : null;
   const [selling, setSelling] = useState(false);
   const [tags, setTags] = useState((card.tags ?? []).join(", "));
   const [confirm, setConfirm] = useState(false);
@@ -92,6 +110,12 @@ function InstanceRow({ card, onChanged }: { card: CardDTO; onChanged: () => void
           <Repeat aria-hidden className="size-4" />
           Échanger
         </Link>
+        {source && (
+          <button type="button" className="btn btn-sm" onClick={() => setFusing(true)}>
+            <ChevronsUp aria-hidden className="size-4" />
+            Fusionner
+          </button>
+        )}
         <button
           type="button"
           className="btn btn-sm btn-danger"
@@ -144,6 +168,24 @@ function InstanceRow({ card, onChanged }: { card: CardDTO; onChanged: () => void
             Enregistrer
           </button>
         </form>
+      )}
+      {source && (
+        <ConfirmDialog
+          open={fusing}
+          title={`Monter au niveau ${card.level + 1} ?`}
+          confirmLabel="Fusionner"
+          onConfirm={() =>
+            run(
+              () => api(`/collection/${card.instanceId}/fuse`, { body: { sourceId: source.instanceId } }),
+              `Niveau ${card.level + 1} atteint.`,
+            )
+          }
+          onClose={() => setFusing(false)}
+        >
+          Un doublon (édition S{source.season}, niveau {source.level}) est absorbé. Cet exemplaire passe de ATK{" "}
+          {fmt(card.atk)} · DEF {fmt(card.def)} à ATK{" "}
+          {fmt(nextLevelStat(card.atk, card.level))} · DEF {fmt(nextLevelStat(card.def, card.level))}.
+        </ConfirmDialog>
       )}
       <ConfirmDialog
         open={confirm}
@@ -242,7 +284,7 @@ export default function CardPage({ params }: { params: Promise<{ id: string }> }
         {!data.inActiveSeason && " (article absent de la saison en cours)"}.
       </p>
 
-      <div className="mt-4 grid gap-8 lg:grid-cols-[1fr_20rem] lg:items-start">
+      <div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
         <aside className="order-first flex flex-col gap-3 lg:order-last">
           <div className="mx-auto w-full max-w-[18rem]">
             <Card card={card} href={null} priority />
@@ -303,7 +345,7 @@ export default function CardPage({ params }: { params: Promise<{ id: string }> }
           {data.mine.length ? (
             <ul>
               {data.mine.map((c) => (
-                <InstanceRow key={c.instanceId} card={c} onChanged={() => mutate()} />
+                <InstanceRow key={c.instanceId} card={c} siblings={data.mine} onChanged={() => mutate()} />
               ))}
             </ul>
           ) : (

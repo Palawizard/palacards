@@ -280,9 +280,8 @@ export const auctions = pgTable(
   "auctions",
   {
     id: id(),
-    instanceId: bigint("instance_id", { mode: "number" })
-      .notNull()
-      .references(() => cardInstances.id),
+    // Nulle une fois l'exemplaire recyclé ou fusionné après la vente (carte, saison et rareté sont copiées ici).
+    instanceId: bigint("instance_id", { mode: "number" }).references(() => cardInstances.id, { onDelete: "set null" }),
     sellerId: userRef("seller_id").notNull(),
     cardId: bigint("card_id", { mode: "number" }).notNull(),
     season: smallint("season").notNull(),

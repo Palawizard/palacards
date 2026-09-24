@@ -3,6 +3,7 @@ import { dmChannel, guildChannel, type Rarity } from "@palacards/game";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { Effects } from "./notifications.js";
+import { emit } from "./progression.js";
 import { findUserByName } from "./profiles.js";
 
 const f = schema.friendships;
@@ -64,6 +65,11 @@ export async function acceptFriend(ctx: Ctx, userId: string, otherId: string) {
     await fx.notify(tx, otherId, "friend_accepted", { from: await displayName(ctx, userId), userId });
   });
   await fx.flush(ctx);
+  for (const id of [userId, otherId]) {
+    void friendIds(ctx, id)
+      .then((ids) => emit(ctx, id, { type: "friends", count: ids.length }))
+      .catch((err: unknown) => ctx.log.error({ err }, "succès (amis)"));
+  }
 }
 
 /** Refuse, annule une demande ou retire un ami. */

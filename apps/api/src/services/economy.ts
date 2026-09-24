@@ -5,6 +5,7 @@ import type { Ctx } from "../context.js";
 import { notFound } from "../errors.js";
 import { articleUrl } from "./wiki.js";
 import { Effects } from "./notifications.js";
+import { emit } from "./progression.js";
 import { activeSeason, lockPlayer, logMovement, movePw, packState, pushWallet } from "./players.js";
 
 export const PACKS_FULL_JOB = "packs-full";
@@ -26,6 +27,7 @@ export async function claimDaily(ctx: Ctx, userId: string) {
   });
   if (!res) return { claimed: false as const };
   pushWallet(ctx, res.player);
+  void emit(ctx, userId, { type: "login_streak", days: res.streak });
   return { claimed: true as const, reward: res.reward, streak: res.streak };
 }
 
