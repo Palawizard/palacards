@@ -26,7 +26,10 @@ test("ami → message en temps réel → guilde", async ({ browser }) => {
     .getByRole("link", { name: new RegExp(alice.name, "i") })
     .first()
     .click();
-  await expect(bob.page.getByText("Salut, tu échanges ta Tour Eiffel ?", { exact: true })).toBeVisible();
+  // Côté destinataire, l'aperçu n'a pas de préfixe « Toi : » : on cible la bulle du message.
+  await expect(
+    bob.page.getByRole("paragraph").filter({ hasText: "Salut, tu échanges ta Tour Eiffel ?" }),
+  ).toBeVisible();
 
   // Alice fonde une guilde, Bob la rejoint.
   await alice.page.goto("guild");
