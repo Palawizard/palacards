@@ -392,7 +392,7 @@ export async function listAuctions(
   if (q.scope === "bidding") where.push(sql`exists (select 1 from bids b where b.auction_id = ${a.id} and b.bidder_id = ${userId})`);
   if (q.search?.trim()) {
     where.push(
-      sql`exists (select 1 from cards c where c.season = ${a.season} and c.id = ${a.cardId} and lower(f_unaccent(c.title)) like '%' || lower(f_unaccent(${q.search.trim()})) || '%')`,
+      sql`exists (select 1 from cards c where c.season = ${a.season} and c.id = ${a.cardId} and c.search_title like '%' || lower(f_unaccent(${q.search.trim()})) || '%')`,
     );
   }
   const order =

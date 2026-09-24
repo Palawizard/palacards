@@ -135,6 +135,20 @@ describe("paramètres et admin", () => {
     expect(stale.json().error).toBe("season_changed");
   });
 
+  it("impose le pseudo comme nom affiché à l'inscription", async () => {
+    const username = uniqueName("vrai");
+    const res = await app.inject({
+      method: "POST",
+      url: "/palacards/api/auth/sign-up/email",
+      headers: { origin: "http://localhost:3000" },
+      payload: { username, password: "motdepasse123", displayUsername: "Palawi", image: "https://evil.example/x.png" },
+    });
+    expect(res.statusCode).toBe(200);
+    const [u] = await ctx.db.select().from(schema.user).where(eq(schema.user.username, username.toLowerCase()));
+    expect(u!.displayUsername).toBe(username);
+    expect(u!.image).toBeNull();
+  });
+
   it("ferme les routes Better Auth qui contourneraient nos contrôles et limite les avatars", async () => {
     const p = await signUp(app);
     const res = await app.inject({

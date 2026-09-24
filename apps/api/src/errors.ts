@@ -40,7 +40,9 @@ export function registerErrorHandler(app: FastifyInstance) {
       return reply.status(429).send({ error: "rate_limited", message: "Trop de requêtes, réessaie dans un instant." });
     }
     if (err.statusCode && err.statusCode < 500) {
-      return reply.status(err.statusCode).send({ error: err.code ?? "bad_request", message: err.message });
+      // Erreurs de Fastify (JSON invalide, corps trop gros…) : message anglais remplacé par un message français.
+      const message = err.statusCode === 413 ? "Requête trop volumineuse." : err.statusCode === 404 ? "Introuvable." : "Requête invalide.";
+      return reply.status(err.statusCode).send({ error: err.code ?? "bad_request", message });
     }
     req.log.error(err);
     return reply.status(500).send({ error: "internal", message: "Erreur du serveur, réessaie plus tard." });

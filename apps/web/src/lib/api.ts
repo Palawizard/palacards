@@ -28,7 +28,13 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
     throw new ApiError(0, "network", "Serveur injoignable. Vérifie ta connexion.");
   }
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
+  let data: { error?: string; message?: string } | null = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // Page HTML d'un proxy (502 pendant un déploiement…) : message lisible plutôt que « Unexpected token < ».
+    throw new ApiError(res.status, "unavailable", "Le serveur ne répond pas correctement, réessaie dans un instant.");
+  }
   if (!res.ok) {
     throw new ApiError(res.status, data?.error ?? "error", data?.message ?? "Une erreur est survenue.");
   }

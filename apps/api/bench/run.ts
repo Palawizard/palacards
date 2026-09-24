@@ -45,7 +45,7 @@ async function prepare() {
   const t0 = performance.now();
   await sql.begin(async (tx) => {
     await tx`set local maintenance_work_mem = '512MB'`;
-    await fillSyntheticCards(tx, CARDS);
+    await fillSyntheticCards(tx, CARDS, { variedTitles: true });
     await tx`select * from finish_card_load(1::smallint)`;
   });
   await ensureActiveSeason(sql, 1);
@@ -87,14 +87,18 @@ for (let i = 0; i < 100; i++) {
 }
 
 // Recherche floue sans accents et navigation paginée.
-const queries = ["synthetique 1234", "carte synth", "n° 99999", "synthétique n° 2 500 000", "carte 42", "sintetique", "n° 7", "carte synthétique n° 1999999"];
+// Requêtes réalistes : mot très fréquent, expression, sans accents, faute de frappe, préfixe, titre exact.
+const queries = ["chateau", "bataille de paris", "eglise saint-martin", "revolution", "musée de lyon", "chatteau", "cathéd", "Opéra Rouge de Nantes 1234567"];
 const searchTimes: number[] = [];
+const perQuery = new Map<string, number[]>();
 for (const q of queries) await catalog(c, userId, { q, sort: "views", limit: 48 });
 for (let round = 0; round < 5; round++) {
   for (const q of queries) {
     const t = performance.now();
     await catalog(c, userId, { q, sort: "views", limit: 48 });
-    searchTimes.push(performance.now() - t);
+    const d = performance.now() - t;
+    searchTimes.push(d);
+    perQuery.set(q, [...(perQuery.get(q) ?? []), d]);
   }
 }
 const browseTimes: number[] = [];
@@ -113,6 +117,7 @@ console.log("\nRésultats (temps serveur, base de 2,7 M cartes) :");
 console.log(`  Ouverture de paquet : p50 ${ms(pack.p50)} · p95 ${ms(pack.p95)} · max ${ms(pack.max)}  (objectif < 50 ms)`);
 console.log(`  Recherche catalogue : p50 ${ms(search.p50)} · p95 ${ms(search.p95)} · max ${ms(search.max)}  (objectif < 150 ms)`);
 console.log(`  Catalogue paginé    : p50 ${ms(browse.p50)} · p95 ${ms(browse.p95)} · max ${ms(browse.max)}`);
+for (const [q, times] of perQuery) console.log(`    « ${q} » : p50 ${ms(stats(times).p50)}`);
 await app.close();
 const ok = pack.p95 < 50 && search.p95 < 150;
 console.log(ok ? "\nObjectifs atteints." : "\nObjectifs NON atteints.");

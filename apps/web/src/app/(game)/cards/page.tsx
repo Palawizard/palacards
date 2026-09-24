@@ -43,7 +43,7 @@ function Catalog() {
     return p.toString();
   }, [query, rarity, sort, owned, minAtk, minDef]);
 
-  const list = useSWRInfinite<Page<CardDTO>>(
+  const list = useSWRInfinite<Page<CardDTO> & { approximate?: boolean }>(
     (i, prev) =>
       prev && !prev.nextCursor ? null : `/cards?${params}${i && prev?.nextCursor ? `&cursor=${prev.nextCursor}` : ""}`,
     { revalidateFirstPage: false },
@@ -53,7 +53,7 @@ function Catalog() {
   const loadMore = useCallback(() => {
     if (!list.isValidating) void list.setSize((s) => s + 1);
   }, [list]);
-  const searching = query.trim().length >= 3;
+  const approximate = !!list.data?.[0]?.approximate;
 
   return (
     <div className="flex flex-col gap-6">
@@ -92,7 +92,7 @@ function Catalog() {
           <RarityFilter value={rarity} onChange={setRarity} />
           <span className="mx-1 hidden h-5 w-px bg-line sm:block" aria-hidden />
           <Select label="Possession" value={owned} onChange={setOwned} options={OWNED} />
-          {!searching && <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />}
+          <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />
           <details className="group relative">
             <summary className="chip cursor-pointer list-none">Stats minimales</summary>
             <div className="absolute left-0 top-9 z-20 flex w-60 flex-col gap-2 rounded-md border border-line-strong bg-panel p-3 shadow-[0_12px_30px_-10px_rgb(0_0_0/0.8)]">
@@ -129,6 +129,11 @@ function Catalog() {
         <Empty title="Aucun article trouvé">Essaie un autre mot ou retire des filtres.</Empty>
       ) : (
         <>
+          {approximate && (
+            <p className="hatnote -mt-2" role="status">
+              Aucun titre ne contient tous ces mots : voici les plus proches.
+            </p>
+          )}
           <CardGrid>
             {items.map((card) => (
               <Card key={card.cardId} card={card} />

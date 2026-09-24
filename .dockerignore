@@ -6,3 +6,7 @@ docs
 data
 tools/import/data
 .env
+import
+**/.next-e2e
+apps/e2e/test-results
+apps/e2e/playwright-report
