@@ -1,29 +1,42 @@
 #!/bin/sh
-# Restauration d'une sauvegarde PalaCards.
-# Usage : ./restore.sh /mnt/nas/backups/palacards/palacards_2026-10-01_0400.dump [saison]
-# À tester d'abord dans un conteneur jetable (voir docs/14-exploitation.md, « Tester une restauration »).
-# 1. recrée la base vide et applique le dump (schéma + données, sans les cartes) ;
-# 2. recharge les cartes depuis le dernier cards.csv.gz sauvegardé.
+# Restauration d'une sauvegarde PalaCards (voir docs/14-exploitation.md).
+# Usage : ./restore.sh /mnt/nas/backups/palacards/palacards_2026-10-01_0400.dump <saison active>
+# Le dossier du dump doit contenir cards.csv.gz (cartes de la saison active) et le fichier
+# palacards_<date>.cards-ref.csv.gz écrit par backup.sh.
+# 1. base recréée, schéma complet (tables vides, index, clés étrangères) ;
+# 2. cartes de la saison active depuis cards.csv.gz, puis cartes référencées (éditions passées) ;
+# 3. données du dump (comptes, exemplaires, ledger…), triggers des clés étrangères coupés pendant le
+#    chargement (le dump est cohérent, et les cartes référencées sont déjà là).
 set -eu
 
 DUMP="$1"
-SEASON="${2:-1}"
-STACK_DIR="${STACK_DIR:-/opt/dockpanel/stacks/palacards}"
-. "$STACK_DIR/.env"
+SEASON="$2"
+DIR="$(cd "$(dirname "$DUMP")" && pwd)"
+REF="${DUMP%.dump}.cards-ref.csv.gz"
+PG="${PG_CONTAINER:-palacards-postgres}"
+for f in "$DUMP" "$DIR/cards.csv.gz" "$REF"; do
+  [ -f "$f" ] || { echo "Fichier manquant : $f" >&2; exit 1; }
+done
+pg() { docker exec -i "$PG" sh -c "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 $1"; }
 
 echo "Arrêt de l'API et du front…"
-docker stop palacards-api palacards-web
+docker stop palacards-api palacards-web >/dev/null 2>&1 || true
 
-docker exec palacards-postgres dropdb -U "$POSTGRES_USER" --if-exists "$POSTGRES_DB"
-docker exec palacards-postgres createdb -U "$POSTGRES_USER" "$POSTGRES_DB"
-docker exec -i palacards-postgres pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner < "$DUMP"
+docker exec "$PG" sh -c 'dropdb -U "$POSTGRES_USER" --if-exists --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker cp "$DUMP" "$PG:/tmp/restore.dump"
+docker exec "$PG" sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --exit-on-error --section=pre-data --section=post-data /tmp/restore.dump'
 
-CSV="$(dirname "$DUMP")/cards.csv.gz"
-if [ -f "$CSV" ]; then
-  echo "Rechargement des cartes (saison $SEASON) depuis $CSV…"
-  # Les exemplaires référencent les cartes : on les recharge avant de relancer le jeu.
-  "$(dirname "$0")/load-cards.sh" "$CSV" "$SEASON" --restore
-fi
+echo "Cartes de la saison $SEASON…"
+"$(dirname "$0")/load-cards.sh" "$DIR/cards.csv.gz" "$SEASON" --restore
+echo "Cartes référencées (éditions passées)…"
+gunzip -c "$REF" | pg "-c 'create temp table ref (like cards_next including defaults, season smallint)' \
+  -c '\\copy ref (id, season, title, rarity, atk, def, views_12m, page_len) from pstdin with (format csv)' \
+  -c 'insert into cards (id, season, title, rarity, atk, def, views_12m, page_len)
+      select id, season, title, rarity, atk, def, views_12m, page_len from ref on conflict do nothing'"
 
-docker start palacards-api palacards-web
+echo "Données…"
+docker exec "$PG" sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --exit-on-error --section=data --disable-triggers /tmp/restore.dump && rm /tmp/restore.dump'
+pg "-c 'analyze'" >/dev/null
+
+docker start palacards-api palacards-web >/dev/null
 echo "Restauration terminée."
