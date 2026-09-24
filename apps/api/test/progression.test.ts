@@ -1,9 +1,10 @@
 import { eq, schema, sql } from "@palacards/db";
 import { ECONOMY, ELO_START } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
-import { progressionIdle } from "../src/services/progression.js";
+import { lockOrder, PLAYER_LOCK_ORDER } from "../src/services/players.js";
+import { collectionEvent, progressionIdle } from "../src/services/progression.js";
 import { rolloverSeason } from "../src/services/seasons.js";
-import { makeApp, signUp, uniqueName } from "./helpers.js";
+import { makeApp, signUp, signUpAdmin, uniqueName } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -21,6 +22,37 @@ describe("succès", () => {
     const rows = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from ledger where user_id = ${p.userId} and reason = 'achievement' and ref_id = 'first_pack'`);
     expect(rows[0]!.n).toBe(1);
     expect((await p.get("/notifications")).body.items.some((n: { type: string }) => n.type === "achievement")).toBe(true);
+  });
+});
+
+describe("succès de collection", () => {
+  it("ne compte que les cartes tirées soi-même, pas celles reçues par échange ou données", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const pulledA = (await a.post("/packs/open")).body.cards as { cardId: number; instanceId: number }[];
+    const pulledB = (await b.post("/packs/open")).body.cards as { cardId: number; instanceId: number }[];
+    const mineA = new Set(pulledA.map((c) => c.cardId));
+    const before = await collectionEvent(ctx.db, a.userId);
+    expect(before).toMatchObject({ type: "collection", uniqueCards: mineA.size });
+
+    // B donne gratuitement à A une carte que A n'a pas tirée : elle ne compte ni pour A ni pour B.
+    const gift = pulledB.find((c) => !mineA.has(c.cardId) && pulledB.filter((x) => x.cardId === c.cardId).length === 1)!;
+    const beforeB = await collectionEvent(ctx.db, b.userId);
+    const trade = await b.post("/trades", { to: a.username, give: [gift.instanceId] });
+    expect((await a.post(`/trades/${trade.body.id}/accept`)).status).toBe(200);
+    // Carte donnée par l'admin (route de test) : ne compte pas non plus.
+    const [fresh] = await ctx.db.execute<{ id: number }>(sql`
+      select c.id::int as id from cards c
+      where c.season = (select id from seasons where status = 'active')
+        and not exists (select 1 from card_instances i where i.owner_id = ${a.userId} and i.card_id = c.id)
+      limit 1
+    `);
+    expect((await a.post("/test/grant-card", { cardId: fresh!.id, count: 2 })).status).toBe(200);
+    await progressionIdle();
+    expect(await collectionEvent(ctx.db, a.userId)).toEqual(before);
+    expect(await collectionEvent(ctx.db, b.userId)).toMatchObject({ uniqueCards: (beforeB as { uniqueCards: number }).uniqueCards - 1 });
+    const list = (await a.get("/achievements")).body as { key: string; progress: number }[];
+    expect(list.find((x) => x.key === "collection_1000")!.progress).toBe(mineA.size);
   });
 });
 
@@ -60,6 +92,21 @@ describe("classements et saisons", () => {
     expect(res.body.rows.some((r: { me: boolean }) => r.me)).toBe(true);
   });
 
+  it("verrouille les joueurs dans le même ordre en SQL (bascule) et en JS (lockPlayers)", async () => {
+    // Ids Better Auth à casse mixte : la collation en_US classerait « abc » avant « ABD » et « Zed »,
+    // l'ordre JS (unités de code) fait l'inverse. Les deux côtés doivent suivre la collation "C".
+    const ids = ["abc", "ABD", "Zed", "aZ", "zz", "A0", "9x", "_u", "Ab", "aB", "b", "B"];
+    const values = sql.join(ids.map((id) => sql`(${id})`), sql`, `);
+    const rows = await ctx.db.execute<{ user_id: string }>(sql`select user_id from (values ${values}) as t(user_id) order by ${PLAYER_LOCK_ORDER}`);
+    expect(rows.map((r) => r.user_id)).toEqual(lockOrder(ids));
+    // Et avec de vrais joueurs inscrits (ids générés par Better Auth).
+    const players = await Promise.all([signUp(app), signUp(app), signUp(app), signUp(app)]);
+    const real = players.map((p) => p.userId);
+    const inList = sql.join(real.map((id) => sql`${id}`), sql`, `);
+    const locked = await ctx.db.execute<{ user_id: string }>(sql`select user_id from players where user_id in (${inList}) order by ${PLAYER_LOCK_ORDER}`);
+    expect(locked.map((r) => r.user_id)).toEqual(lockOrder(real));
+  });
+
   it("bascule de saison : archives, Elo remis à zéro, nouvelle édition", async () => {
     const p = await signUp(app);
     await p.post("/packs/open");
@@ -85,27 +132,22 @@ describe("classements et saisons", () => {
 });
 
 describe("paramètres et admin", () => {
-  it("change de pseudo, refuse un pseudo pris ou réservé", async () => {
+  it("change de pseudo, refuse un pseudo pris", async () => {
     const p = await signUp(app);
     const other = await signUp(app);
     const name = uniqueName("Nouveau");
     expect((await p.post("/settings/username", { username: name })).body.displayName).toBe(name);
     expect((await p.post("/settings/username", { username: other.username })).body.error).toBe("username_taken");
-    expect((await p.post("/settings/username", { username: "admin" })).body.error).toBe("username_reserved");
+    // Plus de pseudo « admin » réservé : le rôle ne dépend pas du pseudo.
+    const free = uniqueName("admin");
+    expect((await p.post("/settings/username", { username: free })).status).toBe(200);
+    expect((await p.get("/me")).body.isAdmin).toBe(false);
   });
 
-  it("réserve l'admin aux pseudos configurés et trace les dons", async () => {
+  it("réserve l'admin aux comptes admin (en base) et trace les dons", async () => {
     const p = await signUp(app);
     expect((await p.get("/admin")).status).toBe(403);
-    const existing = await ctx.db.select().from(schema.user).where(eq(schema.user.username, "admin"));
-    if (!existing.length) await signUp(app, "admin");
-    const adminLogin = await app.inject({
-      method: "POST",
-      url: "/palacards/api/auth/sign-in/username",
-      headers: { origin: "http://localhost:3000" },
-      payload: { username: "admin", password: "motdepasse123" },
-    });
-    const cookie = [adminLogin.headers["set-cookie"]].flat().filter(Boolean).map((c) => String(c).split(";")[0]).join("; ");
+    const { cookie } = await signUpAdmin(app, ctx);
     const grant = await app.inject({
       method: "POST",
       url: "/palacards/api/admin/grant",
@@ -116,14 +158,15 @@ describe("paramètres et admin", () => {
     expect(grant.json()).toEqual({ balance: ECONOMY.startingBalance + 500, bonusPacks: 2 });
     const overview = await app.inject({ method: "GET", url: "/palacards/api/admin", headers: { cookie } });
     expect(overview.json().economy.supply.total).toBeGreaterThan(0);
-    // L'admin ne peut pas libérer son pseudo (il serait repris avec le rôle).
+    // L'admin peut changer de pseudo : le rôle suit le compte, l'ancien pseudo repris n'a aucun droit.
     const rename = await app.inject({
       method: "POST",
       url: "/palacards/api/settings/username",
       headers: { cookie, origin: "http://localhost:3000" },
       payload: { username: uniqueName("ex") },
     });
-    expect(rename.json().error).toBe("admin_username");
+    expect(rename.statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/palacards/api/admin", headers: { cookie } })).statusCode).toBe(200);
     // Bascule forcée : une requête rejouée avec une saison déjà terminée est refusée.
     const season = (await p.get("/me")).body.season as number;
     const stale = await app.inject({

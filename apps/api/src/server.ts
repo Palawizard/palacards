@@ -3,6 +3,9 @@ import { loadConfig } from "./config.js";
 
 const config = loadConfig();
 const { app } = await buildApp(config, { jobs: true });
+if (process.env.ADMIN_USERNAMES) {
+  app.log.warn("ADMIN_USERNAMES est ignoré : le rôle admin est en base (node dist/cli/admin.js grant <pseudo>).");
+}
 
 const shutdown = async (signal: string) => {
   app.log.info(`${signal} reçu, arrêt…`);

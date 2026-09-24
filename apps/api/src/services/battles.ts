@@ -5,6 +5,7 @@ import {
   BATTLE_REWARDED_PER_PAIR_PER_DAY,
   BATTLE_ROUNDS,
   battleOver,
+  battleRated,
   battleResult,
   battleReward,
   CHALLENGE_TTL_MS,
@@ -178,6 +179,17 @@ async function decks(db: DbOrTx, battleId: number) {
   return rows;
 }
 
+/** Génère la question d'une manche à partir de la graine (et, pour une manche rejouée, de la question à éviter). */
+async function buildQuestion(tx: Tx, battle: Battle, round: number, seed: string, avoid?: Question): Promise<Question> {
+  const all = await decks(tx, battle.id);
+  const a = all.find((d) => d.userId === battle.challengerId && d.slot === round)!;
+  const o = all.find((d) => d.userId === battle.opponentId && d.slot === round)!;
+  const qa = await quizCard(tx, a);
+  const qo = await quizCard(tx, o);
+  const target = qa.extract ? a : o;
+  return makeQuestion(seed, round, qa, qo, await decoys(tx, seed, round, target.season, target.rarity), avoid);
+}
+
 /** Question d'une manche : générée une fois (même graine pour les deux joueurs), puis stockée. */
 async function ensureRound(tx: Tx, battle: Battle, round: number): Promise<Question> {
   const [existing] = await tx
@@ -185,13 +197,7 @@ async function ensureRound(tx: Tx, battle: Battle, round: number): Promise<Quest
     .from(schema.battleRounds)
     .where(and(eq(schema.battleRounds.battleId, battle.id), eq(schema.battleRounds.round, round)));
   if (existing) return existing.question as Question;
-  const all = await decks(tx, battle.id);
-  const a = all.find((d) => d.userId === battle.challengerId && d.slot === round)!;
-  const o = all.find((d) => d.userId === battle.opponentId && d.slot === round)!;
-  const qa = await quizCard(tx, a);
-  const qo = await quizCard(tx, o);
-  const target = qa.extract ? a : o;
-  const question = makeQuestion(battle.seed, round, qa, qo, await decoys(tx, battle.seed, round, target.season, target.rarity));
+  const question = await buildQuestion(tx, battle, round, battle.seed);
   await tx.insert(schema.battleRounds).values({ battleId: battle.id, round, question }).onConflictDoNothing();
   const [stored] = await tx
     .select()
@@ -210,7 +216,7 @@ async function roundCards(db: DbOrTx, battle: Battle, userId: string, round: num
   const all = await decks(db, battle.id);
   const mine = all.find((d) => d.userId === userId && d.slot === round)!;
   const theirs = all.find((d) => d.userId !== userId && d.slot === round)!;
-  const cards = await instancesByIds(db, [mine.instanceId, theirs.instanceId]);
+  const cards = await instancesByIds(db, [mine.instanceId, theirs.instanceId], null);
   const fallback = async (d: DeckRow): Promise<CardDTO> => {
     const q = await quizCard(db, d);
     return { instanceId: d.instanceId, cardId: d.cardId, season: d.season, title: q.title, rarity: d.rarity, atk: d.atk, def: d.def, level: 1, thumbUrl: null, pageUrl: null };
@@ -380,7 +386,6 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
   const players = await lockPlayers(tx, [battle.challengerId, battle.opponentId]);
   const c = players.get(battle.challengerId)!;
   const o = players.get(battle.opponentId)!;
-  const elo = eloUpdate(c.elo, o.elo, result === 1 ? 1 : result === 2 ? 0 : 0.5);
   // Anti-farm : plafond de duels récompensés par paire et par jour (Paris), rien pour qui n'a répondu à aucune manche.
   const [today] = await tx.execute<{ n: number }>(sql`
     select count(*)::int as n from battles
@@ -388,19 +393,25 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
       and ((challenger_id = ${battle.challengerId} and opponent_id = ${battle.opponentId}) or (challenger_id = ${battle.opponentId} and opponent_id = ${battle.challengerId}))
       and finished_at >= (date_trunc('day', ${ctx.now().toISOString()}::timestamptz at time zone 'Europe/Paris') at time zone 'Europe/Paris')
   `);
-  const rewarded = (today?.n ?? 0) < BATTLE_REWARDED_PER_PAIR_PER_DAY;
+  const pairFinishedToday = today?.n ?? 0;
+  const rewarded = pairFinishedToday < BATTLE_REWARDED_PER_PAIR_PER_DAY;
   const answered = await tx.execute<{ user_id: string }>(sql`
     select distinct user_id from battle_answers where battle_id = ${battle.id} and choice is not null
   `);
   const played = new Set(answered.map((r) => r.user_id));
+  // Même plafond pour l'Elo, et aucun Elo contre un perdant qui n'a pas joué (comptes secondaires).
+  const rated = battleRated({ pairFinishedToday, result, answered1: played.has(c.userId), answered2: played.has(o.userId) });
+  const elo = rated ? eloUpdate(c.elo, o.elo, result === 1 ? 1 : result === 2 ? 0 : 0.5) : { r1: c.elo, r2: o.elo };
   for (const [p, rating] of [
     [c, elo.r1],
     [o, elo.r2],
   ] as const) {
-    await tx
-      .update(schema.players)
-      .set({ elo: rating, eloPeak: Math.max(p.eloPeak, rating) })
-      .where(eq(schema.players.userId, p.userId));
+    if (rated) {
+      await tx
+        .update(schema.players)
+        .set({ elo: rating, eloPeak: Math.max(p.eloPeak, rating) })
+        .where(eq(schema.players.userId, p.userId));
+    }
     const outcome = result === 0 ? "draw" : (result === 1) === (p === c) ? "win" : "loss";
     if (rewarded && played.has(p.userId)) await movePw(tx, p, battleReward(outcome), "battle", battle.id);
   }
@@ -505,6 +516,32 @@ export async function forceFinish(ctx: Ctx, battleId: number) {
 // ---------------------------------------------------------------------------
 // Duel en direct : manches cadencées par le serveur (Socket.IO)
 // ---------------------------------------------------------------------------
+
+/**
+ * Reprise d'un duel en direct interrompu (redémarrage du serveur) : la manche en cours est rejouée
+ * de zéro, pour les deux joueurs. Sa question a pu être vue (et cherchée pendant la coupure) : elle est
+ * régénérée avec une nouvelle graine, et un autre type de question quand c'est possible.
+ */
+export async function restartLiveRound(ctx: Ctx, battleId: number, round: number) {
+  await ctx.db.transaction(async (tx) => {
+    const battle = await lockBattle(tx, battleId);
+    if (battle.status !== "active" || round < 1 || round > BATTLE_ROUNDS) return;
+    // Réponses de la manche, données ou non : elles portaient sur l'ancienne question.
+    await tx
+      .delete(schema.battleAnswers)
+      .where(and(eq(schema.battleAnswers.battleId, battleId), eq(schema.battleAnswers.round, round)));
+    const [seen] = await tx
+      .select()
+      .from(schema.battleRounds)
+      .where(and(eq(schema.battleRounds.battleId, battleId), eq(schema.battleRounds.round, round)));
+    if (!seen) return;
+    const question = await buildQuestion(tx, battle, round, `${battle.seed}:${randomBytes(8).toString("hex")}`, seen.question as Question);
+    await tx
+      .update(schema.battleRounds)
+      .set({ question })
+      .where(and(eq(schema.battleRounds.battleId, battleId), eq(schema.battleRounds.round, round)));
+  });
+}
 
 interface LiveState {
   round: number;
@@ -615,8 +652,7 @@ const live = (() => {
     const scored = await scoreRounds(ctx.db, battle, BATTLE_ROUNDS);
     const next = scored.outcomes.length + 1;
     states.set(battleId, { round: 0, startedAt: ctx.now(), timer: null });
-    // Réponses entamées mais jamais données avant l'interruption : le chrono repart de zéro.
-    await ctx.db.execute(sql`delete from battle_answers where battle_id = ${battleId} and round = ${next} and answered_at is null`);
+    await restartLiveRound(ctx, battleId, next);
     setTimeout(() => run(ctx, battleId, () => startRound(ctx, battleId, next)), 1_500);
   }
 
@@ -743,7 +779,7 @@ export async function battleDetail(ctx: Ctx, userId: string, battleId: number) {
   const finished = battle.status === "finished";
   const myDeck = all.filter((d) => d.userId === userId);
   const theirDeck = finished ? all.filter((d) => d.userId !== userId) : [];
-  const cards = await instancesByIds(ctx.db, [...myDeck, ...theirDeck].map((d) => d.instanceId));
+  const cards = await instancesByIds(ctx.db, [...myDeck, ...theirDeck].map((d) => d.instanceId), userId);
   const cardOf = (d: DeckRow) => ({ ...(cards.find((c) => c.instanceId === d.instanceId) ?? { title: "?", thumbUrl: null }), slot: d.slot, atk: d.atk, def: d.def, rarity: d.rarity, cardId: d.cardId, season: d.season, instanceId: d.instanceId });
   const answers = await ctx.db.select().from(schema.battleAnswers).where(eq(schema.battleAnswers.battleId, battleId));
   const rounds = await ctx.db.select().from(schema.battleRounds).where(eq(schema.battleRounds.battleId, battleId)).orderBy(asc(schema.battleRounds.round));

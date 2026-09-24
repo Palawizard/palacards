@@ -71,6 +71,13 @@
       "when": 1790237265901,
       "tag": "0009_battle_answers_pending",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790240081195,
+      "tag": "0010_user_is_admin",
+      "breakpoints": true
     }
   ]
 }

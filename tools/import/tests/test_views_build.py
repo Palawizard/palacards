@@ -51,8 +51,10 @@ def test_rank_ceilings_match_packages_game():
 
 
 def test_scaled_ceilings_keep_proportions():
-    assert scaled_ceilings(2_700_000, sample=False) == RANK_CEILINGS
-    assert scaled_ceilings(27_000, sample=True) == {"L": 10, "UR": 100, "SR": 500, "R": 2_500, "PC": 10_000}
+    assert scaled_ceilings(2_700_000) == RANK_CEILINGS
+    assert scaled_ceilings(2_000_000) == RANK_CEILINGS  # seuil de finish_card_load
+    assert scaled_ceilings(27_000) == {"L": 10, "UR": 100, "SR": 500, "R": 2_500, "PC": 10_000}
+    assert scaled_ceilings(10) == {"L": 1, "UR": 1, "SR": 1, "R": 1, "PC": 4}
 
 
 def test_build_rarity_stats_and_bonus(tmp_path):

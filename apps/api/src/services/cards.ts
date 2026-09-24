@@ -47,9 +47,15 @@ type InstanceRow = {
   thumbUrl: string | null;
   pageUrl: string | null;
   obtainedAt: Date;
+  ownerId: string;
 };
 
-export function toCardDTO(r: InstanceRow, extra: Partial<CardDTO> = {}): CardDTO {
+/**
+ * Exemplaire → DTO. Les vues (12 mois) ne sont données qu'au propriétaire (`viewerId`) : sur les cartes
+ * des autres (collection, vitrine, marché, échanges), elles donneraient la réponse de « Plus lu » en duel.
+ * Le catalogue et la fiche d'un article (coupés pendant une question) les donnent à part.
+ */
+export function toCardDTO(r: InstanceRow, extra: Partial<CardDTO> = {}, viewerId: string | null = null): CardDTO {
   const { atk, def } = effectiveStats(r.baseAtk, r.baseDef, r.level);
   return {
     instanceId: r.instanceId,
@@ -60,7 +66,7 @@ export function toCardDTO(r: InstanceRow, extra: Partial<CardDTO> = {}): CardDTO
     atk,
     def,
     level: r.level,
-    views12m: r.views12m,
+    ...(viewerId !== null && r.ownerId === viewerId ? { views12m: r.views12m } : {}),
     favorite: r.favorite,
     locked: r.locked,
     pinnedSlot: r.pinnedSlot,
@@ -80,13 +86,14 @@ export function selectInstances(db: DbOrTx) {
     .leftJoin(w, eq(w.pageId, ci.cardId));
 }
 
-export async function instancesByIds(db: DbOrTx, ids: number[]): Promise<CardDTO[]> {
+/** Exemplaires par id ; vues seulement pour ceux de `viewerId` (null : jamais). */
+export async function instancesByIds(db: DbOrTx, ids: number[], viewerId: string | null): Promise<CardDTO[]> {
   if (ids.length === 0) return [];
   const rows = await selectInstances(db).where(inArray(ci.id, ids));
   const byId = new Map(rows.map((r) => [r.instanceId, r]));
   return ids.flatMap((id) => {
     const r = byId.get(id);
-    return r ? [toCardDTO(r)] : [];
+    return r ? [toCardDTO(r, {}, viewerId)] : [];
   });
 }
 
@@ -316,7 +323,7 @@ export async function cardSheet(ctx: Ctx, userId: string, cardId: number) {
     extract: media?.extract ?? null,
     inActiveSeason: card.season === season,
     owners: owners.map((o) => ({ userId: o.user_id, username: o.username, copies: o.copies, bestLevel: o.best_level })),
-    mine: mine.map((r) => toCardDTO(r, { tags: tags.get(r.instanceId) ?? [] })),
+    mine: mine.map((r) => toCardDTO(r, { tags: tags.get(r.instanceId) ?? [] }, userId)),
     wishlisted: Boolean(wish),
   };
 }

@@ -8,10 +8,30 @@ from . import build_cards, download, parse_articles, paths, props, views
 STEPS = ["download", "parse", "props", "views", "build"]
 
 
+ENV_FILE_VAR = "PALACARDS_ENV_FILE"
+
+
+def find_env_file() -> Path | None:
+    """`.env` à charger : `PALACARDS_ENV_FILE` s'il est défini, sinon celui de la racine du monorepo
+    (dossier contenant pnpm-workspace.yaml), cherchée depuis le paquet puis depuis le dossier courant."""
+    override = os.environ.get(ENV_FILE_VAR, "").strip()
+    if override:
+        env = Path(override).expanduser()
+        if not env.is_file():
+            raise SystemExit(f"{ENV_FILE_VAR}={override} : fichier introuvable")
+        return env
+    for start in (Path(__file__).resolve().parent, Path.cwd().resolve()):
+        for d in (start, *start.parents):
+            if (d / "pnpm-workspace.yaml").is_file():
+                env = d / ".env"
+                return env if env.is_file() else None
+    return None
+
+
 def load_env() -> None:
-    """Charge le .env racine du monorepo (WIKIMEDIA_USER_AGENT) sans écraser l'environnement."""
-    env = Path(__file__).resolve().parents[3] / ".env"
-    if not env.exists():
+    """Charge le .env du monorepo (WIKIMEDIA_USER_AGENT, PALACARDS_DATA) sans écraser l'environnement."""
+    env = find_env_file()
+    if env is None:
         return
     for line in env.read_text(encoding="utf-8").splitlines():
         key, sep, value = line.partition("=")
@@ -32,6 +52,9 @@ def main() -> None:
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     load_env()
+    paths.configure()  # PALACARDS_DATA peut venir du .env
+    paths.ensure_dirs()
+    print(f"données : {paths.DATA}")
 
     sample = args.limit is not None
     if sample:

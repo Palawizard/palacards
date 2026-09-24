@@ -7,14 +7,17 @@ async function buildDeck(page: Page) {
 
 /** Joue toutes les manches proposées à l'écran (asynchrone). */
 async function playAsync(page: Page) {
+  const finished = page.getByText(/^(Victoire|Défaite|Match nul)$/);
+  const waiting = page.getByText(/Le résultat tombera quand/);
   for (let r = 1; r <= 5; r++) {
     const start = page.getByRole("button", { name: new RegExp(`Jouer la manche ${r}|Manche suivante`) });
-    const finished = page.getByText(/^(Victoire|Défaite|Match nul)$/);
     // Le duel peut se terminer avant la 5e manche (3 manches gagnées).
-    await expect(start.or(finished).or(page.getByText(/Le résultat tombera quand/))).toBeVisible();
+    await expect(start.or(finished).or(waiting)).toBeVisible();
     if (!(await start.isVisible())) break;
-    await start.click();
-    await page.locator("section[aria-label^='Manche'] button.btn").first().click();
+    // Le bouton peut disparaître si le duel se conclut entre-temps : on s'arrête alors.
+    if (!(await start.click({ timeout: 5_000 }).then(() => true, () => false))) break;
+    const choice = page.locator("section[aria-label^='Manche'] button.btn").first();
+    if (!(await choice.click({ timeout: 10_000 }).then(() => true, () => false))) break;
     await expect(page.getByRole("status").or(finished)).toBeVisible();
   }
 }

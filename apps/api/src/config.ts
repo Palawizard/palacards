@@ -21,16 +21,6 @@ const schema = z.object({
   /** Origine publique de l'API, sans chemin (dev : http://localhost:4000, prod : https://www.palawi.fr). */
   BETTER_AUTH_URL: z.url().default("http://localhost:4000"),
   BETTER_AUTH_SECRET: z.string().min(32, "BETTER_AUTH_SECRET : 32 caractères minimum").optional(),
-  /** Pseudos admin, séparés par des virgules (insensible à la casse). */
-  ADMIN_USERNAMES: z
-    .string()
-    .default("")
-    .transform((v) =>
-      v
-        .split(",")
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean),
-    ),
   WIKIMEDIA_USER_AGENT: z.string().default("PalaCards/0.1 (https://www.palawi.fr/palacards/)"),
   /** Désactive les appels Wikimedia (tests). */
   WIKIMEDIA_DISABLED: bool,
@@ -48,6 +38,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (config.NODE_ENV === "production" && (!config.BETTER_AUTH_SECRET || config.BETTER_AUTH_SECRET.includes("change-me"))) {
     // Le secret d'exemple de .env.example est public (repo GitHub) : jamais en production.
     throw new Error("BETTER_AUTH_SECRET est obligatoire en production (et pas la valeur d'exemple)");
+  }
+  if (config.NODE_ENV === "production" && !config.BETTER_AUTH_URL.startsWith("https://")) {
+    // En http, le cookie de session partirait sans l'attribut Secure (et en clair).
+    throw new Error(
+      `BETTER_AUTH_URL doit être en https:// en production (reçu : ${config.BETTER_AUTH_URL}), sinon le cookie de session n'est pas sécurisé`,
+    );
   }
   if (config.NODE_ENV === "production" && config.GAME_TEST_MODE) {
     throw new Error("GAME_TEST_MODE est interdit en production");

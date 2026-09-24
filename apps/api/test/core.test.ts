@@ -2,6 +2,9 @@ import { eq, schema, sql } from "@palacards/db";
 import { ECONOMY, MAX_STORED_PACKS } from "@palacards/game";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
+import type { FastifyRequest } from "fastify";
+import { rateLimitKey } from "../src/app.js";
+import { adminCommand } from "../src/services/roles.js";
 import { achievementPw, makeApp, signUp, uniqueName } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
@@ -49,21 +52,100 @@ describe("authentification", () => {
     expect(rows[0]).toMatchObject({ kind: "pw", delta: ECONOMY.startingBalance, reason: "signup" });
   });
 
-  it("donne le rôle admin aux pseudos de ADMIN_USERNAMES", async () => {
-    const existing = await ctx.db.select().from(schema.user).where(eq(schema.user.username, "admin"));
-    const admin = existing.length ? null : await signUp(app, "admin");
-    if (admin) expect((await admin.get("/me")).body.isAdmin).toBe(true);
+  it("le rôle admin vient de la base, jamais du pseudo ni du corps de l'inscription", async () => {
+    // Pseudos « admin » / « palawi » : de simples pseudos, sans aucun droit.
+    for (const name of ["admin", "palawi"]) {
+      const existing = await ctx.db.select().from(schema.user).where(eq(schema.user.username, name));
+      const p = existing.length ? null : await signUp(app, name);
+      if (p) {
+        expect((await p.get("/me")).body.isAdmin).toBe(false);
+        expect((await p.get("/admin")).status).toBe(403);
+      }
+    }
+    // `isAdmin` envoyé à l'inscription est ignoré (champ `input: false`).
+    const name = uniqueName("Sneaky");
+    const res = await app.inject({
+      method: "POST",
+      url: "/palacards/api/auth/sign-up/email",
+      headers: { origin: "http://localhost:3000" },
+      payload: { username: name, password: "motdepasse123", isAdmin: true },
+    });
+    const [row] = await ctx.db.select().from(schema.user).where(eq(schema.user.username, name.toLowerCase()));
+    if (res.statusCode === 200) expect(row?.isAdmin).toBe(false);
+    else expect(row).toBeUndefined();
+    // La mise à jour du profil par Better Auth reste coupée.
     const p = await signUp(app);
+    const update = await app.inject({
+      method: "POST",
+      url: "/palacards/api/auth/update-user",
+      headers: { cookie: p.cookie, origin: "http://localhost:3000" },
+      payload: { isAdmin: true },
+    });
+    expect(update.statusCode).toBeGreaterThanOrEqual(400);
     expect((await p.get("/me")).body.isAdmin).toBe(false);
+  });
+
+  it("CLI admin : grant / list / revoke, effet immédiat sur la session", async () => {
+    const p = await signUp(app);
+    expect((await p.get("/admin")).status).toBe(403);
+    expect(await adminCommand(ctx.db, ["grant", p.username.toUpperCase()])).toMatchObject({ code: 0 });
+    expect((await p.get("/me")).body.isAdmin).toBe(true);
+    expect((await p.get("/admin")).status).toBe(200);
+    expect((await adminCommand(ctx.db, ["list"])).message).toContain(p.username.toLowerCase());
+    // Renommer ne fait pas perdre le rôle (il est attaché au compte) et ne le transmet à personne.
+    const renamed = uniqueName("Chef");
+    expect((await p.post("/settings/username", { username: renamed })).status).toBe(200);
+    expect((await p.get("/me")).body.isAdmin).toBe(true);
+    expect((await signUp(app, p.username).then((q) => q.get("/me"))).body.isAdmin).toBe(false);
+    expect(await adminCommand(ctx.db, ["revoke", renamed])).toMatchObject({ code: 0 });
+    expect((await p.get("/me")).body.isAdmin).toBe(false);
+    expect((await p.get("/admin")).status).toBe(403);
+    expect(await adminCommand(ctx.db, ["grant", "personne-inconnue"])).toMatchObject({ code: 1 });
+    expect(await adminCommand(ctx.db, ["grant"])).toMatchObject({ code: 2 });
+    expect(await adminCommand(ctx.db, ["oups", "x"])).toMatchObject({ code: 2 });
   });
 });
 
 describe("configuration", () => {
-  it("refuse le secret d'exemple et le mode test en production", () => {
-    const base = { NODE_ENV: "production", BETTER_AUTH_SECRET: "x".repeat(40) };
+  it("refuse le secret d'exemple, le mode test et une URL en http en production", () => {
+    const base = { NODE_ENV: "production", BETTER_AUTH_SECRET: "x".repeat(40), BETTER_AUTH_URL: "https://www.palawi.fr" };
     expect(() => loadConfig(base)).not.toThrow();
     expect(() => loadConfig({ ...base, BETTER_AUTH_SECRET: "change-me-change-me-change-me-change-me" })).toThrow();
     expect(() => loadConfig({ ...base, GAME_TEST_MODE: "1" })).toThrow();
+    expect(() => loadConfig({ ...base, BETTER_AUTH_URL: "http://www.palawi.fr" })).toThrow(/https/);
+    expect(() => loadConfig({ NODE_ENV: "production", BETTER_AUTH_SECRET: "x".repeat(40) })).toThrow(/BETTER_AUTH_URL/);
+    // En dev, http reste accepté.
+    expect(() => loadConfig({ BETTER_AUTH_URL: "http://localhost:4000" })).not.toThrow();
+  });
+});
+
+describe("limitation de débit", () => {
+  const fakeReq = (headers: Record<string, string>, ip = "10.0.0.1") => ({ headers, ip, raw: {} }) as unknown as FastifyRequest;
+
+  it("compte par joueur (session validée), sinon par IP ; un cookie inventé ne crée pas de compteur", async () => {
+    const p = await signUp(app);
+    const config = { TRUST_PROXY: false };
+    expect(await rateLimitKey(config, ctx.auth, fakeReq({ cookie: p.cookie }))).toBe(`user:${p.userId}`);
+    // Deux sessions du même joueur : un seul compteur.
+    const again = await app.inject({
+      method: "POST",
+      url: "/palacards/api/auth/sign-in/username",
+      headers: { origin: "http://localhost:3000" },
+      payload: { username: p.username, password: "motdepasse123" },
+    });
+    const cookie2 = [again.headers["set-cookie"]].flat().filter(Boolean).map((c) => String(c).split(";")[0]).join("; ");
+    expect(cookie2).not.toBe(p.cookie);
+    expect(await rateLimitKey(config, ctx.auth, fakeReq({ cookie: cookie2 }))).toBe(`user:${p.userId}`);
+    // Cookie inventé : retombe sur l'IP.
+    expect(await rateLimitKey(config, ctx.auth, fakeReq({ cookie: "palawi_palacards_session=nimportequoi" }))).toBe("ip:10.0.0.1");
+    expect(await rateLimitKey(config, ctx.auth, fakeReq({}))).toBe("ip:10.0.0.1");
+  });
+
+  it("ne lit cf-connecting-ip que derrière le proxy", async () => {
+    const headers = { "cf-connecting-ip": "203.0.113.7" };
+    expect(await rateLimitKey({ TRUST_PROXY: false }, ctx.auth, fakeReq(headers))).toBe("ip:10.0.0.1");
+    expect(await rateLimitKey({ TRUST_PROXY: true }, ctx.auth, fakeReq(headers))).toBe("ip:203.0.113.7");
+    expect(await rateLimitKey({ TRUST_PROXY: true }, ctx.auth, fakeReq({}))).toBe("ip:10.0.0.1");
   });
 });
 
@@ -101,6 +183,30 @@ describe("paquets", () => {
       "pack:-1",
       `pw:${ECONOMY.startingBalance}`,
     ]);
+  });
+
+  it("répond avec les cartes même si un effet après commit échoue (paquet déjà consommé)", async () => {
+    const p = await signUp(app);
+    const toUser = vi.spyOn(ctx.rt, "toUser").mockImplementation(() => {
+      throw new Error("socket en panne");
+    });
+    const load = vi.spyOn(ctx.wiki, "load").mockImplementation(() => {
+      throw new Error("Wikimedia en panne");
+    });
+    try {
+      const res = await p.post("/packs/open");
+      expect(res.status).toBe(200);
+      expect(res.body.cards).toHaveLength(5);
+      expect(res.body.cards.every((c: { instanceId: number; title: string }) => c.instanceId > 0 && c.title)).toBe(true);
+      // Ses propres cartes gardent leurs vues.
+      expect(res.body.cards[0]).toHaveProperty("views12m");
+      expect(res.body.packs.available).toBe(MAX_STORED_PACKS - 1);
+    } finally {
+      toUser.mockRestore();
+      load.mockRestore();
+    }
+    const owned = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.ownerId, p.userId));
+    expect(owned).toHaveLength(5);
   });
 
   it("refuse d'ouvrir sans paquet, puis utilise un paquet bonus hors plafond", async () => {

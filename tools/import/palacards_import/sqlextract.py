@@ -50,13 +50,24 @@ def disambiguation_ids(stream: BinaryIO, max_page: int | None = None) -> set[int
 
 
 def category_target_ids(stream: BinaryIO, titles: Iterable[str]) -> dict[int, str]:
-    """`lt_id` des catégories (espace de noms 14) aux titres exacts donnés (avec des `_`)."""
-    alt = b"|".join(re.escape(t.encode()) for t in titles)
+    """`lt_id` des catégories (espace de noms 14) aux titres exacts donnés (avec des `_`).
+
+    (lt_namespace, lt_title) est unique : on arrête la lecture dès que tous les titres sont trouvés
+    (le dump fait plusieurs Go et n'est pas trié par titre, mais les catégories visées sont anciennes).
+    """
+    wanted = set(titles)
+    alt = b"|".join(re.escape(t.encode()) for t in sorted(wanted))
     pattern = re.compile(rb"\((\d+),14,'(" + alt + rb")'\)")
     found: dict[int, str] = {}
-    for line in _lines(stream, "linktarget", ["lt_id", "lt_namespace", "lt_title"]):
-        for lt_id, title in pattern.findall(line):
-            found[int(lt_id)] = title.decode()
+    lines = _lines(stream, "linktarget", ["lt_id", "lt_namespace", "lt_title"])
+    try:
+        for line in lines:
+            for lt_id, title in pattern.findall(line):
+                found[int(lt_id)] = title.decode()
+            if wanted <= set(found.values()):
+                break
+    finally:
+        lines.close()
     return found
 
 

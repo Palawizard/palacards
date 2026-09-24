@@ -1,5 +1,12 @@
 # Stack de production sur vm-apps : /opt/dockpanel/stacks/palacards/
-# Caddy route /palacards/api/* et /palacards/socket.io/* -> palacards-api, /palacards/* -> palacards-web.
+# Caddy route /palacards/api/* et /palacards/socket.io/* -> palacards-api, /palacards/* -> palacards-web
+# (deploy/Caddyfile.palacards), par nom de conteneur sur le réseau externe `caddy` ci-dessous.
+# Démarrage / mise à jour (le service one-shot `migrate` fait échouer `up --wait`) :
+#   docker compose build
+#   docker compose run --rm migrate
+#   docker compose up -d --wait --no-deps postgres api web
+# DATABASE_URL est construit à partir de POSTGRES_PASSWORD : celui-ci doit être sûr dans une URL
+# (pas de @ : / ? # % …), par exemple `openssl rand -hex 32`.
 x-logging: &logging
   driver: json-file
   options:
@@ -34,7 +41,8 @@ services:
     logging: *logging
     networks: [palacards]
 
-  # Migrations Drizzle à chaque démarrage de la stack (idempotent), avant l'API.
+  # Migrations Drizzle (idempotent), avant l'API : `docker compose run --rm migrate` à chaque mise à jour.
+  # Un simple `docker compose up -d` les lance aussi (dépendance de l'API), mais pas `up --wait`.
   migrate:
     image: palacards-api:0.1.0
     container_name: palacards-migrate
@@ -102,5 +110,7 @@ networks:
   palacards: {}
   caddy:
     external: true
-    # Adapter au nom du réseau Docker de ta stack Caddy sur vm-apps
+    # Réseau Docker de la stack Caddy de vm-apps (/opt/dockpanel/stacks/caddy) : Caddy doit y être
+    # branché pour joindre palacards-api et palacards-web par leur nom (deploy/Caddyfile.palacards).
+    # Adapter `name` au nom réel du réseau (docker network ls).
     name: caddy

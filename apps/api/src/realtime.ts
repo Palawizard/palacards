@@ -4,6 +4,7 @@ import type { Server as HttpServer } from "node:http";
 import { Server, type Socket } from "socket.io";
 import { getSessionUser, type Auth } from "./auth.js";
 import type { Config } from "./config.js";
+import { socketLimiter } from "./socket-rate-limit.js";
 
 interface SocketData {
   userId: string;
@@ -32,7 +33,7 @@ export function createRealtime(server: HttpServer, config: Config, auth: Auth | 
   io.use(async (socket, next) => {
     if (!auth) return next(new Error("unauthorized"));
     try {
-      const user = await getSessionUser(auth, config, socket.request.headers);
+      const user = await getSessionUser(auth, socket.request.headers);
       if (!user) return next(new Error("unauthorized"));
       socket.data.userId = user.id;
       socket.data.username = user.username;
@@ -44,6 +45,17 @@ export function createRealtime(server: HttpServer, config: Config, auth: Auth | 
 
   io.on("connection", (socket) => {
     const { userId } = socket.data;
+    // Débit limité pour tous les événements client → serveur (y compris ceux ajoutés plus tard).
+    const limiter = socketLimiter();
+    let warned = false;
+    socket.use(([event], next) => {
+      if (limiter.allow(String(event))) return next();
+      if (!warned) {
+        warned = true;
+        log.warn({ userId, event }, "socket : trop d'événements, ignorés");
+      }
+      // Événement ignoré : `next` n'est pas appelé, aucun gestionnaire ne s'exécute.
+    });
     void socket.join(userRoom(userId));
     const count = (online.get(userId) ?? 0) + 1;
     online.set(userId, count);
