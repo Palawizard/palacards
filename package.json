@@ -23,7 +23,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "db:seed": "pnpm --filter @palacards/db seed",
-    "e2e": "pnpm --filter @palacards/e2e e2e"
+    "e2e": "pnpm --filter @palacards/e2e e2e",
+    "bench": "pnpm --filter \"./packages/*\" build && pnpm --filter @palacards/api bench"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
