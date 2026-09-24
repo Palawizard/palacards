@@ -2,6 +2,7 @@ import { eq, schema, sql } from "@palacards/db";
 import { GUILD_MAX_MEMBERS } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { checkObjective } from "../src/services/guilds.js";
+import { progressionIdle } from "../src/services/progression.js";
 import { makeApp, signUp, uniqueName } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
@@ -100,5 +101,42 @@ describe("guildes", () => {
     const [rows] = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective'`);
     expect(rows!.n).toBe(1);
     expect(detail.body.objective.target).toBeGreaterThan(0);
+  });
+
+  it("relit le ledger sous verrou : pas de double récompense si l'autre guilde du joueur valide en même temps", async () => {
+    const chief = await signUp(app);
+    const mover = await signUp(app);
+    const { body } = await chief.post("/guilds", { name: uniqueName("Course "), tag: "CR" + String(Date.now()).slice(-3), emblem: "🏁" });
+    expect((await mover.post(`/guilds/${body.id}/join`)).status).toBe(200);
+    await chief.get("/guilds/mine");
+    await ctx.db
+      .update(schema.guildObjectives)
+      .set({ kind: "open_packs", target: 1, progress: 1_000 })
+      .where(eq(schema.guildObjectives.guildId, body.id));
+    await progressionIdle();
+    // Une autre transaction tient le joueur (comme la récompense de son autre guilde) : la vérification
+    // doit l'attendre, puis voir la récompense déjà versée cette semaine.
+    let check: Promise<void> | undefined;
+    await ctx.db.transaction(async (tx) => {
+      await tx.select().from(schema.players).where(eq(schema.players.userId, mover.userId)).for("update");
+      check = checkObjective(ctx, body.id);
+      for (let i = 0; i < 100; i++) {
+        const [w] = await ctx.db.execute<{ n: number }>(sql`
+          select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and wait_event_type = 'Lock' and query ilike '%"players"%for update%'
+        `);
+        if (w!.n > 0) break;
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await tx.insert(schema.ledger).values({ userId: mover.userId, kind: "bonus_pack", delta: 1, balanceAfter: 1, reason: "guild_objective", refId: "autre-guilde" });
+    });
+    await check;
+    const [rows] = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from ledger where user_id = ${mover.userId} and reason = 'guild_objective'`);
+    expect(rows!.n).toBe(1);
+    const [p] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, mover.userId));
+    expect(p!.bonusPacks).toBe(0);
+    // Le chef, lui, est bien récompensé.
+    const [c] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
+    expect(c!.bonusPacks).toBe(1);
   });
 });

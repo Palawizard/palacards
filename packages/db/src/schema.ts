@@ -121,6 +121,8 @@ export const user = pgTable("user", {
     .notNull(),
   username: text("username").unique(),
   displayUsername: text("display_username"),
+  /** Rôle admin : attribué seulement par la CLI (`node dist/cli/admin.js grant <pseudo>`), jamais déduit du pseudo. */
+  isAdmin: boolean("is_admin").notNull().default(false),
 });
 
 export const session = pgTable(

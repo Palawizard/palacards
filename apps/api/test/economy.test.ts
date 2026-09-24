@@ -40,7 +40,9 @@ describe("marché", () => {
     const instanceId = await giveCard(seller);
     const listed = await seller.post("/market", { instanceId, startPrice: 20, buyout: null, durationMs: HOUR });
     expect(listed.status).toBe(200);
-    expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee + (await achievementPw(ctx, seller.userId)));
+    // Succès (traités en arrière-plan) attendus AVANT de lire le solde, sinon course avec ur_10pct & co.
+    const listedBonus = await achievementPw(ctx, seller.userId);
+    expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee + listedBonus);
     // Carte verrouillée : ni recyclage ni seconde vente.
     expect((await seller.post("/collection/recycle", { instanceIds: [instanceId] })).status).toBe(409);
     expect((await seller.post("/market", { instanceId, startPrice: 5, buyout: null, durationMs: HOUR })).status).toBe(409);
@@ -199,7 +201,8 @@ describe("échanges", () => {
     expect(ib!.ownerId).toBe(a.userId);
     const bonusA = await achievementPw(ctx, a.userId);
     expect(await wallet(a)).toEqual({ balance: ECONOMY.startingBalance - 25 + bonusA, locked: 0, available: ECONOMY.startingBalance - 25 + bonusA });
-    expect((await wallet(b)).balance).toBe(ECONOMY.startingBalance + 25 + (await achievementPw(ctx, b.userId)));
+    const bonusB = await achievementPw(ctx, b.userId);
+    expect((await wallet(b)).balance).toBe(ECONOMY.startingBalance + 25 + bonusB);
     await expectLedgerConsistent(a);
     await expectLedgerConsistent(b);
   });
@@ -243,5 +246,50 @@ describe("portefeuille", () => {
     const res = await p.post("/packs/buy");
     expect(res.body.packs.bonus).toBe(1);
     expect((await wallet(p)).balance).toBe(ECONOMY.startingBalance + 200 - ECONOMY.bonusPackPrice);
+  });
+});
+
+describe("vues cachées sur les cartes des autres (« Plus lu » en duel)", () => {
+  it("donne les vues sur ses propres cartes, jamais sur celles d'un autre joueur", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const ca = await giveCard(a);
+    const cb = await giveCard(b);
+    const hasViews = (c: object) => "views12m" in c;
+
+    // Sa propre collection : vues présentes ; celle d'un autre : absentes.
+    expect((await a.get("/collection")).body.items.every(hasViews)).toBe(true);
+    const other = await b.get(`/players/${a.username}/collection`);
+    expect(other.status).toBe(200);
+    expect(other.body.items.length).toBeGreaterThan(0);
+    expect(other.body.items.some(hasViews)).toBe(false);
+
+    // Vitrine du profil : vues pour soi seulement.
+    expect((await a.post(`/collection/${ca}/pin`, { slot: 1 })).status).toBe(200);
+    expect((await a.get(`/players/${a.username}`)).body.showcase.every(hasViews)).toBe(true);
+    const seen = (await b.get(`/players/${a.username}`)).body.showcase;
+    expect(seen).toHaveLength(1);
+    expect(seen.some(hasViews)).toBe(false);
+
+    // Échanges : vues sur ses propres cartes seulement.
+    const trade = await a.post("/trades", { to: b.username, give: [ca], want: [cb] });
+    expect(trade.status).toBe(200);
+    const received = (await b.get("/trades?box=received")).body.find((t: { id: number }) => t.id === trade.body.id);
+    expect(hasViews(received.give[0])).toBe(false);
+    expect(hasViews(received.want[0])).toBe(true);
+    const sent = (await a.get("/trades?box=sent")).body.find((t: { id: number }) => t.id === trade.body.id);
+    expect(hasViews(sent.give[0])).toBe(true);
+    expect(hasViews(sent.want[0])).toBe(false);
+    await a.post(`/trades/${trade.body.id}/cancel`);
+
+    // Marché (public) : jamais de vues.
+    const listed = await b.post("/market", { instanceId: cb, startPrice: 20, buyout: null, durationMs: HOUR });
+    expect(listed.status).toBe(200);
+    expect(hasViews((await a.get(`/market/${listed.body.id}`)).body.card)).toBe(false);
+    expect((await a.get("/market")).body.some((x: { card: object }) => hasViews(x.card))).toBe(false);
+
+    // Le catalogue (coupé pendant une question de duel) garde les vues.
+    const [card] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, cb));
+    expect((await a.get(`/cards/${card!.cardId}`)).body.card).toHaveProperty("views12m");
   });
 });

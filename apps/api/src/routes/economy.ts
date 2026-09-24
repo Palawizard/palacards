@@ -110,7 +110,7 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     counterTrade(ctx, req.user.id, parse(idParams, req.params).id, parse(offer, req.body)),
   );
 
-  // Collection d'un autre joueur (composer un échange, collections de guilde) : sans tags ni favoris.
+  // Collection d'un joueur (composer un échange, collections de guilde) : sans tags, favoris ni vues.
   api.get("/players/:username/collection", auth, async (req) => {
     const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
     const q = parse(
@@ -126,8 +126,9 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
       req.query,
     );
     const owner = await findUserByName(ctx.db, username);
-    const res = await listCollection(ctx, owner.id, { ...q, sort: "rarity", limit: 60 });
-    return { ...res, items: res.items.map(({ tags: _t, favorite: _f, ...c }) => c) };
+    // Sans vues (« Plus lu » en duel) : listCollection ne les donne qu'au propriétaire.
+    const res = await listCollection(ctx, owner.id, { ...q, sort: "rarity", limit: 60 }, req.user.id);
+    return { ...res, items: res.items.map(({ tags: _t, favorite: _f, views12m: _v, ...c }) => c) };
   });
 
   // --- Wishlist ---

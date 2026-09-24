@@ -99,7 +99,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       }),
       req.query,
     );
-    return listCollection(ctx, req.user.id, q);
+    return listCollection(ctx, req.user.id, q, req.user.id);
   });
   api.get("/collection/summary", auth, async (req) => completion(ctx, req.user.id));
   api.post("/collection/:id/favorite", auth, async (req) => {
