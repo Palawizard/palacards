@@ -28,9 +28,12 @@ export default function LeaderboardPage() {
   const [board, setBoard] = useState<Board>("collection");
   const [period, setPeriod] = useState<"season" | "all">("season");
   // Garde l'ancien tableau (atténué) pendant le changement d'onglet : pas de flash de squelette.
-  const { data, error, mutate, isLoading } = useSWR<{ season: number; rows: Row[] }>(`/leaderboard?board=${board}&period=${period}`, {
-    keepPreviousData: true,
-  });
+  const { data, error, mutate, isLoading } = useSWR<{ season: number; rows: Row[] }>(
+    `/leaderboard?board=${board}&period=${period}`,
+    {
+      keepPreviousData: true,
+    },
+  );
   const unit = BOARDS.find((b) => b.value === board)!.unit;
 
   return (
@@ -38,14 +41,20 @@ export default function LeaderboardPage() {
       <div>
         <h1 className="page-title">Classement</h1>
         <p className="hatnote mt-2">
-          Le score de collection additionne les points de rareté des articles différents possédés (1 pour une commune, 1 000 pour une légendaire).
-          Les classements de saison repartent à zéro chaque mois.
+          Le score de collection additionne les points de rareté des articles différents possédés (1 pour une commune, 1
+          000 pour une légendaire). Les classements de saison repartent à zéro chaque mois.
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Classements" className="flex flex-wrap gap-1.5">
           {BOARDS.map((b) => (
-            <button key={b.value} type="button" className="chip h-9 px-3.5" aria-pressed={board === b.value} onClick={() => setBoard(b.value)}>
+            <button
+              key={b.value}
+              type="button"
+              className="chip h-9 px-3.5"
+              aria-pressed={board === b.value}
+              onClick={() => setBoard(b.value)}
+            >
               {b.label}
             </button>
           ))}
@@ -67,7 +76,10 @@ export default function LeaderboardPage() {
       ) : data.rows.length === 0 ? (
         <p className="text-muted">Personne au classement pour l’instant.</p>
       ) : (
-        <table aria-busy={isLoading} className={`tnum w-full overflow-hidden rounded-md border border-line bg-panel text-sm transition-opacity duration-150 ${isLoading ? "opacity-60" : ""}`}>
+        <table
+          aria-busy={isLoading}
+          className={`tnum w-full overflow-hidden rounded-md border border-line bg-panel text-sm transition-opacity duration-150 ${isLoading ? "opacity-60" : ""}`}
+        >
           <thead>
             <tr className="border-b border-line text-left text-xs text-faint">
               <th scope="col" className="w-12 px-3 py-2 text-right font-semibold">
@@ -84,7 +96,9 @@ export default function LeaderboardPage() {
           <tbody>
             {data.rows.map((r) => (
               <tr key={r.id} className={`border-b border-line last:border-0 ${r.me ? "bg-accent/10" : ""}`}>
-                <td className={`px-3 py-2 text-right font-serif text-base ${r.rank <= 3 ? "text-warn" : "text-faint"}`}>{r.rank}</td>
+                <td className={`px-3 py-2 text-right font-serif text-base ${r.rank <= 3 ? "text-warn" : "text-faint"}`}>
+                  {r.rank}
+                </td>
                 <td className="px-3 py-2">
                   {r.username ? (
                     <Link href={`/u/${r.username}`} className="font-semibold hover:underline">

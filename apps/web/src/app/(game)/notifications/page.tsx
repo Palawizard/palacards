@@ -73,7 +73,12 @@ export default function NotificationsPage() {
         </ul>
       )}
       {!done && list.data && (
-        <button type="button" className="btn btn-sm self-center" onClick={() => list.setSize((s) => s + 1)} disabled={list.isValidating}>
+        <button
+          type="button"
+          className="btn btn-sm self-center"
+          onClick={() => list.setSize((s) => s + 1)}
+          disabled={list.isValidating}
+        >
           {list.isValidating ? "Chargement…" : "Plus ancien"}
         </button>
       )}

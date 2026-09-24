@@ -14,7 +14,13 @@ interface Overview {
     flows: { reason: string; created: number; destroyed: number }[];
     cards: { instances: number; auctions: number; trades: number };
   };
-  season: { active: number; startedAt: string | null; endsAt: string | null; cards: { season: number; cards: number }[]; nextLoaded: boolean };
+  season: {
+    active: number;
+    startedAt: string | null;
+    endsAt: string | null;
+    cards: { season: number; cards: number }[];
+    nextLoaded: boolean;
+  };
   jobs: { name: string; queued: number; active: number; total: number }[];
 }
 interface LedgerRow {
@@ -58,7 +64,12 @@ export default function AdminPage() {
     setBusy(true);
     try {
       const res = await api<{ balance: number; bonusPacks: number }>("/admin/grant", {
-        body: { username: username.trim(), pw: Number(pw) || 0, packs: Number(packs) || 0, note: note.trim() || undefined },
+        body: {
+          username: username.trim(),
+          pw: Number(pw) || 0,
+          packs: Number(packs) || 0,
+          note: note.trim() || undefined,
+        },
       });
       toast.success(`Fait : ${username} a ${fmt(res.balance)} PW et ${res.bonusPacks} paquet(s) bonus.`);
       setPw("");
@@ -77,7 +88,9 @@ export default function AdminPage() {
     const toastId = toast.loading(`Bascule vers la saison ${data.season.active + 1}… (jusqu’à quelques minutes)`);
     try {
       // `from` : si la requête est relancée après un délai dépassé, le serveur refuse de rebasculer.
-      const res = await api<{ from: number; to: number; copied: boolean }>("/admin/season", { body: { from: data.season.active } });
+      const res = await api<{ from: number; to: number; copied: boolean }>("/admin/season", {
+        body: { from: data.season.active },
+      });
       toast.dismiss(toastId);
       toast.success(`Saison ${res.to} lancée${res.copied ? " (cartes de la saison précédente reconduites)" : ""}.`);
       void mutate();
@@ -104,7 +117,10 @@ export default function AdminPage() {
               <Stat label="Exemplaires" value={fmt(data.economy.cards.instances)} />
               <Stat label="Ventes ouvertes" value={fmt(data.economy.cards.auctions)} />
               <Stat label="Échanges en attente" value={fmt(data.economy.cards.trades)} />
-              <Stat label="PW moyens / joueur" value={fmt(Math.round(data.economy.supply.total / Math.max(1, data.economy.supply.players)))} />
+              <Stat
+                label="PW moyens / joueur"
+                value={fmt(Math.round(data.economy.supply.total / Math.max(1, data.economy.supply.players)))}
+              />
             </dl>
             <table className="tnum mt-4 w-full text-sm">
               <caption className="mb-1 text-left text-xs text-faint">Flux de PW sur 30 jours</caption>
@@ -119,8 +135,12 @@ export default function AdminPage() {
                 {data.economy.flows.map((f) => (
                   <tr key={f.reason} className="border-t border-line">
                     <td className="py-1.5">{reasonLabel(f.reason)}</td>
-                    <td className={`py-1.5 text-right ${f.created ? "text-accent" : "text-faint"}`}>{f.created ? `+${fmt(f.created)}` : "—"}</td>
-                    <td className={`py-1.5 text-right ${f.destroyed ? "text-danger" : "text-faint"}`}>{f.destroyed ? `−${fmt(f.destroyed)}` : "—"}</td>
+                    <td className={`py-1.5 text-right ${f.created ? "text-accent" : "text-faint"}`}>
+                      {f.created ? `+${fmt(f.created)}` : "—"}
+                    </td>
+                    <td className={`py-1.5 text-right ${f.destroyed ? "text-danger" : "text-faint"}`}>
+                      {f.destroyed ? `−${fmt(f.destroyed)}` : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -140,17 +160,31 @@ export default function AdminPage() {
           </label>
           <label>
             <span className="label">PW (négatif pour retirer)</span>
-            <input className="field tnum" inputMode="numeric" value={pw} onChange={(e) => setPw(e.target.value.replace(/[^\d-]/g, ""))} />
+            <input
+              className="field tnum"
+              inputMode="numeric"
+              value={pw}
+              onChange={(e) => setPw(e.target.value.replace(/[^\d-]/g, ""))}
+            />
           </label>
           <label>
             <span className="label">Paquets bonus</span>
-            <input className="field tnum" inputMode="numeric" value={packs} onChange={(e) => setPacks(e.target.value.replace(/[^\d-]/g, ""))} />
+            <input
+              className="field tnum"
+              inputMode="numeric"
+              value={packs}
+              onChange={(e) => setPacks(e.target.value.replace(/[^\d-]/g, ""))}
+            />
           </label>
           <label>
             <span className="label">Note (journal)</span>
             <input className="field" value={note} onChange={(e) => setNote(e.target.value)} maxLength={80} />
           </label>
-          <button type="submit" className="btn btn-primary" disabled={busy || !username.trim() || (!Number(pw) && !Number(packs))}>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={busy || !username.trim() || (!Number(pw) && !Number(packs))}
+          >
             {busy ? "Envoi…" : "Donner"}
           </button>
         </form>
@@ -162,7 +196,9 @@ export default function AdminPage() {
           <div className="flex flex-col gap-3 text-sm">
             <p>
               Saison active : <strong>{data.season.active}</strong>
-              {data.season.endsAt && <span className="text-muted"> · bascule automatique {relative(data.season.endsAt)}</span>}
+              {data.season.endsAt && (
+                <span className="text-muted"> · bascule automatique {relative(data.season.endsAt)}</span>
+              )}
             </p>
             <p className="text-muted">
               Cartes chargées : {data.season.cards.map((c) => `saison ${c.season} (${fmt(c.cards)})`).join(", ")}.{" "}
@@ -214,9 +250,13 @@ export default function AdminPage() {
               </span>
               <span className="truncate text-muted sm:order-3 sm:text-inherit">
                 {reasonLabel(l.reason)} <span className="hidden text-faint sm:inline">({KINDS[l.kind] ?? l.kind})</span>
-                {l.reason === "admin" && l.refId?.split(":")[2] && <span className="text-faint"> · {l.refId.split(":").slice(2).join(":")}</span>}
+                {l.reason === "admin" && l.refId?.split(":")[2] && (
+                  <span className="text-faint"> · {l.refId.split(":").slice(2).join(":")}</span>
+                )}
               </span>
-              <span className="text-right text-xs text-faint sm:order-1 sm:text-left sm:text-sm">{relative(l.createdAt)}</span>
+              <span className="text-right text-xs text-faint sm:order-1 sm:text-left sm:text-sm">
+                {relative(l.createdAt)}
+              </span>
               <span className="hidden text-right text-faint sm:order-5 sm:block" title="Solde après le mouvement">
                 {fmt(l.balanceAfter)}
               </span>
@@ -233,8 +273,8 @@ export default function AdminPage() {
         onConfirm={newSeason}
         onClose={() => setConfirmSeason(false)}
       >
-        Les classements de la saison sont archivés, l’Elo repart à 1 000 et les nouveaux tirages portent le tampon de la nouvelle édition. Les cartes possédées
-        gardent leurs stats.
+        Les classements de la saison sont archivés, l’Elo repart à 1 000 et les nouveaux tirages portent le tampon de la
+        nouvelle édition. Les cartes possédées gardent leurs stats.
       </ConfirmDialog>
     </div>
   );

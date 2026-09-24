@@ -19,9 +19,13 @@ describe("succès", () => {
     const list = await p.get("/achievements");
     const first = list.body.find((a: { key: string }) => a.key === "first_pack");
     expect(first.unlockedAt).not.toBeNull();
-    const rows = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from ledger where user_id = ${p.userId} and reason = 'achievement' and ref_id = 'first_pack'`);
+    const rows = await ctx.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from ledger where user_id = ${p.userId} and reason = 'achievement' and ref_id = 'first_pack'`,
+    );
     expect(rows[0]!.n).toBe(1);
-    expect((await p.get("/notifications")).body.items.some((n: { type: string }) => n.type === "achievement")).toBe(true);
+    expect((await p.get("/notifications")).body.items.some((n: { type: string }) => n.type === "achievement")).toBe(
+      true,
+    );
   });
 });
 
@@ -36,7 +40,9 @@ describe("succès de collection", () => {
     expect(before).toMatchObject({ type: "collection", uniqueCards: mineA.size });
 
     // B donne gratuitement à A une carte que A n'a pas tirée : elle ne compte ni pour A ni pour B.
-    const gift = pulledB.find((c) => !mineA.has(c.cardId) && pulledB.filter((x) => x.cardId === c.cardId).length === 1)!;
+    const gift = pulledB.find(
+      (c) => !mineA.has(c.cardId) && pulledB.filter((x) => x.cardId === c.cardId).length === 1,
+    )!;
     const beforeB = await collectionEvent(ctx.db, b.userId);
     const trade = await b.post("/trades", { to: a.username, give: [gift.instanceId] });
     expect((await a.post(`/trades/${trade.body.id}/accept`)).status).toBe(200);
@@ -50,7 +56,9 @@ describe("succès de collection", () => {
     expect((await a.post("/test/grant-card", { cardId: fresh!.id, count: 2 })).status).toBe(200);
     await progressionIdle();
     expect(await collectionEvent(ctx.db, a.userId)).toEqual(before);
-    expect(await collectionEvent(ctx.db, b.userId)).toMatchObject({ uniqueCards: (beforeB as { uniqueCards: number }).uniqueCards - 1 });
+    expect(await collectionEvent(ctx.db, b.userId)).toMatchObject({
+      uniqueCards: (beforeB as { uniqueCards: number }).uniqueCards - 1,
+    });
     const list = (await a.get("/achievements")).body as { key: string; progress: number }[];
     expect(list.find((x) => x.key === "collection_1000")!.progress).toBe(mineA.size);
   });
@@ -72,9 +80,13 @@ describe("fusion et niveaux", () => {
     expect(max.body.error).toBe("max_level");
     // Pas de fusion d'articles différents ni avec soi-même.
     expect((await p.post(`/collection/${target.instanceId}/fuse`, { sourceId: target.instanceId })).status).toBe(400);
-    expect((await p.post(`/collection/${opened.body.cards[1].instanceId}/fuse`, { sourceId: rest[3] })).body.error).toBe("different_cards");
+    expect(
+      (await p.post(`/collection/${opened.body.cards[1].instanceId}/fuse`, { sourceId: rest[3] })).body.error,
+    ).toBe("different_cards");
     // Jamais le meilleur exemplaire (ici le niveau 5) dans un moins bon.
-    expect((await p.post(`/collection/${rest[3]}/fuse`, { sourceId: target.instanceId })).body.error).toBe("source_better");
+    expect((await p.post(`/collection/${rest[3]}/fuse`, { sourceId: target.instanceId })).body.error).toBe(
+      "source_better",
+    );
   });
 });
 
@@ -96,14 +108,24 @@ describe("classements et saisons", () => {
     // Ids Better Auth à casse mixte : la collation en_US classerait « abc » avant « ABD » et « Zed »,
     // l'ordre JS (unités de code) fait l'inverse. Les deux côtés doivent suivre la collation "C".
     const ids = ["abc", "ABD", "Zed", "aZ", "zz", "A0", "9x", "_u", "Ab", "aB", "b", "B"];
-    const values = sql.join(ids.map((id) => sql`(${id})`), sql`, `);
-    const rows = await ctx.db.execute<{ user_id: string }>(sql`select user_id from (values ${values}) as t(user_id) order by ${PLAYER_LOCK_ORDER}`);
+    const values = sql.join(
+      ids.map((id) => sql`(${id})`),
+      sql`, `,
+    );
+    const rows = await ctx.db.execute<{ user_id: string }>(
+      sql`select user_id from (values ${values}) as t(user_id) order by ${PLAYER_LOCK_ORDER}`,
+    );
     expect(rows.map((r) => r.user_id)).toEqual(lockOrder(ids));
     // Et avec de vrais joueurs inscrits (ids générés par Better Auth).
     const players = await Promise.all([signUp(app), signUp(app), signUp(app), signUp(app)]);
     const real = players.map((p) => p.userId);
-    const inList = sql.join(real.map((id) => sql`${id}`), sql`, `);
-    const locked = await ctx.db.execute<{ user_id: string }>(sql`select user_id from players where user_id in (${inList}) order by ${PLAYER_LOCK_ORDER}`);
+    const inList = sql.join(
+      real.map((id) => sql`${id}`),
+      sql`, `,
+    );
+    const locked = await ctx.db.execute<{ user_id: string }>(
+      sql`select user_id from players where user_id in (${inList}) order by ${PLAYER_LOCK_ORDER}`,
+    );
     expect(locked.map((r) => r.user_id)).toEqual(lockOrder(real));
   });
 
@@ -166,7 +188,9 @@ describe("paramètres et admin", () => {
       payload: { username: uniqueName("ex") },
     });
     expect(rename.statusCode).toBe(200);
-    expect((await app.inject({ method: "GET", url: "/palacards/api/admin", headers: { cookie } })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/palacards/api/admin", headers: { cookie } })).statusCode).toBe(
+      200,
+    );
     // Bascule forcée : une requête rejouée avec une saison déjà terminée est refusée.
     const season = (await p.get("/me")).body.season as number;
     const stale = await app.inject({

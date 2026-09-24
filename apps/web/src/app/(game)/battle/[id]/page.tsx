@@ -44,7 +44,11 @@ interface BattleDetail {
 /** Résultat de la manche : réponse HTTP, ou résumé reçu par socket en direct (sans la carte adverse). */
 type AnswerResult = Omit<BattleAnswerDTO, "battleId" | "theirCard"> & { theirCard?: CardDTO };
 
-const TYPE_LABEL: Record<string, string> = { who_am_i: "Qui suis-je ?", most_viewed: "Le plus lu", longest: "Le plus long" };
+const TYPE_LABEL: Record<string, string> = {
+  who_am_i: "Qui suis-je ?",
+  most_viewed: "Le plus lu",
+  longest: "Le plus long",
+};
 
 /** Barre de temps : se vide en continu jusqu'à l'échéance (calculée à la réception, sans dépendre de l'horloge du serveur). */
 function Countdown({ endsAt, total }: { endsAt: number; total: number }) {
@@ -53,7 +57,10 @@ function Countdown({ endsAt, total }: { endsAt: number; total: number }) {
   return (
     <div className="flex items-center gap-3" aria-live="off">
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-panel-2">
-        <div className={`h-full origin-left rounded-full transition-transform duration-200 ease-linear ${left < 3000 ? "bg-danger" : "bg-accent"}`} style={{ transform: `scaleX(${left / total})` }} />
+        <div
+          className={`h-full origin-left rounded-full transition-transform duration-200 ease-linear ${left < 3000 ? "bg-danger" : "bg-accent"}`}
+          style={{ transform: `scaleX(${left / total})` }}
+        />
       </div>
       <span className="tnum w-8 text-right text-sm font-semibold">{Math.ceil(left / 1000)}</span>
     </div>
@@ -103,7 +110,9 @@ function QuestionPanel({
           </span>
         </h2>
         <div className="flex flex-col gap-4 p-4">
-          <p className={q.type === "who_am_i" ? "font-serif text-lg leading-relaxed" : "text-lg font-semibold"}>{q.prompt}</p>
+          <p className={q.type === "who_am_i" ? "font-serif text-lg leading-relaxed" : "text-lg font-semibold"}>
+            {q.prompt}
+          </p>
           {!locked && <Countdown endsAt={endsAt} total={q.timeLimitMs} />}
           <div className="grid gap-2 sm:grid-cols-2">
             {q.choices.map((choice, i) => {
@@ -119,7 +128,11 @@ function QuestionPanel({
                     isCorrect ? "border-accent bg-accent/15 text-text" : isMine ? "border-danger bg-danger/10" : ""
                   }`}
                 >
-                  {isCorrect ? <Check aria-hidden className="size-4 shrink-0 text-accent" /> : isMine ? <X aria-hidden className="size-4 shrink-0 text-danger" /> : null}
+                  {isCorrect ? (
+                    <Check aria-hidden className="size-4 shrink-0 text-accent" />
+                  ) : isMine ? (
+                    <X aria-hidden className="size-4 shrink-0 text-danger" />
+                  ) : null}
                   {choice}
                 </button>
               );
@@ -132,8 +145,14 @@ function QuestionPanel({
           )}
           {result && (
             <p className="tnum text-sm" role="status">
-              {result.yourChoice === null ? "Temps écoulé." : result.correct ? "Bonne réponse !" : "Raté."} Puissance de ta carte : <strong>{fmt(result.yourPower)}</strong>
-              {result.correct && result.timeLeftMs > 0 && <span className="text-faint"> (bonus de vitesse : {Math.round(result.timeLeftMs / 100) / 10} s restantes)</span>}
+              {result.yourChoice === null ? "Temps écoulé." : result.correct ? "Bonne réponse !" : "Raté."} Puissance de
+              ta carte : <strong>{fmt(result.yourPower)}</strong>
+              {result.correct && result.timeLeftMs > 0 && (
+                <span className="text-faint">
+                  {" "}
+                  (bonus de vitesse : {Math.round(result.timeLeftMs / 100) / 10} s restantes)
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -154,7 +173,9 @@ function Recap({ battle }: { battle: BattleDetail }) {
           transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
           className="rounded-md border border-line-strong bg-panel p-5 text-center"
         >
-          <p className={`font-serif text-4xl ${won ? "text-accent" : draw ? "" : "text-danger"}`}>{won ? "Victoire" : draw ? "Match nul" : "Défaite"}</p>
+          <p className={`font-serif text-4xl ${won ? "text-accent" : draw ? "" : "text-danger"}`}>
+            {won ? "Victoire" : draw ? "Match nul" : "Défaite"}
+          </p>
           <p className="tnum mt-1 text-lg">
             {battle.score.you} – {battle.score.them}
             {battle.eloDelta !== null && (
@@ -179,12 +200,18 @@ function Recap({ battle }: { battle: BattleDetail }) {
                   <span className="tnum text-muted">
                     {fmt(r.yourPower)}
                     {r.theirPower !== null && ` contre ${fmt(r.theirPower)}`}
-                    {r.winnerId && <strong className={`ml-2 ${r.winnerId === battle.opponent.id ? "text-danger" : "text-accent"}`}>{r.winnerId === battle.opponent.id ? "perdue" : "gagnée"}</strong>}
+                    {r.winnerId && (
+                      <strong className={`ml-2 ${r.winnerId === battle.opponent.id ? "text-danger" : "text-accent"}`}>
+                        {r.winnerId === battle.opponent.id ? "perdue" : "gagnée"}
+                      </strong>
+                    )}
                   </span>
                 </p>
                 <p className="mt-1 text-muted">
                   Réponse : <span className="text-text">{r.choices[r.correctIndex]}</span>
-                  {r.yourChoice !== r.correctIndex && <span> · toi : {r.yourChoice === null ? "pas de réponse" : r.choices[r.yourChoice]}</span>}
+                  {r.yourChoice !== r.correctIndex && (
+                    <span> · toi : {r.yourChoice === null ? "pas de réponse" : r.choices[r.yourChoice]}</span>
+                  )}
                 </p>
               </li>
             ))}
@@ -240,9 +267,25 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
     if (r.battleId !== battleId) return;
     setLiveScore(r.score);
     if (r.round === shownRound.current) {
-      setResult((prev) => prev ?? { round: r.round, correctIndex: r.correctIndex, yourChoice: r.yourChoice, correct: r.yourChoice === r.correctIndex, yourPower: r.yourPower, timeLeftMs: 0 });
+      setResult(
+        (prev) =>
+          prev ?? {
+            round: r.round,
+            correctIndex: r.correctIndex,
+            yourChoice: r.yourChoice,
+            correct: r.yourChoice === r.correctIndex,
+            yourPower: r.yourPower,
+            timeLeftMs: 0,
+          },
+      );
     }
-    toast(r.winnerId === null ? "Manche nulle." : r.winnerId === battle?.opponent.id ? `Manche perdue (${fmt(r.yourPower)} contre ${fmt(r.theirPower)}).` : `Manche gagnée (${fmt(r.yourPower)} contre ${fmt(r.theirPower)}) !`);
+    toast(
+      r.winnerId === null
+        ? "Manche nulle."
+        : r.winnerId === battle?.opponent.id
+          ? `Manche perdue (${fmt(r.yourPower)} contre ${fmt(r.theirPower)}).`
+          : `Manche gagnée (${fmt(r.yourPower)} contre ${fmt(r.theirPower)}) !`,
+    );
     if (r.finished) void mutate();
   });
   useSocketEvent("battle:update", ({ battleId: b }) => {
@@ -295,7 +338,9 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line-strong pb-2">
         <div>
-          <h1 className="font-serif text-[clamp(1.6rem,1.3rem+1.3vw,2.2rem)] leading-tight">Duel contre {battle.opponent.name}</h1>
+          <h1 className="font-serif text-[clamp(1.6rem,1.3rem+1.3vw,2.2rem)] leading-tight">
+            Duel contre {battle.opponent.name}
+          </h1>
           <p className="text-sm text-muted">{battle.mode === "live" ? "En direct" : "Asynchrone"}</p>
         </div>
         {battle.status !== "pending" && (
@@ -307,7 +352,9 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
 
       {battle.status === "pending" && (
         <p className="text-muted">
-          {battle.isChallenger ? `En attente de la réponse de ${battle.opponent.name}.` : "Ce défi t’attend sur la page Bataille."}{" "}
+          {battle.isChallenger
+            ? `En attente de la réponse de ${battle.opponent.name}.`
+            : "Ce défi t’attend sur la page Bataille."}{" "}
           <Link href="/battle" className="article-link">
             Retour aux duels
           </Link>
@@ -315,7 +362,9 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
       )}
 
       {battle.status === "active" && battle.mode === "live" && !question && (
-        <p className="text-muted">Le duel démarre dès que vous êtes connectés tous les deux. Première question dans un instant…</p>
+        <p className="text-muted">
+          Le duel démarre dès que vous êtes connectés tous les deux. Première question dans un instant…
+        </p>
       )}
 
       {battle.status === "active" && battle.mode === "async" && !question && !asyncDone && (
@@ -323,30 +372,50 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
           <p className="text-muted">
             Manche {battle.nextRound} sur {BATTLE_ROUNDS}. Tu as 10 secondes dès l’affichage de la question.
           </p>
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => playRound(battle.nextRound ?? 1)}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => playRound(battle.nextRound ?? 1)}
+          >
             Jouer la manche {battle.nextRound}
           </button>
         </div>
       )}
 
       <p className="sr-only" aria-live="polite">
-        {question && battle.status === "active" ? `Manche ${question.round} : ${TYPE_LABEL[question.type] ?? "question"}. ${question.prompt}` : ""}
+        {question && battle.status === "active"
+          ? `Manche ${question.round} : ${TYPE_LABEL[question.type] ?? "question"}. ${question.prompt}`
+          : ""}
       </p>
-      {question && battle.status === "active" && <QuestionPanel q={question} endsAt={endsAt} result={result} onAnswer={answer} />}
+      {question && battle.status === "active" && (
+        <QuestionPanel q={question} endsAt={endsAt} result={result} onAnswer={answer} />
+      )}
 
       {question && result && battle.mode === "async" && battle.status === "active" && (
         <div>
           {question.round < BATTLE_ROUNDS ? (
-            <button type="button" className="btn btn-primary" onClick={() => playRound(question.round + 1)} disabled={busy}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => playRound(question.round + 1)}
+              disabled={busy}
+            >
               Manche suivante
             </button>
           ) : (
-            <p className="text-muted">Tu as joué tes {BATTLE_ROUNDS} manches. Le résultat tombera quand {battle.opponent.name} aura joué les siennes.</p>
+            <p className="text-muted">
+              Tu as joué tes {BATTLE_ROUNDS} manches. Le résultat tombera quand {battle.opponent.name} aura joué les
+              siennes.
+            </p>
           )}
         </div>
       )}
       {asyncDone && !question && (
-        <p className="text-muted">Tu as joué tes {BATTLE_ROUNDS} manches. Le résultat tombera quand {battle.opponent.name} aura joué les siennes.</p>
+        <p className="text-muted">
+          Tu as joué tes {BATTLE_ROUNDS} manches. Le résultat tombera quand {battle.opponent.name} aura joué les
+          siennes.
+        </p>
       )}
 
       {(battle.status === "finished" || (!question && battle.rounds.length > 0)) && <Recap battle={battle} />}

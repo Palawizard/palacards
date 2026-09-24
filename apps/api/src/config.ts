@@ -35,7 +35,10 @@ export type Config = z.infer<typeof schema>;
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const config = schema.parse(env);
-  if (config.NODE_ENV === "production" && (!config.BETTER_AUTH_SECRET || config.BETTER_AUTH_SECRET.includes("change-me"))) {
+  if (
+    config.NODE_ENV === "production" &&
+    (!config.BETTER_AUTH_SECRET || config.BETTER_AUTH_SECRET.includes("change-me"))
+  ) {
     // Le secret d'exemple de .env.example est public (repo GitHub) : jamais en production.
     throw new Error("BETTER_AUTH_SECRET est obligatoire en production (et pas la valeur d'exemple)");
   }

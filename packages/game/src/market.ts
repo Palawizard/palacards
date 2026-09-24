@@ -83,5 +83,10 @@ export function addDays(day: string, n: number): string {
 
 /** Jour calendaire à Paris (les séries et objectifs suivent l'heure française). */
 export function parisDay(now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(now);
 }

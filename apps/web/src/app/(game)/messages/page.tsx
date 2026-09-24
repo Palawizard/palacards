@@ -41,11 +41,20 @@ const stamp = (iso: string) =>
 
 function CardPicker({ onPick, onClose }: { onPick: (c: CardDTO) => void; onClose: () => void }) {
   const [q, setQ] = useState("");
-  const { data } = useSWR<Page<CardDTO>>(`/collection?limit=30&sort=rarity${q.trim().length >= 2 ? `&q=${encodeURIComponent(q.trim())}` : ""}`);
+  const { data } = useSWR<Page<CardDTO>>(
+    `/collection?limit=30&sort=rarity${q.trim().length >= 2 ? `&q=${encodeURIComponent(q.trim())}` : ""}`,
+  );
   return (
     <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-md border border-line-strong bg-panel p-2 shadow-[0_12px_30px_-10px_rgb(0_0_0/0.8)]">
       <div className="mb-2 flex gap-2">
-        <input className="field h-8 min-h-0 text-sm" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Chercher une de tes cartes" aria-label="Chercher une de tes cartes" autoFocus />
+        <input
+          className="field h-8 min-h-0 text-sm"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Chercher une de tes cartes"
+          aria-label="Chercher une de tes cartes"
+          autoFocus
+        />
         <button type="button" className="btn btn-sm btn-ghost px-2" onClick={onClose} aria-label="Fermer">
           <X className="size-4" />
         </button>
@@ -53,7 +62,11 @@ function CardPicker({ onPick, onClose }: { onPick: (c: CardDTO) => void; onClose
       <ul className="max-h-56 overflow-y-auto">
         {data?.items.map((c) => (
           <li key={c.instanceId}>
-            <button type="button" className="flex w-full items-center gap-2 rounded p-1.5 text-left hover:bg-panel-2" onClick={() => onPick(c)}>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded p-1.5 text-left hover:bg-panel-2"
+              onClick={() => onPick(c)}
+            >
               <Thumb card={c} size="sm" />
               <span className="line-clamp-1 flex-1 font-serif">{c.title}</span>
               <RaritySigil rarity={c.rarity} />
@@ -106,7 +119,9 @@ function Thread({
 
   useSocketEvent("message:new", (msg) => {
     if (msg.channel === channel) {
-      void mutate((d) => (d && !d.items.some((x) => x.id === msg.id) ? { ...d, items: [...d.items, msg] } : d), { revalidate: false });
+      void mutate((d) => (d && !d.items.some((x) => x.id === msg.id) ? { ...d, items: [...d.items, msg] } : d), {
+        revalidate: false,
+      });
     }
   });
 
@@ -127,11 +142,16 @@ function Thread({
     setBusy(true);
     atBottom.current = true;
     try {
-      const msg = await api<Message>("/messages", { body: { ...(channel ? { channel } : { to }), body: body.trim(), instanceId: card?.instanceId ?? undefined } });
+      const msg = await api<Message>("/messages", {
+        body: { ...(channel ? { channel } : { to }), body: body.trim(), instanceId: card?.instanceId ?? undefined },
+      });
       setBody("");
       setCard(null);
       if (!channel) onSent(msg.channel);
-      else void mutate((d) => (d && !d.items.some((x) => x.id === msg.id) ? { ...d, items: [...d.items, msg] } : d), { revalidate: false });
+      else
+        void mutate((d) => (d && !d.items.some((x) => x.id === msg.id) ? { ...d, items: [...d.items, msg] } : d), {
+          revalidate: false,
+        });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Envoi impossible.");
     } finally {
@@ -170,14 +190,18 @@ function Thread({
                 <li key={msg.id} className={`border-l border-line pl-3 ${mine ? "ml-6 sm:ml-12" : ""}`}>
                   {msg.body && <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.body}</p>}
                   {msg.card && (
-                    <Link href={`/card/${msg.card.cardId}`} className="mt-1.5 inline-flex items-center gap-2 rounded-md border border-line bg-panel px-2 py-1.5 hover:border-faint">
+                    <Link
+                      href={`/card/${msg.card.cardId}`}
+                      className="mt-1.5 inline-flex items-center gap-2 rounded-md border border-line bg-panel px-2 py-1.5 hover:border-faint"
+                    >
                       <RaritySigil rarity={msg.card.rarity} />
                       <span className="font-serif">{msg.card.title}</span>
                       <span className="text-xs text-faint">S{msg.card.season}</span>
                     </Link>
                   )}
                   <p className="mt-0.5 text-xs text-faint">
-                    — <span className={mine ? "" : "font-semibold text-muted"}>{mine ? "toi" : msg.sender}</span>, {stamp(msg.createdAt)}
+                    — <span className={mine ? "" : "font-semibold text-muted"}>{mine ? "toi" : msg.sender}</span>,{" "}
+                    {stamp(msg.createdAt)}
                   </p>
                 </li>
               );
@@ -199,13 +223,24 @@ function Thread({
         {card && (
           <span className="chip w-fit gap-2">
             <RaritySigil rarity={card.rarity} /> {card.title}
-            <button type="button" onClick={() => setCard(null)} aria-label="Retirer la carte" className="text-faint hover:text-text">
+            <button
+              type="button"
+              onClick={() => setCard(null)}
+              aria-label="Retirer la carte"
+              className="text-faint hover:text-text"
+            >
               <X className="size-3.5" />
             </button>
           </span>
         )}
         <div className="flex items-end gap-2">
-          <button type="button" className="btn btn-ghost px-2" onClick={() => setPicking((v) => !v)} aria-label="Partager une carte" title="Partager une carte">
+          <button
+            type="button"
+            className="btn btn-ghost px-2"
+            onClick={() => setPicking((v) => !v)}
+            aria-label="Partager une carte"
+            title="Partager une carte"
+          >
             <Paperclip className="size-4" />
           </button>
           <textarea
@@ -220,7 +255,12 @@ function Thread({
             placeholder="Écrire un message"
             aria-label="Message"
           />
-          <button type="submit" className="btn btn-primary px-3" disabled={busy || (!body.trim() && !card)} aria-label="Envoyer">
+          <button
+            type="submit"
+            className="btn btn-primary px-3"
+            disabled={busy || (!body.trim() && !card)}
+            aria-label="Envoyer"
+          >
             <Send className="size-4" />
           </button>
         </div>
@@ -238,9 +278,11 @@ function Messages() {
   const { mutateMe } = useMe();
 
   useSocketEvent("message:new", () => void mutate());
-  const current = data?.find((c) => c.channel === channel) ?? (to ? data?.find((c) => c.username === to.toLowerCase()) : undefined);
+  const current =
+    data?.find((c) => c.channel === channel) ?? (to ? data?.find((c) => c.username === to.toLowerCase()) : undefined);
   useEffect(() => {
-    if (current && current.channel !== channel) router.replace(`/messages?channel=${encodeURIComponent(current.channel)}`);
+    if (current && current.channel !== channel)
+      router.replace(`/messages?channel=${encodeURIComponent(current.channel)}`);
   }, [current, channel, router]);
   const onRead = useCallback(() => {
     void mutate();
@@ -275,7 +317,10 @@ function Messages() {
                     className="flex items-center gap-3 px-3 py-2.5 transition-colors duration-150 hover:bg-panel-2 aria-[current=page]:bg-panel-2"
                   >
                     {c.kind === "guild" ? (
-                      <span className="grid size-10 place-items-center rounded-full border border-line-strong bg-panel-2" aria-hidden>
+                      <span
+                        className="grid size-10 place-items-center rounded-full border border-line-strong bg-panel-2"
+                        aria-hidden
+                      >
                         <Shield className="size-4 text-muted" />
                       </span>
                     ) : (
@@ -287,8 +332,18 @@ function Messages() {
                         {c.lastAt && <span className="shrink-0 text-xs text-faint">{relative(c.lastAt)}</span>}
                       </span>
                       <span className="flex items-center justify-between gap-2 text-sm text-muted">
-                        <span className="truncate">{c.lastBody ? `${c.lastFromMe ? "Toi : " : ""}${c.lastBody}` : c.kind === "guild" ? "Salon de la guilde" : "Carte partagée"}</span>
-                        {c.unread > 0 && <span className="tnum rounded-full bg-accent px-1.5 text-xs font-bold text-accent-ink">{c.unread}</span>}
+                        <span className="truncate">
+                          {c.lastBody
+                            ? `${c.lastFromMe ? "Toi : " : ""}${c.lastBody}`
+                            : c.kind === "guild"
+                              ? "Salon de la guilde"
+                              : "Carte partagée"}
+                        </span>
+                        {c.unread > 0 && (
+                          <span className="tnum rounded-full bg-accent px-1.5 text-xs font-bold text-accent-ink">
+                            {c.unread}
+                          </span>
+                        )}
                       </span>
                     </span>
                   </Link>

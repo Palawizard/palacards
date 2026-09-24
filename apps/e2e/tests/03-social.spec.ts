@@ -22,7 +22,10 @@ test("ami → message en temps réel → guilde", async ({ browser }) => {
   // exact : l'aperçu de la conversation (« Toi : … ») contient aussi le texte.
   await expect(alice.page.getByText("Salut, tu échanges ta Tour Eiffel ?", { exact: true })).toBeVisible();
   await expect(bob.page.getByRole("link", { name: new RegExp(alice.name, "i") })).toBeVisible();
-  await bob.page.getByRole("link", { name: new RegExp(alice.name, "i") }).first().click();
+  await bob.page
+    .getByRole("link", { name: new RegExp(alice.name, "i") })
+    .first()
+    .click();
   await expect(bob.page.getByText("Salut, tu échanges ta Tour Eiffel ?", { exact: true })).toBeVisible();
 
   // Alice fonde une guilde, Bob la rejoint.
@@ -34,7 +37,10 @@ test("ami → message en temps réel → guilde", async ({ browser }) => {
   await alice.page.getByRole("button", { name: "Fonder" }).click();
   await expect(alice.page.getByText("Objectif de la semaine")).toBeVisible();
   await bob.page.goto("guild");
-  await bob.page.locator("li", { hasText: `Club ${alice.name}` }).getByRole("button", { name: "Rejoindre" }).click();
+  await bob.page
+    .locator("li", { hasText: `Club ${alice.name}` })
+    .getByRole("button", { name: "Rejoindre" })
+    .click();
   await expect(bob.page.getByText("Objectif de la semaine")).toBeVisible();
   await expect(bob.page.getByRole("link", { name: alice.name })).toBeVisible();
 });

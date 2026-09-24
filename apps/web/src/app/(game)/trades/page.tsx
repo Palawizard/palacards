@@ -62,7 +62,17 @@ function Side({ title, cards, pw }: { title: string; cards: CardDTO[]; pw: numbe
   );
 }
 
-function TradeItem({ trade, meId, now, onChanged }: { trade: TradeDTO; meId: string; now: number; onChanged: () => void }) {
+function TradeItem({
+  trade,
+  meId,
+  now,
+  onChanged,
+}: {
+  trade: TradeDTO;
+  meId: string;
+  now: number;
+  onChanged: () => void;
+}) {
   const incoming = trade.to.id === meId;
   const other = incoming ? trade.from : trade.to;
   const [busy, setBusy] = useState(false);
@@ -106,7 +116,9 @@ function TradeItem({ trade, meId, now, onChanged }: { trade: TradeDTO; meId: str
               : STATUS[trade.status]}
         </span>
       </p>
-      {trade.message && <p className="rounded-md bg-panel-2 px-3 py-2 text-sm italic text-muted">« {trade.message} »</p>}
+      {trade.message && (
+        <p className="rounded-md bg-panel-2 px-3 py-2 text-sm italic text-muted">« {trade.message} »</p>
+      )}
       <div className="flex flex-col gap-4 sm:flex-row">
         <Side title="Tu reçois" {...receive} />
         <div className="hidden w-px bg-line sm:block" aria-hidden />
@@ -116,13 +128,23 @@ function TradeItem({ trade, meId, now, onChanged }: { trade: TradeDTO; meId: str
         <div className="flex flex-wrap justify-end gap-2">
           {incoming ? (
             <>
-              <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={() => act("decline", "Échange refusé.")}>
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                disabled={busy}
+                onClick={() => act("decline", "Échange refusé.")}
+              >
                 Refuser
               </button>
               <Link href={`/trades/new?counter=${trade.id}`} className="btn btn-sm">
                 Contre-offre
               </Link>
-              <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => setConfirmAccept(true)}>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={busy}
+                onClick={() => setConfirmAccept(true)}
+              >
                 Accepter
               </button>
               <ConfirmDialog
@@ -136,7 +158,12 @@ function TradeItem({ trade, meId, now, onChanged }: { trade: TradeDTO; meId: str
               </ConfirmDialog>
             </>
           ) : (
-            <button type="button" className="btn btn-sm" disabled={busy} onClick={() => act("cancel", "Proposition annulée.")}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={busy}
+              onClick={() => act("cancel", "Proposition annulée.")}
+            >
               Annuler la proposition
             </button>
           )}
@@ -165,7 +192,10 @@ function Trades() {
           Proposer un échange
         </Link>
       </div>
-      <p className="hatnote -mt-2">Troc de cartes et de points wiki. Tes cartes proposées sont réservées tant que l’échange est en attente (72 h au plus).</p>
+      <p className="hatnote -mt-2">
+        Troc de cartes et de points wiki. Tes cartes proposées sont réservées tant que l’échange est en attente (72 h au
+        plus).
+      </p>
 
       <nav aria-label="Boîtes d'échanges" className="-mb-2 flex gap-1 border-b border-line">
         {BOXES.map((b) => (
@@ -186,7 +216,15 @@ function Trades() {
       ) : !data || !me ? (
         <div className="h-60 animate-pulse rounded-md bg-panel" aria-busy />
       ) : data.length === 0 ? (
-        <Empty title={box === "received" ? "Aucune proposition reçue" : box === "sent" ? "Aucune proposition en attente" : "Aucun échange terminé"}>
+        <Empty
+          title={
+            box === "received"
+              ? "Aucune proposition reçue"
+              : box === "sent"
+                ? "Aucune proposition en attente"
+                : "Aucun échange terminé"
+          }
+        >
           Propose un troc depuis la fiche d’une carte ou le profil d’un ami.
         </Empty>
       ) : (

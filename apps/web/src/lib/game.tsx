@@ -95,7 +95,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const claim = () =>
       api<{ claimed: boolean; reward?: number; streak?: number }>("/daily", { method: "POST" })
         .then((r) => {
-          if (r.claimed) toast.success(`Bonus du jour : +${r.reward} PW${r.streak && r.streak > 1 ? ` (série de ${r.streak} jours)` : ""}`);
+          if (r.claimed)
+            toast.success(
+              `Bonus du jour : +${r.reward} PW${r.streak && r.streak > 1 ? ` (série de ${r.streak} jours)` : ""}`,
+            );
         })
         .catch(() => {});
     void claim();

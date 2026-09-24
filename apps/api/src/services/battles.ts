@@ -61,12 +61,26 @@ async function snapshotDeck(tx: Tx, battleId: number, userId: string, instanceId
     instanceIds.map((id, i) => {
       const r = byId.get(id)!;
       const stats = effectiveStats(r.atk, r.def, r.level);
-      return { battleId, userId, slot: i + 1, instanceId: id, cardId: r.cardId, season: r.season, rarity: r.rarity, atk: stats.atk, def: stats.def };
+      return {
+        battleId,
+        userId,
+        slot: i + 1,
+        instanceId: id,
+        cardId: r.cardId,
+        season: r.season,
+        rarity: r.rarity,
+        atk: stats.atk,
+        def: stats.def,
+      };
     }),
   );
 }
 
-export async function challenge(ctx: Ctx, challengerId: string, input: { opponent: string; mode: "live" | "async"; deck: number[] }) {
+export async function challenge(
+  ctx: Ctx,
+  challengerId: string,
+  input: { opponent: string; mode: "live" | "async"; deck: number[] },
+) {
   const opponent = await findUserByName(ctx.db, input.opponent);
   if (opponent.id === challengerId) throw badRequest("self", "Tu ne peux pas te défier toi-même.");
   const fx = new Effects();
@@ -78,20 +92,33 @@ export async function challenge(ctx: Ctx, challengerId: string, input: { opponen
       .where(
         and(
           inArray(b.status, ["pending", "active"]),
-          or(and(eq(b.challengerId, challengerId), eq(b.opponentId, opponent.id)), and(eq(b.challengerId, opponent.id), eq(b.opponentId, challengerId))),
+          or(
+            and(eq(b.challengerId, challengerId), eq(b.opponentId, opponent.id)),
+            and(eq(b.challengerId, opponent.id), eq(b.opponentId, challengerId)),
+          ),
         ),
       );
     if ((open?.n ?? 0) > 0) throw conflict("battle_exists", "Un duel est déjà en cours ou en attente avec ce joueur.");
     const [created] = await tx
       .insert(b)
-      .values({ challengerId, opponentId: opponent.id, mode: input.mode, seed: randomBytes(16).toString("hex"), createdAt: ctx.now() })
+      .values({
+        challengerId,
+        opponentId: opponent.id,
+        mode: input.mode,
+        seed: randomBytes(16).toString("hex"),
+        createdAt: ctx.now(),
+      })
       .returning();
     await snapshotDeck(tx, created!.id, challengerId, input.deck);
     const [me] = await tx
       .select({ name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
       .from(schema.user)
       .where(eq(schema.user.id, challengerId));
-    await fx.notify(tx, opponent.id, "battle_challenge", { battleId: created!.id, from: me?.name ?? "?", mode: input.mode });
+    await fx.notify(tx, opponent.id, "battle_challenge", {
+      battleId: created!.id,
+      from: me?.name ?? "?",
+      mode: input.mode,
+    });
     return created!;
   });
   await afterCommit(ctx, () => fx.flush(ctx));
@@ -114,7 +141,11 @@ export async function acceptChallenge(ctx: Ctx, userId: string, battleId: number
       throw conflict("opponent_offline", "Ton adversaire n'est pas connecté : réessaie quand il sera en ligne.");
     }
     await snapshotDeck(tx, battleId, userId, deck);
-    const [started] = await tx.update(b).set({ status: "active", startedAt: ctx.now() }).where(eq(b.id, battleId)).returning();
+    const [started] = await tx
+      .update(b)
+      .set({ status: "active", startedAt: ctx.now() })
+      .where(eq(b.id, battleId))
+      .returning();
     return started!;
   });
   await afterCommit(ctx, async () => {
@@ -160,7 +191,14 @@ async function quizCard(db: DbOrTx, d: DeckRow): Promise<QuizCard & { rarity: Ra
     select c.title, c.views_12m, c.page_len, w.extract from cards c left join wiki_summaries w on w.page_id = c.id
     where c.season = ${d.season} and c.id = ${d.cardId}
   `);
-  return { cardId: d.cardId, title: row?.title ?? "?", views12m: Number(row?.views_12m ?? 0), pageLen: row?.page_len ?? 0, extract: row?.extract ?? null, rarity: d.rarity };
+  return {
+    cardId: d.cardId,
+    title: row?.title ?? "?",
+    views12m: Number(row?.views_12m ?? 0),
+    pageLen: row?.page_len ?? 0,
+    extract: row?.extract ?? null,
+    rarity: d.rarity,
+  };
 }
 
 /** Leurres « Qui suis-je ? » : titres de la saison et de la rareté de la carte visée, choisis par la graine (index de tirage). */
@@ -175,7 +213,11 @@ async function decoys(db: DbOrTx, seed: string, round: number, season: number, r
 }
 
 async function decks(db: DbOrTx, battleId: number) {
-  const rows = await db.select().from(schema.battleDecks).where(eq(schema.battleDecks.battleId, battleId)).orderBy(asc(schema.battleDecks.slot));
+  const rows = await db
+    .select()
+    .from(schema.battleDecks)
+    .where(eq(schema.battleDecks.battleId, battleId))
+    .orderBy(asc(schema.battleDecks.slot));
   return rows;
 }
 
@@ -219,7 +261,18 @@ async function roundCards(db: DbOrTx, battle: Battle, userId: string, round: num
   const cards = await instancesByIds(db, [mine.instanceId, theirs.instanceId], null);
   const fallback = async (d: DeckRow): Promise<CardDTO> => {
     const q = await quizCard(db, d);
-    return { instanceId: d.instanceId, cardId: d.cardId, season: d.season, title: q.title, rarity: d.rarity, atk: d.atk, def: d.def, level: 1, thumbUrl: null, pageUrl: null };
+    return {
+      instanceId: d.instanceId,
+      cardId: d.cardId,
+      season: d.season,
+      title: q.title,
+      rarity: d.rarity,
+      atk: d.atk,
+      def: d.def,
+      level: 1,
+      thumbUrl: null,
+      pageUrl: null,
+    };
   };
   // Stats figées au moment du défi (le deck ne bouge plus même si la carte a changé depuis).
   // Jamais de vues : elles donneraient la réponse à « plus lu ».
@@ -234,12 +287,18 @@ async function roundCards(db: DbOrTx, battle: Battle, userId: string, round: num
  * Sert la question d'une manche au joueur et démarre son chrono (heure du serveur).
  * Redemander la question ne relance pas le chrono.
  */
-export async function serveQuestion(ctx: Ctx, userId: string, battleId: number, round: number): Promise<BattleQuestionDTO> {
+export async function serveQuestion(
+  ctx: Ctx,
+  userId: string,
+  battleId: number,
+  round: number,
+): Promise<BattleQuestionDTO> {
   const res = await ctx.db.transaction(async (tx) => {
     const battle = await lockBattle(tx, battleId);
     sideOf(battle, userId);
     if (battle.status !== "active") throw conflict("battle_not_active", "Ce duel n'est pas en cours.");
-    if (!Number.isInteger(round) || round < 1 || round > BATTLE_ROUNDS) throw badRequest("invalid_round", "Manche invalide.");
+    if (!Number.isInteger(round) || round < 1 || round > BATTLE_ROUNDS)
+      throw badRequest("invalid_round", "Manche invalide.");
     // Asynchrone : les manches se jouent dans l'ordre ; direct : seule la manche en cours est servie.
     const answered = await tx
       .select({ round: schema.battleAnswers.round, answeredAt: schema.battleAnswers.answeredAt })
@@ -248,7 +307,8 @@ export async function serveQuestion(ctx: Ctx, userId: string, battleId: number, 
     const done = answered.filter((x) => x.answeredAt).map((x) => x.round);
     const expected = done.length ? Math.max(...done) + 1 : 1;
     if (battle.mode === "async" && round !== expected) throw conflict("wrong_round", "Joue les manches dans l'ordre.");
-    if (battle.mode === "live" && live.currentRound(battleId) !== round) throw conflict("wrong_round", "Cette manche n'est pas en cours.");
+    if (battle.mode === "live" && live.currentRound(battleId) !== round)
+      throw conflict("wrong_round", "Cette manche n'est pas en cours.");
     const question = await ensureRound(tx, battle, round);
     await tx
       .insert(schema.battleAnswers)
@@ -257,7 +317,13 @@ export async function serveQuestion(ctx: Ctx, userId: string, battleId: number, 
     const [ans] = await tx
       .select()
       .from(schema.battleAnswers)
-      .where(and(eq(schema.battleAnswers.battleId, battleId), eq(schema.battleAnswers.round, round), eq(schema.battleAnswers.userId, userId)));
+      .where(
+        and(
+          eq(schema.battleAnswers.battleId, battleId),
+          eq(schema.battleAnswers.round, round),
+          eq(schema.battleAnswers.userId, userId),
+        ),
+      );
     return { battle, question, servedAt: ans!.servedAt, answered: !!ans!.answeredAt };
   });
   const cards = await roundCards(ctx.db, res.battle, userId, round);
@@ -277,7 +343,13 @@ export async function serveQuestion(ctx: Ctx, userId: string, battleId: number, 
 }
 
 /** Enregistre la réponse d'un joueur ; le temps est mesuré par le serveur depuis l'envoi de la question. */
-export async function answerQuestion(ctx: Ctx, userId: string, battleId: number, round: number, choice: number): Promise<BattleAnswerDTO> {
+export async function answerQuestion(
+  ctx: Ctx,
+  userId: string,
+  battleId: number,
+  round: number,
+  choice: number,
+): Promise<BattleAnswerDTO> {
   const res = await ctx.db.transaction(async (tx) => {
     const battle = await lockBattle(tx, battleId);
     const side = sideOf(battle, userId);
@@ -285,7 +357,13 @@ export async function answerQuestion(ctx: Ctx, userId: string, battleId: number,
     const [ans] = await tx
       .select()
       .from(schema.battleAnswers)
-      .where(and(eq(schema.battleAnswers.battleId, battleId), eq(schema.battleAnswers.round, round), eq(schema.battleAnswers.userId, userId)))
+      .where(
+        and(
+          eq(schema.battleAnswers.battleId, battleId),
+          eq(schema.battleAnswers.round, round),
+          eq(schema.battleAnswers.userId, userId),
+        ),
+      )
       .for("update");
     if (!ans) throw conflict("not_served", "Cette question ne t'a pas encore été posée.");
     if (ans.answeredAt) throw conflict("already_answered", "Tu as déjà répondu.");
@@ -303,7 +381,13 @@ export async function answerQuestion(ctx: Ctx, userId: string, battleId: number,
     await tx
       .update(schema.battleAnswers)
       .set({ answeredAt: now, choice: valid ? choice : null, correct, timeLeftMs: timeLeft, power })
-      .where(and(eq(schema.battleAnswers.battleId, battleId), eq(schema.battleAnswers.round, round), eq(schema.battleAnswers.userId, userId)));
+      .where(
+        and(
+          eq(schema.battleAnswers.battleId, battleId),
+          eq(schema.battleAnswers.round, round),
+          eq(schema.battleAnswers.userId, userId),
+        ),
+      );
     return { battle, side, question, correct, power, timeLeft, valid };
   });
   const { theirs } = await roundCards(ctx.db, res.battle, userId, round);
@@ -335,7 +419,10 @@ async function closeMissing(tx: Tx, battle: Battle, round: number, now: Date) {
     const mine = all.find((d) => d.userId === userId && d.slot === round)!;
     const theirs = all.find((d) => d.userId !== userId && d.slot === round)!;
     const power = roundPower(mine.atk, theirs.def, false, 0);
-    await tx.insert(schema.battleAnswers).values({ battleId: battle.id, round, userId, servedAt: now }).onConflictDoNothing();
+    await tx
+      .insert(schema.battleAnswers)
+      .values({ battleId: battle.id, round, userId, servedAt: now })
+      .onConflictDoNothing();
     await tx
       .update(schema.battleAnswers)
       .set({ answeredAt: now, choice: null, correct: false, timeLeftMs: 0, power })
@@ -400,7 +487,12 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
   `);
   const played = new Set(answered.map((r) => r.user_id));
   // Même plafond pour l'Elo, et aucun Elo contre un perdant qui n'a pas joué (comptes secondaires).
-  const rated = battleRated({ pairFinishedToday, result, answered1: played.has(c.userId), answered2: played.has(o.userId) });
+  const rated = battleRated({
+    pairFinishedToday,
+    result,
+    answered1: played.has(c.userId),
+    answered2: played.has(o.userId),
+  });
   const elo = rated ? eloUpdate(c.elo, o.elo, result === 1 ? 1 : result === 2 ? 0 : 0.5) : { r1: c.elo, r2: o.elo };
   for (const [p, rating] of [
     [c, elo.r1],
@@ -439,8 +531,18 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
     .from(schema.user)
     .where(inArray(schema.user.id, [battle.challengerId, battle.opponentId]));
   const nameOf = (id: string) => names.find((n) => n.id === id)?.name ?? "?";
-  await fx.notify(tx, battle.challengerId, "battle_result", { battleId: battle.id, won: result === 1, draw: result === 0, opponent: nameOf(battle.opponentId) });
-  await fx.notify(tx, battle.opponentId, "battle_result", { battleId: battle.id, won: result === 2, draw: result === 0, opponent: nameOf(battle.challengerId) });
+  await fx.notify(tx, battle.challengerId, "battle_result", {
+    battleId: battle.id,
+    won: result === 1,
+    draw: result === 0,
+    opponent: nameOf(battle.opponentId),
+  });
+  await fx.notify(tx, battle.opponentId, "battle_result", {
+    battleId: battle.id,
+    won: result === 2,
+    draw: result === 0,
+    opponent: nameOf(battle.challengerId),
+  });
   return { players: [c, o], winnerId, result };
 }
 
@@ -473,7 +575,8 @@ async function afterFinish(ctx: Ctx, fx: Effects, battle: Battle, players: Playe
   await afterCommit(ctx, async () => {
     for (const p of players) pushWallet(ctx, p);
     // Anti-farm : seule une victoire récompensée fait avancer l'objectif de guilde.
-    if (winnerId && (await battleRewarded(ctx.db, winnerId, battle.id))) await bumpObjective(ctx, winnerId, { win_battles: 1 });
+    if (winnerId && (await battleRewarded(ctx.db, winnerId, battle.id)))
+      await bumpObjective(ctx, winnerId, { win_battles: 1 });
     ctx.rt.toUser(battle.challengerId, "battle:update", { battleId: battle.id });
     ctx.rt.toUser(battle.opponentId, "battle:update", { battleId: battle.id });
     await fx.flush(ctx);
@@ -535,7 +638,13 @@ export async function restartLiveRound(ctx: Ctx, battleId: number, round: number
       .from(schema.battleRounds)
       .where(and(eq(schema.battleRounds.battleId, battleId), eq(schema.battleRounds.round, round)));
     if (!seen) return;
-    const question = await buildQuestion(tx, battle, round, `${battle.seed}:${randomBytes(8).toString("hex")}`, seen.question as Question);
+    const question = await buildQuestion(
+      tx,
+      battle,
+      round,
+      `${battle.seed}:${randomBytes(8).toString("hex")}`,
+      seen.question as Question,
+    );
     await tx
       .update(schema.battleRounds)
       .set({ question })
@@ -578,7 +687,10 @@ const live = (() => {
     await ctx.db.transaction((tx) => ensureRound(tx, battle, round));
     const state: LiveState = { round, startedAt: ctx.now(), timer: null };
     states.set(battleId, state);
-    state.timer = setTimeout(() => run(ctx, battleId, () => resolveRound(ctx, battleId, round)), QUESTION_TIME_MS + ANSWER_GRACE_MS);
+    state.timer = setTimeout(
+      () => run(ctx, battleId, () => resolveRound(ctx, battleId, round)),
+      QUESTION_TIME_MS + ANSWER_GRACE_MS,
+    );
     await Promise.all(
       [battle.challengerId, battle.opponentId].map(async (userId) => {
         try {
@@ -692,19 +804,35 @@ export const liveBattles = live;
 /** Rattrapage : défis expirés, duels asynchrones trop vieux, duels en direct interrompus. */
 export async function sweepBattles(ctx: Ctx) {
   const now = ctx.now().getTime();
-  const rows = await ctx.db.select().from(b).where(inArray(b.status, ["pending", "active"]));
+  const rows = await ctx.db
+    .select()
+    .from(b)
+    .where(inArray(b.status, ["pending", "active"]));
   for (const battle of rows) {
     try {
       const age = now - (battle.startedAt ?? battle.createdAt).getTime();
       if (battle.status === "pending" && now - battle.createdAt.getTime() > CHALLENGE_TTL_MS) {
-        await ctx.db.update(b).set({ status: "cancelled", finishedAt: ctx.now() }).where(and(eq(b.id, battle.id), eq(b.status, "pending")));
+        await ctx.db
+          .update(b)
+          .set({ status: "cancelled", finishedAt: ctx.now() })
+          .where(and(eq(b.id, battle.id), eq(b.status, "pending")));
       } else if (battle.status === "active" && battle.mode === "async" && age > ASYNC_BATTLE_TTL_MS) {
         await forceFinish(ctx, battle.id);
-      } else if (battle.status === "active" && battle.mode === "live" && !live.isRunning(battle.id) && age > LIVE_STALE_MS) {
+      } else if (
+        battle.status === "active" &&
+        battle.mode === "live" &&
+        !live.isRunning(battle.id) &&
+        age > LIVE_STALE_MS
+      ) {
         // Jamais commencé (un joueur n'est pas venu) : annulé sans récompense ; interrompu en cours : terminé.
-        const [played] = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from battle_answers where battle_id = ${battle.id} and answered_at is not null`);
+        const [played] = await ctx.db.execute<{ n: number }>(
+          sql`select count(*)::int as n from battle_answers where battle_id = ${battle.id} and answered_at is not null`,
+        );
         if ((played?.n ?? 0) === 0) {
-          await ctx.db.update(b).set({ status: "cancelled", finishedAt: ctx.now() }).where(and(eq(b.id, battle.id), eq(b.status, "active")));
+          await ctx.db
+            .update(b)
+            .set({ status: "cancelled", finishedAt: ctx.now() })
+            .where(and(eq(b.id, battle.id), eq(b.status, "active")));
           ctx.rt.toUser(battle.challengerId, "battle:update", { battleId: battle.id });
           ctx.rt.toUser(battle.opponentId, "battle:update", { battleId: battle.id });
         } else await forceFinish(ctx, battle.id);
@@ -737,7 +865,11 @@ export async function listBattles(ctx: Ctx, userId: string) {
   const ids = [...new Set(rows.flatMap((r) => [r.challengerId, r.opponentId]))];
   const users = ids.length
     ? await ctx.db
-        .select({ id: schema.user.id, username: schema.user.username, name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
+        .select({
+          id: schema.user.id,
+          username: schema.user.username,
+          name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
+        })
         .from(schema.user)
         .where(inArray(schema.user.id, ids))
     : [];
@@ -746,7 +878,16 @@ export async function listBattles(ctx: Ctx, userId: string) {
     ? await ctx.db
         .select({ battleId: schema.battleAnswers.battleId, n: sql<number>`count(*)::int` })
         .from(schema.battleAnswers)
-        .where(and(inArray(schema.battleAnswers.battleId, rows.map((r) => r.id)), eq(schema.battleAnswers.userId, userId), sql`${schema.battleAnswers.answeredAt} is not null`))
+        .where(
+          and(
+            inArray(
+              schema.battleAnswers.battleId,
+              rows.map((r) => r.id),
+            ),
+            eq(schema.battleAnswers.userId, userId),
+            sql`${schema.battleAnswers.answeredAt} is not null`,
+          ),
+        )
         .groupBy(schema.battleAnswers.battleId)
     : [];
   const doneBy = new Map(progress.map((p) => [p.battleId, p.n]));
@@ -760,7 +901,10 @@ export async function listBattles(ctx: Ctx, userId: string) {
       status: r.status,
       isChallenger,
       opponent: { id: otherId, name: other?.name ?? "?", username: other?.username ?? "" },
-      score: { you: isChallenger ? r.challengerScore : r.opponentScore, them: isChallenger ? r.opponentScore : r.challengerScore },
+      score: {
+        you: isChallenger ? r.challengerScore : r.opponentScore,
+        them: isChallenger ? r.opponentScore : r.challengerScore,
+      },
       result: r.status !== "finished" ? null : r.winnerId === null ? "draw" : r.winnerId === userId ? "win" : "loss",
       eloDelta: isChallenger ? r.challengerEloDelta : r.opponentEloDelta,
       roundsPlayed: doneBy.get(r.id) ?? 0,
@@ -779,13 +923,34 @@ export async function battleDetail(ctx: Ctx, userId: string, battleId: number) {
   const finished = battle.status === "finished";
   const myDeck = all.filter((d) => d.userId === userId);
   const theirDeck = finished ? all.filter((d) => d.userId !== userId) : [];
-  const cards = await instancesByIds(ctx.db, [...myDeck, ...theirDeck].map((d) => d.instanceId), userId);
-  const cardOf = (d: DeckRow) => ({ ...(cards.find((c) => c.instanceId === d.instanceId) ?? { title: "?", thumbUrl: null }), slot: d.slot, atk: d.atk, def: d.def, rarity: d.rarity, cardId: d.cardId, season: d.season, instanceId: d.instanceId });
+  const cards = await instancesByIds(
+    ctx.db,
+    [...myDeck, ...theirDeck].map((d) => d.instanceId),
+    userId,
+  );
+  const cardOf = (d: DeckRow) => ({
+    ...(cards.find((c) => c.instanceId === d.instanceId) ?? { title: "?", thumbUrl: null }),
+    slot: d.slot,
+    atk: d.atk,
+    def: d.def,
+    rarity: d.rarity,
+    cardId: d.cardId,
+    season: d.season,
+    instanceId: d.instanceId,
+  });
   const answers = await ctx.db.select().from(schema.battleAnswers).where(eq(schema.battleAnswers.battleId, battleId));
-  const rounds = await ctx.db.select().from(schema.battleRounds).where(eq(schema.battleRounds.battleId, battleId)).orderBy(asc(schema.battleRounds.round));
+  const rounds = await ctx.db
+    .select()
+    .from(schema.battleRounds)
+    .where(eq(schema.battleRounds.battleId, battleId))
+    .orderBy(asc(schema.battleRounds.round));
   const otherId = side === "challenger" ? battle.opponentId : battle.challengerId;
   const names = await ctx.db
-    .select({ id: schema.user.id, username: schema.user.username, name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
+    .select({
+      id: schema.user.id,
+      username: schema.user.username,
+      name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
+    })
     .from(schema.user)
     .where(eq(schema.user.id, otherId));
   const myAnswered = answers.filter((a) => a.userId === userId && a.answeredAt).map((a) => a.round);
@@ -796,7 +961,10 @@ export async function battleDetail(ctx: Ctx, userId: string, battleId: number) {
     isChallenger: side === "challenger",
     opponent: { id: otherId, name: names[0]?.name ?? "?", username: names[0]?.username ?? "" },
     winnerId: battle.winnerId,
-    score: side === "challenger" ? { you: battle.challengerScore, them: battle.opponentScore } : { you: battle.opponentScore, them: battle.challengerScore },
+    score:
+      side === "challenger"
+        ? { you: battle.challengerScore, them: battle.opponentScore }
+        : { you: battle.opponentScore, them: battle.challengerScore },
     eloDelta: side === "challenger" ? battle.challengerEloDelta : battle.opponentEloDelta,
     nextRound: battle.status === "active" ? (myAnswered.length ? Math.max(...myAnswered) + 1 : 1) : null,
     liveRound: battle.mode === "live" ? live.currentRound(battleId) : null,

@@ -38,28 +38,38 @@ async function lockGuild(tx: Tx, guildId: number) {
   return row;
 }
 
-export async function createGuild(ctx: Ctx, userId: string, input: { name: string; tag: string; emblem: string; description: string }) {
+export async function createGuild(
+  ctx: Ctx,
+  userId: string,
+  input: { name: string; tag: string; emblem: string; description: string },
+) {
   if (!validateGuildName(input.name)) throw badRequest("invalid_name", "Nom de guilde : 3 à 30 caractères.");
   if (!validateGuildTag(input.tag)) throw badRequest("invalid_tag", "Blason : 2 à 5 lettres ou chiffres.");
   const guild = await ctx.db
     .transaction(async (tx) => {
-    await lockPlayers(tx, [userId]);
-    if (await membership(tx, userId)) throw conflict("already_in_guild", "Tu es déjà dans une guilde.");
-    const clash = await tx
-      .select({ id: g.id })
-      .from(g)
-      .where(sql`lower(${g.name}) = lower(${input.name.trim()}) or lower(${g.tag}) = lower(${input.tag.trim()})`);
-    if (clash.length) throw conflict("guild_exists", "Ce nom ou ce blason est déjà pris.");
-    const [created] = await tx
-      .insert(g)
-      .values({ name: input.name.trim(), tag: input.tag.trim().toUpperCase(), emblem: input.emblem, description: input.description.trim() })
-      .returning();
-    await tx.insert(gm).values({ userId, guildId: created!.id, role: "leader" });
-    return created!;
-  })
+      await lockPlayers(tx, [userId]);
+      if (await membership(tx, userId)) throw conflict("already_in_guild", "Tu es déjà dans une guilde.");
+      const clash = await tx
+        .select({ id: g.id })
+        .from(g)
+        .where(sql`lower(${g.name}) = lower(${input.name.trim()}) or lower(${g.tag}) = lower(${input.tag.trim()})`);
+      if (clash.length) throw conflict("guild_exists", "Ce nom ou ce blason est déjà pris.");
+      const [created] = await tx
+        .insert(g)
+        .values({
+          name: input.name.trim(),
+          tag: input.tag.trim().toUpperCase(),
+          emblem: input.emblem,
+          description: input.description.trim(),
+        })
+        .returning();
+      await tx.insert(gm).values({ userId, guildId: created!.id, role: "leader" });
+      return created!;
+    })
     .catch((err: { cause?: { code?: string }; code?: string }) => {
       // Création simultanée du même nom : l'index unique tranche, on répond proprement.
-      if ((err.cause?.code ?? err.code) === "23505") throw conflict("guild_exists", "Ce nom ou ce blason est déjà pris.");
+      if ((err.cause?.code ?? err.code) === "23505")
+        throw conflict("guild_exists", "Ce nom ou ce blason est déjà pris.");
       throw err;
     });
   syncGuildRoom(ctx, userId, guild.id, true);
@@ -74,14 +84,21 @@ export async function joinGuild(ctx: Ctx, userId: string, guildId: number) {
     await lockGuild(tx, guildId);
     await lockPlayers(tx, [userId]);
     if (await membership(tx, userId)) throw conflict("already_in_guild", "Quitte d'abord ta guilde actuelle.");
-    const [count] = await tx.select({ n: sql<number>`count(*)::int` }).from(gm).where(eq(gm.guildId, guildId));
-    if ((count?.n ?? 0) >= GUILD_MAX_MEMBERS) throw conflict("guild_full", `Cette guilde est complète (${GUILD_MAX_MEMBERS} membres).`);
+    const [count] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(gm)
+      .where(eq(gm.guildId, guildId));
+    if ((count?.n ?? 0) >= GUILD_MAX_MEMBERS)
+      throw conflict("guild_full", `Cette guilde est complète (${GUILD_MAX_MEMBERS} membres).`);
     await tx.insert(gm).values({ userId, guildId, role: "member" });
     // L'historique du salon n'arrive pas comme des non-lus.
     await tx
       .insert(schema.messageReads)
       .values({ userId, channel: guildChannel(guildId), lastReadAt: ctx.now() })
-      .onConflictDoUpdate({ target: [schema.messageReads.userId, schema.messageReads.channel], set: { lastReadAt: ctx.now() } });
+      .onConflictDoUpdate({
+        target: [schema.messageReads.userId, schema.messageReads.channel],
+        set: { lastReadAt: ctx.now() },
+      });
   });
   syncGuildRoom(ctx, userId, guildId, true);
   void emit(ctx, userId, { type: "guild_joined" });
@@ -113,13 +130,24 @@ export async function leaveGuild(ctx: Ctx, userId: string) {
   syncGuildRoom(ctx, userId, me.guildId, false);
 }
 
-export async function manageMember(ctx: Ctx, actorId: string, targetId: string, action: "kick" | "promote" | "demote" | "transfer") {
+export async function manageMember(
+  ctx: Ctx,
+  actorId: string,
+  targetId: string,
+  action: "kick" | "promote" | "demote" | "transfer",
+) {
   const actor = await membership(ctx.db, actorId);
   if (!actor) throw notFound("Tu n'es dans aucune guilde.");
   await ctx.db.transaction(async (tx) => {
     await lockGuild(tx, actor.guildId);
-    const [target] = await tx.select().from(gm).where(and(eq(gm.userId, targetId), eq(gm.guildId, actor.guildId)));
-    const [me] = await tx.select().from(gm).where(and(eq(gm.userId, actorId), eq(gm.guildId, actor.guildId)));
+    const [target] = await tx
+      .select()
+      .from(gm)
+      .where(and(eq(gm.userId, targetId), eq(gm.guildId, actor.guildId)));
+    const [me] = await tx
+      .select()
+      .from(gm)
+      .where(and(eq(gm.userId, actorId), eq(gm.guildId, actor.guildId)));
     if (!target || !me) throw notFound("Ce joueur n'est pas dans ta guilde.");
     if (!canManage(me.role, target.role, action)) throw forbidden("Ton rôle ne permet pas cette action.");
     if (action === "kick") await tx.delete(gm).where(eq(gm.userId, targetId));
@@ -146,7 +174,10 @@ export async function updateGuild(ctx: Ctx, actorId: string, input: { descriptio
 /** Crée l'objectif de la semaine s'il n'existe pas (job du lundi, et à la lecture par sécurité). */
 export async function ensureObjective(ctx: Ctx, guildId: number) {
   const week = weekStart(parisDay(ctx.now()));
-  const [count] = await ctx.db.select({ n: sql<number>`count(*)::int` }).from(gm).where(eq(gm.guildId, guildId));
+  const [count] = await ctx.db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(gm)
+    .where(eq(gm.guildId, guildId));
   const { kind, target } = weeklyObjective(week, count?.n ?? 1);
   await ctx.db.insert(schema.guildObjectives).values({ guildId, weekStart: week, kind, target }).onConflictDoNothing();
   const [obj] = await ctx.db
@@ -158,7 +189,10 @@ export async function ensureObjective(ctx: Ctx, guildId: number) {
 
 /** Cible effective : jamais inférieure à ce qu'exige la taille actuelle de la guilde. */
 async function effectiveTarget(db: DbOrTx, guildId: number, obj: { kind: string; target: number }) {
-  const [count] = await db.select({ n: sql<number>`count(*)::int` }).from(gm).where(eq(gm.guildId, guildId));
+  const [count] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(gm)
+    .where(eq(gm.guildId, guildId));
   const def = GUILD_OBJECTIVES[obj.kind as GuildObjectiveKind];
   return Math.max(obj.target, def ? def.perMember * (count?.n ?? 1) : 0);
 }
@@ -191,17 +225,32 @@ export async function checkObjective(ctx: Ctx, guildId: number) {
   if (obj.completedAt || obj.progress < (await effectiveTarget(ctx.db, guildId, obj))) return;
   const fx = new Effects();
   const rewarded = await ctx.db.transaction(async (tx) => {
-    const [locked] = await tx.select().from(schema.guildObjectives).where(eq(schema.guildObjectives.id, obj.id)).for("update");
+    const [locked] = await tx
+      .select()
+      .from(schema.guildObjectives)
+      .where(eq(schema.guildObjectives.id, obj.id))
+      .for("update");
     if (!locked || locked.completedAt || locked.progress < (await effectiveTarget(tx, guildId, locked))) return [];
-    await tx.update(schema.guildObjectives).set({ completedAt: ctx.now() }).where(eq(schema.guildObjectives.id, obj.id));
+    await tx
+      .update(schema.guildObjectives)
+      .set({ completedAt: ctx.now() })
+      .where(eq(schema.guildObjectives.id, obj.id));
     const members = await tx.select({ userId: gm.userId }).from(gm).where(eq(gm.guildId, guildId));
     // Joueurs verrouillés AVANT de relire le ledger : un joueur passé dans une autre guilde dont
     // l'objectif se valide en même temps attend ici la fin de l'autre transaction, puis la voit.
-    const lockedPlayers = await lockPlayers(tx, members.map((x) => x.userId));
+    const lockedPlayers = await lockPlayers(
+      tx,
+      members.map((x) => x.userId),
+    );
     const ids = [...lockedPlayers.keys()];
     // Relus sous verrou (adhésion et départ verrouillent aussi le joueur) : membres encore présents,
     // et déjà récompensés cette semaine, quelle que soit la guilde.
-    const still = ids.length ? await tx.select({ userId: gm.userId }).from(gm).where(and(eq(gm.guildId, guildId), inArray(gm.userId, ids))) : [];
+    const still = ids.length
+      ? await tx
+          .select({ userId: gm.userId })
+          .from(gm)
+          .where(and(eq(gm.guildId, guildId), inArray(gm.userId, ids)))
+      : [];
     const already = ids.length
       ? await tx
           .selectDistinct({ userId: schema.ledger.userId })
@@ -220,7 +269,15 @@ export async function checkObjective(ctx: Ctx, guildId: number) {
     for (const p of players) {
       const bonusPacks = p.bonusPacks + GUILD_OBJECTIVE_REWARD_PACKS;
       await tx.update(schema.players).set({ bonusPacks }).where(eq(schema.players.userId, p.userId));
-      await logMovement(tx, p.userId, "bonus_pack", GUILD_OBJECTIVE_REWARD_PACKS, bonusPacks, "guild_objective", obj.id);
+      await logMovement(
+        tx,
+        p.userId,
+        "bonus_pack",
+        GUILD_OBJECTIVE_REWARD_PACKS,
+        bonusPacks,
+        "guild_objective",
+        obj.id,
+      );
       await fx.notify(tx, p.userId, "guild_objective", { guildId, kind: obj.kind });
       p.bonusPacks = bonusPacks;
     }
@@ -248,7 +305,17 @@ export async function listGuilds(ctx: Ctx) {
   const season = await activeSeason(ctx.db);
   const scores = await seasonScores(ctx, season);
   const guilds = await ctx.db.select().from(g).orderBy(g.name);
-  const members = guilds.length ? await ctx.db.select().from(gm).where(inArray(gm.guildId, guilds.map((x) => x.id))) : [];
+  const members = guilds.length
+    ? await ctx.db
+        .select()
+        .from(gm)
+        .where(
+          inArray(
+            gm.guildId,
+            guilds.map((x) => x.id),
+          ),
+        )
+    : [];
   return guilds
     .map((x) => {
       const mine = members.filter((y) => y.guildId === x.id);
@@ -270,7 +337,15 @@ export async function guildDetail(ctx: Ctx, guildId: number) {
   if (!guild) throw notFound("Cette guilde n'existe pas.");
   const season = await activeSeason(ctx.db);
   const scores = await seasonScores(ctx, season);
-  const rows = await ctx.db.execute<{ user_id: string; username: string; display_name: string; avatar: string | null; role: GuildRole; joined_at: Date; elo: number }>(sql`
+  const rows = await ctx.db.execute<{
+    user_id: string;
+    username: string;
+    display_name: string;
+    avatar: string | null;
+    role: GuildRole;
+    joined_at: Date;
+    elo: number;
+  }>(sql`
     select m.user_id, u.username, coalesce(u.display_username, u.name) as display_name, p.avatar, m.role, m.joined_at, p.elo
     from guild_members m join "user" u on u.id = m.user_id join players p on p.user_id = m.user_id
     where m.guild_id = ${guildId}

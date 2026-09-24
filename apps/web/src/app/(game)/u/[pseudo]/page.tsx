@@ -65,12 +65,22 @@ function Actions({ p, onChanged }: { p: ProfileDTO; onChanged: () => void }) {
         <MessageSquare aria-hidden className="size-4" /> Message
       </Link>
       {p.relation === "none" && (
-        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => run(() => api("/friends", { body: { username: p.username } }), "Demande d'ami envoyée.")}>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={busy}
+          onClick={() => run(() => api("/friends", { body: { username: p.username } }), "Demande d'ami envoyée.")}
+        >
           <UserPlus aria-hidden className="size-4" /> Ajouter en ami
         </button>
       )}
       {p.relation === "incoming" && (
-        <button type="button" className="btn btn-sm" disabled={busy} onClick={() => run(() => api(`/friends/${p.id}/accept`, { method: "POST" }), "Vous êtes amis !")}>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={busy}
+          onClick={() => run(() => api(`/friends/${p.id}/accept`, { method: "POST" }), "Vous êtes amis !")}
+        >
           <UserCheck aria-hidden className="size-4" /> Accepter sa demande
         </button>
       )}
@@ -124,7 +134,9 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
       <header className="flex flex-wrap items-end gap-4 border-b border-line-strong pb-3">
         <Avatar name={p.displayName} avatar={p.avatar} online={p.isMe ? undefined : p.online} size="lg" />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-serif text-[clamp(1.75rem,1.4rem+1.4vw,2.35rem)] leading-tight">{p.displayName}</h1>
+          <h1 className="truncate font-serif text-[clamp(1.75rem,1.4rem+1.4vw,2.35rem)] leading-tight">
+            {p.displayName}
+          </h1>
           <p className="text-sm text-muted">
             Joueur depuis {since(p.createdAt)}
             {p.guild && (
@@ -146,7 +158,10 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
         <Actions p={p} onChanged={() => mutate()} />
       </header>
 
-      <dl className="tnum grid grid-cols-2 overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4 [&>div]:bg-panel" style={{ gap: 1 }}>
+      <dl
+        className="tnum grid grid-cols-2 overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4 [&>div]:bg-panel"
+        style={{ gap: 1 }}
+      >
         {[
           ["Score de collection", fmt(p.collectionScore)],
           ["Articles différents", fmt(p.uniqueCards)],
@@ -170,7 +185,9 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
           </div>
         ) : (
           <p className="text-sm text-muted">
-            {p.isMe ? "Épingle jusqu’à 5 cartes depuis leur fiche (bouton « Épingler ») pour les montrer ici." : "Aucune carte épinglée pour l’instant."}
+            {p.isMe
+              ? "Épingle jusqu’à 5 cartes depuis leur fiche (bouton « Épingler ») pour les montrer ici."
+              : "Aucune carte épinglée pour l’instant."}
           </p>
         )}
       </section>

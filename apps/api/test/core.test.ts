@@ -108,7 +108,11 @@ describe("authentification", () => {
 
 describe("configuration", () => {
   it("refuse le secret d'exemple, le mode test et une URL en http en production", () => {
-    const base = { NODE_ENV: "production", BETTER_AUTH_SECRET: "x".repeat(40), BETTER_AUTH_URL: "https://www.palawi.fr" };
+    const base = {
+      NODE_ENV: "production",
+      BETTER_AUTH_SECRET: "x".repeat(40),
+      BETTER_AUTH_URL: "https://www.palawi.fr",
+    };
     expect(() => loadConfig(base)).not.toThrow();
     expect(() => loadConfig({ ...base, BETTER_AUTH_SECRET: "change-me-change-me-change-me-change-me" })).toThrow();
     expect(() => loadConfig({ ...base, GAME_TEST_MODE: "1" })).toThrow();
@@ -120,7 +124,8 @@ describe("configuration", () => {
 });
 
 describe("limitation de débit", () => {
-  const fakeReq = (headers: Record<string, string>, ip = "10.0.0.1") => ({ headers, ip, raw: {} }) as unknown as FastifyRequest;
+  const fakeReq = (headers: Record<string, string>, ip = "10.0.0.1") =>
+    ({ headers, ip, raw: {} }) as unknown as FastifyRequest;
 
   it("compte par joueur (session validée), sinon par IP ; un cookie inventé ne crée pas de compteur", async () => {
     const p = await signUp(app);
@@ -133,11 +138,17 @@ describe("limitation de débit", () => {
       headers: { origin: "http://localhost:3000" },
       payload: { username: p.username, password: "motdepasse123" },
     });
-    const cookie2 = [again.headers["set-cookie"]].flat().filter(Boolean).map((c) => String(c).split(";")[0]).join("; ");
+    const cookie2 = [again.headers["set-cookie"]]
+      .flat()
+      .filter(Boolean)
+      .map((c) => String(c).split(";")[0])
+      .join("; ");
     expect(cookie2).not.toBe(p.cookie);
     expect(await rateLimitKey(config, ctx.auth, fakeReq({ cookie: cookie2 }))).toBe(`user:${p.userId}`);
     // Cookie inventé : retombe sur l'IP.
-    expect(await rateLimitKey(config, ctx.auth, fakeReq({ cookie: "palawi_palacards_session=nimportequoi" }))).toBe("ip:10.0.0.1");
+    expect(await rateLimitKey(config, ctx.auth, fakeReq({ cookie: "palawi_palacards_session=nimportequoi" }))).toBe(
+      "ip:10.0.0.1",
+    );
     expect(await rateLimitKey(config, ctx.auth, fakeReq({}))).toBe("ip:10.0.0.1");
   });
 
@@ -161,7 +172,11 @@ describe("sessions", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(spy).toHaveBeenCalledWith(p.userId);
-    const out = await app.inject({ method: "POST", url: "/palacards/api/auth/sign-out", headers: { cookie: p.cookie, origin: "http://localhost:3000" } });
+    const out = await app.inject({
+      method: "POST",
+      url: "/palacards/api/auth/sign-out",
+      headers: { cookie: p.cookie, origin: "http://localhost:3000" },
+    });
     expect(out.statusCode).toBe(200);
     spy.mockRestore();
   });
@@ -197,7 +212,9 @@ describe("paquets", () => {
       const res = await p.post("/packs/open");
       expect(res.status).toBe(200);
       expect(res.body.cards).toHaveLength(5);
-      expect(res.body.cards.every((c: { instanceId: number; title: string }) => c.instanceId > 0 && c.title)).toBe(true);
+      expect(res.body.cards.every((c: { instanceId: number; title: string }) => c.instanceId > 0 && c.title)).toBe(
+        true,
+      );
       // Ses propres cartes gardent leurs vues.
       expect(res.body.cards[0]).toHaveProperty("views12m");
       expect(res.body.packs.available).toBe(MAX_STORED_PACKS - 1);
@@ -316,7 +333,9 @@ describe("catalogue", () => {
     expect(typo.body.approximate).toBe(true);
     expect(typo.body.items.length).toBeGreaterThan(0);
     // Les jokers LIKE saisis par le joueur sont pris au pied de la lettre.
-    expect((await p.get("/cards?q=%25%25%25&limit=5")).body.items.filter((c: { title: string }) => !c.title.includes("%"))).toHaveLength(0);
+    expect(
+      (await p.get("/cards?q=%25%25%25&limit=5")).body.items.filter((c: { title: string }) => !c.title.includes("%")),
+    ).toHaveLength(0);
 
     const page1 = await p.get("/cards?limit=10&sort=views");
     const page2 = await p.get(`/cards?limit=10&sort=views&cursor=${page1.body.nextCursor}`);

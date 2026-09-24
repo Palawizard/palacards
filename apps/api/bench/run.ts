@@ -62,7 +62,13 @@ const stats = (xs: number[]) => {
 const ms = (n: number) => `${n.toFixed(1)} ms`;
 
 await prepare();
-const config = loadConfig({ ...process.env, DATABASE_URL: benchUrl.toString(), WIKIMEDIA_DISABLED: "1", LOG_LEVEL: "error", NODE_ENV: "test" });
+const config = loadConfig({
+  ...process.env,
+  DATABASE_URL: benchUrl.toString(),
+  WIKIMEDIA_DISABLED: "1",
+  LOG_LEVEL: "error",
+  NODE_ENV: "test",
+});
 const { app, ctx } = await buildApp(config);
 await app.ready();
 const c = ctx as Ctx;
@@ -88,7 +94,16 @@ for (let i = 0; i < 100; i++) {
 
 // Recherche floue sans accents et navigation paginée.
 // Requêtes réalistes : mot très fréquent, expression, sans accents, faute de frappe, préfixe, titre exact.
-const queries = ["chateau", "bataille de paris", "eglise saint-martin", "revolution", "musée de lyon", "chatteau", "cathéd", "Opéra Rouge de Nantes 1234567"];
+const queries = [
+  "chateau",
+  "bataille de paris",
+  "eglise saint-martin",
+  "revolution",
+  "musée de lyon",
+  "chatteau",
+  "cathéd",
+  "Opéra Rouge de Nantes 1234567",
+];
 const searchTimes: number[] = [];
 const perQuery = new Map<string, number[]>();
 for (const q of queries) await catalog(c, userId, { q, sort: "views", limit: 48 });
@@ -114,8 +129,12 @@ const pack = stats(packTimes);
 const search = stats(searchTimes);
 const browse = stats(browseTimes);
 console.log("\nRésultats (temps serveur, base de 2,7 M cartes) :");
-console.log(`  Ouverture de paquet : p50 ${ms(pack.p50)} · p95 ${ms(pack.p95)} · max ${ms(pack.max)}  (objectif < 50 ms)`);
-console.log(`  Recherche catalogue : p50 ${ms(search.p50)} · p95 ${ms(search.p95)} · max ${ms(search.max)}  (objectif < 150 ms)`);
+console.log(
+  `  Ouverture de paquet : p50 ${ms(pack.p50)} · p95 ${ms(pack.p95)} · max ${ms(pack.max)}  (objectif < 50 ms)`,
+);
+console.log(
+  `  Recherche catalogue : p50 ${ms(search.p50)} · p95 ${ms(search.p95)} · max ${ms(search.max)}  (objectif < 150 ms)`,
+);
 console.log(`  Catalogue paginé    : p50 ${ms(browse.p50)} · p95 ${ms(browse.p95)} · max ${ms(browse.max)}`);
 for (const [q, times] of perQuery) console.log(`    « ${q} » : p50 ${ms(stats(times).p50)}`);
 await app.close();

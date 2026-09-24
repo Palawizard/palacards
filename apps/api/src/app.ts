@@ -32,7 +32,11 @@ export interface BuildOptions {
  * un nouveau compteur), sinon l'IP réelle. `cf-connecting-ip` n'est lu que derrière le proxy (TRUST_PROXY),
  * sinon n'importe quel client pourrait le falsifier ; `req.ip` suit déjà `trustProxy`.
  */
-export async function rateLimitKey(config: Pick<Config, "TRUST_PROXY">, auth: Auth | undefined, req: FastifyRequest): Promise<string> {
+export async function rateLimitKey(
+  config: Pick<Config, "TRUST_PROXY">,
+  auth: Auth | undefined,
+  req: FastifyRequest,
+): Promise<string> {
   if (auth && req.headers.cookie?.includes(`${SESSION_COOKIE}=`)) {
     try {
       const user = await sessionUser(auth, req);
@@ -62,7 +66,9 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
   const database = config.DATABASE_URL ? createDb(config.DATABASE_URL) : undefined;
   // Le temps réel a besoin de l'auth (handshake) et l'auth coupe les sockets à la révocation d'une session.
   const late: { rt?: { disconnectUser(userId: string): void } } = {};
-  const auth = database ? createAuth(database.db, config, { onSessionsRevoked: (userId) => late.rt?.disconnectUser(userId) }) : undefined;
+  const auth = database
+    ? createAuth(database.db, config, { onSessionsRevoked: (userId) => late.rt?.disconnectUser(userId) })
+    : undefined;
 
   await app.register(rateLimit, {
     // Plafond global (lectures comprises : catalogue, fiches, résumés Wikipédia) ; routes sensibles plus strictes.

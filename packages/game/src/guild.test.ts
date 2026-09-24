@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { canManage, dmChannel, GUILD_OBJECTIVES, validateGuildName, validateGuildTag, weeklyObjective, weekStart } from "./guild.js";
+import {
+  canManage,
+  dmChannel,
+  GUILD_OBJECTIVES,
+  validateGuildName,
+  validateGuildTag,
+  weeklyObjective,
+  weekStart,
+} from "./guild.js";
 
 describe("guildes", () => {
   it("calcule le lundi de la semaine", () => {

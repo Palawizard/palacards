@@ -21,7 +21,11 @@ describe("amis", () => {
     expect((await a.get("/friends")).body.friends).toHaveLength(1);
     const notif = await a.get("/notifications");
     expect(notif.body.items[0].type).toBe("friend_accepted");
-    const del = await app.inject({ method: "DELETE", url: `/palacards/api/friends/${b.userId}`, headers: { cookie: a.cookie } });
+    const del = await app.inject({
+      method: "DELETE",
+      url: `/palacards/api/friends/${b.userId}`,
+      headers: { cookie: a.cookie },
+    });
     expect(del.statusCode).toBe(200);
     expect((await a.get("/friends")).body.friends).toHaveLength(0);
   });
@@ -54,7 +58,13 @@ describe("guildes", () => {
     const chief = await signUp(app);
     const officer = await signUp(app);
     const member = await signUp(app);
-    const created = await chief.post("/guilds", { name: uniqueName("Guilde "), tag: uniqueName("G").slice(0, 5).replace(/[^A-Za-z0-9]/g, "X"), emblem: "🦉" });
+    const created = await chief.post("/guilds", {
+      name: uniqueName("Guilde "),
+      tag: uniqueName("G")
+        .slice(0, 5)
+        .replace(/[^A-Za-z0-9]/g, "X"),
+      emblem: "🦉",
+    });
     expect(created.status).toBe(200);
     const id = created.body.id;
     await officer.post(`/guilds/${id}/join`);
@@ -74,7 +84,11 @@ describe("guildes", () => {
 
   it("limite la guilde à 20 membres", async () => {
     const chief = await signUp(app);
-    const { body } = await chief.post("/guilds", { name: uniqueName("Pleine "), tag: "PL" + String(Date.now()).slice(-3), emblem: "🗺️" });
+    const { body } = await chief.post("/guilds", {
+      name: uniqueName("Pleine "),
+      tag: "PL" + String(Date.now()).slice(-3),
+      emblem: "🗺️",
+    });
     const joiners = await Promise.all(Array.from({ length: GUILD_MAX_MEMBERS }, () => signUp(app)));
     const results = await Promise.all(joiners.map((p) => p.post(`/guilds/${body.id}/join`)));
     expect(results.filter((r) => r.status === 200)).toHaveLength(GUILD_MAX_MEMBERS - 1);
@@ -83,7 +97,11 @@ describe("guildes", () => {
 
   it("récompense l'objectif hebdomadaire une seule fois", async () => {
     const chief = await signUp(app);
-    const { body } = await chief.post("/guilds", { name: uniqueName("Objectif "), tag: "OB" + String(Date.now()).slice(-3), emblem: "🔭" });
+    const { body } = await chief.post("/guilds", {
+      name: uniqueName("Objectif "),
+      tag: "OB" + String(Date.now()).slice(-3),
+      emblem: "🔭",
+    });
     const detail = await chief.get("/guilds/mine");
     // Objectif « ouvrir des paquets » à un paquet de la fin : le prochain tirage le termine.
     await ctx.db
@@ -98,7 +116,9 @@ describe("guildes", () => {
     expect(obj!.completedAt).not.toBeNull();
     const [p] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
     expect(p!.bonusPacks).toBe(1);
-    const [rows] = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective'`);
+    const [rows] = await ctx.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective'`,
+    );
     expect(rows!.n).toBe(1);
     expect(detail.body.objective.target).toBeGreaterThan(0);
   });
@@ -106,7 +126,11 @@ describe("guildes", () => {
   it("relit le ledger sous verrou : pas de double récompense si l'autre guilde du joueur valide en même temps", async () => {
     const chief = await signUp(app);
     const mover = await signUp(app);
-    const { body } = await chief.post("/guilds", { name: uniqueName("Course "), tag: "CR" + String(Date.now()).slice(-3), emblem: "🏁" });
+    const { body } = await chief.post("/guilds", {
+      name: uniqueName("Course "),
+      tag: "CR" + String(Date.now()).slice(-3),
+      emblem: "🏁",
+    });
     expect((await mover.post(`/guilds/${body.id}/join`)).status).toBe(200);
     await chief.get("/guilds/mine");
     await ctx.db
@@ -128,10 +152,19 @@ describe("guildes", () => {
         if (w!.n > 0) break;
         await new Promise((r) => setTimeout(r, 20));
       }
-      await tx.insert(schema.ledger).values({ userId: mover.userId, kind: "bonus_pack", delta: 1, balanceAfter: 1, reason: "guild_objective", refId: "autre-guilde" });
+      await tx.insert(schema.ledger).values({
+        userId: mover.userId,
+        kind: "bonus_pack",
+        delta: 1,
+        balanceAfter: 1,
+        reason: "guild_objective",
+        refId: "autre-guilde",
+      });
     });
     await check;
-    const [rows] = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from ledger where user_id = ${mover.userId} and reason = 'guild_objective'`);
+    const [rows] = await ctx.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from ledger where user_id = ${mover.userId} and reason = 'guild_objective'`,
+    );
     expect(rows!.n).toBe(1);
     const [p] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, mover.userId));
     expect(p!.bonusPacks).toBe(0);

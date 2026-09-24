@@ -4,7 +4,18 @@ services:
     image: postgres:17.6-alpine
     container_name: palacards-postgres-dev
     # Mêmes réglages mémoire que la prod (docker-compose.yml) : le benchmark mesure la vraie configuration.
-    command: ["postgres", "-c", "shared_buffers=512MB", "-c", "effective_cache_size=1536MB", "-c", "work_mem=16MB", "-c", "maintenance_work_mem=512MB"]
+    command:
+      [
+        "postgres",
+        "-c",
+        "shared_buffers=512MB",
+        "-c",
+        "effective_cache_size=1536MB",
+        "-c",
+        "work_mem=16MB",
+        "-c",
+        "maintenance_work_mem=512MB",
+      ]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-palacards}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}

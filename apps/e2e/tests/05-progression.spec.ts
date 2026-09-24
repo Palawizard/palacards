@@ -6,7 +6,10 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   await instantPacks(page);
 
   // Premier paquet : le succès tombe en notification et sur la page Succès.
-  await page.getByRole("button", { name: /Ouvrir un paquet/ }).first().click();
+  await page
+    .getByRole("button", { name: /Ouvrir un paquet/ })
+    .first()
+    .click();
   await expect(page.getByText("Succès débloqué : Premier paquet.")).toBeVisible();
   await page.goto("achievements");
   // Au moins 1 : selon le tirage, une SR/UR peut débloquer d'autres succès dès le premier paquet.
@@ -61,7 +64,11 @@ test("parcours : toutes les pages du menu s'affichent sans erreur, sur mobile au
     { width: 390, height: 844 },
     { width: 360, height: 780 },
   ]) {
-    const context = await browser.newContext({ locale: "fr-FR", viewport, ...(viewport.width < 768 ? { isMobile: true, hasTouch: true } : {}) });
+    const context = await browser.newContext({
+      locale: "fr-FR",
+      viewport,
+      ...(viewport.width < 768 ? { isMobile: true, hasTouch: true } : {}),
+    });
     const page = await context.newPage();
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));
@@ -70,12 +77,29 @@ test("parcours : toutes les pages du menu s'affichent sans erreur, sur mobile au
     await page.getByLabel("Mot de passe").fill("motdepasse123");
     await page.getByRole("button", { name: "Créer mon compte" }).click();
     await expect(page).toHaveURL(/\/palacards\/pulls$/);
-    for (const path of ["pulls", "collection", "cards", "battle", "market", "trades", "friends", "messages", "guild", "leaderboard", "profile", "achievements", "settings", "notifications"]) {
+    for (const path of [
+      "pulls",
+      "collection",
+      "cards",
+      "battle",
+      "market",
+      "trades",
+      "friends",
+      "messages",
+      "guild",
+      "leaderboard",
+      "profile",
+      "achievements",
+      "settings",
+      "notifications",
+    ]) {
       await page.goto(path);
       await expect(page.locator("h1").first()).toBeVisible();
       await expect(page.getByText("Cette page arrive bientôt.")).toHaveCount(0);
       // Pas de défilement horizontal parasite sur mobile.
-      const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
       expect(overflow, `débordement horizontal sur /${path}`).toBeLessThanOrEqual(1);
     }
     expect(errors).toEqual([]);

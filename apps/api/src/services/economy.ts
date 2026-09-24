@@ -21,7 +21,10 @@ export async function claimDaily(ctx: Ctx, userId: string) {
     const streak = nextLoginStreak(p.lastLoginDay, today, p.loginStreak);
     if (streak === null) return null;
     const reward = dailyLoginReward(streak);
-    await tx.update(schema.players).set({ loginStreak: streak, lastLoginDay: today, lastSeenAt: ctx.now() }).where(eq(schema.players.userId, userId));
+    await tx
+      .update(schema.players)
+      .set({ loginStreak: streak, lastLoginDay: today, lastSeenAt: ctx.now() })
+      .where(eq(schema.players.userId, userId));
     await movePw(tx, p, reward, "daily_login", today);
     return { reward, streak, player: p };
   });
@@ -71,11 +74,17 @@ export async function notifyPacksFull(ctx: Ctx, userId: string, fullAt: string) 
 
 export async function setWishlist(ctx: Ctx, userId: string, cardId: number, wanted: boolean) {
   if (wanted) {
-    const [exists] = await ctx.db.select({ id: schema.cards.id }).from(schema.cards).where(eq(schema.cards.id, cardId)).limit(1);
+    const [exists] = await ctx.db
+      .select({ id: schema.cards.id })
+      .from(schema.cards)
+      .where(eq(schema.cards.id, cardId))
+      .limit(1);
     if (!exists) throw notFound("Cette carte n'existe pas.");
     await ctx.db.insert(schema.wishlist).values({ userId, cardId }).onConflictDoNothing();
   } else {
-    await ctx.db.delete(schema.wishlist).where(and(eq(schema.wishlist.userId, userId), eq(schema.wishlist.cardId, cardId)));
+    await ctx.db
+      .delete(schema.wishlist)
+      .where(and(eq(schema.wishlist.userId, userId), eq(schema.wishlist.cardId, cardId)));
   }
   return { wishlisted: wanted };
 }

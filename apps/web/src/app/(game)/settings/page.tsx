@@ -39,7 +39,8 @@ export default function SettingsPage() {
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
   const prefs = useSWR<{ group: string; enabled: boolean }[]>("/settings/notifications");
-  const history = useSWR<{ id: number; delta: number; balanceAfter: number; reason: string; createdAt: string }[]>("/wallet/history");
+  const history =
+    useSWR<{ id: number; delta: number; balanceAfter: number; reason: string; createdAt: string }[]>("/wallet/history");
 
   async function run(fn: () => Promise<unknown>, ok: string) {
     setBusy(true);
@@ -73,7 +74,14 @@ export default function SettingsPage() {
           >
             <label className="min-w-56 flex-1">
               <span className="label">Pseudo (actuel : {me.displayName})</span>
-              <input className="field" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Nouveau pseudo" maxLength={20} autoCapitalize="none" />
+              <input
+                className="field"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Nouveau pseudo"
+                maxLength={20}
+                autoCapitalize="none"
+              />
             </label>
             <button type="submit" className="btn" disabled={busy || username.trim().length < 3}>
               Changer de pseudo
@@ -86,7 +94,15 @@ export default function SettingsPage() {
                 type="button"
                 aria-pressed={!me.avatar}
                 className="rounded-full p-0.5 aria-pressed:ring-2 aria-pressed:ring-accent"
-                onClick={() => run(() => mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { avatar: null } }), { revalidate: false }), "Avatar mis à jour.")}
+                onClick={() =>
+                  run(
+                    () =>
+                      mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { avatar: null } }), {
+                        revalidate: false,
+                      }),
+                    "Avatar mis à jour.",
+                  )
+                }
                 aria-label="Initiale du pseudo"
               >
                 <Avatar name={me.displayName} avatar={null} size="sm" />
@@ -97,7 +113,15 @@ export default function SettingsPage() {
                   type="button"
                   aria-pressed={me.avatar === a}
                   className="grid size-9 place-items-center rounded-full border border-line-strong text-lg aria-pressed:border-accent aria-pressed:bg-accent/15"
-                  onClick={() => run(() => mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { avatar: a } }), { revalidate: false }), "Avatar mis à jour.")}
+                  onClick={() =>
+                    run(
+                      () =>
+                        mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { avatar: a } }), {
+                          revalidate: false,
+                        }),
+                      "Avatar mis à jour.",
+                    )
+                  }
                 >
                   {a}
                 </button>
@@ -113,7 +137,11 @@ export default function SettingsPage() {
           onSubmit={(e) => {
             e.preventDefault();
             void run(async () => {
-              const res = await authClient.changePassword({ currentPassword: current, newPassword: next, revokeOtherSessions: true });
+              const res = await authClient.changePassword({
+                currentPassword: current,
+                newPassword: next,
+                revokeOtherSessions: true,
+              });
               if (res.error) throw new Error(authErrorMessage(res.error.code, "Mot de passe actuel incorrect."));
               setCurrent("");
               setNext("");
@@ -122,11 +150,24 @@ export default function SettingsPage() {
         >
           <label>
             <span className="label">Mot de passe actuel</span>
-            <input type="password" className="field" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+            <input
+              type="password"
+              className="field"
+              autoComplete="current-password"
+              value={current}
+              onChange={(e) => setCurrent(e.target.value)}
+            />
           </label>
           <label>
             <span className="label">Nouveau (8 caractères min.)</span>
-            <input type="password" className="field" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} minLength={8} />
+            <input
+              type="password"
+              className="field"
+              autoComplete="new-password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+              minLength={8}
+            />
           </label>
           <button type="submit" className="btn" disabled={busy || !current || next.length < 8}>
             Modifier
@@ -143,7 +184,15 @@ export default function SettingsPage() {
               role="radio"
               aria-checked={me.animationSpeed === s.value}
               className="chip h-9 px-4 aria-checked:border-accent aria-checked:bg-accent/15 aria-checked:text-accent-strong"
-              onClick={() => run(() => mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { animationSpeed: s.value } }), { revalidate: false }), "Réglage enregistré.")}
+              onClick={() =>
+                run(
+                  () =>
+                    mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { animationSpeed: s.value } }), {
+                      revalidate: false,
+                    }),
+                  "Réglage enregistré.",
+                )
+              }
             >
               {s.label}
             </button>
@@ -170,7 +219,13 @@ export default function SettingsPage() {
                           await api("/settings/notifications", { method: "PUT", body: { [p.group]: enabled } });
                           return undefined;
                         },
-                        { optimisticData: (cur) => (cur ?? []).map((x) => (x.group === p.group ? { ...x, enabled } : x)), populateCache: false, revalidate: true, rollbackOnError: true },
+                        {
+                          optimisticData: (cur) =>
+                            (cur ?? []).map((x) => (x.group === p.group ? { ...x, enabled } : x)),
+                          populateCache: false,
+                          revalidate: true,
+                          rollbackOnError: true,
+                        },
                       );
                     }, "Préférences enregistrées.");
                   }}
@@ -183,7 +238,8 @@ export default function SettingsPage() {
 
       <Section title="Portefeuille" id="wallet">
         <p className="tnum mb-3 text-sm text-muted">
-          Solde : <strong className="text-text">{fmt(me.wallet.balance)} PW</strong>, dont {fmt(me.wallet.locked)} bloqués dans des enchères ou des échanges.
+          Solde : <strong className="text-text">{fmt(me.wallet.balance)} PW</strong>, dont {fmt(me.wallet.locked)}{" "}
+          bloqués dans des enchères ou des échanges.
         </p>
         {history.data?.length ? (
           <table className="tnum w-full text-sm">

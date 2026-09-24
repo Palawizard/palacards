@@ -6,7 +6,16 @@ import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { instancesByIds } from "./cards.js";
 import { afterCommit, Effects } from "./notifications.js";
 import { emit } from "./progression.js";
-import { lockPlayers, logMovement, moveLocked, movePw, ownedCount, pushWallet, transferInstances, type Player } from "./players.js";
+import {
+  lockPlayers,
+  logMovement,
+  moveLocked,
+  movePw,
+  ownedCount,
+  pushWallet,
+  transferInstances,
+  type Player,
+} from "./players.js";
 import { findUserByName } from "./profiles.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
@@ -33,24 +42,45 @@ async function lockTrade(tx: Tx, tradeId: number): Promise<Trade> {
 
 /** Libère ce que l'offreur avait engagé (cartes et PW) sur un échange qui n'aboutit pas. */
 async function release(tx: Tx, trade: Trade, from: Player) {
-  const items = await tx.select().from(schema.tradeItems).where(and(eq(schema.tradeItems.tradeId, trade.id), eq(schema.tradeItems.side, "from")));
+  const items = await tx
+    .select()
+    .from(schema.tradeItems)
+    .where(and(eq(schema.tradeItems.tradeId, trade.id), eq(schema.tradeItems.side, "from")));
   if (items.length) {
     await tx
       .update(ci)
       .set({ lockedBy: null })
-      .where(and(inArray(ci.id, items.map((i) => i.instanceId)), eq(ci.ownerId, trade.fromId), eq(ci.lockedBy, "trade")));
+      .where(
+        and(
+          inArray(
+            ci.id,
+            items.map((i) => i.instanceId),
+          ),
+          eq(ci.ownerId, trade.fromId),
+          eq(ci.lockedBy, "trade"),
+        ),
+      );
   }
   await moveLocked(tx, from, -trade.fromPw);
 }
 
-async function createTrade(tx: Tx, fx: Effects, fromId: string, toId: string, offer: Omit<TradeOffer, "toUsername">, now: Date, parentId: number | null) {
+async function createTrade(
+  tx: Tx,
+  fx: Effects,
+  fromId: string,
+  toId: string,
+  offer: Omit<TradeOffer, "toUsername">,
+  now: Date,
+  parentId: number | null,
+) {
   const give = [...new Set(offer.give)];
   const want = [...new Set(offer.want)];
   if (fromId === toId) throw badRequest("self_trade", "Tu ne peux pas échanger avec toi-même.");
   if (give.length > TRADE_MAX_CARDS_PER_SIDE || want.length > TRADE_MAX_CARDS_PER_SIDE) {
     throw badRequest("too_many_cards", `${TRADE_MAX_CARDS_PER_SIDE} cartes maximum de chaque côté.`);
   }
-  if (!give.length && !want.length && !offer.givePw && !offer.wantPw) throw badRequest("empty_trade", "L'échange est vide.");
+  if (!give.length && !want.length && !offer.givePw && !offer.wantPw)
+    throw badRequest("empty_trade", "L'échange est vide.");
 
   const players = await lockPlayers(tx, [fromId, toId]);
   const from = players.get(fromId)!;
@@ -81,9 +111,14 @@ async function createTrade(tx: Tx, fx: Effects, fromId: string, toId: string, of
       expiresAt: new Date(now.getTime() + TRADE_TTL_MS),
     })
     .returning();
-  const items = [...give.map((id) => ({ side: "from" as const, id })), ...want.map((id) => ({ side: "to" as const, id }))];
+  const items = [
+    ...give.map((id) => ({ side: "from" as const, id })),
+    ...want.map((id) => ({ side: "to" as const, id })),
+  ];
   if (items.length) {
-    await tx.insert(schema.tradeItems).values(items.map((i) => ({ tradeId: trade!.id, instanceId: i.id, side: i.side })));
+    await tx
+      .insert(schema.tradeItems)
+      .values(items.map((i) => ({ tradeId: trade!.id, instanceId: i.id, side: i.side })));
   }
   await fx.notify(tx, toId, parentId ? "trade_countered" : "trade_received", { tradeId: trade!.id, fromId });
   return { trade: trade!, from };
@@ -108,7 +143,8 @@ export async function counterTrade(ctx: Ctx, userId: string, tradeId: number, of
   const res = await ctx.db.transaction(async (tx) => {
     const trade = await lockTrade(tx, tradeId);
     if (trade.toId !== userId) throw forbidden("Seul le destinataire peut faire une contre-offre.");
-    if (trade.status !== "pending" || trade.expiresAt <= now) throw conflict("trade_closed", "Cet échange n'est plus en attente.");
+    if (trade.status !== "pending" || trade.expiresAt <= now)
+      throw conflict("trade_closed", "Cet échange n'est plus en attente.");
     const players = await lockPlayers(tx, [trade.fromId, trade.toId]);
     await release(tx, trade, players.get(trade.fromId)!);
     await tx.update(t).set({ status: "countered", resolvedAt: now }).where(eq(t.id, tradeId));
@@ -130,7 +166,8 @@ export async function acceptTrade(ctx: Ctx, userId: string, tradeId: number) {
   const res = await ctx.db.transaction(async (tx) => {
     const trade = await lockTrade(tx, tradeId);
     if (trade.toId !== userId) throw forbidden("Seul le destinataire peut accepter.");
-    if (trade.status !== "pending" || trade.expiresAt <= now) throw conflict("trade_closed", "Cet échange n'est plus en attente.");
+    if (trade.status !== "pending" || trade.expiresAt <= now)
+      throw conflict("trade_closed", "Cet échange n'est plus en attente.");
     const players = await lockPlayers(tx, [trade.fromId, trade.toId]);
     const from = players.get(trade.fromId)!;
     const to = players.get(trade.toId)!;
@@ -142,12 +179,15 @@ export async function acceptTrade(ctx: Ctx, userId: string, tradeId: number) {
     const want = items.filter((i) => i.side === "to").map((i) => i.instanceId);
     for (const id of give) {
       const r = byId.get(id);
-      if (!r || r.ownerId !== trade.fromId || r.lockedBy !== "trade") throw conflict("trade_invalid", "Une carte proposée n'est plus disponible.");
+      if (!r || r.ownerId !== trade.fromId || r.lockedBy !== "trade")
+        throw conflict("trade_invalid", "Une carte proposée n'est plus disponible.");
     }
     for (const id of want) {
       const r = byId.get(id);
-      if (!r || r.ownerId !== trade.toId) throw conflict("trade_invalid", "Tu ne possèdes plus une des cartes demandées.");
-      if (r.lockedBy) throw conflict("card_locked", "Une des cartes demandées est engagée dans une vente ou un échange.");
+      if (!r || r.ownerId !== trade.toId)
+        throw conflict("trade_invalid", "Tu ne possèdes plus une des cartes demandées.");
+      if (r.lockedBy)
+        throw conflict("card_locked", "Une des cartes demandées est engagée dans une vente ou un échange.");
     }
     // PW : l'offreur paie ce qu'il avait bloqué, le destinataire paie ce qui lui est demandé.
     await moveLocked(tx, from, -trade.fromPw);
@@ -178,7 +218,11 @@ export async function acceptTrade(ctx: Ctx, userId: string, tradeId: number) {
 }
 
 /** Refus (destinataire), annulation (offreur) ou expiration (job) : tout est libéré. */
-export async function closeTrade(ctx: Ctx, tradeId: number, action: { by: string; kind: "decline" | "cancel" } | { kind: "expire" }) {
+export async function closeTrade(
+  ctx: Ctx,
+  tradeId: number,
+  action: { by: string; kind: "decline" | "cancel" } | { kind: "expire" },
+) {
   const fx = new Effects();
   const now = ctx.now();
   const res = await ctx.db.transaction(async (tx) => {
@@ -208,7 +252,6 @@ export async function closeTrade(ctx: Ctx, tradeId: number, action: { by: string
   });
 }
 
-
 export async function listTrades(ctx: Ctx, userId: string, box: "received" | "sent" | "history"): Promise<TradeDTO[]> {
   const where =
     box === "received"
@@ -218,7 +261,15 @@ export async function listTrades(ctx: Ctx, userId: string, box: "received" | "se
         : and(or(eq(t.fromId, userId), eq(t.toId, userId)), sql`${t.status} <> 'pending'`);
   const trades = await ctx.db.select().from(t).where(where).orderBy(desc(t.createdAt)).limit(100);
   if (!trades.length) return [];
-  const items = await ctx.db.select().from(schema.tradeItems).where(inArray(schema.tradeItems.tradeId, trades.map((x) => x.id)));
+  const items = await ctx.db
+    .select()
+    .from(schema.tradeItems)
+    .where(
+      inArray(
+        schema.tradeItems.tradeId,
+        trades.map((x) => x.id),
+      ),
+    );
   // Vues seulement sur ses propres cartes (« Plus lu » en duel).
   const cards = await instancesByIds(ctx.db, [...new Set(items.map((i) => i.instanceId))], userId);
   const cardBy = new Map(cards.map((c) => [c.instanceId, c]));
@@ -234,7 +285,9 @@ export async function listTrades(ctx: Ctx, userId: string, box: "received" | "se
   const person = (id: string) => ({ id, name: userBy.get(id)?.name ?? "?", username: userBy.get(id)?.username ?? "" });
   return trades.map((x) => {
     const side = (s: "from" | "to") =>
-      items.filter((i) => i.tradeId === x.id && i.side === s).flatMap((i) => (cardBy.get(i.instanceId) ? [cardBy.get(i.instanceId)!] : []));
+      items
+        .filter((i) => i.tradeId === x.id && i.side === s)
+        .flatMap((i) => (cardBy.get(i.instanceId) ? [cardBy.get(i.instanceId)!] : []));
     return {
       id: x.id,
       from: person(x.fromId),

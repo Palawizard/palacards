@@ -31,7 +31,9 @@ describe("duels asynchrones", () => {
     const created = await a.post("/battles", { opponent: b.username, mode: "async", deck: await deckOf(a) });
     expect(created.status).toBe(200);
     const id = created.body.id;
-    expect((await a.post("/battles", { opponent: b.username, mode: "async", deck: await deckOf(a) })).body.error).toBe("battle_exists");
+    expect((await a.post("/battles", { opponent: b.username, mode: "async", deck: await deckOf(a) })).body.error).toBe(
+      "battle_exists",
+    );
     expect((await b.get("/notifications")).body.items[0].type).toBe("battle_challenge");
     expect((await b.post(`/battles/${id}/accept`, { deck: await deckOf(b) })).status).toBe(200);
 
@@ -65,7 +67,9 @@ describe("duels asynchrones", () => {
     const [row] = await ctx.db.select().from(schema.battles).where(eq(schema.battles.id, id));
     expect(Math.max(row!.challengerScore, row!.opponentScore)).toBeGreaterThanOrEqual(row!.winnerId ? 1 : 0);
     expect(row!.challengerEloDelta! + row!.opponentEloDelta!).toBe(0);
-    const rewards = await ctx.db.execute<{ delta: number }>(sql`select delta::int from ledger where reason = 'battle' and ref_id = ${String(id)} order by delta`);
+    const rewards = await ctx.db.execute<{ delta: number }>(
+      sql`select delta::int from ledger where reason = 'battle' and ref_id = ${String(id)} order by delta`,
+    );
     const expected = row!.winnerId ? [ECONOMY.battle.loss, ECONOMY.battle.win] : [20, 20];
     expect(rewards.map((r) => r.delta)).toEqual(expected);
     expect(detail.body.theirDeck).toHaveLength(5);
@@ -115,14 +119,18 @@ describe("duels asynchrones", () => {
     expect(rows).toHaveLength(BATTLE_REWARDED_PER_PAIR_PER_DAY);
     expect(rows.map((r) => Number(r.ref_id))).not.toContain(ids.at(-1));
     // Même plafond pour l'Elo : le duel de trop ne le change pas.
-    const [last] = await ctx.db.select().from(schema.battles).where(eq(schema.battles.id, ids.at(-1)!));
+    const [last] = await ctx.db
+      .select()
+      .from(schema.battles)
+      .where(eq(schema.battles.id, ids.at(-1)!));
     expect(last).toMatchObject({ status: "finished", challengerEloDelta: 0, opponentEloDelta: 0 });
   });
 
   it("n'accorde pas d'Elo contre un perdant qui n'a répondu à aucune manche", async () => {
     const a = await signUp(app);
     const b = await signUp(app);
-    const eloOf = async (p: Client) => (await ctx.db.select().from(schema.players).where(eq(schema.players.userId, p.userId)))[0]!.elo;
+    const eloOf = async (p: Client) =>
+      (await ctx.db.select().from(schema.players).where(eq(schema.players.userId, p.userId)))[0]!.elo;
     const { body } = await a.post("/battles", { opponent: b.username, mode: "async", deck: await deckOf(a) });
     await b.post(`/battles/${body.id}/accept`, { deck: await deckOf(b) });
     // Deck de A imbattable : B (absent) perd à coup sûr.
@@ -154,7 +162,9 @@ describe("duels asynchrones", () => {
     const detail = await a.get(`/battles/${second.body.id}`);
     expect(detail.body.status).toBe("finished");
     // B n'a répondu à aucune manche : pas de PW pour lui.
-    const paid = await ctx.db.execute<{ user_id: string }>(sql`select user_id from ledger where reason = 'battle' and ref_id = ${String(second.body.id)}`);
+    const paid = await ctx.db.execute<{ user_id: string }>(
+      sql`select user_id from ledger where reason = 'battle' and ref_id = ${String(second.body.id)}`,
+    );
     expect(paid.map((r) => r.user_id)).toEqual([a.userId]);
   });
 });

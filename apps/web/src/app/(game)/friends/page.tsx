@@ -31,7 +31,9 @@ export default function FriendsPage() {
   const [busy, setBusy] = useState(false);
 
   useSocketEvent("presence:update", ({ userId, online }) => {
-    void mutate((d) => d && { ...d, friends: d.friends.map((f) => (f.id === userId ? { ...f, online } : f)) }, { revalidate: false });
+    void mutate((d) => d && { ...d, friends: d.friends.map((f) => (f.id === userId ? { ...f, online } : f)) }, {
+      revalidate: false,
+    });
   });
   useSocketEvent("notification:new", (n) => {
     if (n.type.startsWith("friend_")) void mutate();
@@ -56,7 +58,11 @@ export default function FriendsPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="page-title">Amis</h1>
-        <p className="hatnote mt-2 tnum">{data ? `${data.friends.length} ami${data.friends.length > 1 ? "s" : ""}, ${online} en ligne.` : "Chargement…"}</p>
+        <p className="hatnote mt-2 tnum">
+          {data
+            ? `${data.friends.length} ami${data.friends.length > 1 ? "s" : ""}, ${online} en ligne.`
+            : "Chargement…"}
+        </p>
       </div>
 
       <form
@@ -74,7 +80,15 @@ export default function FriendsPage() {
         <label className="sr-only" htmlFor="friend-name">
           Pseudo à ajouter
         </label>
-        <input id="friend-name" className="field" value={name} onChange={(e) => setName(e.target.value)} placeholder="Pseudo d’un joueur" autoCapitalize="none" spellCheck={false} />
+        <input
+          id="friend-name"
+          className="field"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Pseudo d’un joueur"
+          autoCapitalize="none"
+          spellCheck={false}
+        />
         <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
           <UserPlus aria-hidden className="size-4" /> Ajouter
         </button>
@@ -96,10 +110,20 @@ export default function FriendsPage() {
                     <Link href={`/u/${f.username}`} className="flex-1 font-semibold hover:underline">
                       {f.displayName}
                     </Link>
-                    <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => run(() => api(`/friends/${f.id}`, { method: "DELETE" }))}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      disabled={busy}
+                      onClick={() => run(() => api(`/friends/${f.id}`, { method: "DELETE" }))}
+                    >
                       Refuser
                     </button>
-                    <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => run(() => api(`/friends/${f.id}/accept`, { method: "POST" }), "Nouvel ami !")}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      disabled={busy}
+                      onClick={() => run(() => api(`/friends/${f.id}/accept`, { method: "POST" }), "Nouvel ami !")}
+                    >
                       Accepter
                     </button>
                   </li>
@@ -111,13 +135,18 @@ export default function FriendsPage() {
           <section>
             <h2 className="section-title mt-0">Mes amis</h2>
             {data.friends.length === 0 ? (
-              <Empty title="Pas encore d’amis ici">Ajoute tes potes par leur pseudo pour échanger, discuter et vous défier.</Empty>
+              <Empty title="Pas encore d’amis ici">
+                Ajoute tes potes par leur pseudo pour échanger, discuter et vous défier.
+              </Empty>
             ) : (
               <ul className="grid gap-2 sm:grid-cols-2">
                 {[...data.friends]
                   .sort((a, b) => Number(b.online) - Number(a.online))
                   .map((f) => (
-                    <li key={f.id} className="flex items-center gap-3 rounded-md border border-line bg-panel px-3 py-2.5">
+                    <li
+                      key={f.id}
+                      className="flex items-center gap-3 rounded-md border border-line bg-panel px-3 py-2.5"
+                    >
                       <Avatar name={f.displayName} avatar={f.avatar} online={f.online} />
                       <div className="min-w-0 flex-1">
                         <Link href={`/u/${f.username}`} className="block truncate font-semibold hover:underline">
@@ -128,13 +157,28 @@ export default function FriendsPage() {
                         </span>
                       </div>
                       <div className="flex gap-1">
-                        <Link href={`/messages?to=${f.username}`} className="btn btn-sm btn-ghost px-2" aria-label={`Écrire à ${f.displayName}`} title="Message">
+                        <Link
+                          href={`/messages?to=${f.username}`}
+                          className="btn btn-sm btn-ghost px-2"
+                          aria-label={`Écrire à ${f.displayName}`}
+                          title="Message"
+                        >
                           <MessageSquare className="size-4" />
                         </Link>
-                        <Link href={`/trades/new?to=${f.username}`} className="btn btn-sm btn-ghost px-2" aria-label={`Échanger avec ${f.displayName}`} title="Échanger">
+                        <Link
+                          href={`/trades/new?to=${f.username}`}
+                          className="btn btn-sm btn-ghost px-2"
+                          aria-label={`Échanger avec ${f.displayName}`}
+                          title="Échanger"
+                        >
                           <Repeat className="size-4" />
                         </Link>
-                        <Link href={`/battle?opponent=${f.username}`} className="btn btn-sm btn-ghost px-2" aria-label={`Défier ${f.displayName}`} title="Défier">
+                        <Link
+                          href={`/battle?opponent=${f.username}`}
+                          className="btn btn-sm btn-ghost px-2"
+                          aria-label={`Défier ${f.displayName}`}
+                          title="Défier"
+                        >
                           <Swords className="size-4" />
                         </Link>
                       </div>
@@ -151,7 +195,13 @@ export default function FriendsPage() {
                 {data.outgoing.map((f) => (
                   <li key={f.id} className="chip gap-2 pr-1">
                     {f.displayName}
-                    <button type="button" className="rounded-full px-1.5 text-faint hover:text-danger" disabled={busy} onClick={() => run(() => api(`/friends/${f.id}`, { method: "DELETE" }))} aria-label={`Annuler la demande à ${f.displayName}`}>
+                    <button
+                      type="button"
+                      className="rounded-full px-1.5 text-faint hover:text-danger"
+                      disabled={busy}
+                      onClick={() => run(() => api(`/friends/${f.id}`, { method: "DELETE" }))}
+                      aria-label={`Annuler la demande à ${f.displayName}`}
+                    >
                       <X aria-hidden className="size-3.5" />
                     </button>
                   </li>

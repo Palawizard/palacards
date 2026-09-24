@@ -17,7 +17,9 @@ interface Achievement {
 }
 
 const reward = (r: Achievement["reward"]) =>
-  [r.pw ? `${fmt(r.pw)} PW` : "", r.packs ? `${r.packs} paquet${r.packs > 1 ? "s" : ""} bonus` : ""].filter(Boolean).join(" + ");
+  [r.pw ? `${fmt(r.pw)} PW` : "", r.packs ? `${r.packs} paquet${r.packs > 1 ? "s" : ""} bonus` : ""]
+    .filter(Boolean)
+    .join(" + ");
 
 export default function AchievementsPage() {
   const { data, error, mutate } = useSWR<Achievement[]>("/achievements");
@@ -48,8 +50,14 @@ export default function AchievementsPage() {
             const done = !!a.unlockedAt;
             const pct = Math.round((Math.min(a.progress, a.target) / a.target) * 100);
             return (
-              <li key={a.key} className={`flex gap-3 rounded-md border bg-panel p-3 ${done ? "border-warn/50" : "border-line"}`}>
-                <span className={`grid size-10 shrink-0 place-items-center rounded-full border ${done ? "border-warn/60 text-warn" : "border-line-strong text-faint"}`} aria-hidden>
+              <li
+                key={a.key}
+                className={`flex gap-3 rounded-md border bg-panel p-3 ${done ? "border-warn/50" : "border-line"}`}
+              >
+                <span
+                  className={`grid size-10 shrink-0 place-items-center rounded-full border ${done ? "border-warn/60 text-warn" : "border-line-strong text-faint"}`}
+                  aria-hidden
+                >
                   {done ? <Award className="size-5" /> : <Lock className="size-4" />}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -61,8 +69,17 @@ export default function AchievementsPage() {
                     </p>
                   ) : (
                     <>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2" role="progressbar" aria-valuenow={a.progress} aria-valuemax={a.target} aria-label={`Progression : ${a.name}`}>
-                        <div className="h-full rounded-full bg-accent transition-[width] duration-300 ease-(--ease-out)" style={{ width: `${pct}%` }} />
+                      <div
+                        className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2"
+                        role="progressbar"
+                        aria-valuenow={a.progress}
+                        aria-valuemax={a.target}
+                        aria-label={`Progression : ${a.name}`}
+                      >
+                        <div
+                          className="h-full rounded-full bg-accent transition-[width] duration-300 ease-(--ease-out)"
+                          style={{ width: `${pct}%` }}
+                        />
                       </div>
                       <p className="tnum mt-1 flex justify-between text-xs text-faint">
                         <span>

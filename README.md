@@ -42,17 +42,17 @@ deploy/         Caddy, sauvegarde (timer systemd), restauration, chargement des 
 
 ## Scripts
 
-| Commande | Effet |
-| --- | --- |
-| `pnpm dev` | Front + API en mode dev |
-| `pnpm test` | Vitest (règles du jeu + intégration API sur `palacards_test`) |
-| `pnpm e2e` | Playwright (base `palacards_e2e`, ports 3100/4100) |
-| `pnpm bench` | Benchmark sur 2,7 M cartes synthétiques (`palacards_bench`) |
-| `pnpm typecheck` / `pnpm lint` | TypeScript, ESLint |
-| `pnpm build` | Build de production |
-| `pnpm db:up` / `pnpm db:down` | Postgres local |
-| `pnpm db:generate` / `pnpm db:migrate` | Migrations Drizzle |
-| `pnpm db:seed` | Cartes de développement |
+| Commande                               | Effet                                                         |
+| -------------------------------------- | ------------------------------------------------------------- |
+| `pnpm dev`                             | Front + API en mode dev                                       |
+| `pnpm test`                            | Vitest (règles du jeu + intégration API sur `palacards_test`) |
+| `pnpm e2e`                             | Playwright (base `palacards_e2e`, ports 3100/4100)            |
+| `pnpm bench`                           | Benchmark sur 2,7 M cartes synthétiques (`palacards_bench`)   |
+| `pnpm typecheck` / `pnpm lint`         | TypeScript, ESLint                                            |
+| `pnpm build`                           | Build de production                                           |
+| `pnpm db:up` / `pnpm db:down`          | Postgres local                                                |
+| `pnpm db:generate` / `pnpm db:migrate` | Migrations Drizzle                                            |
+| `pnpm db:seed`                         | Cartes de développement                                       |
 
 La première exécution de `pnpm e2e` demande les navigateurs Playwright : `pnpm --filter @palacards/e2e exec playwright install chromium`.
 

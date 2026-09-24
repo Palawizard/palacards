@@ -47,7 +47,10 @@ export async function rolloverSeason(ctx: Ctx, options: { onlyIfDue?: boolean; e
     if (options.onlyIfDue && current.endsAt && current.endsAt.getTime() > ctx.now().getTime() + 5 * 60_000) return null;
     // Bascule forcée par l'admin : une requête relancée (délai dépassé, double clic) ne rebascule pas.
     if (options.expectedFrom !== undefined && current.id !== options.expectedFrom) {
-      throw conflict("season_changed", `La saison ${options.expectedFrom} est déjà terminée (saison active : ${current.id}).`);
+      throw conflict(
+        "season_changed",
+        `La saison ${options.expectedFrom} est déjà terminée (saison active : ${current.id}).`,
+      );
     }
     const next = current.id + 1;
     const [loaded] = await tx.execute<{ n: number }>(sql`select count(*)::int as n from cards where season = ${next}`);
@@ -71,7 +74,10 @@ export async function rolloverSeason(ctx: Ctx, options: { onlyIfDue?: boolean; e
     // minuscules) ; sinon deux ordres opposés sur des ids à casse mixte peuvent s'interbloquer.
     await tx.execute(sql`select user_id from players order by ${PLAYER_LOCK_ORDER} for update`);
     await tx.update(schema.players).set({ elo: ELO_START });
-    await tx.update(schema.seasons).set({ status: "archived", endsAt: ctx.now() }).where(eq(schema.seasons.id, current.id));
+    await tx
+      .update(schema.seasons)
+      .set({ status: "archived", endsAt: ctx.now() })
+      .where(eq(schema.seasons.id, current.id));
     // Fin au 1er du mois suivant (heure de Paris) ; une bascule forcée à moins de 7 jours de cette date
     // court jusqu'au 1er du mois d'après, pour ne jamais créer une saison de quelques jours.
     await tx.execute(sql`

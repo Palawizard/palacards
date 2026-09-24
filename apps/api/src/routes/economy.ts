@@ -58,7 +58,10 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
         instanceId: id,
         startPrice: price,
         buyout: price.nullable().default(null),
-        durationMs: z.number().int().refine((v) => (ECONOMY.auctionDurationsMs as readonly number[]).includes(v), "Durée invalide"),
+        durationMs: z
+          .number()
+          .int()
+          .refine((v) => (ECONOMY.auctionDurationsMs as readonly number[]).includes(v), "Durée invalide"),
       }),
       req.body,
     );
@@ -134,7 +137,9 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   // --- Wishlist ---
   api.get("/wishlist", auth, async (req) => listWishlist(ctx, req.user.id));
   api.put("/wishlist/:id", auth, async (req) => setWishlist(ctx, req.user.id, parse(idParams, req.params).id, true));
-  api.delete("/wishlist/:id", auth, async (req) => setWishlist(ctx, req.user.id, parse(idParams, req.params).id, false));
+  api.delete("/wishlist/:id", auth, async (req) =>
+    setWishlist(ctx, req.user.id, parse(idParams, req.params).id, false),
+  );
 
   // --- Notifications ---
   api.get("/notifications", auth, async (req) => {

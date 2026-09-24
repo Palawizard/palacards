@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ACHIEVEMENTS, applyEvent } from "./achievements.js";
 
-const state = (entries: [string, number, boolean?][]) => new Map(entries.map(([k, p, u]) => [k, { progress: p, unlocked: !!u }]));
+const state = (entries: [string, number, boolean?][]) =>
+  new Map(entries.map(([k, p, u]) => [k, { progress: p, unlocked: !!u }]));
 
 describe("succès", () => {
   it("définit une vingtaine de succès aux récompenses de 50 à 2 000 PW ou en paquets", () => {
@@ -23,7 +24,13 @@ describe("succès", () => {
   });
 
   it("compte les paquets jusqu'à 100 et ignore les succès déjà débloqués", () => {
-    const up = applyEvent(state([["packs_100", 99], ["first_pack", 1, true]]), { type: "pack_opened", rarities: ["C"] });
+    const up = applyEvent(
+      state([
+        ["packs_100", 99],
+        ["first_pack", 1, true],
+      ]),
+      { type: "pack_opened", rarities: ["C"] },
+    );
     expect(up.find((u) => u.key === "packs_100")).toEqual({ key: "packs_100", progress: 100, unlocked: true });
     expect(up.find((u) => u.key === "first_pack")).toBeUndefined();
   });
@@ -34,24 +41,41 @@ describe("succès", () => {
     expect(streak.find((u) => u.key === "wins_10")?.progress).toBe(1);
     const lost = applyEvent(state([["streak_5", 3]]), { type: "battle_finished", won: false, winStreak: 0 });
     expect(lost.find((u) => u.key === "streak_5")).toBeUndefined();
-    const ur = applyEvent(new Map(), { type: "collection", uniqueCards: 10, uniqueLegendary: 0, uniqueUR: 1, totalUR: 9 });
+    const ur = applyEvent(new Map(), {
+      type: "collection",
+      uniqueCards: 10,
+      uniqueLegendary: 0,
+      uniqueUR: 1,
+      totalUR: 9,
+    });
     expect(ur.find((u) => u.key === "ur_10pct")).toEqual({ key: "ur_10pct", progress: 10, unlocked: true });
-    expect(applyEvent(new Map(), { type: "card_level", level: 5 }).find((u) => u.key === "level_5")?.unlocked).toBe(true);
+    expect(applyEvent(new Map(), { type: "card_level", level: 5 }).find((u) => u.key === "level_5")?.unlocked).toBe(
+      true,
+    );
   });
 
   it("ne fait dépendre de l'état de la collection que les succès « tirés de ses propres paquets »", () => {
     // L'API ne compte dans l'événement « collection » que les exemplaires tirés par le joueur :
     // tout succès qui en dépend doit l'annoncer (anti-farm par échanges entre amis).
     const ev = { type: "collection", uniqueCards: 1_000, uniqueLegendary: 10, uniqueUR: 1, totalUR: 10 } as const;
-    const keys = applyEvent(new Map(), ev).map((u) => u.key).sort();
+    const keys = applyEvent(new Map(), ev)
+      .map((u) => u.key)
+      .sort();
     expect(keys).toEqual(["collection_1000", "legend_10", "ur_10pct"]);
-    for (const key of keys) expect(ACHIEVEMENTS.find((a) => a.key === key)!.description).toMatch(/tirée?s de ses propres paquets/);
+    for (const key of keys)
+      expect(ACHIEVEMENTS.find((a) => a.key === key)!.description).toMatch(/tirée?s de ses propres paquets/);
   });
 
   it("ne compte que les ventes à plus de 1 000 PW pour le coup de marteau", () => {
-    expect(applyEvent(new Map(), { type: "sale", price: 1_000, bidders: 2 }).find((u) => u.key === "big_sale")).toBeUndefined();
-    expect(applyEvent(new Map(), { type: "sale", price: 1_001, bidders: 2 }).find((u) => u.key === "big_sale")?.unlocked).toBe(true);
+    expect(
+      applyEvent(new Map(), { type: "sale", price: 1_000, bidders: 2 }).find((u) => u.key === "big_sale"),
+    ).toBeUndefined();
+    expect(
+      applyEvent(new Map(), { type: "sale", price: 1_001, bidders: 2 }).find((u) => u.key === "big_sale")?.unlocked,
+    ).toBe(true);
     // Vente à un seul ami (ou achat immédiat sans enchère) : pas de « Coup de marteau ».
-    expect(applyEvent(new Map(), { type: "sale", price: 5_000, bidders: 1 }).find((u) => u.key === "big_sale")).toBeUndefined();
+    expect(
+      applyEvent(new Map(), { type: "sale", price: 5_000, bidders: 1 }).find((u) => u.key === "big_sale"),
+    ).toBeUndefined();
   });
 });

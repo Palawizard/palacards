@@ -26,7 +26,10 @@ export function battleRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/battles", auth, async (req) => listBattles(ctx, req.user.id));
   api.get("/battles/:id", auth, async (req) => battleDetail(ctx, req.user.id, parse(z.object({ id }), req.params).id));
   api.post("/battles", limited(10), async (req) => {
-    const body = parse(z.object({ opponent: z.string().trim().min(1).max(30), mode: z.enum(["live", "async"]), deck }), req.body);
+    const body = parse(
+      z.object({ opponent: z.string().trim().min(1).max(30), mode: z.enum(["live", "async"]), deck }),
+      req.body,
+    );
     return challenge(ctx, req.user.id, body);
   });
   api.post("/battles/:id/accept", limited(10), async (req) => {

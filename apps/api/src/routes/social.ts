@@ -78,7 +78,9 @@ export function socialRoutes(api: FastifyInstance, ctx: Ctx) {
     const me = await membership(ctx.db, req.user.id);
     return me ? { ...(await guildDetail(ctx, me.guildId)), myRole: me.role } : null;
   });
-  api.get("/guilds/:id", auth, async (req) => guildDetail(ctx, parse(z.object({ id: z.coerce.number().int().positive() }), req.params).id));
+  api.get("/guilds/:id", auth, async (req) =>
+    guildDetail(ctx, parse(z.object({ id: z.coerce.number().int().positive() }), req.params).id),
+  );
   api.post("/guilds", limited(5), async (req) => {
     const body = parse(
       z.object({
@@ -92,7 +94,13 @@ export function socialRoutes(api: FastifyInstance, ctx: Ctx) {
     return createGuild(ctx, req.user.id, body);
   });
   api.patch("/guilds/mine", auth, async (req) => {
-    const body = parse(z.object({ description: z.string().trim().max(280).optional(), emblem: z.string().trim().min(1).max(4).optional() }), req.body);
+    const body = parse(
+      z.object({
+        description: z.string().trim().max(280).optional(),
+        emblem: z.string().trim().min(1).max(4).optional(),
+      }),
+      req.body,
+    );
     await updateGuild(ctx, req.user.id, body);
     return { ok: true };
   });
@@ -105,7 +113,10 @@ export function socialRoutes(api: FastifyInstance, ctx: Ctx) {
     return { ok: true };
   });
   api.post("/guilds/members/:userId/:action", auth, async (req) => {
-    const p = parse(z.object({ userId: z.string().min(1).max(64), action: z.enum(["kick", "promote", "demote", "transfer"]) }), req.params);
+    const p = parse(
+      z.object({ userId: z.string().min(1).max(64), action: z.enum(["kick", "promote", "demote", "transfer"]) }),
+      req.params,
+    );
     await manageMember(ctx, req.user.id, p.userId, p.action);
     return { ok: true };
   });

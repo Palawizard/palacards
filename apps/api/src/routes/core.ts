@@ -7,7 +7,16 @@ import { requireUser, type Ctx } from "../context.js";
 import { conflict, parse } from "../errors.js";
 import { answeringQuestion } from "../services/battles.js";
 import { cardSheet, catalog } from "../services/cards.js";
-import { completion, duplicateIds, fuse, listCollection, recycle, setFavorite, setPinned, setTags } from "../services/collection.js";
+import {
+  completion,
+  duplicateIds,
+  fuse,
+  listCollection,
+  recycle,
+  setFavorite,
+  setPinned,
+  setTags,
+} from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
 import { emit } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
@@ -66,10 +75,11 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/me", auth, async (req) => me(ctx, req.user));
   api.patch("/me/settings", auth, async (req) => {
     const body = parse(
-      z.object({
-        animationSpeed: z.enum(["normal", "fast", "instant"]).optional(),
-        avatar: avatarSchema.nullable().optional(),
-      })
+      z
+        .object({
+          animationSpeed: z.enum(["normal", "fast", "instant"]).optional(),
+          avatar: avatarSchema.nullable().optional(),
+        })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
       req.body,
     );
@@ -110,7 +120,10 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   });
   api.post("/collection/:id/pin", auth, async (req) => {
     const { id } = parse(idParams, req.params);
-    const { slot } = parse(z.object({ slot: z.union([z.number().int().min(1).max(5), z.literal("auto")]).nullable() }), req.body);
+    const { slot } = parse(
+      z.object({ slot: z.union([z.number().int().min(1).max(5), z.literal("auto")]).nullable() }),
+      req.body,
+    );
     await setPinned(ctx, req.user.id, id, slot);
     return { ok: true };
   });
