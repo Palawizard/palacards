@@ -4,7 +4,8 @@ import { avatarSchema, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
-import { parse } from "../errors.js";
+import { conflict, parse } from "../errors.js";
+import { answeringQuestion } from "../services/battles.js";
 import { cardSheet, catalog } from "../services/cards.js";
 import { completion, duplicateIds, fuse, listCollection, recycle, setFavorite, setPinned, setTags } from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
@@ -18,6 +19,8 @@ const rarityList = z
   .transform((v) => (v ? v.split(",") : undefined))
   .pipe(z.array(z.enum(RARITIES)).optional());
 const intParam = z.coerce.number().int();
+/** ATK / DEF : colonnes smallint, bornées pour ne jamais déborder côté SQL. */
+const statParam = intParam.min(0).max(32_767);
 const idParams = z.object({ id: z.coerce.number().int().positive() });
 
 /** Nombre de messages non lus (MP + guilde), utilisé par l'en-tête. */
@@ -136,15 +139,16 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   });
 
   // --- Catalogue et fiche carte ---
+  const duelInProgress = () => conflict("duel_question", "Réponds d'abord à ta question de duel.");
   api.get("/cards", auth, async (req) => {
     const q = parse(
       z.object({
         q: z.string().trim().min(3, "3 caractères minimum pour chercher").max(100).optional(),
         rarity: rarityList,
-        minAtk: intParam.optional(),
-        maxAtk: intParam.optional(),
-        minDef: intParam.optional(),
-        maxDef: intParam.optional(),
+        minAtk: statParam.optional(),
+        maxAtk: statParam.optional(),
+        minDef: statParam.optional(),
+        maxDef: statParam.optional(),
         owned: z.enum(["yes", "no"]).optional(),
         sort: z.enum(["views", "atk", "def", "title"]).default("views"),
         cursor: z.string().max(200).optional(),
@@ -152,10 +156,12 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       }),
       req.query,
     );
+    if (await answeringQuestion(ctx, req.user.id)) throw duelInProgress();
     return catalog(ctx, req.user.id, q);
   });
-  api.get("/cards/:id", auth, async (req) => {
+  api.get("/cards/:id", { ...auth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req) => {
     const { id } = parse(idParams, req.params);
+    if (await answeringQuestion(ctx, req.user.id)) throw duelInProgress();
     return cardSheet(ctx, req.user.id, id);
   });
 

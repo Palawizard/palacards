@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { RaritySigil } from "@/components/Card";
 import { Thumb } from "@/components/market";
-import { Empty, ErrorBox } from "@/components/ui";
+import { ConfirmDialog, Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { countdown, fmt, relative } from "@/lib/format";
 import { useMe, useSocketEvent } from "@/lib/game";
@@ -66,6 +66,7 @@ function TradeItem({ trade, meId, now, onChanged }: { trade: TradeDTO; meId: str
   const incoming = trade.to.id === meId;
   const other = incoming ? trade.from : trade.to;
   const [busy, setBusy] = useState(false);
+  const [confirmAccept, setConfirmAccept] = useState(false);
   // Du point de vue du joueur : ce qu'il reçoit et ce qu'il donne.
   const receive = incoming ? { cards: trade.give, pw: trade.fromPw } : { cards: trade.want, pw: trade.toPw };
   const give = incoming ? { cards: trade.want, pw: trade.toPw } : { cards: trade.give, pw: trade.fromPw };
@@ -121,9 +122,18 @@ function TradeItem({ trade, meId, now, onChanged }: { trade: TradeDTO; meId: str
               <Link href={`/trades/new?counter=${trade.id}`} className="btn btn-sm">
                 Contre-offre
               </Link>
-              <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => act("accept", "Échange conclu !")}>
+              <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => setConfirmAccept(true)}>
                 Accepter
               </button>
+              <ConfirmDialog
+                open={confirmAccept}
+                title="Accepter cet échange ?"
+                confirmLabel="Accepter l’échange"
+                onConfirm={() => act("accept", "Échange conclu !")}
+                onClose={() => setConfirmAccept(false)}
+              >
+                Les cartes et les PW changent de main tout de suite, sans retour possible.
+              </ConfirmDialog>
             </>
           ) : (
             <button type="button" className="btn btn-sm" disabled={busy} onClick={() => act("cancel", "Proposition annulée.")}>

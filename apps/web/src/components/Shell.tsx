@@ -238,7 +238,8 @@ export function Shell({ children }: { children: ReactNode }) {
           >
             <Menu className="size-5" />
           </button>
-          <Wordmark className="lg:hidden" />
+          {/* Sous 400 px (Android courant : 360 px), le logo texte ne tient pas avec les compteurs : il reste dans le tiroir. */}
+          <Wordmark className="max-[399px]:hidden lg:hidden" />
           <SearchBox />
           <div className="ml-auto flex items-center gap-1 sm:gap-2">
             <PackStock />

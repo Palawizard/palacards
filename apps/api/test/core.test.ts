@@ -1,6 +1,7 @@
 import { eq, schema, sql } from "@palacards/db";
 import { ECONOMY, MAX_STORED_PACKS } from "@palacards/game";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { loadConfig } from "../src/config.js";
 import { achievementPw, makeApp, signUp, uniqueName } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
@@ -54,6 +55,33 @@ describe("authentification", () => {
     if (admin) expect((await admin.get("/me")).body.isAdmin).toBe(true);
     const p = await signUp(app);
     expect((await p.get("/me")).body.isAdmin).toBe(false);
+  });
+});
+
+describe("configuration", () => {
+  it("refuse le secret d'exemple et le mode test en production", () => {
+    const base = { NODE_ENV: "production", BETTER_AUTH_SECRET: "x".repeat(40) };
+    expect(() => loadConfig(base)).not.toThrow();
+    expect(() => loadConfig({ ...base, BETTER_AUTH_SECRET: "change-me-change-me-change-me-change-me" })).toThrow();
+    expect(() => loadConfig({ ...base, GAME_TEST_MODE: "1" })).toThrow();
+  });
+});
+
+describe("sessions", () => {
+  it("coupe les sockets du joueur quand ses sessions sont révoquées", async () => {
+    const p = await signUp(app);
+    const spy = vi.spyOn(ctx.rt, "disconnectUser");
+    const res = await app.inject({
+      method: "POST",
+      url: "/palacards/api/auth/change-password",
+      headers: { cookie: p.cookie, origin: "http://localhost:3000" },
+      payload: { currentPassword: "motdepasse123", newPassword: "nouveaumotdepasse", revokeOtherSessions: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(spy).toHaveBeenCalledWith(p.userId);
+    const out = await app.inject({ method: "POST", url: "/palacards/api/auth/sign-out", headers: { cookie: p.cookie, origin: "http://localhost:3000" } });
+    expect(out.statusCode).toBe(200);
+    spy.mockRestore();
   });
 });
 

@@ -62,8 +62,9 @@ test("parcours : toutes les pages du menu s'affichent sans erreur, sur mobile au
   for (const viewport of [
     { width: 1280, height: 800 },
     { width: 390, height: 844 },
+    { width: 360, height: 780 },
   ]) {
-    const context = await browser.newContext({ locale: "fr-FR", viewport });
+    const context = await browser.newContext({ locale: "fr-FR", viewport, ...(viewport.width < 768 ? { isMobile: true, hasTouch: true } : {}) });
     const page = await context.newPage();
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(e.message));

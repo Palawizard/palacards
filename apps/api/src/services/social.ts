@@ -266,6 +266,7 @@ export async function history(ctx: Ctx, userId: string, channel: string, before?
 }
 
 export async function markChannelRead(ctx: Ctx, userId: string, channel: string, at = new Date()) {
+  await channelAccess(ctx, userId, channel); // pas de lignes de lecture pour des salons auxquels on n'a pas accès
   await ctx.db
     .insert(schema.messageReads)
     .values({ userId, channel, lastReadAt: at })
