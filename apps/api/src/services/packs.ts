@@ -7,6 +7,7 @@ import { instancesByIds, loadMediaInBackground } from "./cards.js";
 import { schedulePacksFull } from "./economy.js";
 import { bumpObjective } from "./guilds.js";
 import { afterCommit } from "./notifications.js";
+import { emit } from "./progression.js";
 import { activeSeason, getPlayer, lockPlayer, logMovement, ownedCount, packState, type DbOrTx } from "./players.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
@@ -115,6 +116,8 @@ export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
       open_packs: 1,
       pull_sr: result.drawn.filter((d) => d.rarity === "SR" || d.rarity === "UR" || d.rarity === "L").length,
     });
+    // Succès en arrière-plan : l'ouverture du paquet ne les attend pas.
+    void emit(ctx, userId, { type: "pack_opened", rarities: result.drawn.map((d) => d.rarity) }, "collection");
   });
   loadMediaInBackground(
     ctx,

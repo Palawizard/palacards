@@ -2,6 +2,7 @@ import type { Ctx } from "../context.js";
 import { sweepBattles } from "./battles.js";
 import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
 import { GUILD_WEEKLY_JOB, weeklyJob } from "./guilds.js";
+import { purgeOldCards, rolloverSeason, SEASON_ROLLOVER_JOB } from "./seasons.js";
 import { AUCTION_CLOSE_JOB, closeAuctionIfDue, sweepAuctions } from "./market.js";
 import { closeTrade, sweepTrades, TRADE_EXPIRE_JOB } from "./trades.js";
 
@@ -19,6 +20,11 @@ export function registerJobs(ctx: Ctx) {
   // Objectifs de guilde : nouvelle semaine le lundi à 0 h (heure de Paris).
   ctx.jobs.schedule(GUILD_WEEKLY_JOB, "0 0 * * 1", async () => {
     await weeklyJob(ctx);
+  });
+  // Saisons mensuelles : bascule le 1er du mois à 0 h (heure de Paris), puis purge des vieilles cartes.
+  ctx.jobs.schedule(SEASON_ROLLOVER_JOB, "0 0 1 * *", async () => {
+    await rolloverSeason(ctx, { onlyIfDue: true });
+    await purgeOldCards(ctx);
   });
   // Filet de sécurité : rattrape toute échéance manquée (redémarrage, job perdu).
   ctx.jobs.schedule("market-sweep", "* * * * *", async () => {

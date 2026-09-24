@@ -2,6 +2,8 @@ import type { FastifyInstance } from "fastify";
 import { buildApp, type BuildOptions } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import type { Ctx } from "../src/context.js";
+import { progressionIdle } from "../src/services/progression.js";
+import { sql } from "@palacards/db";
 
 try {
   process.loadEnvFile("../../.env");
@@ -24,6 +26,7 @@ export async function makeApp(options: BuildOptions = {}) {
     LOG_LEVEL: "warn",
     ADMIN_USERNAMES: "admin",
     NODE_ENV: "test",
+    GAME_TEST_MODE: "1",
   });
   const { app, ctx } = await buildApp(config, options);
   await app.ready();
@@ -75,4 +78,13 @@ export async function signUp(
     post: (url, body) => call("POST", url, body ?? {}),
     put: (url, body) => call("PUT", url, body ?? {}),
   };
+}
+
+/** PW gagnés par les succès (traités en arrière-plan) : attend leur fin puis lit le ledger. */
+export async function achievementPw(ctx: Ctx, userId: string): Promise<number> {
+  await progressionIdle();
+  const [row] = await ctx.db.execute<{ n: string }>(
+    sql`select coalesce(sum(delta), 0) as n from ledger where user_id = ${userId} and kind = 'pw' and reason = 'achievement'`,
+  );
+  return Number(row?.n ?? 0);
 }

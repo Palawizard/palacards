@@ -5,6 +5,7 @@ import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { instancesByIds } from "./cards.js";
 import { afterCommit, Effects } from "./notifications.js";
+import { emit } from "./progression.js";
 import { lockPlayers, logMovement, moveLocked, movePw, ownedCount, pushWallet, transferInstances, type Player } from "./players.js";
 import { findUserByName } from "./profiles.js";
 
@@ -171,6 +172,7 @@ export async function acceptTrade(ctx: Ctx, userId: string, tradeId: number) {
     pushWallet(ctx, res.from);
     pushWallet(ctx, res.to);
     await fx.flush(ctx);
+    for (const p of [res.from, res.to]) void emit(ctx, p.userId, { type: "trade_done" }, "collection");
   });
   return { ok: true };
 }

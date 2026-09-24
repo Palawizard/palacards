@@ -149,7 +149,7 @@ export default function CollectionPage() {
         </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_19rem] lg:items-start">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-start">
         <div className="flex min-w-0 flex-col gap-4">
           {/* Barre de filtres */}
           <div className="flex flex-col gap-3 rounded-md border border-line bg-panel p-3">

@@ -19,7 +19,6 @@ test("inscription → ouvrir un paquet → recycler un doublon", async ({ browse
   // Mode instantané, puis quelques paquets pour obtenir un doublon.
   await instantPacks(page);
   await page.reload();
-  const balanceBefore = (await apiCall<{ wallet: { balance: number } }>(page, "GET", "/me")).wallet.balance;
   for (let i = 0; i < 8; i++) await apiCall(page, "POST", "/packs/open");
 
   await page.goto("collection");
@@ -38,8 +37,9 @@ test("inscription → ouvrir un paquet → recycler un doublon", async ({ browse
   await dialog.getByRole("button", { name: /Recycler \(\+/ }).click();
   await expect(page.getByText(/recyclées? : +/).first()).toBeVisible();
 
-  const after = await apiCall<{ wallet: { balance: number } }>(page, "GET", "/me");
-  expect(after.wallet.balance).toBe(balanceBefore + dups.gain);
+  // Le solde bouge aussi avec les succès (en arrière-plan) : on vérifie la ligne de ledger du recyclage.
+  const history = await apiCall<{ reason: string; delta: number }[]>(page, "GET", "/wallet/history");
+  expect(history.find((h) => h.reason === "recycle")?.delta).toBe(dups.gain);
 });
 
 test("fiche carte et catalogue", async ({ browser }) => {

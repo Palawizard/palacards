@@ -239,7 +239,11 @@
     transition:
       background-color 160ms ease,
       color 160ms ease,
-      border-color 160ms ease;
+      border-color 160ms ease,
+      transform 160ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+  }
+  button.chip:active:not(:disabled) {
+    transform: scale(0.97);
   }
   .chip[aria-pressed="true"] {
     background: color-mix(in oklab, var(--color-accent) 16%, transparent);

@@ -1,7 +1,7 @@
 import { eq, schema, sql } from "@palacards/db";
 import { ECONOMY, MAX_STORED_PACKS } from "@palacards/game";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { makeApp, signUp, uniqueName } from "./helpers.js";
+import { achievementPw, makeApp, signUp, uniqueName } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -66,7 +66,9 @@ describe("paquets", () => {
     expect(["R", "SR", "UR", "L"]).toContain(res.body.cards[4].rarity);
     expect(res.body.packs.available).toBe(MAX_STORED_PACKS - 1);
     const ledger = await ctx.db.select().from(schema.ledger).where(eq(schema.ledger.userId, p.userId));
-    expect(ledger.map((l) => `${l.kind}:${l.delta}`).sort()).toEqual([
+    // Les succès (premier paquet…) sont crédités en arrière-plan : hors du périmètre de ce test.
+    const own = ledger.filter((l) => l.reason !== "achievement");
+    expect(own.map((l) => `${l.kind}:${l.delta}`).sort()).toEqual([
       "card:5",
       "pack:-1",
       `pw:${ECONOMY.startingBalance}`,
@@ -136,7 +138,7 @@ describe("collection et recyclage", () => {
     const res = await p.post("/collection/recycle", { instanceIds: [first!.instanceId] });
     expect(res.status).toBe(200);
     expect(res.body.gain).toBe(ECONOMY.recycleValue[first!.rarity]);
-    expect(res.body.balance).toBe(ECONOMY.startingBalance + res.body.gain);
+    expect(res.body.balance).toBe(ECONOMY.startingBalance + res.body.gain + (await achievementPw(ctx, p.userId)));
     const again = await p.post("/collection/recycle", { instanceIds: [first!.instanceId] });
     expect(again.status).toBe(404);
   });
