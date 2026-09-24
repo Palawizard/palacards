@@ -66,3 +66,17 @@ def test_rejects_old_schema():
     old = CATEGORYLINKS.replace(b"`cl_sortkey` varbinary", b"`cl_to` varbinary")
     with pytest.raises(SystemExit):
         category_members(gz(old), [7])
+
+
+def test_category_target_ids_stops_once_all_titles_found():
+    # Suite du dump volumineuse puis tronquée : la lire jusqu'au bout lèverait EOFError.
+    rows = ",".join(f"({i},0,'Titre_{i * 7919 % 100_003}')" for i in range(11, 200_000))
+    data = LINKTARGET + f"INSERT INTO `linktarget` VALUES {rows};\n".encode()
+    compressed = gzip.compress(data)
+    truncated = io.BytesIO(compressed[: len(compressed) * 3 // 5])
+    with pytest.raises(EOFError):
+        category_target_ids(io.BytesIO(compressed[: len(compressed) * 3 // 5]), ["Absent"])
+    assert category_target_ids(truncated, ["Article_de_qualité", "Bon_article"]) == {
+        7: "Article_de_qualité",
+        9: "Bon_article",
+    }

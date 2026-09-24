@@ -7,23 +7,30 @@ Sortie : `flags.parquet` (page_id, disambiguation, featured, good).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import duckdb
 import pyarrow as pa
 import pyarrow.parquet as pq
 
 from . import paths
 from .download import open_dump
+from .paths import sql_str
 from .sqlextract import category_members, category_target_ids, disambiguation_ids
 
 FEATURED = "Article_de_qualité"
 GOOD = "Bon_article"
 
 
+def max_page_id(articles: Path) -> int:
+    return duckdb.sql(f"SELECT max(page_id) FROM read_parquet({sql_str(articles)})").fetchone()[0]
+
+
 def run(sample: bool = False) -> None:
     max_page = None
     if sample:
         # Les dumps SQL sont triés par page : on s'arrête après le dernier article de l'échantillon.
-        max_page = duckdb.sql(f"SELECT max(page_id) FROM '{(paths.WORK / 'articles.parquet').as_posix()}'").fetchone()[0]
+        max_page = max_page_id(paths.WORK / "articles.parquet")
     print("props : homonymies (page_props)…")
     with open_dump("page_props.sql.gz") as f:
         disamb = disambiguation_ids(f, max_page)

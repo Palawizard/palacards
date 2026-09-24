@@ -5,7 +5,8 @@ Règles (docs/05-cartes.md) :
 - ATK = 100 + floor(9899 × pct(page_len)) ;
 - Q = 0,35·pct(refs) + 0,25·pct(sections) + 0,2·pct(images) + 0,2·pct(liens)
   DEF = min(9999, 100 + floor(9899 × pct(Q)) + bonus), bonus +1500 AdQ, +800 BA.
-En mode échantillon, les paliers sont mis à l'échelle de l'échantillon (mêmes proportions).
+Sous 2 M articles (échantillon), les paliers sont mis à l'échelle du pool (mêmes proportions),
+exactement comme le contrôle du chargement (finish_card_load).
 """
 
 from __future__ import annotations
@@ -13,22 +14,35 @@ from __future__ import annotations
 import duckdb
 
 from . import paths
+from .paths import sql_str
 
 # Doit rester identique à RARITY_RANK_CEILING dans packages/game/src/rarity.ts (vérifié par les tests).
 RANK_CEILINGS = {"L": 1_000, "UR": 10_000, "SR": 50_000, "R": 250_000, "PC": 1_000_000}
 # Taille de référence du pool complet (~2,7 M articles) pour la mise à l'échelle des échantillons.
 FULL_POOL_SIZE = 2_700_000
+# En dessous, les paliers sont mis à l'échelle (même seuil que finish_card_load, migration 0002).
+SCALE_BELOW = 2_000_000
 FEATURED_BONUS = 1_500
 GOOD_BONUS = 800
 CSV_COLUMNS = ["id", "title", "rarity", "atk", "def", "views_12m", "page_len"]
 
 
-def scaled_ceilings(pool_size: int, sample: bool) -> dict[str, int]:
-    """Rang plafond de chaque palier. Échantillon : mêmes proportions que le pool complet (au moins 1 L)."""
-    if not sample:
+def scaled_ceilings(pool_size: int) -> dict[str, int]:
+    """Rang plafond de chaque palier, transcription exacte du contrôle de finish_card_load
+    (packages/db/migrations/0002_card_load.sql) :
+
+        expected := CASE WHEN total >= 2000000 THEN ceiling
+                         ELSE greatest(1, floor(ceiling * total / 2700000.0 + 0.5)) END;
+
+    En arithmétique entière (pas de flottant : `int(c * ratio + 0.5)` divergeait d'une carte sur
+    certains effectifs et le chargement était refusé) : floor(c·t/2,7 M + 1/2) = (2·c·t + 2,7 M) // 5,4 M.
+    Le `least(expected, total)` du SQL est implicite : un plafond au-delà du pool couvre tout le pool.
+    """
+    if pool_size >= SCALE_BELOW:
         return dict(RANK_CEILINGS)
-    ratio = pool_size / FULL_POOL_SIZE
-    return {r: max(1, int(c * ratio + 0.5)) for r, c in RANK_CEILINGS.items()}
+    return {
+        r: max(1, (2 * c * pool_size + FULL_POOL_SIZE) // (2 * FULL_POOL_SIZE)) for r, c in RANK_CEILINGS.items()
+    }
 
 
 def rarity_case(ceilings: dict[str, int]) -> str:
@@ -36,22 +50,29 @@ def rarity_case(ceilings: dict[str, int]) -> str:
     return f"CASE {whens} ELSE 'C' END"
 
 
-def build(con: duckdb.DuckDBPyConnection, articles: str, views: str, flags: str, out: str, sample: bool) -> dict[str, int]:
+def build(
+    con: duckdb.DuckDBPyConnection, articles: str, views: str, flags: str, out: str, sample: bool
+) -> dict[str, int]:
     con.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE pool AS
         SELECT a.*, coalesce(v.views, 0) AS views_12m,
                coalesce(f.featured, false) AS featured, coalesce(f.good, false) AS good
-        FROM read_parquet('{articles}') a
-        LEFT JOIN read_parquet('{views}') v USING (page_id)
-        LEFT JOIN read_parquet('{flags}') f USING (page_id)
+        FROM read_parquet({sql_str(articles)}) a
+        LEFT JOIN read_parquet({sql_str(views)}) v USING (page_id)
+        LEFT JOIN read_parquet({sql_str(flags)}) f USING (page_id)
         WHERE NOT coalesce(f.disambiguation, false)
         """
     )
     pool_size = con.execute("SELECT count(*) FROM pool").fetchone()[0]
     if pool_size == 0:
         raise SystemExit("Aucun article à exporter")
-    ceilings = scaled_ceilings(pool_size, sample)
+    ceilings = scaled_ceilings(pool_size)
+    scaled = pool_size < SCALE_BELOW
+    if sample != scaled:
+        # Le chargement décide sur l'effectif, pas sur le mode : on suit la même règle.
+        mode = "mis à l'échelle" if scaled else "complets"
+        print(f"  attention : {pool_size:,} articles, paliers {mode} (règle de finish_card_load)")
     con.execute(
         f"""
         CREATE OR REPLACE TEMP TABLE scored AS
@@ -73,7 +94,7 @@ def build(con: duckdb.DuckDBPyConnection, articles: str, views: str, flags: str,
         FROM ranked
         """
     )
-    con.execute(f"COPY (SELECT {', '.join(CSV_COLUMNS)} FROM scored ORDER BY id) TO '{out}' (HEADER, DELIMITER ',')")
+    con.execute(f"COPY (SELECT {', '.join(CSV_COLUMNS)} FROM scored ORDER BY id) TO {sql_str(out)} (HEADER, DELIMITER ',')")
     return dict(con.execute("SELECT rarity, count(*) FROM scored GROUP BY rarity").fetchall())
 
 
