@@ -262,6 +262,15 @@ async function catalogPage(
     pageUrl: r.page_url ?? articleUrl(r.title),
     owned: r.owned,
   }));
+  // Articles jamais consultés (pas de ligne wiki_summaries) : images poussées par socket une fois chargées.
+  loadMediaInBackground(
+    ctx,
+    userId,
+    rows
+      .slice(0, query.limit)
+      .filter((r) => r.page_url === null)
+      .map((r) => ({ cardId: Number(r.id), title: r.title })),
+  );
   const last = rows[query.limit - 1];
   const nextCursor =
     rows.length > query.limit && last
