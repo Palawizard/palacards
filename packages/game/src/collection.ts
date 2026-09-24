@@ -15,6 +15,24 @@ export function rarityRank(r: Rarity): number {
   return RARITIES.indexOf(r);
 }
 
+export interface CopyRank {
+  id: number;
+  rarity: Rarity;
+  level: number;
+  atk: number;
+  def: number;
+}
+/**
+ * Ordre des exemplaires d'un même article : rareté, niveau, puis ATK+DEF, le plus ancien (id le plus petit)
+ * à égalité. Le meilleur est celui qu'on garde (doublons) et le seul dans lequel on fusionne.
+ */
+export function isBetterCopy(a: CopyRank, b: CopyRank): boolean {
+  const x = [rarityRank(a.rarity), a.level, a.atk + a.def];
+  const y = [rarityRank(b.rarity), b.level, b.atk + b.def];
+  for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i]! > y[i]!;
+  return a.id < b.id;
+}
+
 /**
  * Score de collection : somme des points de rareté sur les cartes **uniques** (un article compte une fois,
  * à sa meilleure rareté possédée). Récompense la diversité plutôt que les doublons.

@@ -1,16 +1,15 @@
 "use client";
 
-import type { MeDTO } from "@palacards/shared";
+import { AVATARS, type MeDTO } from "@palacards/shared";
 import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
 import { api, ApiError } from "@/lib/api";
 import { authClient, authErrorMessage } from "@/lib/auth-client";
-import { fmt, relative } from "@/lib/format";
+import { fmt, reasonLabel, relative } from "@/lib/format";
 import { useMe } from "@/lib/game";
 
-const AVATARS = ["🦉", "🐉", "🦊", "🐺", "🦁", "🐙", "🦄", "🐢", "🦋", "🌋", "🗿", "🎭", "🧭", "📜", "🪐", "⚓"];
 const GROUPS: Record<string, string> = {
   market: "Marché (enchères, ventes, wishlist)",
   trades: "Échanges",
@@ -24,22 +23,6 @@ const SPEEDS = [
   { value: "fast", label: "Rapide" },
   { value: "instant", label: "Instantanée" },
 ] as const;
-const REASONS: Record<string, string> = {
-  signup: "Inscription",
-  recycle: "Recyclage",
-  daily_login: "Bonus du jour",
-  battle: "Duel",
-  achievement: "Succès",
-  bonus_pack: "Paquet bonus",
-  market_fee: "Frais d’annonce",
-  market_purchase: "Achat au marché",
-  market_sale: "Vente au marché",
-  market_tax: "Taxe de vente",
-  trade: "Échange",
-  admin: "Admin",
-  guild_objective: "Objectif de guilde",
-};
-
 function Section({ title, id, children }: { title: string; id?: string; children: React.ReactNode }) {
   return (
     <section id={id} className="scroll-mt-20">
@@ -179,10 +162,16 @@ export default function SettingsPage() {
                   className="size-4 accent-[var(--color-accent)]"
                   checked={p.enabled}
                   onChange={(e) => {
-                    const body = Object.fromEntries((prefs.data ?? []).map((x) => [x.group, x.group === p.group ? e.target.checked : x.enabled]));
+                    const enabled = e.target.checked;
                     void run(async () => {
-                      await api("/settings/notifications", { method: "PUT", body });
-                      await prefs.mutate();
+                      // Mise à jour optimiste, un seul groupe envoyé (le serveur fusionne).
+                      await prefs.mutate(
+                        async () => {
+                          await api("/settings/notifications", { method: "PUT", body: { [p.group]: enabled } });
+                          return undefined;
+                        },
+                        { optimisticData: (cur) => (cur ?? []).map((x) => (x.group === p.group ? { ...x, enabled } : x)), populateCache: false, revalidate: true, rollbackOnError: true },
+                      );
                     }, "Préférences enregistrées.");
                   }}
                 />
@@ -202,7 +191,7 @@ export default function SettingsPage() {
               {history.data.map((l) => (
                 <tr key={l.id} className="border-b border-line">
                   <td className="py-1.5 pr-3 text-faint">{relative(l.createdAt)}</td>
-                  <td className="py-1.5 pr-3">{REASONS[l.reason] ?? l.reason}</td>
+                  <td className="py-1.5 pr-3">{reasonLabel(l.reason)}</td>
                   <td className={`py-1.5 pr-3 text-right font-semibold ${l.delta > 0 ? "text-accent" : "text-danger"}`}>
                     {l.delta > 0 ? "+" : ""}
                     {fmt(l.delta)}

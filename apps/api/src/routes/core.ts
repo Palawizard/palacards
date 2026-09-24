@@ -1,6 +1,6 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
 import { RARITIES } from "@palacards/game";
-import type { MeDTO } from "@palacards/shared";
+import { avatarSchema, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
@@ -65,7 +65,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     const body = parse(
       z.object({
         animationSpeed: z.enum(["normal", "fast", "instant"]).optional(),
-        avatar: z.string().trim().min(1).max(4).nullable().optional(),
+        avatar: avatarSchema.nullable().optional(),
       })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
       req.body,

@@ -1,13 +1,25 @@
 import { and, desc, eq, inArray, schema, sql, type SQL } from "@palacards/db";
-import { ECONOMY, effectiveStats, LEVEL_BONUS, MAX_LEVEL, RARITIES, rarityRank, type Rarity } from "@palacards/game";
+import { ECONOMY, effectiveStats, isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITIES, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { seasonTotals, selectInstances, toCardDTO } from "./cards.js";
-import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet } from "./players.js";
+import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet, type DbOrTx } from "./players.js";
 
 const ci = schema.cardInstances;
 const c = schema.cards;
+
+/** Exemplaires demandés dans un échange en attente : ni recyclables ni fusionnables (le destinataire peut refuser l'échange). */
+async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promise<Set<number>> {
+  if (!ids.length) return new Set();
+  const rows = await tx
+    .select({ id: schema.tradeItems.instanceId })
+    .from(schema.tradeItems)
+    .innerJoin(schema.trades, eq(schema.trades.id, schema.tradeItems.tradeId))
+    .where(and(inArray(schema.tradeItems.instanceId, ids), eq(schema.trades.status, "pending")));
+  return new Set(rows.map((r) => r.id));
+}
+
 
 export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title";
 
@@ -191,6 +203,8 @@ export async function recycle(ctx: Ctx, ownerId: string, instanceIds: number[]) 
     if (rows.length !== ids.length) throw notFound("Certaines cartes ne sont plus dans ta collection.");
     if (rows.some((r) => r.lockedBy))
       throw conflict("card_locked", "Une carte est engagée dans une vente ou un échange.");
+    if ((await requestedInPendingTrades(tx, ids)).size)
+      throw conflict("card_requested", "Une carte est demandée dans un échange en attente : refuse-le d'abord.");
     const gain = rows.reduce((sum, r) => sum + ECONOMY.recycleValue[r.rarity], 0);
     await tx.delete(ci).where(inArray(ci.id, ids));
     await logMovement(tx, ownerId, "card", -ids.length, await ownedCount(tx, ownerId), "recycle", ids.join(","));
@@ -222,18 +236,16 @@ export async function duplicateIds(
     .from(ci)
     .where(eq(ci.ownerId, ownerId));
   const best = new Map<number, (typeof rows)[number]>();
-  const score = (r: (typeof rows)[number]) => [rarityRank(r.rarity), r.level, r.atk + r.def];
-  const better = (a: (typeof rows)[number], b: (typeof rows)[number]) => {
-    const [x, y] = [score(a), score(b)];
-    for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i]! > y[i]!;
-    return a.id < b.id;
-  };
   for (const r of rows) {
     const cur = best.get(r.cardId);
-    if (!cur || better(r, cur)) best.set(r.cardId, r);
+    if (!cur || isBetterCopy(r, cur)) best.set(r.cardId, r);
   }
+  const requested = await requestedInPendingTrades(
+    ctx.db,
+    rows.filter((r) => best.get(r.cardId)?.id !== r.id).map((r) => r.id),
+  );
   const dups = rows
-    .filter((r) => best.get(r.cardId)?.id !== r.id && !r.lockedBy && !r.favorite && r.pinned === null)
+    .filter((r) => best.get(r.cardId)?.id !== r.id && !r.lockedBy && !r.favorite && r.pinned === null && !requested.has(r.id))
     .filter((r) => !rarities || rarities.includes(r.rarity));
   return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + ECONOMY.recycleValue[r.rarity], 0) };
 }
@@ -258,6 +270,10 @@ export async function fuse(ctx: Ctx, ownerId: string, targetId: number, sourceId
     if (target.cardId !== source.cardId) throw badRequest("different_cards", "On ne fusionne que deux exemplaires du même article.");
     if (target.lockedBy || source.lockedBy) throw conflict("card_locked", "Une carte est engagée dans une vente ou un échange.");
     if (target.level >= MAX_LEVEL) throw conflict("max_level", `Cette carte est déjà au niveau ${MAX_LEVEL}.`);
+    // Sans perte accidentelle : on ne fusionne jamais un exemplaire meilleur (plus rare, plus haut niveau) dans un moins bon.
+    if (isBetterCopy(source, target)) throw conflict("source_better", "Fusionne plutôt dans ton meilleur exemplaire de cette carte.");
+    if ((await requestedInPendingTrades(tx, [sourceId])).size)
+      throw conflict("card_requested", "Cet exemplaire est demandé dans un échange en attente : refuse-le d'abord.");
     const level = target.level + 1;
     await tx.delete(ci).where(eq(ci.id, sourceId));
     await tx.update(ci).set({ level }).where(eq(ci.id, targetId));

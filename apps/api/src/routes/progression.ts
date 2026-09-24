@@ -34,7 +34,11 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
   });
   api.put("/settings/notifications", auth, async (req) => {
     const body = parse(z.record(z.enum(Object.keys(NOTIFICATION_GROUPS) as [string, ...string[]]), z.boolean()), req.body);
-    await ctx.db.update(schema.players).set({ notificationPrefs: body }).where(eq(schema.players.userId, req.user.id));
+    // Fusion (et non remplacement) : deux cases cochées coup sur coup ne s'écrasent pas.
+    await ctx.db
+      .update(schema.players)
+      .set({ notificationPrefs: sql`coalesce(${schema.players.notificationPrefs}, '{}'::jsonb) || ${JSON.stringify(body)}::jsonb` })
+      .where(eq(schema.players.userId, req.user.id));
     return { ok: true };
   });
   api.post("/settings/username", { ...auth, config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (req) => {
@@ -61,8 +65,9 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     return grant(ctx, req.user.id, body);
   });
-  api.post("/admin/season", admin, async () => {
-    const res = await rolloverSeason(ctx);
+  api.post("/admin/season", admin, async (req) => {
+    const { from } = parse(z.object({ from: z.number().int().positive() }), req.body);
+    const res = await rolloverSeason(ctx, { expectedFrom: from });
     // Nettoyage des vieilles cartes en tâche de fond (peut prendre une minute sur 2,7 M lignes).
     void purgeOldCards(ctx).catch((err) => ctx.log.error({ err }, "purge des cartes"));
     return res;

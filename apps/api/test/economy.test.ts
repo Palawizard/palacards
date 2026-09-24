@@ -122,6 +122,43 @@ describe("marché", () => {
   });
 });
 
+describe("après le marché et pendant un échange", () => {
+  it("recycle ou fusionne une carte achetée ou retirée de la vente", async () => {
+    const seller = await signUp(app);
+    const buyer = await signUp(app);
+    const instanceId = await giveCard(seller);
+    const listed = await seller.post("/market", { instanceId, startPrice: 10, buyout: 20, durationMs: HOUR });
+    expect((await buyer.post(`/market/${listed.body.id}/buy`)).status).toBe(200);
+    expect((await buyer.post("/collection/recycle", { instanceIds: [instanceId] })).status).toBe(200);
+    // Vente annulée puis fusion de l'exemplaire (plus faible) dans une nouvelle copie.
+    const other = await giveCard(seller);
+    const cancelled = await seller.post("/market", { instanceId: other, startPrice: 10, buyout: null, durationMs: HOUR });
+    expect((await seller.post(`/market/${cancelled.body.id}/cancel`)).status).toBe(200);
+    const [row] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, other));
+    const copy = await seller.post("/test/grant-card", { cardId: row!.cardId, count: 1 });
+    await ctx.db.update(schema.cardInstances).set({ level: 2 }).where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
+    expect((await seller.post(`/collection/${copy.body.instanceIds[0]}/fuse`, { sourceId: other })).status).toBe(200);
+  });
+
+  it("refuse de détruire une carte demandée dans un échange en attente", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const wanted = await giveCard(b);
+    const trade = await a.post("/trades", { to: b.username, want: [wanted], givePw: 10 });
+    expect(trade.status).toBe(200);
+    expect((await b.post("/collection/recycle", { instanceIds: [wanted] })).body.error).toBe("card_requested");
+    const [row] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, wanted));
+    const copy = await b.post("/test/grant-card", { cardId: row!.cardId, count: 1 });
+    await ctx.db.update(schema.cardInstances).set({ level: 2 }).where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
+    expect((await b.post(`/collection/${copy.body.instanceIds[0]}/fuse`, { sourceId: wanted })).body.error).toBe("card_requested");
+    // Le recyclage groupé des doublons l'épargne aussi.
+    expect((await b.get("/collection/duplicates")).body.instanceIds ?? []).not.toContain(wanted);
+    // Refuser l'échange la libère.
+    expect((await b.post(`/trades/${trade.body.id}/decline`)).status).toBe(200);
+    expect((await b.post("/collection/recycle", { instanceIds: [wanted] })).status).toBe(200);
+  });
+});
+
 describe("rattrapage", () => {
   it("clôture les ventes échues et expire les échanges échus", async () => {
     const seller = await signUp(app);
