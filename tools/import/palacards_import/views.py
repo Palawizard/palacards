@@ -14,6 +14,7 @@ import bz2
 import datetime as dt
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
+from pathlib import Path
 
 import duckdb
 import pyarrow as pa
@@ -21,6 +22,7 @@ import pyarrow.parquet as pq
 
 from . import paths
 from .download import session
+from .paths import sql_str
 
 BASE = "https://dumps.wikimedia.org/other/pageview_complete/monthly"
 WIKI = b"fr.wikipedia"
@@ -104,6 +106,15 @@ def write_month(month: str, totals: dict[int, int]) -> None:
     tmp.replace(out)
 
 
+def merge_months(files: list[Path], out: Path) -> None:
+    """Somme par page_id des mois agrégés, dans `out` (chemins échappés : apostrophes possibles)."""
+    sources = "[" + ", ".join(sql_str(f) for f in files) + "]"
+    duckdb.sql(
+        f"COPY (SELECT page_id, sum(views)::BIGINT AS views FROM read_parquet({sources}) GROUP BY page_id) "
+        f"TO {sql_str(out)} (FORMAT parquet)"
+    )
+
+
 def run(months: int = 12, today: dt.date | None = None) -> None:
     http = session()
     wanted = last_complete_months(today or dt.date.today(), months + 1)
@@ -126,9 +137,5 @@ def run(months: int = 12, today: dt.date | None = None) -> None:
             raise SystemExit(f"Aucune ligne fr.wikipedia dans {month_url(month)}")
         write_month(month, totals)
         print(f"  {month} : {len(totals):,} pages")
-    files = [(paths.WORK / f"views-{m}.parquet").as_posix() for m in wanted]
-    duckdb.sql(
-        f"COPY (SELECT page_id, sum(views)::BIGINT AS views FROM read_parquet({files}) GROUP BY page_id) "
-        f"TO '{(paths.WORK / 'views.parquet').as_posix()}' (FORMAT parquet)"
-    )
+    merge_months([paths.WORK / f"views-{m}.parquet" for m in wanted], paths.WORK / "views.parquet")
     print(f"views : {paths.WORK / 'views.parquet'} écrit ({len(wanted)} mois)")
