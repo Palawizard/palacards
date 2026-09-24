@@ -12,7 +12,10 @@ import type { Config } from "./config.js";
 export const SESSION_COOKIE = "palawi_palacards_session";
 const DEV_SECRET = "dev-only-secret-palacards-change-me-in-prod";
 
-export function createAuth(db: Db, config: Config) {
+/** Routes qui révoquent des sessions : les sockets ouverts de ce joueur sont coupés (ceux encore valides se reconnectent). */
+const REVOKING_PATHS = new Set(["/change-password", "/revoke-sessions", "/revoke-other-sessions", "/revoke-session", "/sign-out"]);
+
+export function createAuth(db: Db, config: Config, events: { onSessionsRevoked?: (userId: string) => void } = {}) {
   const secure = config.BETTER_AUTH_URL.startsWith("https://");
   return betterAuth({
     secret: config.BETTER_AUTH_SECRET ?? DEV_SECRET,
@@ -57,7 +60,15 @@ export function createAuth(db: Db, config: Config) {
           throw new APIError("BAD_REQUEST", { message: "Adresse email réservée." });
         }
         ctx.body.email = email || technical;
+        // Nom affiché = pseudo : sinon `displayUsername` permettait de s'afficher « Palawi » sous un autre pseudo.
         ctx.body.name = name;
+        ctx.body.displayUsername = name;
+        delete ctx.body.image;
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        if (!REVOKING_PATHS.has(ctx.path)) return;
+        const userId = ctx.context.session?.user.id;
+        if (userId) events.onSessionsRevoked?.(userId);
       }),
     },
     databaseHooks: {

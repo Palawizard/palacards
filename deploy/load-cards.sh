@@ -18,4 +18,10 @@ PG="${PG_CONTAINER:-palacards-postgres}"
 docker cp "$REPO_DIR/tools/import/load_cards.sql" "$PG:/tmp/load_cards.sql"
 gunzip -c "$CSV" | docker exec -i "$PG" sh -c \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v season="$1" $2 -f /tmp/load_cards.sql' sh "$SEASON" "$RESTORE"
+# Copie datée par saison, reprise par backup.sh : la restauration recharge le CSV de la bonne saison.
+if [ -z "$RESTORE" ]; then
+  mkdir -p "$REPO_DIR/import"
+  dest="$REPO_DIR/import/cards-s$SEASON.csv.gz"
+  [ "$(cd "$(dirname "$CSV")" && pwd)/$(basename "$CSV")" = "$dest" ] || cp "$CSV" "$dest"
+fi
 echo "Cartes de la saison $SEASON chargées."

@@ -3,7 +3,7 @@ import { ACHIEVEMENTS, ACHIEVEMENT_BY_KEY, applyEvent, type GameEvent } from "@p
 import type { Ctx } from "../context.js";
 import { activeSeason, lockPlayer, logMovement, movePw, packState, pushWallet, type DbOrTx, type Player } from "./players.js";
 import { afterCommit, Effects } from "./notifications.js";
-import { onBattleFinished } from "./battles.js";
+import { battleRewarded, onBattleFinished } from "./battles.js";
 import { collectionScoresSql } from "./profiles.js";
 
 let hooksRegistered = false;
@@ -115,10 +115,6 @@ export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameE
 const rewardedSql = (userId: string) =>
   sql`exists (select 1 from ledger l where l.user_id = ${userId} and l.reason = 'battle' and l.ref_id = ${schema.battles.id}::text)`;
 
-async function battleRewarded(db: DbOrTx, userId: string, battleId: number): Promise<boolean> {
-  const [row] = await db.select({ id: schema.battles.id }).from(schema.battles).where(and(eq(schema.battles.id, battleId), rewardedSql(userId)));
-  return !!row;
-}
 
 /** Série de victoires en cours, sur les seuls duels récompensés (du plus récent au plus ancien). */
 export async function winStreak(db: DbOrTx, userId: string): Promise<number> {

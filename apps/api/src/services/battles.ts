@@ -433,6 +433,26 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
   return { players: [c, o], winnerId, result };
 }
 
+/** Le joueur a touché des PW pour ce duel (dans le quota anti-farm et a répondu au moins une fois). */
+export async function battleRewarded(db: DbOrTx, userId: string, battleId: number): Promise<boolean> {
+  const [row] = await db.execute(
+    sql`select 1 from ledger where user_id = ${userId} and reason = 'battle' and ref_id = ${String(battleId)} limit 1`,
+  );
+  return !!row;
+}
+
+/**
+ * Une question de duel attend la réponse de ce joueur (10 s + tolérance) : le catalogue et les fiches
+ * sont refusés pendant ce temps, sinon vues, longueur et rareté donneraient la réponse de « Plus lu » / « Plus long ».
+ */
+export async function answeringQuestion(ctx: Ctx, userId: string): Promise<boolean> {
+  const since = new Date(ctx.now().getTime() - QUESTION_TIME_MS - ANSWER_GRACE_MS);
+  const [row] = await ctx.db.execute(
+    sql`select 1 from battle_answers where user_id = ${userId} and answered_at is null and served_at > ${since.toISOString()} limit 1`,
+  );
+  return !!row;
+}
+
 /** Hooks après un duel terminé (succès, objectifs de guilde). */
 type FinishHook = (ctx: Ctx, battle: Battle, winnerId: string | null) => Promise<void>;
 const finishHooks: FinishHook[] = [];
@@ -441,7 +461,8 @@ export const onBattleFinished = (hook: FinishHook) => finishHooks.push(hook);
 async function afterFinish(ctx: Ctx, fx: Effects, battle: Battle, players: Player[], winnerId: string | null) {
   await afterCommit(ctx, async () => {
     for (const p of players) pushWallet(ctx, p);
-    if (winnerId) await bumpObjective(ctx, winnerId, { win_battles: 1 });
+    // Anti-farm : seule une victoire récompensée fait avancer l'objectif de guilde.
+    if (winnerId && (await battleRewarded(ctx.db, winnerId, battle.id))) await bumpObjective(ctx, winnerId, { win_battles: 1 });
     ctx.rt.toUser(battle.challengerId, "battle:update", { battleId: battle.id });
     ctx.rt.toUser(battle.opponentId, "battle:update", { battleId: battle.id });
     await fx.flush(ctx);
