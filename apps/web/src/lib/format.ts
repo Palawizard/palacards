@@ -27,3 +27,24 @@ export function relative(iso: string, now = Date.now()): string {
 /** Vues compactes : 1,2 M. */
 export const compact = (n: number) =>
   new Intl.NumberFormat("fr-FR", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+
+const REASONS: Record<string, string> = {
+  signup: "Inscription",
+  pack_open: "Ouverture de paquet",
+  recycle: "Recyclage",
+  fusion: "Fusion",
+  daily_login: "Bonus du jour",
+  battle: "Duel",
+  achievement: "Succès",
+  bonus_pack: "Paquet bonus",
+  market_fee: "Frais d’annonce",
+  market_purchase: "Achat au marché",
+  market_sale: "Vente au marché",
+  market_tax: "Taxe de vente",
+  trade: "Échange",
+  admin: "Admin",
+  guild_objective: "Objectif de guilde",
+  test: "Test",
+};
+/** Motif d'une ligne du ledger, en français (code brut si inconnu). */
+export const reasonLabel = (reason: string) => REASONS[reason] ?? reason;
