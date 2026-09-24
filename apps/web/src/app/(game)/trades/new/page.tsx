@@ -151,7 +151,7 @@ function Composer() {
         </label>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <section className="flex flex-col gap-3">
           <h2 className="section-title mt-0">
             Tu donnes <span className="tnum text-base text-faint">({give.size})</span>

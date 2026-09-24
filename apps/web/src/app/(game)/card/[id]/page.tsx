@@ -277,7 +277,7 @@ export default function CardPage({ params }: { params: Promise<{ id: string }> }
         {!data.inActiveSeason && " (article absent de la saison en cours)"}.
       </p>
 
-      <div className="mt-4 grid gap-8 lg:grid-cols-[1fr_20rem] lg:items-start">
+      <div className="mt-4 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start">
         <aside className="order-first flex flex-col gap-3 lg:order-last">
           <div className="mx-auto w-full max-w-[18rem]">
             <Card card={card} href={null} priority />

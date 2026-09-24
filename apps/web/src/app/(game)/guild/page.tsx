@@ -66,7 +66,7 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
   const [description, setDescription] = useState("");
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1fr_22rem] lg:items-start">
+    <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
       <section>
         <h2 className="section-title mt-0">Rejoindre une guilde</h2>
         {error ? (
@@ -166,7 +166,7 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
         </Link>
       </header>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <section className="infobox">
           <h3 className="infobox-head">Objectif de la semaine</h3>
           <div className="p-3">
