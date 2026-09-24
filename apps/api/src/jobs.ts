@@ -1,5 +1,5 @@
 import type { FastifyBaseLogger } from "fastify";
-import { PgBoss, type Job } from "pg-boss";
+import { PgBoss, type Job, type QueueOptions } from "pg-boss";
 
 type Handler = (data: Record<string, unknown>) => Promise<void>;
 
@@ -11,6 +11,7 @@ type Handler = (data: Record<string, unknown>) => Promise<void>;
 export function createJobs(databaseUrl: string | undefined, log: FastifyBaseLogger) {
   const boss = databaseUrl ? new PgBoss({ connectionString: databaseUrl, schema: "pgboss" }) : null;
   const handlers = new Map<string, Handler>();
+  const queueOptions = new Map<string, QueueOptions>();
   const schedules: { name: string; cron: string }[] = [];
   let started = false;
 
@@ -18,8 +19,9 @@ export function createJobs(databaseUrl: string | undefined, log: FastifyBaseLogg
 
   return {
     /** Déclare une file et son handler (avant `start`). */
-    define(name: string, handler: Handler) {
+    define(name: string, handler: Handler, options?: QueueOptions) {
       handlers.set(name, handler);
+      if (options) queueOptions.set(name, options);
     },
     /** Exécution récurrente (cron, heure de Paris). */
     schedule(name: string, cron: string, handler: Handler) {
@@ -30,7 +32,7 @@ export function createJobs(databaseUrl: string | undefined, log: FastifyBaseLogg
       if (!boss || started) return;
       await boss.start();
       for (const [name, handler] of handlers) {
-        await boss.createQueue(name, { retryLimit: 5, retryDelay: 5, retryBackoff: true });
+        await boss.createQueue(name, { retryLimit: 5, retryDelay: 5, retryBackoff: true, ...queueOptions.get(name) });
         await boss.work<Record<string, unknown>>(name, async (jobs: Job<Record<string, unknown>>[]) => {
           for (const job of jobs) await handler(job.data ?? {});
         });

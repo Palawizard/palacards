@@ -204,6 +204,8 @@ async function catalogPage(
     sortExpr = query.sort === "atk" ? sql`c.atk` : query.sort === "def" ? sql`c.def` : sql`c.views_12m`;
   }
   if (cursor) {
+    // Le type de la valeur doit suivre le tri (texte pour le titre, nombre sinon), sinon erreur SQL.
+    if ((typeof cursor.v === "string") !== (query.sort === "title")) throw badRequest("invalid_cursor", "Curseur de pagination invalide.");
     where.push(
       desc_ ? sql`(${sortExpr}, c.id) < (${cursor.v}, ${cursor.id})` : sql`(${sortExpr}, c.id) > (${cursor.v}, ${cursor.id})`,
     );
@@ -320,7 +322,19 @@ export async function cardSheet(ctx: Ctx, userId: string, cardId: number) {
 }
 
 /** Nombre de cartes par rareté dans la saison active (dénominateur de la complétion). */
+// Les cartes d'une saison active ne changent plus : un comptage (≈ 100 ms sur 2,7 M lignes) par saison et par processus.
+const totalsCache = new Map<number, Record<Rarity, number>>();
+
+/** Nombre de cartes par rareté dans la saison (mis en cache une fois la saison peuplée). */
 export async function seasonTotals(db: DbOrTx, season: number): Promise<Record<Rarity, number>> {
+  const cached = totalsCache.get(season);
+  if (cached) return cached;
+  const out = await countSeason(db, season);
+  if (Object.values(out).some((n) => n > 0)) totalsCache.set(season, out);
+  return out;
+}
+
+async function countSeason(db: DbOrTx, season: number): Promise<Record<Rarity, number>> {
   const rows = await db
     .select({ rarity: c.rarity, n: sql<number>`count(*)::int` })
     .from(c)
