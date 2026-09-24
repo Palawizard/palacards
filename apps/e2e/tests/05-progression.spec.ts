@@ -9,7 +9,8 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   await page.getByRole("button", { name: /Ouvrir un paquet/ }).first().click();
   await expect(page.getByText("Succès débloqué : Premier paquet.")).toBeVisible();
   await page.goto("achievements");
-  await expect(page.getByText(/1 succès débloqués sur 20/)).toBeVisible();
+  // Au moins 1 : selon le tirage, une SR/UR peut débloquer d'autres succès dès le premier paquet.
+  await expect(page.getByText(/[1-9]\d* succès débloqués sur 20/)).toBeVisible();
   await expect(page.locator("li", { hasText: "Premier paquet" }).getByText(/Débloqué le/)).toBeVisible();
 
   // Fusion : deux exemplaires du même article → niveau 2.
