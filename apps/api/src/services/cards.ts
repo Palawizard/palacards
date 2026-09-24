@@ -125,24 +125,55 @@ interface CatalogQuery {
   limit: number;
 }
 
-type Cursor = { v: number | string; id: number };
+// `fuzzy` : pagination d'une recherche approchante (aucun titre ne contenait tous les mots).
+type Cursor = { v: number | string; id: number; fuzzy?: boolean };
 
 const encodeCursor = (cur: Cursor) => Buffer.from(JSON.stringify(cur)).toString("base64url");
 function decodeCursor(raw: string): Cursor {
   try {
     const cur = JSON.parse(Buffer.from(raw, "base64url").toString()) as Cursor;
     if (typeof cur.id !== "number" || (typeof cur.v !== "number" && typeof cur.v !== "string")) throw new Error();
+    if (cur.fuzzy !== undefined && typeof cur.fuzzy !== "boolean") throw new Error();
     return cur;
   } catch {
     throw badRequest("invalid_cursor", "Curseur de pagination invalide.");
   }
 }
 
+/** Mots d'une recherche, échappés pour LIKE (au plus 8). */
+function searchWords(q: string): string[] {
+  const words = q
+    .split(/[\s'’,.;:!?()«»"]+/)
+    .filter(Boolean)
+    .slice(0, 8);
+  // Un mot de moins de 3 lettres n'a pas de trigramme : il filtre, mais ne peut pas guider l'index seul.
+  const usable = words.some((w) => w.length >= 3) ? words : [q];
+  return usable.map((w) => w.replace(/[\\%_]/g, "\\$&"));
+}
+
 /**
  * Catalogue de la saison active, paginé par curseur (keyset) : pas d'OFFSET sur 2,7 M lignes.
- * Recherche floue sans accents via l'index trigram sur `lower(f_unaccent(title))`.
+ * Recherche sans accents sur `search_title` (colonne normalisée, index trigram) en deux temps :
+ * 1. titres contenant tous les mots, dans le tri choisi (vues par défaut : l'article principal d'abord) ;
+ * 2. sinon (faute de frappe), titres approchants par similarité de mots (`<%`), dans le même tri.
+ * Trier par similarité tous les titres d'un mot fréquent (« château ») coûtait des centaines de ms.
  */
-export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Promise<Page<CardDTO>> {
+export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Promise<Page<CardDTO> & { approximate: boolean }> {
+  const cursor = query.cursor ? decodeCursor(query.cursor) : null;
+  const q = query.q?.trim() || undefined;
+  const exact = await catalogPage(ctx, userId, query, q, cursor, cursor?.fuzzy ?? false);
+  if (q && !cursor && exact.items.length === 0) return { ...(await catalogPage(ctx, userId, query, q, null, true)), approximate: true };
+  return { ...exact, approximate: cursor?.fuzzy ?? false };
+}
+
+async function catalogPage(
+  ctx: Ctx,
+  userId: string,
+  query: CatalogQuery,
+  q: string | undefined,
+  cursor: Cursor | null,
+  fuzzy: boolean,
+): Promise<Page<CardDTO>> {
   const season = await activeSeason(ctx.db);
   const where: SQL[] = [sql`c.season = ${season}`];
   if (query.rarity?.length)
@@ -161,26 +192,20 @@ export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Pr
   if (query.owned === "yes") where.push(sql`c.id in (select o.card_id from card_instances o where o.owner_id = ${userId})`);
   if (query.owned === "no") where.push(sql`not ${ownedExpr}`);
 
-  const q = query.q?.trim();
+  if (q && fuzzy) where.push(sql`lower(f_unaccent(${q})) <% c.search_title`);
+  else if (q) for (const w of searchWords(q)) where.push(sql`c.search_title like '%' || lower(f_unaccent(${w})) || '%'`);
+  // Même tri pour les deux modes : trier des dizaines de milliers de candidats par similarité coûtait trop cher.
   let sortExpr: SQL;
   let desc_ = true;
-  if (q) {
-    // Pertinence : similarité de mots (trigrammes), bornée aux titres qui contiennent la recherche ou s'en approchent.
-    const needle = sql`lower(f_unaccent(${q}))`;
-    where.push(
-      sql`(lower(f_unaccent(c.title)) like '%' || ${needle} || '%' or ${needle} <% lower(f_unaccent(c.title)))`,
-    );
-    sortExpr = sql`round(word_similarity(${needle}, lower(f_unaccent(c.title)))::numeric, 4)`;
-  } else if (query.sort === "title") {
+  if (query.sort === "title") {
     sortExpr = sql`c.title`;
     desc_ = false;
   } else {
     sortExpr = query.sort === "atk" ? sql`c.atk` : query.sort === "def" ? sql`c.def` : sql`c.views_12m`;
   }
-  if (query.cursor) {
-    const cur = decodeCursor(query.cursor);
+  if (cursor) {
     where.push(
-      desc_ ? sql`(${sortExpr}, c.id) < (${cur.v}, ${cur.id})` : sql`(${sortExpr}, c.id) > (${cur.v}, ${cur.id})`,
+      desc_ ? sql`(${sortExpr}, c.id) < (${cursor.v}, ${cursor.id})` : sql`(${sortExpr}, c.id) > (${cursor.v}, ${cursor.id})`,
     );
   }
   const dir = desc_ ? sql`desc` : sql`asc`;
@@ -222,11 +247,9 @@ export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Pr
   const nextCursor =
     rows.length > query.limit && last
       ? encodeCursor({
-          v:
-            typeof last.sort_value === "string" && !q && query.sort === "title"
-              ? last.sort_value
-              : Number(last.sort_value),
+          v: query.sort === "title" ? String(last.sort_value) : Number(last.sort_value),
           id: Number(last.id),
+          ...(fuzzy ? { fuzzy: true } : {}),
         })
       : null;
   return { items, nextCursor };

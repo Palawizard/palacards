@@ -50,6 +50,13 @@
       "when": 1790233932096,
       "tag": "0006_auction_instance_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790235279538,
+      "tag": "0007_cards_search_title",
+      "breakpoints": true
     }
   ]
 }
