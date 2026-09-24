@@ -8,6 +8,10 @@
 #    chargée sans être activée (cards-s<N+1>.csv.gz présent), puis cartes référencées (éditions passées) ;
 # 3. données du dump (comptes, exemplaires, ledger…), triggers des clés étrangères coupés pendant le
 #    chargement (le dump est cohérent, et les cartes référencées sont déjà là).
+# L'API et le front sont arrêtés pendant la restauration puis relancés, seulement si la cible est le
+# Postgres de prod (palacards-postgres). Test de restauration dans un Postgres temporaire pendant que
+# la prod tourne : PG_CONTAINER=<conteneur de test> ./restore.sh …  (la prod n'est pas touchée).
+# APP_CONTAINERS force la liste des conteneurs à arrêter/relancer (vide : aucun).
 set -eu
 
 DUMP="$1"
@@ -15,6 +19,8 @@ SEASON="$2"
 DIR="$(cd "$(dirname "$DUMP")" && pwd)"
 REF="${DUMP%.dump}.cards-ref.csv.gz"
 PG="${PG_CONTAINER:-palacards-postgres}"
+if [ "$PG" = palacards-postgres ]; then DEFAULT_APPS="palacards-api palacards-web"; else DEFAULT_APPS=""; fi
+APPS="${APP_CONTAINERS-$DEFAULT_APPS}"
 # CSV de la saison active, sinon celui de la dernière saison importée avant elle (saison reconduite).
 CSV=""
 n="$SEASON"
@@ -35,8 +41,13 @@ for f in "$DUMP" "$REF"; do
 done
 pg() { docker exec -i "$PG" sh -c "psql -U \"\$POSTGRES_USER\" -d \"\$POSTGRES_DB\" -v ON_ERROR_STOP=1 $1"; }
 
-echo "Arrêt de l'API et du front…"
-docker stop palacards-api palacards-web >/dev/null 2>&1 || true
+if [ -n "$APPS" ]; then
+  echo "Arrêt de : $APPS…"
+  # shellcheck disable=SC2086 # liste de conteneurs séparés par des espaces
+  docker stop $APPS >/dev/null 2>&1 || true
+else
+  echo "Conteneurs applicatifs non touchés (cible : $PG)."
+fi
 
 docker exec "$PG" sh -c 'dropdb -U "$POSTGRES_USER" --if-exists --force "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
 docker cp "$DUMP" "$PG:/tmp/restore.dump"
@@ -58,5 +69,8 @@ echo "Données…"
 docker exec "$PG" sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --exit-on-error --section=data --disable-triggers /tmp/restore.dump && rm /tmp/restore.dump'
 pg "-c 'analyze'" >/dev/null
 
-docker start palacards-api palacards-web >/dev/null
+if [ -n "$APPS" ]; then
+  # shellcheck disable=SC2086
+  docker start $APPS >/dev/null
+fi
 echo "Restauration terminée."
