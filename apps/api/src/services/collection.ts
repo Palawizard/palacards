@@ -49,7 +49,7 @@ export async function listCollection(ctx: Ctx, ownerId: string, query: Collectio
     );
   }
   if (query.q?.trim())
-    where.push(sql`lower(f_unaccent(${c.title})) like '%' || lower(f_unaccent(${query.q.trim()})) || '%'`);
+    where.push(sql`${c.searchTitle} like '%' || lower(f_unaccent(${query.q.trim()})) || '%'`);
 
   const order: SQL[] = {
     date: [sql`${ci.obtainedAt} desc`],

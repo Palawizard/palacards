@@ -176,6 +176,13 @@ describe("catalogue", () => {
     const res = await p.get("/cards?q=synthetique%20n%C2%B0%2042&limit=5");
     expect(res.status).toBe(200);
     expect(res.body.items[0].title).toBe("Carte synthétique n° 42");
+    expect(res.body.approximate).toBe(false);
+    // Faute de frappe : aucun titre exact, repli sur les titres approchants.
+    const typo = await p.get("/cards?q=carte%20synthetiqe&limit=5");
+    expect(typo.body.approximate).toBe(true);
+    expect(typo.body.items.length).toBeGreaterThan(0);
+    // Les jokers LIKE saisis par le joueur sont pris au pied de la lettre.
+    expect((await p.get("/cards?q=%25%25%25&limit=5")).body.items.filter((c: { title: string }) => !c.title.includes("%"))).toHaveLength(0);
 
     const page1 = await p.get("/cards?limit=10&sort=views");
     const page2 = await p.get(`/cards?limit=10&sort=views&cursor=${page1.body.nextCursor}`);

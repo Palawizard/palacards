@@ -47,9 +47,12 @@ export const cards = pgTable(
     randKey: doublePrecision("rand_key")
       .notNull()
       .default(sql`random()`),
+    // Titre normalisé (minuscules, sans accents) calculé une fois : la recherche n'appelle plus unaccent ligne à ligne.
+    searchTitle: text("search_title").generatedAlwaysAs(sql`lower(f_unaccent(title))`),
   },
   (t) => [
     primaryKey({ columns: [t.season, t.id] }),
+    index("cards_search_trgm_idx").using("gin", sql`${t.searchTitle} gin_trgm_ops`),
     index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey),
     // Tris du catalogue paginé par curseur (keyset).
     index("cards_views_idx").on(t.season, t.views12m, t.id),
