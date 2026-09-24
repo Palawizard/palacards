@@ -165,11 +165,16 @@ function searchWords(q: string): string[] {
  * 2. sinon (faute de frappe), titres approchants par similarité de mots (`<%`), dans le même tri.
  * Trier par similarité tous les titres d'un mot fréquent (« château ») coûtait des centaines de ms.
  */
-export async function catalog(ctx: Ctx, userId: string, query: CatalogQuery): Promise<Page<CardDTO> & { approximate: boolean }> {
+export async function catalog(
+  ctx: Ctx,
+  userId: string,
+  query: CatalogQuery,
+): Promise<Page<CardDTO> & { approximate: boolean }> {
   const cursor = query.cursor ? decodeCursor(query.cursor) : null;
   const q = query.q?.trim() || undefined;
   const exact = await catalogPage(ctx, userId, query, q, cursor, cursor?.fuzzy ?? false);
-  if (q && !cursor && exact.items.length === 0) return { ...(await catalogPage(ctx, userId, query, q, null, true)), approximate: true };
+  if (q && !cursor && exact.items.length === 0)
+    return { ...(await catalogPage(ctx, userId, query, q, null, true)), approximate: true };
   return { ...exact, approximate: cursor?.fuzzy ?? false };
 }
 
@@ -196,11 +201,13 @@ async function catalogPage(
   if (query.maxDef !== undefined) where.push(sql`c.def <= ${query.maxDef}`);
   const ownedExpr = sql`exists (select 1 from card_instances o where o.owner_id = ${userId} and o.card_id = c.id)`;
   // « Possédées » : on part des exemplaires du joueur (petit ensemble) plutôt que de toute la saison.
-  if (query.owned === "yes") where.push(sql`c.id in (select o.card_id from card_instances o where o.owner_id = ${userId})`);
+  if (query.owned === "yes")
+    where.push(sql`c.id in (select o.card_id from card_instances o where o.owner_id = ${userId})`);
   if (query.owned === "no") where.push(sql`not ${ownedExpr}`);
 
   if (q && fuzzy) where.push(sql`lower(f_unaccent(${q})) <% c.search_title`);
-  else if (q) for (const w of searchWords(q)) where.push(sql`c.search_title like '%' || lower(f_unaccent(${w})) || '%'`);
+  else if (q)
+    for (const w of searchWords(q)) where.push(sql`c.search_title like '%' || lower(f_unaccent(${w})) || '%'`);
   // Même tri pour les deux modes : trier des dizaines de milliers de candidats par similarité coûtait trop cher.
   let sortExpr: SQL;
   let desc_ = true;
@@ -212,9 +219,12 @@ async function catalogPage(
   }
   if (cursor) {
     // Le type de la valeur doit suivre le tri (texte pour le titre, nombre sinon), sinon erreur SQL.
-    if ((typeof cursor.v === "string") !== (query.sort === "title")) throw badRequest("invalid_cursor", "Curseur de pagination invalide.");
+    if ((typeof cursor.v === "string") !== (query.sort === "title"))
+      throw badRequest("invalid_cursor", "Curseur de pagination invalide.");
     where.push(
-      desc_ ? sql`(${sortExpr}, c.id) < (${cursor.v}, ${cursor.id})` : sql`(${sortExpr}, c.id) > (${cursor.v}, ${cursor.id})`,
+      desc_
+        ? sql`(${sortExpr}, c.id) < (${cursor.v}, ${cursor.id})`
+        : sql`(${sortExpr}, c.id) > (${cursor.v}, ${cursor.id})`,
     );
   }
   const dir = desc_ ? sql`desc` : sql`asc`;

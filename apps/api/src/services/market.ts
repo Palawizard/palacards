@@ -70,7 +70,8 @@ export async function createAuction(
   input: { instanceId: number; startPrice: number; buyout: number | null; durationMs: number },
 ) {
   const error = validateListing(input.startPrice, input.buyout, input.durationMs);
-  if (error === "buyout_below_start") throw badRequest(error, "L'achat immédiat doit être au moins égal à la mise à prix.");
+  if (error === "buyout_below_start")
+    throw badRequest(error, "L'achat immédiat doit être au moins égal à la mise à prix.");
   if (error === "invalid_duration") throw badRequest(error, "Durée de vente invalide.");
   if (error) throw badRequest(error, "Prix invalide.");
   const now = ctx.now();
@@ -145,7 +146,10 @@ export async function cancelAuction(ctx: Ctx, sellerId: string, auctionId: numbe
     if (auction.status !== "open") throw conflict("auction_closed", "Cette vente est déjà terminée.");
     if (auction.currentBidderId) throw conflict("has_bids", "Impossible d'annuler une vente qui a déjà une offre.");
     await tx.update(a).set({ status: "cancelled", closedAt: ctx.now() }).where(eq(a.id, auctionId));
-    await tx.update(schema.cardInstances).set({ lockedBy: null }).where(eq(schema.cardInstances.id, lotOf(auction)));
+    await tx
+      .update(schema.cardInstances)
+      .set({ lockedBy: null })
+      .where(eq(schema.cardInstances.id, lotOf(auction)));
   });
   ctx.rt.toRoom(auctionRoom(auctionId), "auction:update", {
     id: auctionId,
@@ -182,7 +186,16 @@ function emitSale(ctx: Ctx, auction: Pick<Auction, "id" | "status" | "sellerId" 
   void emit(ctx, auction.currentBidderId, "collection");
 }
 
-async function settle(tx: Tx, fx: Effects, auction: Auction, players: Map<string, Player>, winnerId: string, price: number, lockedAmount: number, now: Date) {
+async function settle(
+  tx: Tx,
+  fx: Effects,
+  auction: Auction,
+  players: Map<string, Player>,
+  winnerId: string,
+  price: number,
+  lockedAmount: number,
+  now: Date,
+) {
   const winner = players.get(winnerId)!;
   const seller = players.get(auction.sellerId)!;
   await moveLocked(tx, winner, -lockedAmount);
@@ -191,8 +204,18 @@ async function settle(tx: Tx, fx: Effects, auction: Auction, players: Map<string
   await movePw(tx, seller, -saleTax(price), "market_tax", auction.id);
   await transferInstances(tx, [lotOf(auction)], winnerId, "market");
   await logMovement(tx, winnerId, "card", 1, await ownedCount(tx, winnerId), "market_purchase", auction.id);
-  await logMovement(tx, auction.sellerId, "card", -1, await ownedCount(tx, auction.sellerId), "market_sale", auction.id);
-  await tx.insert(schema.sales).values({ cardId: auction.cardId, rarity: auction.rarity, price, auctionId: auction.id, soldAt: now });
+  await logMovement(
+    tx,
+    auction.sellerId,
+    "card",
+    -1,
+    await ownedCount(tx, auction.sellerId),
+    "market_sale",
+    auction.id,
+  );
+  await tx
+    .insert(schema.sales)
+    .values({ cardId: auction.cardId, rarity: auction.rarity, price, auctionId: auction.id, soldAt: now });
   await tx
     .update(a)
     .set({ status: "sold", currentBid: price, currentBidderId: winnerId, closedAt: now })
@@ -213,14 +236,19 @@ export async function placeBid(ctx: Ctx, bidderId: string, auctionId: number, am
     const auction = await lockAuction(tx, auctionId);
     // Heure lue sous verrou : une offre en attente ne peut pas passer après la vraie fin.
     const now = ctx.now();
-    if (auction.status !== "open" || auction.endsAt <= now) throw conflict("auction_closed", "Cette vente est terminée.");
+    if (auction.status !== "open" || auction.endsAt <= now)
+      throw conflict("auction_closed", "Cette vente est terminée.");
     if (auction.sellerId === bidderId) throw forbidden("Tu ne peux pas enchérir sur ta propre vente.");
     if (!Number.isInteger(amount) || amount < 1) throw badRequest("bid_too_low", "Offre invalide.");
 
     // Offre au prix d'achat immédiat ou plus : on achète directement au prix affiché
     // (même si la hausse minimale de 5 % dépasserait ce prix).
     if (auction.buyout !== null && amount >= auction.buyout) {
-      const players = await lockPlayers(tx, [bidderId, auction.sellerId, ...(auction.currentBidderId ? [auction.currentBidderId] : [])]);
+      const players = await lockPlayers(tx, [
+        bidderId,
+        auction.sellerId,
+        ...(auction.currentBidderId ? [auction.currentBidderId] : []),
+      ]);
       if (auction.currentBidderId && auction.currentBidderId !== bidderId) {
         await moveLocked(tx, players.get(auction.currentBidderId)!, -auction.currentBid!);
       }
@@ -230,7 +258,16 @@ export async function placeBid(ctx: Ctx, bidderId: string, auctionId: number, am
         throw conflict("insufficient_funds", "Pas assez de points wiki disponibles.");
       }
       await tx.insert(schema.bids).values({ auctionId, bidderId, amount: auction.buyout, createdAt: now });
-      const sold = await settle(tx, fx, { ...auction, bidCount: auction.bidCount + 1 }, players, bidderId, auction.buyout, ownLocked, now);
+      const sold = await settle(
+        tx,
+        fx,
+        { ...auction, bidCount: auction.bidCount + 1 },
+        players,
+        bidderId,
+        auction.buyout,
+        ownLocked,
+        now,
+      );
       if (auction.currentBidderId && auction.currentBidderId !== bidderId) {
         await fx.notify(tx, auction.currentBidderId, "outbid", { auctionId, amount: auction.buyout, bought: true });
       }
@@ -267,7 +304,11 @@ export async function placeBid(ctx: Ctx, bidderId: string, auctionId: number, am
     if (res.rescheduled) await ctx.jobs.sendAt(AUCTION_CLOSE_JOB, { auctionId }, res.auction.endsAt);
     for (const p of res.players.values()) pushWallet(ctx, p);
     const names = await usernames(ctx.db, [res.auction.currentBidderId]);
-    pushAuction(ctx, res.auction, res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null);
+    pushAuction(
+      ctx,
+      res.auction,
+      res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null,
+    );
     await fx.flush(ctx);
     emitSale(ctx, res.auction);
   });
@@ -293,19 +334,35 @@ export async function closeAuctionIfDue(ctx: Ctx, auctionId: number) {
     if (auction.status !== "open" || auction.endsAt > now) return null;
     if (!auction.currentBidderId || auction.currentBid === null) {
       await tx.update(a).set({ status: "expired", closedAt: now }).where(eq(a.id, auctionId));
-      await tx.update(schema.cardInstances).set({ lockedBy: null }).where(eq(schema.cardInstances.id, lotOf(auction)));
+      await tx
+        .update(schema.cardInstances)
+        .set({ lockedBy: null })
+        .where(eq(schema.cardInstances.id, lotOf(auction)));
       await fx.notify(tx, auction.sellerId, "auction_expired", { auctionId, cardId: auction.cardId });
       return { auction: { ...auction, status: "expired" as const }, players: new Map<string, Player>() };
     }
     const players = await lockPlayers(tx, [auction.sellerId, auction.currentBidderId]);
-    const sold = await settle(tx, fx, auction, players, auction.currentBidderId, auction.currentBid, auction.currentBid, now);
+    const sold = await settle(
+      tx,
+      fx,
+      auction,
+      players,
+      auction.currentBidderId,
+      auction.currentBid,
+      auction.currentBid,
+      now,
+    );
     return { auction: sold, players };
   });
   if (!res) return false;
   await afterCommit(ctx, async () => {
     for (const p of res.players.values()) pushWallet(ctx, p);
     const names = await usernames(ctx.db, [res.auction.currentBidderId]);
-    pushAuction(ctx, res.auction, res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null);
+    pushAuction(
+      ctx,
+      res.auction,
+      res.auction.currentBidderId ? (names.get(res.auction.currentBidderId) ?? null) : null,
+    );
     await fx.flush(ctx);
     emitSale(ctx, res.auction);
   });
@@ -331,7 +388,6 @@ export async function sweepAuctions(ctx: Ctx) {
 // ---------------------------------------------------------------------------
 // Lecture
 // ---------------------------------------------------------------------------
-
 
 /** Exemplaire d'une vente ouverte : jamais nul, il reste verrouillé (donc indestructible) tant que la vente court. */
 function lotOf(auction: Auction): number {
@@ -384,7 +440,10 @@ export async function referencePrices(ctx: Ctx, cardIds: number[]) {
   const rows = await ctx.db.execute<{ card_id: string; prices: number[] }>(sql`
     select card_id, array_agg(price order by sold_at desc) as prices from (
       select card_id, price, sold_at, row_number() over (partition by card_id order by sold_at desc) as rn
-      from sales where card_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})
+      from sales where card_id in (${sql.join(
+        ids.map((i) => sql`${i}`),
+        sql`, `,
+      )})
     ) s where rn <= ${ECONOMY.referencePriceSampleSize}
     group by card_id
   `);
@@ -400,14 +459,19 @@ export async function listAuctions(
   const where: SQL[] = [eq(a.status, "open")];
   if (q.rarity?.length) where.push(inArray(a.rarity, q.rarity));
   if (q.scope === "mine") where.push(eq(a.sellerId, userId));
-  if (q.scope === "bidding") where.push(sql`exists (select 1 from bids b where b.auction_id = ${a.id} and b.bidder_id = ${userId})`);
+  if (q.scope === "bidding")
+    where.push(sql`exists (select 1 from bids b where b.auction_id = ${a.id} and b.bidder_id = ${userId})`);
   if (q.search?.trim()) {
     where.push(
       sql`exists (select 1 from cards c where c.season = ${a.season} and c.id = ${a.cardId} and c.search_title like '%' || lower(f_unaccent(${q.search.trim()})) || '%')`,
     );
   }
   const order =
-    q.sort === "ending" ? [a.endsAt] : q.sort === "recent" ? [desc(a.createdAt)] : [sql`coalesce(${a.currentBid}, ${a.startPrice}) desc`];
+    q.sort === "ending"
+      ? [a.endsAt]
+      : q.sort === "recent"
+        ? [desc(a.createdAt)]
+        : [sql`coalesce(${a.currentBid}, ${a.startPrice}) desc`];
   const rows = await ctx.db
     .select()
     .from(a)
@@ -433,7 +497,11 @@ export async function auctionDetail(ctx: Ctx, auctionId: number) {
   );
   return {
     ...dto!,
-    bids: history.map((h) => ({ amount: h.amount, at: h.createdAt.toISOString(), bidder: names.get(h.bidderId) ?? "?" })),
+    bids: history.map((h) => ({
+      amount: h.amount,
+      at: h.createdAt.toISOString(),
+      bidder: names.get(h.bidderId) ?? "?",
+    })),
   };
 }
 

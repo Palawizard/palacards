@@ -24,7 +24,8 @@ export interface CardSheet {
 }
 
 /** Stat au niveau suivant (les stats affichées incluent déjà le bonus du niveau actuel). */
-const nextLevelStat = (value: number, level: number) => Math.round((value / (1 + LEVEL_BONUS * (level - 1))) * (1 + LEVEL_BONUS * level));
+const nextLevelStat = (value: number, level: number) =>
+  Math.round((value / (1 + LEVEL_BONUS * (level - 1))) * (1 + LEVEL_BONUS * level));
 
 const rank = (c: CardDTO) => ({ id: c.instanceId ?? 0, rarity: c.rarity, level: c.level, atk: c.atk, def: c.def });
 
@@ -102,11 +103,21 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
           <Pin aria-hidden className="size-4" />
           {card.pinnedSlot ? "Désépingler" : "Épingler"}
         </button>
-        <button type="button" className="btn btn-sm" disabled={!!card.locked} onClick={() => setSelling((v) => !v)} aria-expanded={selling}>
+        <button
+          type="button"
+          className="btn btn-sm"
+          disabled={!!card.locked}
+          onClick={() => setSelling((v) => !v)}
+          aria-expanded={selling}
+        >
           <Gavel aria-hidden className="size-4" />
           Vendre
         </button>
-        <Link href={`/trades/new?give=${card.instanceId}`} className={`btn btn-sm ${card.locked ? "pointer-events-none opacity-45" : ""}`} aria-disabled={!!card.locked}>
+        <Link
+          href={`/trades/new?give=${card.instanceId}`}
+          className={`btn btn-sm ${card.locked ? "pointer-events-none opacity-45" : ""}`}
+          aria-disabled={!!card.locked}
+        >
           <Repeat aria-hidden className="size-4" />
           Échanger
         </Link>
@@ -183,8 +194,8 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
           onClose={() => setFusing(false)}
         >
           Un doublon (édition S{source.season}, niveau {source.level}) est absorbé. Cet exemplaire passe de ATK{" "}
-          {fmt(card.atk)} · DEF {fmt(card.def)} à ATK{" "}
-          {fmt(nextLevelStat(card.atk, card.level))} · DEF {fmt(nextLevelStat(card.def, card.level))}.
+          {fmt(card.atk)} · DEF {fmt(card.def)} à ATK {fmt(nextLevelStat(card.atk, card.level))} · DEF{" "}
+          {fmt(nextLevelStat(card.def, card.level))}.
         </ConfirmDialog>
       )}
       <ConfirmDialog
@@ -218,7 +229,9 @@ function WishButton({ cardId, wishlisted, onChanged }: { cardId: number; wishlis
         setBusy(true);
         try {
           await api(`/wishlist/${cardId}`, { method: wishlisted ? "DELETE" : "PUT" });
-          toast.success(wishlisted ? "Retirée de ta wishlist." : "Ajoutée à ta wishlist : tu seras prévenu à sa mise en vente.");
+          toast.success(
+            wishlisted ? "Retirée de ta wishlist." : "Ajoutée à ta wishlist : tu seras prévenu à sa mise en vente.",
+          );
           onChanged();
         } catch (err) {
           toast.error(err instanceof ApiError ? err.message : "Action impossible.");
@@ -234,9 +247,10 @@ function WishButton({ cardId, wishlisted, onChanged }: { cardId: number; wishlis
 }
 
 function PriceHistory({ cardId }: { cardId: number }) {
-  const { data } = useSWR<{ reference: ReferencePriceDTO | null; sales: { price: number; soldAt: string; rarity: string }[] }>(
-    `/cards/${cardId}/prices`,
-  );
+  const { data } = useSWR<{
+    reference: ReferencePriceDTO | null;
+    sales: { price: number; soldAt: string; rarity: string }[];
+  }>(`/cards/${cardId}/prices`);
   return (
     <section className="infobox text-sm">
       <h2 className="infobox-head">Historique des prix</h2>

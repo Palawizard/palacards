@@ -80,7 +80,10 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
             {data.map((g, i) => (
               <li key={g.id} className="flex items-center gap-3 px-3 py-3">
                 <span className="tnum w-6 text-right text-sm text-faint">{i + 1}</span>
-                <span className="grid size-10 place-items-center rounded-md border border-line-strong bg-panel-2 text-xl" aria-hidden>
+                <span
+                  className="grid size-10 place-items-center rounded-md border border-line-strong bg-panel-2 text-xl"
+                  aria-hidden
+                >
                   {g.emblem}
                 </span>
                 <span className="min-w-0 flex-1">
@@ -91,7 +94,14 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
                     {g.members}/{GUILD_MAX_MEMBERS} membres · {fmt(g.score)} pts de saison
                   </span>
                 </span>
-                <button type="button" className="btn btn-sm" disabled={g.members >= GUILD_MAX_MEMBERS} onClick={() => run(() => api(`/guilds/${g.id}/join`, { method: "POST" }), `Bienvenue chez ${g.name} !`, onChanged)}>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  disabled={g.members >= GUILD_MAX_MEMBERS}
+                  onClick={() =>
+                    run(() => api(`/guilds/${g.id}/join`, { method: "POST" }), `Bienvenue chez ${g.name} !`, onChanged)
+                  }
+                >
                   {g.members >= GUILD_MAX_MEMBERS ? "Complète" : "Rejoindre"}
                 </button>
               </li>
@@ -111,17 +121,35 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
         <div className="flex flex-col gap-3 p-3">
           <label>
             <span className="label">Nom</span>
-            <input className="field" value={name} onChange={(e) => setName(e.target.value)} minLength={3} maxLength={30} required />
+            <input
+              className="field"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              minLength={3}
+              maxLength={30}
+              required
+            />
           </label>
           <label>
             <span className="label">Blason (2 à 5 lettres)</span>
-            <input className="field uppercase" value={tag} onChange={(e) => setTag(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 5))} required />
+            <input
+              className="field uppercase"
+              value={tag}
+              onChange={(e) => setTag(e.target.value.replace(/[^A-Za-z0-9]/g, "").slice(0, 5))}
+              required
+            />
           </label>
           <fieldset>
             <legend className="label">Emblème</legend>
             <div className="flex flex-wrap gap-1.5">
               {EMBLEMS.map((em) => (
-                <button key={em} type="button" aria-pressed={emblem === em} onClick={() => setEmblem(em)} className="grid size-9 place-items-center rounded-md border border-line-strong text-lg aria-pressed:border-accent aria-pressed:bg-accent/15">
+                <button
+                  key={em}
+                  type="button"
+                  aria-pressed={emblem === em}
+                  onClick={() => setEmblem(em)}
+                  className="grid size-9 place-items-center rounded-md border border-line-strong text-lg aria-pressed:border-accent aria-pressed:bg-accent/15"
+                >
                   {em}
                 </button>
               ))}
@@ -129,7 +157,12 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
           </fieldset>
           <label>
             <span className="label">Description (facultatif)</span>
-            <textarea className="field min-h-16" maxLength={280} value={description} onChange={(e) => setDescription(e.target.value)} />
+            <textarea
+              className="field min-h-16"
+              maxLength={280}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
           </label>
           <button type="submit" className="btn btn-primary" disabled={name.trim().length < 3 || tag.length < 2}>
             Fonder
@@ -152,7 +185,10 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-center gap-4">
-        <span className="grid size-16 place-items-center rounded-lg border border-line-strong bg-panel-2 text-4xl" aria-hidden>
+        <span
+          className="grid size-16 place-items-center rounded-lg border border-line-strong bg-panel-2 text-4xl"
+          aria-hidden
+        >
           {guild.emblem}
         </span>
         <div className="min-w-0 flex-1">
@@ -171,12 +207,23 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
           <h3 className="infobox-head">Objectif de la semaine</h3>
           <div className="p-3">
             <p className="font-semibold">{guild.objective.label}</p>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-panel-2" role="progressbar" aria-valuenow={guild.objective.progress} aria-valuemax={guild.objective.target} aria-label="Progression de l'objectif">
-              <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${pct}%` }} />
+            <div
+              className="mt-2 h-2 overflow-hidden rounded-full bg-panel-2"
+              role="progressbar"
+              aria-valuenow={guild.objective.progress}
+              aria-valuemax={guild.objective.target}
+              aria-label="Progression de l'objectif"
+            >
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-500"
+                style={{ width: `${pct}%` }}
+              />
             </div>
             <p className="tnum mt-1.5 text-sm text-muted">
               {fmt(guild.objective.progress)} / {fmt(guild.objective.target)}
-              {guild.objective.completed ? " · atteint : un paquet bonus pour chacun !" : " · récompense : un paquet bonus par membre"}
+              {guild.objective.completed
+                ? " · atteint : un paquet bonus pour chacun !"
+                : " · récompense : un paquet bonus par membre"}
             </p>
           </div>
         </section>
@@ -191,7 +238,10 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
 
       <section>
         <h3 className="section-title mt-0">
-          Membres <span className="tnum text-base text-faint">({guild.members.length}/{guild.maxMembers})</span>
+          Membres{" "}
+          <span className="tnum text-base text-faint">
+            ({guild.members.length}/{guild.maxMembers})
+          </span>
         </h3>
         <ul className="divide-y divide-line rounded-md border border-line bg-panel">
           {guild.members.map((m) => (
@@ -202,7 +252,11 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
                   {m.displayName}
                 </Link>
                 <span className="ml-2 inline-flex items-center gap-1 text-xs text-muted">
-                  {m.role === "leader" ? <Crown aria-hidden className="size-3.5 text-warn" /> : m.role === "officer" ? <ShieldCheck aria-hidden className="size-3.5 text-link" /> : null}
+                  {m.role === "leader" ? (
+                    <Crown aria-hidden className="size-3.5 text-warn" />
+                  ) : m.role === "officer" ? (
+                    <ShieldCheck aria-hidden className="size-3.5 text-link" />
+                  ) : null}
                   {ROLE_LABEL[m.role]}
                 </span>
                 <span className="tnum block text-xs text-faint">
@@ -212,22 +266,38 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
               {m.id !== me?.id && (
                 <span className="flex flex-wrap gap-1">
                   {myRole === "leader" && m.role === "member" && (
-                    <button type="button" className="btn btn-sm" onClick={() => act(m, "promote", `${m.displayName} est officier.`)}>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => act(m, "promote", `${m.displayName} est officier.`)}
+                    >
                       Promouvoir
                     </button>
                   )}
                   {myRole === "leader" && m.role === "officer" && (
                     <>
-                      <button type="button" className="btn btn-sm" onClick={() => act(m, "demote", `${m.displayName} redevient membre.`)}>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => act(m, "demote", `${m.displayName} redevient membre.`)}
+                      >
                         Rétrograder
                       </button>
-                      <button type="button" className="btn btn-sm" onClick={() => setPending({ m, action: "transfer" })}>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => setPending({ m, action: "transfer" })}
+                      >
                         Nommer chef
                       </button>
                     </>
                   )}
                   {(myRole === "leader" ? m.role !== "leader" : myRole === "officer" && m.role === "member") && (
-                    <button type="button" className="btn btn-sm btn-danger" onClick={() => setPending({ m, action: "kick" })}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger"
+                      onClick={() => setPending({ m, action: "kick" })}
+                    >
                       Exclure
                     </button>
                   )}
@@ -246,15 +316,27 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
       <ConfirmDialog
         open={!!pending}
         danger={pending?.action === "kick"}
-        title={pending?.action === "kick" ? `Exclure ${pending.m.displayName} ?` : `Nommer ${pending?.m.displayName ?? ""} chef ?`}
+        title={
+          pending?.action === "kick"
+            ? `Exclure ${pending.m.displayName} ?`
+            : `Nommer ${pending?.m.displayName ?? ""} chef ?`
+        }
         confirmLabel={pending?.action === "kick" ? "Exclure" : "Nommer chef"}
         onConfirm={() =>
           pending &&
-          act(pending.m, pending.action, pending.action === "kick" ? `${pending.m.displayName} a été exclu.` : `${pending.m.displayName} est le nouveau chef.`)
+          act(
+            pending.m,
+            pending.action,
+            pending.action === "kick"
+              ? `${pending.m.displayName} a été exclu.`
+              : `${pending.m.displayName} est le nouveau chef.`,
+          )
         }
         onClose={() => setPending(null)}
       >
-        {pending?.action === "kick" ? "Il pourra revenir plus tard s’il le souhaite." : "Tu deviendras officier et ne pourras plus reprendre la tête toi-même."}
+        {pending?.action === "kick"
+          ? "Il pourra revenir plus tard s’il le souhaite."
+          : "Tu deviendras officier et ne pourras plus reprendre la tête toi-même."}
       </ConfirmDialog>
       <ConfirmDialog
         open={leaving}
@@ -264,7 +346,9 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
         onConfirm={() => run(() => api("/guilds/leave", { method: "POST" }), "Tu as quitté la guilde.", onChanged)}
         onClose={() => setLeaving(false)}
       >
-        {myRole === "leader" ? "Tu es chef : le plus ancien officier (ou membre) prendra ta place. Une guilde vide est dissoute." : "Tu pourras en rejoindre une autre à tout moment."}
+        {myRole === "leader"
+          ? "Tu es chef : le plus ancien officier (ou membre) prendra ta place. Une guilde vide est dissoute."
+          : "Tu pourras en rejoindre une autre à tout moment."}
       </ConfirmDialog>
     </div>
   );
@@ -276,7 +360,10 @@ export default function GuildPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="page-title">Guilde</h1>
-        <p className="hatnote mt-2">Jusqu’à {GUILD_MAX_MEMBERS} membres, un salon commun et un objectif chaque semaine qui rapporte un paquet bonus à tous.</p>
+        <p className="hatnote mt-2">
+          Jusqu’à {GUILD_MAX_MEMBERS} membres, un salon commun et un objectif chaque semaine qui rapporte un paquet
+          bonus à tous.
+        </p>
       </div>
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />

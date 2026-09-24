@@ -19,7 +19,10 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/achievements", auth, async (req) => listAchievements(ctx, req.user.id));
   api.get("/leaderboard", auth, async (req) => {
     const q = parse(
-      z.object({ board: z.enum(["collection", "elo", "wealth", "guilds"]).default("collection"), period: z.enum(["season", "all"]).default("season") }),
+      z.object({
+        board: z.enum(["collection", "elo", "wealth", "guilds"]).default("collection"),
+        period: z.enum(["season", "all"]).default("season"),
+      }),
       req.query,
     );
     return leaderboard(ctx, req.user.id, q.board, q.period);
@@ -33,11 +36,16 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
     return Object.keys(NOTIFICATION_GROUPS).map((group) => ({ group, enabled: p?.prefs?.[group] !== false }));
   });
   api.put("/settings/notifications", auth, async (req) => {
-    const body = parse(z.record(z.enum(Object.keys(NOTIFICATION_GROUPS) as [string, ...string[]]), z.boolean()), req.body);
+    const body = parse(
+      z.record(z.enum(Object.keys(NOTIFICATION_GROUPS) as [string, ...string[]]), z.boolean()),
+      req.body,
+    );
     // Fusion (et non remplacement) : deux cases cochées coup sur coup ne s'écrasent pas.
     await ctx.db
       .update(schema.players)
-      .set({ notificationPrefs: sql`coalesce(${schema.players.notificationPrefs}, '{}'::jsonb) || ${JSON.stringify(body)}::jsonb` })
+      .set({
+        notificationPrefs: sql`coalesce(${schema.players.notificationPrefs}, '{}'::jsonb) || ${JSON.stringify(body)}::jsonb`,
+      })
       .where(eq(schema.players.userId, req.user.id));
     return { ok: true };
   });

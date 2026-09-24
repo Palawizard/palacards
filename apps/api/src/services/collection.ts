@@ -20,7 +20,6 @@ async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promise<Set<
   return new Set(rows.map((r) => r.id));
 }
 
-
 export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title";
 
 export interface CollectionQuery {
@@ -39,7 +38,12 @@ export interface CollectionQuery {
  * Collection d'un joueur, filtrée et triée (pagination par page : quelques milliers de cartes au plus).
  * Vue par un autre joueur (`viewerId` ≠ `ownerId`) : ni vues ni tri par vues (« Plus lu » en duel).
  */
-export async function listCollection(ctx: Ctx, ownerId: string, query: CollectionQuery, viewerId: string): Promise<Page<CardDTO>> {
+export async function listCollection(
+  ctx: Ctx,
+  ownerId: string,
+  query: CollectionQuery,
+  viewerId: string,
+): Promise<Page<CardDTO>> {
   const byViews = viewerId === ownerId ? sql`${c.views12m} desc` : sql`${c.title} asc`;
   const where: SQL[] = [eq(ci.ownerId, ownerId)];
   if (query.rarity?.length) where.push(inArray(ci.rarity, query.rarity));
@@ -52,8 +56,7 @@ export async function listCollection(ctx: Ctx, ownerId: string, query: Collectio
       sql`(select count(*) from card_instances d where d.owner_id = ${ownerId} and d.card_id = ${ci.cardId}) > 1`,
     );
   }
-  if (query.q?.trim())
-    where.push(sql`${c.searchTitle} like '%' || lower(f_unaccent(${query.q.trim()})) || '%'`);
+  if (query.q?.trim()) where.push(sql`${c.searchTitle} like '%' || lower(f_unaccent(${query.q.trim()})) || '%'`);
 
   const order: SQL[] = {
     date: [sql`${ci.obtainedAt} desc`],
@@ -90,10 +93,14 @@ export async function listCollection(ctx: Ctx, ownerId: string, query: Collectio
   const copiesBy = new Map(copies.map((r) => [r.cardId, r.n]));
   return {
     items: page.map((r) =>
-      toCardDTO(r, {
-        tags: tags.filter((t) => t.instanceId === r.instanceId).map((t) => t.tag),
-        copies: copiesBy.get(r.cardId) ?? 1,
-      }, viewerId),
+      toCardDTO(
+        r,
+        {
+          tags: tags.filter((t) => t.instanceId === r.instanceId).map((t) => t.tag),
+          copies: copiesBy.get(r.cardId) ?? 1,
+        },
+        viewerId,
+      ),
     ),
     nextCursor: rows.length > query.limit ? String(query.page + 1) : null,
     total: countRow?.n ?? 0,
@@ -180,10 +187,14 @@ export async function setPinned(ctx: Ctx, ownerId: string, instanceId: number, w
       .where(and(eq(ci.id, instanceId), eq(ci.ownerId, ownerId)))
       .for("update");
     if (!inst) throw notFound("Carte introuvable dans ta collection.");
-    if (slot !== null && inst.lockedBy) throw conflict("card_locked", "Une carte en vente ou en échange ne peut pas être épinglée.");
+    if (slot !== null && inst.lockedBy)
+      throw conflict("card_locked", "Une carte en vente ou en échange ne peut pas être épinglée.");
     if (slot !== null) {
       // L'emplacement est libéré s'il était pris par une autre carte.
-      await tx.update(ci).set({ pinnedSlot: null }).where(and(eq(ci.ownerId, ownerId), eq(ci.pinnedSlot, slot)));
+      await tx
+        .update(ci)
+        .set({ pinnedSlot: null })
+        .where(and(eq(ci.ownerId, ownerId), eq(ci.pinnedSlot, slot)));
     }
     await tx.update(ci).set({ pinnedSlot: slot }).where(eq(ci.id, instanceId));
   });
@@ -249,7 +260,9 @@ export async function duplicateIds(
     rows.filter((r) => best.get(r.cardId)?.id !== r.id).map((r) => r.id),
   );
   const dups = rows
-    .filter((r) => best.get(r.cardId)?.id !== r.id && !r.lockedBy && !r.favorite && r.pinned === null && !requested.has(r.id))
+    .filter(
+      (r) => best.get(r.cardId)?.id !== r.id && !r.lockedBy && !r.favorite && r.pinned === null && !requested.has(r.id),
+    )
     .filter((r) => !rarities || rarities.includes(r.rarity));
   return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + ECONOMY.recycleValue[r.rarity], 0) };
 }
@@ -271,11 +284,14 @@ export async function fuse(ctx: Ctx, ownerId: string, targetId: number, sourceId
     const target = rows.find((r) => r.id === targetId);
     const source = rows.find((r) => r.id === sourceId);
     if (!target || !source) throw notFound("Cette carte n'est plus dans ta collection.");
-    if (target.cardId !== source.cardId) throw badRequest("different_cards", "On ne fusionne que deux exemplaires du même article.");
-    if (target.lockedBy || source.lockedBy) throw conflict("card_locked", "Une carte est engagée dans une vente ou un échange.");
+    if (target.cardId !== source.cardId)
+      throw badRequest("different_cards", "On ne fusionne que deux exemplaires du même article.");
+    if (target.lockedBy || source.lockedBy)
+      throw conflict("card_locked", "Une carte est engagée dans une vente ou un échange.");
     if (target.level >= MAX_LEVEL) throw conflict("max_level", `Cette carte est déjà au niveau ${MAX_LEVEL}.`);
     // Sans perte accidentelle : on ne fusionne jamais un exemplaire meilleur (plus rare, plus haut niveau) dans un moins bon.
-    if (isBetterCopy(source, target)) throw conflict("source_better", "Fusionne plutôt dans ton meilleur exemplaire de cette carte.");
+    if (isBetterCopy(source, target))
+      throw conflict("source_better", "Fusionne plutôt dans ton meilleur exemplaire de cette carte.");
     if ((await requestedInPendingTrades(tx, [sourceId])).size)
       throw conflict("card_requested", "Cet exemplaire est demandé dans un échange en attente : refuse-le d'abord.");
     const level = target.level + 1;

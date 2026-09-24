@@ -45,19 +45,30 @@ describe("marché", () => {
     expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee + listedBonus);
     // Carte verrouillée : ni recyclage ni seconde vente.
     expect((await seller.post("/collection/recycle", { instanceIds: [instanceId] })).status).toBe(409);
-    expect((await seller.post("/market", { instanceId, startPrice: 5, buyout: null, durationMs: HOUR })).status).toBe(409);
+    expect((await seller.post("/market", { instanceId, startPrice: 5, buyout: null, durationMs: HOUR })).status).toBe(
+      409,
+    );
 
     expect((await bidder.post(`/market/${listed.body.id}/bid`, { amount: 10 })).body.error).toBe("bid_too_low");
     expect((await bidder.post(`/market/${listed.body.id}/bid`, { amount: 40 })).status).toBe(200);
     expect(await wallet(bidder)).toMatchObject({ locked: 40, available: ECONOMY.startingBalance - 40 });
 
-    await ctx.db.update(schema.auctions).set({ endsAt: new Date(Date.now() - 1000) }).where(eq(schema.auctions.id, listed.body.id));
+    await ctx.db
+      .update(schema.auctions)
+      .set({ endsAt: new Date(Date.now() - 1000) })
+      .where(eq(schema.auctions.id, listed.body.id));
     expect(await closeAuctionIfDue(ctx, listed.body.id)).toBe(true);
     expect(await closeAuctionIfDue(ctx, listed.body.id)).toBe(false); // idempotent
 
     const bonus = { bidder: await achievementPw(ctx, bidder.userId), seller: await achievementPw(ctx, seller.userId) };
-    expect(await wallet(bidder)).toEqual({ balance: ECONOMY.startingBalance - 40 + bonus.bidder, locked: 0, available: ECONOMY.startingBalance - 40 + bonus.bidder });
-    expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee + 40 - saleTax(40) + bonus.seller);
+    expect(await wallet(bidder)).toEqual({
+      balance: ECONOMY.startingBalance - 40 + bonus.bidder,
+      locked: 0,
+      available: ECONOMY.startingBalance - 40 + bonus.bidder,
+    });
+    expect((await wallet(seller)).balance).toBe(
+      ECONOMY.startingBalance - ECONOMY.auctionListingFee + 40 - saleTax(40) + bonus.seller,
+    );
     const [inst] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, instanceId));
     expect(inst).toMatchObject({ ownerId: bidder.userId, lockedBy: null, source: "market" });
     const prices = await bidder.get(`/cards/${inst!.cardId}/prices`);
@@ -70,11 +81,19 @@ describe("marché", () => {
     const seller = await signUp(app);
     const a = await signUp(app);
     const b = await signUp(app);
-    const listed = await seller.post("/market", { instanceId: await giveCard(seller), startPrice: 10, buyout: null, durationMs: 10 * 60_000 });
+    const listed = await seller.post("/market", {
+      instanceId: await giveCard(seller),
+      startPrice: 10,
+      buyout: null,
+      durationMs: 10 * 60_000,
+    });
     const id = listed.body.id;
     await a.post(`/market/${id}/bid`, { amount: 10 });
     // Fin dans 20 s : une offre maintenant prolonge la vente de 60 s (fin à ~80 s).
-    await ctx.db.update(schema.auctions).set({ endsAt: new Date(Date.now() + 20_000) }).where(eq(schema.auctions.id, id));
+    await ctx.db
+      .update(schema.auctions)
+      .set({ endsAt: new Date(Date.now() + 20_000) })
+      .where(eq(schema.auctions.id, id));
     const res = await b.post(`/market/${id}/bid`, { amount: 11 });
     expect(new Date(res.body.endsAt).getTime()).toBeGreaterThan(Date.now() + 75_000);
     expect((await wallet(a)).locked).toBe(0);
@@ -90,12 +109,22 @@ describe("marché", () => {
     const seller = await signUp(app);
     const x = await signUp(app);
     const y = await signUp(app);
-    const listed = await seller.post("/market", { instanceId: await giveCard(seller), startPrice: 10, buyout: 50, durationMs: HOUR });
-    const results = await Promise.all([x.post(`/market/${listed.body.id}/buy`), y.post(`/market/${listed.body.id}/buy`)]);
+    const listed = await seller.post("/market", {
+      instanceId: await giveCard(seller),
+      startPrice: 10,
+      buyout: 50,
+      durationMs: HOUR,
+    });
+    const results = await Promise.all([
+      x.post(`/market/${listed.body.id}/buy`),
+      y.post(`/market/${listed.body.id}/buy`),
+    ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
     const balances = [(await wallet(x)).balance, (await wallet(y)).balance].sort((m, n) => m - n);
     expect(balances).toEqual([ECONOMY.startingBalance - 50, ECONOMY.startingBalance]);
-    const [sales] = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from sales where auction_id = ${listed.body.id}`);
+    const [sales] = await ctx.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from sales where auction_id = ${listed.body.id}`,
+    );
     expect(sales!.n).toBe(1);
     await expectLedgerConsistent(x);
     await expectLedgerConsistent(y);
@@ -105,7 +134,12 @@ describe("marché", () => {
   it("refuse une enchère sans fonds disponibles et sur sa propre vente", async () => {
     const seller = await signUp(app);
     const poor = await signUp(app);
-    const listed = await seller.post("/market", { instanceId: await giveCard(seller), startPrice: 500, buyout: null, durationMs: HOUR });
+    const listed = await seller.post("/market", {
+      instanceId: await giveCard(seller),
+      startPrice: 500,
+      buyout: null,
+      durationMs: HOUR,
+    });
     expect((await poor.post(`/market/${listed.body.id}/bid`, { amount: 500 })).body.error).toBe("insufficient_funds");
     expect((await seller.post(`/market/${listed.body.id}/bid`, { amount: 600 })).status).toBe(403);
   });
@@ -134,11 +168,19 @@ describe("après le marché et pendant un échange", () => {
     expect((await buyer.post("/collection/recycle", { instanceIds: [instanceId] })).status).toBe(200);
     // Vente annulée puis fusion de l'exemplaire (plus faible) dans une nouvelle copie.
     const other = await giveCard(seller);
-    const cancelled = await seller.post("/market", { instanceId: other, startPrice: 10, buyout: null, durationMs: HOUR });
+    const cancelled = await seller.post("/market", {
+      instanceId: other,
+      startPrice: 10,
+      buyout: null,
+      durationMs: HOUR,
+    });
     expect((await seller.post(`/market/${cancelled.body.id}/cancel`)).status).toBe(200);
     const [row] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, other));
     const copy = await seller.post("/test/grant-card", { cardId: row!.cardId, count: 1 });
-    await ctx.db.update(schema.cardInstances).set({ level: 2 }).where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
+    await ctx.db
+      .update(schema.cardInstances)
+      .set({ level: 2 })
+      .where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
     expect((await seller.post(`/collection/${copy.body.instanceIds[0]}/fuse`, { sourceId: other })).status).toBe(200);
   });
 
@@ -151,8 +193,13 @@ describe("après le marché et pendant un échange", () => {
     expect((await b.post("/collection/recycle", { instanceIds: [wanted] })).body.error).toBe("card_requested");
     const [row] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, wanted));
     const copy = await b.post("/test/grant-card", { cardId: row!.cardId, count: 1 });
-    await ctx.db.update(schema.cardInstances).set({ level: 2 }).where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
-    expect((await b.post(`/collection/${copy.body.instanceIds[0]}/fuse`, { sourceId: wanted })).body.error).toBe("card_requested");
+    await ctx.db
+      .update(schema.cardInstances)
+      .set({ level: 2 })
+      .where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
+    expect((await b.post(`/collection/${copy.body.instanceIds[0]}/fuse`, { sourceId: wanted })).body.error).toBe(
+      "card_requested",
+    );
     // Le recyclage groupé des doublons l'épargne aussi.
     expect((await b.get("/collection/duplicates")).body.instanceIds ?? []).not.toContain(wanted);
     // Refuser l'échange la libère.
@@ -165,10 +212,21 @@ describe("rattrapage", () => {
   it("clôture les ventes échues et expire les échanges échus", async () => {
     const seller = await signUp(app);
     const other = await signUp(app);
-    const listed = await seller.post("/market", { instanceId: await giveCard(seller), startPrice: 5, buyout: null, durationMs: HOUR });
-    await ctx.db.update(schema.auctions).set({ endsAt: new Date(Date.now() - 5000) }).where(eq(schema.auctions.id, listed.body.id));
+    const listed = await seller.post("/market", {
+      instanceId: await giveCard(seller),
+      startPrice: 5,
+      buyout: null,
+      durationMs: HOUR,
+    });
+    await ctx.db
+      .update(schema.auctions)
+      .set({ endsAt: new Date(Date.now() - 5000) })
+      .where(eq(schema.auctions.id, listed.body.id));
     const trade = await seller.post("/trades", { to: other.username, givePw: 3 });
-    await ctx.db.update(schema.trades).set({ expiresAt: new Date(Date.now() - 5000) }).where(eq(schema.trades.id, trade.body.id));
+    await ctx.db
+      .update(schema.trades)
+      .set({ expiresAt: new Date(Date.now() - 5000) })
+      .where(eq(schema.trades.id, trade.body.id));
     const { sweepAuctions } = await import("../src/services/market.js");
     const { sweepTrades } = await import("../src/services/trades.js");
     expect(await sweepAuctions(ctx)).toBeGreaterThanOrEqual(1);
@@ -200,7 +258,11 @@ describe("échanges", () => {
     expect(ia).toMatchObject({ ownerId: b.userId, lockedBy: null });
     expect(ib!.ownerId).toBe(a.userId);
     const bonusA = await achievementPw(ctx, a.userId);
-    expect(await wallet(a)).toEqual({ balance: ECONOMY.startingBalance - 25 + bonusA, locked: 0, available: ECONOMY.startingBalance - 25 + bonusA });
+    expect(await wallet(a)).toEqual({
+      balance: ECONOMY.startingBalance - 25 + bonusA,
+      locked: 0,
+      available: ECONOMY.startingBalance - 25 + bonusA,
+    });
     const bonusB = await achievementPw(ctx, b.userId);
     expect((await wallet(b)).balance).toBe(ECONOMY.startingBalance + 25 + bonusB);
     await expectLedgerConsistent(a);
@@ -220,7 +282,10 @@ describe("échanges", () => {
     expect(await wallet(b)).toMatchObject({ locked: 0 });
 
     const again = await a.post("/trades", { to: b.username, give: [ca], givePw: 7 });
-    await ctx.db.update(schema.trades).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(schema.trades.id, again.body.id));
+    await ctx.db
+      .update(schema.trades)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(schema.trades.id, again.body.id));
     expect((await b.post(`/trades/${again.body.id}/accept`)).body.error).toBe("trade_closed");
     const { closeTrade } = await import("../src/services/trades.js");
     await closeTrade(ctx, again.body.id, { kind: "expire" });

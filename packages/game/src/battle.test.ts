@@ -15,7 +15,14 @@ import {
 } from "./battle.js";
 import { ECONOMY } from "./economy.js";
 
-const card = (over: Partial<QuizCard>): QuizCard => ({ cardId: 1, title: "Paris", views12m: 100, pageLen: 1000, extract: null, ...over });
+const card = (over: Partial<QuizCard>): QuizCard => ({
+  cardId: 1,
+  title: "Paris",
+  views12m: 100,
+  pageLen: 1000,
+  extract: null,
+  ...over,
+});
 
 describe("aléatoire à graine", () => {
   it("est déterministe et varie selon la graine", () => {
@@ -35,7 +42,8 @@ describe("questions", () => {
     title: "Tour Eiffel",
     views12m: 900,
     pageLen: 5000,
-    extract: "La tour Eiffel est une tour de fer puddlé de 330 mètres de hauteur située à Paris, à l'extrémité nord-ouest du parc du Champ-de-Mars.",
+    extract:
+      "La tour Eiffel est une tour de fer puddlé de 330 mètres de hauteur située à Paris, à l'extrémité nord-ouest du parc du Champ-de-Mars.",
   });
   const mont = card({ cardId: 2, title: "Mont Blanc", views12m: 400, pageLen: 8000, extract: null });
   const decoys = ["Arc de triomphe", "Louvre", "Notre-Dame de Paris", "Sacré-Cœur"];
@@ -74,7 +82,13 @@ describe("questions", () => {
   });
 
   it("se replie sur « plus lu » sans résumé ni leurres", () => {
-    const q = makeQuestion("x", 1, card({ title: "A", views12m: 5, pageLen: 1 }), card({ title: "B", views12m: 9, pageLen: 1 }), []);
+    const q = makeQuestion(
+      "x",
+      1,
+      card({ title: "A", views12m: 5, pageLen: 1 }),
+      card({ title: "B", views12m: 9, pageLen: 1 }),
+      [],
+    );
     expect(q.type).toBe("most_viewed");
     expect(q.choices[q.answer]).toBe("B");
   });
@@ -89,12 +103,28 @@ describe("questions", () => {
       expect(again.choices[again.answer]).toBe(again.type === "longest" ? "A" : "B");
     }
     // Un seul type possible : on le garde (rien d'autre à poser).
-    const only = makeQuestion("x", 1, card({ title: "A", views12m: 5, pageLen: 1 }), card({ title: "B", views12m: 9, pageLen: 1 }), []);
-    expect(makeQuestion("y", 1, card({ title: "A", views12m: 5, pageLen: 1 }), card({ title: "B", views12m: 9, pageLen: 1 }), [], only).type).toBe("most_viewed");
+    const only = makeQuestion(
+      "x",
+      1,
+      card({ title: "A", views12m: 5, pageLen: 1 }),
+      card({ title: "B", views12m: 9, pageLen: 1 }),
+      [],
+    );
+    expect(
+      makeQuestion(
+        "y",
+        1,
+        card({ title: "A", views12m: 5, pageLen: 1 }),
+        card({ title: "B", views12m: 9, pageLen: 1 }),
+        [],
+        only,
+      ).type,
+    ).toBe("most_viewed");
   });
 
   it("manche rejouée en « Qui suis-je ? » : l'autre article devient la cible", () => {
-    const extract = (t: string) => `${t} est un lieu très connu, décrit ici par une phrase assez longue pour servir de résumé.`;
+    const extract = (t: string) =>
+      `${t} est un lieu très connu, décrit ici par une phrase assez longue pour servir de résumé.`;
     const a = card({ title: "Alpha", views12m: 1, pageLen: 1, extract: extract("Alpha") });
     const b = card({ title: "Bravo", views12m: 1, pageLen: 1, extract: extract("Bravo") });
     const first = makeQuestion("seed", 1, a, b, decoys);

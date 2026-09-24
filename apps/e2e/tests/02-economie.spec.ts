@@ -47,7 +47,10 @@ test("mise en vente → enchère d'un 2e joueur → fin d'enchère → échange"
 
   // Échange : l'acheteur propose la carte contre 10 PW, le vendeur accepte.
   await buyer.page.goto(`trades/new?to=${seller.name}`);
-  await buyer.page.getByRole("button", { name: new RegExp(card.title) }).first().click();
+  await buyer.page
+    .getByRole("button", { name: new RegExp(card.title) })
+    .first()
+    .click();
   await buyer.page.getByPlaceholder("0").last().fill("10");
   await buyer.page.getByRole("button", { name: "Envoyer la proposition" }).click();
   await expect(buyer.page).toHaveURL(/trades\?box=sent/);

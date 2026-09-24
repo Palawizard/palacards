@@ -11,5 +11,22 @@ export const usernameSchema = z
 export const passwordSchema = z.string().min(8, "8 caractères minimum").max(128);
 
 /** Avatars proposés dans les Paramètres (le serveur refuse tout le reste). */
-export const AVATARS = ["🦉", "🐉", "🦊", "🐺", "🦁", "🐙", "🦄", "🐢", "🦋", "🌋", "🗿", "🎭", "🧭", "📜", "🪐", "⚓"] as const;
+export const AVATARS = [
+  "🦉",
+  "🐉",
+  "🦊",
+  "🐺",
+  "🦁",
+  "🐙",
+  "🦄",
+  "🐢",
+  "🦋",
+  "🌋",
+  "🗿",
+  "🎭",
+  "🧭",
+  "📜",
+  "🪐",
+  "⚓",
+] as const;
 export const avatarSchema = z.enum(AVATARS);

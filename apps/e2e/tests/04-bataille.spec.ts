@@ -2,7 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { apiCall, newPlayer } from "./helpers";
 
 async function buildDeck(page: Page) {
-  await page.getByRole("button", { name: /Mes 5 meilleures attaques/ }).first().click();
+  await page
+    .getByRole("button", { name: /Mes 5 meilleures attaques/ })
+    .first()
+    .click();
 }
 
 /** Joue toutes les manches proposées à l'écran (asynchrone). */
@@ -15,9 +18,21 @@ async function playAsync(page: Page) {
     await expect(start.or(finished).or(waiting)).toBeVisible();
     if (!(await start.isVisible())) break;
     // Le bouton peut disparaître si le duel se conclut entre-temps : on s'arrête alors.
-    if (!(await start.click({ timeout: 5_000 }).then(() => true, () => false))) break;
+    if (
+      !(await start.click({ timeout: 5_000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      break;
     const choice = page.locator("section[aria-label^='Manche'] button.btn").first();
-    if (!(await choice.click({ timeout: 10_000 }).then(() => true, () => false))) break;
+    if (
+      !(await choice.click({ timeout: 10_000 }).then(
+        () => true,
+        () => false,
+      ))
+    )
+      break;
     await expect(page.getByRole("status").or(finished)).toBeVisible();
   }
 }
@@ -87,7 +102,13 @@ test("duel en direct : manches cadencées par le serveur", async ({ browser }) =
     await alice.page.waitForTimeout(3_000);
     await alice.page.reload();
     await bob.page.reload();
-    if (await alice.page.getByText(/^(Victoire|Défaite|Match nul)$/).isVisible().catch(() => false)) break;
+    if (
+      await alice.page
+        .getByText(/^(Victoire|Défaite|Match nul)$/)
+        .isVisible()
+        .catch(() => false)
+    )
+      break;
   }
   await expect(alice.page.getByText(/^(Victoire|Défaite|Match nul)$/)).toBeVisible({ timeout: 30_000 });
 });

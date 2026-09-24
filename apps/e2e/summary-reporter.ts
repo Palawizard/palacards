@@ -13,7 +13,9 @@ export default class SummaryReporter implements Reporter {
     if (result.status === "passed" || result.status === "skipped") return;
     const where = test.location ? `${test.location.file.split(/[\\/]/).slice(-1)[0]}:${test.location.line}` : "";
     const message = result.errors.map((e) => strip(e.message ?? e.value ?? "")).join("\n\n");
-    this.failures.push(`#### ✘ ${test.titlePath().slice(1).join(" › ")} (${where}, ${result.status}, essai ${result.retry + 1})\n\n\`\`\`\n${message.slice(0, 4000)}\n\`\`\``);
+    this.failures.push(
+      `#### ✘ ${test.titlePath().slice(1).join(" › ")} (${where}, ${result.status}, essai ${result.retry + 1})\n\n\`\`\`\n${message.slice(0, 4000)}\n\`\`\``,
+    );
   }
 
   onError(error: TestError) {

@@ -59,7 +59,11 @@ const WORDS = (
  * `variedTitles` : titres de 2 à 4 mots tirés d'un vocabulaire (benchmark de la recherche) ;
  * sinon « Carte synthétique n° N » (tests et E2E, qui cherchent ces titres).
  */
-export async function fillSyntheticCards(sql: Sql, count: number, options: { variedTitles?: boolean } = {}): Promise<void> {
+export async function fillSyntheticCards(
+  sql: Sql,
+  count: number,
+  options: { variedTitles?: boolean } = {},
+): Promise<void> {
   const tiers = (ceil: number) =>
     count >= 2_000_000 ? ceil : Math.max(1, Math.floor((ceil * count) / 2_700_000 + 0.5));
   const [l, ur, sr, r, pc] = [1_000, 10_000, 50_000, 250_000, 1_000_000].map(tiers) as [

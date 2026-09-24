@@ -107,6 +107,8 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
     isMe: u.id === viewerId,
     relation: await friendRelation(ctx, viewerId, u.id),
     online: ctx.rt.isOnline(u.id),
-    guild: guild ? { id: Number(guild.id), name: guild.name, tag: guild.tag, emblem: guild.emblem, role: guild.role } : null,
+    guild: guild
+      ? { id: Number(guild.id), name: guild.name, tag: guild.tag, emblem: guild.emblem, role: guild.role }
+      : null,
   };
 }

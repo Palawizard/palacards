@@ -1,7 +1,16 @@
 import { and, desc, eq, schema, sql } from "@palacards/db";
 import { ACHIEVEMENTS, ACHIEVEMENT_BY_KEY, applyEvent, type GameEvent } from "@palacards/game";
 import type { Ctx } from "../context.js";
-import { activeSeason, lockPlayer, logMovement, movePw, packState, pushWallet, type DbOrTx, type Player } from "./players.js";
+import {
+  activeSeason,
+  lockPlayer,
+  logMovement,
+  movePw,
+  packState,
+  pushWallet,
+  type DbOrTx,
+  type Player,
+} from "./players.js";
 import { afterCommit, Effects } from "./notifications.js";
 import { battleRewarded, onBattleFinished } from "./battles.js";
 import { collectionScoresSql } from "./profiles.js";
@@ -33,7 +42,10 @@ export async function recordEvent(ctx: Ctx, userId: string, event: GameEvent) {
   const fx = new Effects();
   const res = await ctx.db.transaction(async (tx) => {
     const player = await lockPlayer(tx, userId);
-    const rows = await tx.select().from(schema.achievementsProgress).where(eq(schema.achievementsProgress.userId, userId));
+    const rows = await tx
+      .select()
+      .from(schema.achievementsProgress)
+      .where(eq(schema.achievementsProgress.userId, userId));
     const current = new Map(rows.map((r) => [r.achievementKey, { progress: r.progress, unlocked: !!r.unlockedAt }]));
     const updates = applyEvent(current, event);
     let rewarded = false;
@@ -122,7 +134,6 @@ export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameE
 const rewardedSql = (userId: string) =>
   sql`exists (select 1 from ledger l where l.user_id = ${userId} and l.reason = 'battle' and l.ref_id = ${schema.battles.id}::text)`;
 
-
 /** Série de victoires en cours, sur les seuls duels récompensés (du plus récent au plus ancien). */
 export async function winStreak(db: DbOrTx, userId: string): Promise<number> {
   const rows = await db
@@ -146,7 +157,10 @@ export async function winStreak(db: DbOrTx, userId: string): Promise<number> {
 }
 
 export async function listAchievements(ctx: Ctx, userId: string) {
-  const rows = await ctx.db.select().from(schema.achievementsProgress).where(eq(schema.achievementsProgress.userId, userId));
+  const rows = await ctx.db
+    .select()
+    .from(schema.achievementsProgress)
+    .where(eq(schema.achievementsProgress.userId, userId));
   const by = new Map(rows.map((r) => [r.achievementKey, r]));
   return ACHIEVEMENTS.map((a) => ({
     key: a.key,
@@ -214,11 +228,20 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
   }
   const myGuild =
     board === "guilds"
-      ? (await ctx.db.select({ g: schema.guildMembers.guildId }).from(schema.guildMembers).where(eq(schema.guildMembers.userId, userId)))[0]?.g
+      ? (
+          await ctx.db
+            .select({ g: schema.guildMembers.guildId })
+            .from(schema.guildMembers)
+            .where(eq(schema.guildMembers.userId, userId))
+        )[0]?.g
       : undefined;
   return {
     season,
-    rows: rows.map((r, i) => ({ ...r, rank: i + 1, me: board === "guilds" ? String(myGuild) === r.id : r.id === userId })),
+    rows: rows.map((r, i) => ({
+      ...r,
+      rank: i + 1,
+      me: board === "guilds" ? String(myGuild) === r.id : r.id === userId,
+    })),
   };
 }
 

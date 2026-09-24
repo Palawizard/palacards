@@ -9,13 +9,24 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
   const p = notif.payload;
   switch (notif.type) {
     case "outbid":
-      return { text: p.bought ? "Une carte que tu visais a été achetée au prix immédiat." : `Ton enchère a été dépassée (${fmt(n(p.amount))} PW).`, href: "/market?scope=bidding" };
+      return {
+        text: p.bought
+          ? "Une carte que tu visais a été achetée au prix immédiat."
+          : `Ton enchère a été dépassée (${fmt(n(p.amount))} PW).`,
+        href: "/market?scope=bidding",
+      };
     case "auction_won":
       return { text: `Enchère gagnée : ${s(p.title)} pour ${fmt(n(p.price))} PW.`, href: `/card/${n(p.cardId)}` };
     case "auction_sold":
-      return { text: `${s(p.title)} vendue ${fmt(n(p.price))} PW (tu reçois ${fmt(n(p.proceeds))} PW après la taxe).`, href: "/market?scope=mine" };
+      return {
+        text: `${s(p.title)} vendue ${fmt(n(p.price))} PW (tu reçois ${fmt(n(p.proceeds))} PW après la taxe).`,
+        href: "/market?scope=mine",
+      };
     case "auction_expired":
-      return { text: "Ta vente s'est terminée sans offre : la carte est revenue dans ta collection.", href: "/market?scope=mine" };
+      return {
+        text: "Ta vente s'est terminée sans offre : la carte est revenue dans ta collection.",
+        href: "/market?scope=mine",
+      };
     case "wishlist_listed":
       return { text: `${s(p.title)}, de ta wishlist, vient d'être mise en vente.`, href: "/market" };
     case "trade_received":
@@ -35,7 +46,10 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
     case "battle_challenge":
       return { text: `${s(p.from)} te défie en duel.`, href: "/battle" };
     case "battle_result":
-      return { text: p.won ? `Victoire contre ${s(p.opponent)} !` : `Défaite contre ${s(p.opponent)}.`, href: `/battle/${n(p.battleId)}` };
+      return {
+        text: p.won ? `Victoire contre ${s(p.opponent)} !` : `Défaite contre ${s(p.opponent)}.`,
+        href: `/battle/${n(p.battleId)}`,
+      };
     case "packs_full":
       return { text: "Ton stock de paquets est plein : ouvre-les pour relancer le minuteur.", href: "/pulls" };
     case "achievement":

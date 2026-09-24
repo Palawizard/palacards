@@ -13,7 +13,9 @@ import { Thumb } from "./market";
 export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: CardDTO[]) => void }) {
   const [q, setQ] = useState("");
   const query = useDebounced(q);
-  const { data } = useSWR<Page<CardDTO>>(`/collection?sort=atk&limit=60${query.trim().length >= 2 ? `&q=${encodeURIComponent(query.trim())}` : ""}`);
+  const { data } = useSWR<Page<CardDTO>>(
+    `/collection?sort=atk&limit=60${query.trim().length >= 2 ? `&q=${encodeURIComponent(query.trim())}` : ""}`,
+  );
   const chosen = new Set(deck.map((c) => c.instanceId));
   const move = (i: number, dir: -1 | 1) => {
     const next = [...deck];
@@ -27,13 +29,19 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div>
         <h3 className="mb-2 text-sm font-semibold text-muted">
-          Ton deck <span className="tnum text-faint">({deck.length}/{DECK_SIZE})</span>
+          Ton deck{" "}
+          <span className="tnum text-faint">
+            ({deck.length}/{DECK_SIZE})
+          </span>
         </h3>
         <ol className="flex flex-col gap-1.5">
           {Array.from({ length: DECK_SIZE }, (_, i) => {
             const c = deck[i];
             return (
-              <li key={i} className="flex min-h-12 items-center gap-2 rounded-md border border-line bg-panel px-2 py-1.5">
+              <li
+                key={i}
+                className="flex min-h-12 items-center gap-2 rounded-md border border-line bg-panel px-2 py-1.5"
+              >
                 <span className="tnum w-5 text-center font-serif text-lg text-faint">{i + 1}</span>
                 {c ? (
                   <>
@@ -44,13 +52,30 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
                         <RaritySigil rarity={c.rarity} /> ATK {fmt(c.atk)} · DEF {fmt(c.def)}
                       </span>
                     </span>
-                    <button type="button" className="btn btn-sm btn-ghost px-1.5" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Monter">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost px-1.5"
+                      onClick={() => move(i, -1)}
+                      disabled={i === 0}
+                      aria-label="Monter"
+                    >
                       <ArrowUp className="size-4" />
                     </button>
-                    <button type="button" className="btn btn-sm btn-ghost px-1.5" onClick={() => move(i, 1)} disabled={i === deck.length - 1} aria-label="Descendre">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost px-1.5"
+                      onClick={() => move(i, 1)}
+                      disabled={i === deck.length - 1}
+                      aria-label="Descendre"
+                    >
                       <ArrowDown className="size-4" />
                     </button>
-                    <button type="button" className="btn btn-sm btn-ghost px-1.5" onClick={() => onChange(deck.filter((_, j) => j !== i))} aria-label={`Retirer ${c.title}`}>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost px-1.5"
+                      onClick={() => onChange(deck.filter((_, j) => j !== i))}
+                      aria-label={`Retirer ${c.title}`}
+                    >
                       <X className="size-4" />
                     </button>
                   </>
@@ -72,8 +97,18 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
       </div>
       <div>
         <div className="relative mb-2">
-          <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint" />
-          <input className="field h-9 min-h-0 pl-8 text-sm" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Chercher dans ma collection" aria-label="Chercher dans ma collection" />
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint"
+          />
+          <input
+            className="field h-9 min-h-0 pl-8 text-sm"
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Chercher dans ma collection"
+            aria-label="Chercher dans ma collection"
+          />
         </div>
         <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto rounded-md border border-line bg-bg p-1">
           {data?.items.map((c) => (

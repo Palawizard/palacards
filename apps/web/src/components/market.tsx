@@ -41,7 +41,10 @@ export function ReferenceLine({ reference }: { reference: ReferencePriceDTO | nu
   if (!reference) return <span className="text-faint">Aucune vente de référence</span>;
   return (
     <span className="tnum text-faint" title={`Médiane des ${reference.count} dernières ventes`}>
-      Réf. {fmt(reference.median)} PW <span className="text-faint/80">({fmt(reference.min)}–{fmt(reference.max)})</span>
+      Réf. {fmt(reference.median)} PW{" "}
+      <span className="text-faint/80">
+        ({fmt(reference.min)}–{fmt(reference.max)})
+      </span>
     </span>
   );
 }
@@ -99,7 +102,10 @@ export function AuctionRow({
         <Thumb card={auction.card} />
       </Link>
       <div className="min-w-0">
-        <Link href={`/card/${auction.card.cardId}`} className="line-clamp-1 font-serif text-lg leading-snug hover:underline">
+        <Link
+          href={`/card/${auction.card.cardId}`}
+          className="line-clamp-1 font-serif text-lg leading-snug hover:underline"
+        >
           {auction.card.title}
         </Link>
         <p className="flex flex-wrap items-center gap-x-2 text-xs text-muted">
@@ -130,7 +136,12 @@ export function AuctionRow({
       <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:justify-end">
         {mine ? (
           open && auction.currentBid === null ? (
-            <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={() => run(`/market/${auction.id}/cancel`, undefined, "Vente annulée.")}>
+            <button
+              type="button"
+              className="btn btn-sm btn-danger"
+              disabled={busy}
+              onClick={() => run(`/market/${auction.id}/cancel`, undefined, "Vente annulée.")}
+            >
               Annuler la vente
             </button>
           ) : (
@@ -155,7 +166,11 @@ export function AuctionRow({
                 onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))}
                 className="field tnum h-8 min-h-0 w-24 text-right text-sm"
               />
-              <button type="submit" className="btn btn-sm btn-primary" disabled={busy || Number(amount) < auction.minBid}>
+              <button
+                type="submit"
+                className="btn btn-sm btn-primary"
+                disabled={busy || Number(amount) < auction.minBid}
+              >
                 Enchérir
               </button>
             </form>
@@ -200,7 +215,9 @@ export function SellForm({ card, onDone }: { card: CardDTO; onDone: () => void }
     if (!valid) return;
     setBusy(true);
     try {
-      await api("/market", { body: { instanceId: card.instanceId, startPrice: startN, buyout: buyN, durationMs: Number(duration) } });
+      await api("/market", {
+        body: { instanceId: card.instanceId, startPrice: startN, buyout: buyN, durationMs: Number(duration) },
+      });
       toast.success(`${card.title} est en vente.`);
       onDone();
     } catch (err) {
@@ -214,11 +231,23 @@ export function SellForm({ card, onDone }: { card: CardDTO; onDone: () => void }
     <form onSubmit={submit} className="grid gap-3 rounded-md border border-line bg-panel-2 p-3 sm:grid-cols-3">
       <label>
         <span className="label">Mise à prix (PW)</span>
-        <input ref={startRef} inputMode="numeric" className="field tnum" value={start} onChange={(e) => setStart(e.target.value.replace(/\D/g, ""))} placeholder={prices?.reference ? String(prices.reference.median) : "50"} />
+        <input
+          ref={startRef}
+          inputMode="numeric"
+          className="field tnum"
+          value={start}
+          onChange={(e) => setStart(e.target.value.replace(/\D/g, ""))}
+          placeholder={prices?.reference ? String(prices.reference.median) : "50"}
+        />
       </label>
       <label>
         <span className="label">Achat immédiat (facultatif)</span>
-        <input inputMode="numeric" className="field tnum" value={buyout} onChange={(e) => setBuyout(e.target.value.replace(/\D/g, ""))} />
+        <input
+          inputMode="numeric"
+          className="field tnum"
+          value={buyout}
+          onChange={(e) => setBuyout(e.target.value.replace(/\D/g, ""))}
+        />
       </label>
       <label>
         <span className="label">Durée</span>
@@ -232,8 +261,11 @@ export function SellForm({ card, onDone }: { card: CardDTO; onDone: () => void }
       </label>
       <p className="text-xs leading-relaxed text-muted sm:col-span-2">
         Frais d’annonce : {ECONOMY.auctionListingFee} PW. Taxe de {ECONOMY.marketTaxRate * 100} % à la vente
-        {startN >= 1 && ` (à ${fmt(startN)} PW, tu recevrais ${fmt(startN - saleTax(startN))} PW)`}. <ReferenceLine reference={prices?.reference ?? null} />
-        {buyN !== null && buyN < startN && <span className="block text-danger">L’achat immédiat doit être au moins égal à la mise à prix.</span>}
+        {startN >= 1 && ` (à ${fmt(startN)} PW, tu recevrais ${fmt(startN - saleTax(startN))} PW)`}.{" "}
+        <ReferenceLine reference={prices?.reference ?? null} />
+        {buyN !== null && buyN < startN && (
+          <span className="block text-danger">L’achat immédiat doit être au moins égal à la mise à prix.</span>
+        )}
       </p>
       <div className="flex items-end justify-end gap-2">
         <button type="button" className="btn btn-sm btn-ghost" onClick={onDone}>

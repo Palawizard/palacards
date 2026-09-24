@@ -39,7 +39,9 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
   async function submit() {
     setBusy(true);
     try {
-      const res = await api<{ id: number }>("/battles", { body: { opponent: opponent.trim(), mode, deck: deck.map((c) => c.instanceId) } });
+      const res = await api<{ id: number }>("/battles", {
+        body: { opponent: opponent.trim(), mode, deck: deck.map((c) => c.instanceId) },
+      });
       toast.success("Défi envoyé !");
       onDone();
       router.push(`/battle/${res.id}`);
@@ -56,7 +58,14 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
         <div className="flex flex-wrap items-end gap-4">
           <label className="min-w-48 flex-1">
             <span className="label">Adversaire</span>
-            <input className="field" value={opponent} onChange={(e) => setOpponent(e.target.value)} placeholder="Pseudo d’un ami" autoCapitalize="none" spellCheck={false} />
+            <input
+              className="field"
+              value={opponent}
+              onChange={(e) => setOpponent(e.target.value)}
+              placeholder="Pseudo d’un ami"
+              autoCapitalize="none"
+              spellCheck={false}
+            />
           </label>
           <fieldset className="flex gap-1.5" aria-label="Mode">
             {(
@@ -65,7 +74,13 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
                 ["live", "En direct"],
               ] as const
             ).map(([v, label]) => (
-              <button key={v} type="button" className="chip h-10 px-4" aria-pressed={mode === v} onClick={() => setMode(v)}>
+              <button
+                key={v}
+                type="button"
+                className="chip h-10 px-4"
+                aria-pressed={mode === v}
+                onClick={() => setMode(v)}
+              >
                 {label}
               </button>
             ))}
@@ -78,7 +93,12 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
         </p>
         <DeckPicker deck={deck} onChange={setDeck} />
         <div className="flex justify-end">
-          <button type="button" className="btn btn-primary" disabled={busy || deck.length !== DECK_SIZE || opponent.trim().length < 3} onClick={submit}>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy || deck.length !== DECK_SIZE || opponent.trim().length < 3}
+            onClick={submit}
+          >
             <Swords aria-hidden className="size-4" /> Défier
           </button>
         </div>
@@ -115,7 +135,12 @@ function AcceptPanel({ battle, onDone }: { battle: BattleSummary; onDone: () => 
         <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={() => act(false)}>
           Refuser
         </button>
-        <button type="button" className="btn btn-sm btn-primary" disabled={busy || deck.length !== DECK_SIZE} onClick={() => act(true)}>
+        <button
+          type="button"
+          className="btn btn-sm btn-primary"
+          disabled={busy || deck.length !== DECK_SIZE}
+          onClick={() => act(true)}
+        >
           Accepter le duel
         </button>
       </div>
@@ -141,8 +166,9 @@ function Battles() {
       <div>
         <h1 className="page-title">Bataille</h1>
         <p className="hatnote mt-2">
-          Duel en {BATTLE_ROUNDS} manches : à chaque manche, une carte de chaque deck et la même question pour les deux. Bien répondre, et vite,
-          multiplie l’attaque. Premier à {ROUNDS_TO_WIN} manches ; victoire {ECONOMY.battle.win} PW, défaite {ECONOMY.battle.loss} PW. Ton Elo :{" "}
+          Duel en {BATTLE_ROUNDS} manches : à chaque manche, une carte de chaque deck et la même question pour les deux.
+          Bien répondre, et vite, multiplie l’attaque. Premier à {ROUNDS_TO_WIN} manches ; victoire {ECONOMY.battle.win}{" "}
+          PW, défaite {ECONOMY.battle.loss} PW. Ton Elo :{" "}
           {me ? <span className="tnum font-semibold not-italic text-text">{me.elo ?? "…"}</span> : "…"}.
         </p>
       </div>
@@ -157,7 +183,10 @@ function Battles() {
               <li key={x.id} className="rounded-md border border-accent/40 bg-panel">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
                   <span>
-                    <strong>{x.opponent.name}</strong> te défie <span className="text-muted">({x.mode === "live" ? "en direct" : "asynchrone"}, {relative(x.createdAt)})</span>
+                    <strong>{x.opponent.name}</strong> te défie{" "}
+                    <span className="text-muted">
+                      ({x.mode === "live" ? "en direct" : "asynchrone"}, {relative(x.createdAt)})
+                    </span>
                   </span>
                   {accepting !== x.id && (
                     <button type="button" className="btn btn-sm btn-primary" onClick={() => setAccepting(x.id)}>
@@ -165,7 +194,15 @@ function Battles() {
                     </button>
                   )}
                 </div>
-                {accepting === x.id && <AcceptPanel battle={x} onDone={() => { setAccepting(null); void mutate(); }} />}
+                {accepting === x.id && (
+                  <AcceptPanel
+                    battle={x}
+                    onDone={() => {
+                      setAccepting(null);
+                      void mutate();
+                    }}
+                  />
+                )}
               </li>
             ))}
           </ul>
@@ -178,12 +215,20 @@ function Battles() {
           <ul className="divide-y divide-line rounded-md border border-line bg-panel">
             {ongoing.map((x) => (
               <li key={x.id}>
-                <Link href={`/battle/${x.id}`} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 hover:bg-panel-2">
+                <Link
+                  href={`/battle/${x.id}`}
+                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 hover:bg-panel-2"
+                >
                   <span>
-                    Contre <strong>{x.opponent.name}</strong> <span className="text-muted">· {x.mode === "live" ? "en direct" : "asynchrone"}</span>
+                    Contre <strong>{x.opponent.name}</strong>{" "}
+                    <span className="text-muted">· {x.mode === "live" ? "en direct" : "asynchrone"}</span>
                   </span>
                   <span className="text-sm text-muted">
-                    {x.status === "pending" ? "en attente de réponse" : x.mode === "async" ? `${x.roundsPlayed}/${BATTLE_ROUNDS} manches jouées` : "en cours"}
+                    {x.status === "pending"
+                      ? "en attente de réponse"
+                      : x.mode === "async"
+                        ? `${x.roundsPlayed}/${BATTLE_ROUNDS} manches jouées`
+                        : "en cours"}
                   </span>
                 </Link>
               </li>
@@ -204,10 +249,15 @@ function Battles() {
           <ul className="divide-y divide-line rounded-md border border-line bg-panel">
             {history.map((x) => (
               <li key={x.id}>
-                <Link href={`/battle/${x.id}`} className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 hover:bg-panel-2 sm:grid-cols-[1fr_auto_auto]">
+                <Link
+                  href={`/battle/${x.id}`}
+                  className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 hover:bg-panel-2 sm:grid-cols-[1fr_auto_auto]"
+                >
                   <span>
                     {x.status === "finished" ? (
-                      <strong className={x.result === "win" ? "text-accent" : x.result === "loss" ? "text-danger" : ""}>{RESULT[x.result ?? "draw"]}</strong>
+                      <strong className={x.result === "win" ? "text-accent" : x.result === "loss" ? "text-danger" : ""}>
+                        {RESULT[x.result ?? "draw"]}
+                      </strong>
                     ) : (
                       <span className="text-muted">{x.status === "declined" ? "Refusé" : "Annulé"}</span>
                     )}{" "}

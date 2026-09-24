@@ -39,11 +39,18 @@ export async function requestFriend(ctx: Ctx, userId: string, username: string) 
   const key = pair(userId, other.id);
   const fx = new Effects();
   const status = await ctx.db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(f).where(and(eq(f.userA, key.userA), eq(f.userB, key.userB))).for("update");
+    const [existing] = await tx
+      .select()
+      .from(f)
+      .where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)))
+      .for("update");
     if (existing?.status === "accepted") throw conflict("already_friends", "Vous êtes déjà amis.");
     if (existing && existing.requestedBy === userId) throw conflict("already_requested", "Demande déjà envoyée.");
     if (existing) {
-      await tx.update(f).set({ status: "accepted" }).where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)));
+      await tx
+        .update(f)
+        .set({ status: "accepted" })
+        .where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)));
       await fx.notify(tx, other.id, "friend_accepted", { from: await displayName(ctx, userId), userId });
       return "accepted" as const;
     }
@@ -59,9 +66,16 @@ export async function acceptFriend(ctx: Ctx, userId: string, otherId: string) {
   const key = pair(userId, otherId);
   const fx = new Effects();
   await ctx.db.transaction(async (tx) => {
-    const [row] = await tx.select().from(f).where(and(eq(f.userA, key.userA), eq(f.userB, key.userB))).for("update");
+    const [row] = await tx
+      .select()
+      .from(f)
+      .where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)))
+      .for("update");
     if (!row || row.status !== "pending" || row.requestedBy === userId) throw notFound("Aucune demande de ce joueur.");
-    await tx.update(f).set({ status: "accepted" }).where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)));
+    await tx
+      .update(f)
+      .set({ status: "accepted" })
+      .where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)));
     await fx.notify(tx, otherId, "friend_accepted", { from: await displayName(ctx, userId), userId });
   });
   await fx.flush(ctx);
@@ -112,10 +126,17 @@ export async function listFriends(ctx: Ctx, userId: string) {
 }
 
 /** Relation avec un autre joueur (profil public). */
-export async function relation(ctx: Ctx, userId: string, otherId: string): Promise<"self" | "friends" | "incoming" | "outgoing" | "none"> {
+export async function relation(
+  ctx: Ctx,
+  userId: string,
+  otherId: string,
+): Promise<"self" | "friends" | "incoming" | "outgoing" | "none"> {
   if (userId === otherId) return "self";
   const key = pair(userId, otherId);
-  const [row] = await ctx.db.select().from(f).where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)));
+  const [row] = await ctx.db
+    .select()
+    .from(f)
+    .where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)));
   if (!row) return "none";
   if (row.status === "accepted") return "friends";
   return row.requestedBy === userId ? "outgoing" : "incoming";
@@ -153,14 +174,19 @@ export function syncGuildRoom(ctx: Ctx, userId: string, guildId: number, join: b
 // ---------------------------------------------------------------------------
 
 /** Vérifie l'accès à un canal et renvoie la cible de diffusion. */
-async function channelAccess(ctx: Ctx, userId: string, channel: string): Promise<{ kind: "dm"; other: string } | { kind: "guild"; guildId: number }> {
+async function channelAccess(
+  ctx: Ctx,
+  userId: string,
+  channel: string,
+): Promise<{ kind: "dm"; other: string } | { kind: "guild"; guildId: number }> {
   const dm = /^dm:([^:]+):([^:]+)$/.exec(channel);
   if (dm) {
     const [, a, b] = dm;
     if (userId !== a && userId !== b) throw forbidden("Conversation privée.");
     const other = userId === a ? b! : a!;
     // Un seul canal par paire (ids triés), vers un joueur qui existe, jamais vers soi-même.
-    if (other === userId || channel !== dmChannel(a!, b!)) throw badRequest("invalid_channel", "Conversation inconnue.");
+    if (other === userId || channel !== dmChannel(a!, b!))
+      throw badRequest("invalid_channel", "Conversation inconnue.");
     const [exists] = await ctx.db.select({ id: schema.user.id }).from(schema.user).where(eq(schema.user.id, other));
     if (!exists) throw notFound("Ce joueur n'existe pas.");
     return { kind: "dm", other };
@@ -192,7 +218,10 @@ async function toMessageDTOs(ctx: Ctx, rows: MessageRow[]) {
   const senders = [...new Set(rows.map((r) => r.senderId))];
   const names = senders.length
     ? await ctx.db
-        .select({ id: schema.user.id, name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
+        .select({
+          id: schema.user.id,
+          name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
+        })
         .from(schema.user)
         .where(inArray(schema.user.id, senders))
     : [];
@@ -201,7 +230,10 @@ async function toMessageDTOs(ctx: Ctx, rows: MessageRow[]) {
   const cards = withCard.length
     ? await ctx.db.execute<{ id: string; season: number; title: string; rarity: Rarity }>(sql`
         select id, season, title, rarity from cards
-        where (season, id) in (${sql.join(withCard.map((r) => sql`(${r.cardSeason}::smallint, ${r.cardId}::bigint)`), sql`, `)})
+        where (season, id) in (${sql.join(
+          withCard.map((r) => sql`(${r.cardSeason}::smallint, ${r.cardId}::bigint)`),
+          sql`, `,
+        )})
       `)
     : [];
   const cardBy = new Map(cards.map((c) => [`${c.season}:${c.id}`, c]));
@@ -219,7 +251,11 @@ async function toMessageDTOs(ctx: Ctx, rows: MessageRow[]) {
   });
 }
 
-export async function sendMessage(ctx: Ctx, userId: string, input: { to?: string; channel?: string; body: string; instanceId?: number }) {
+export async function sendMessage(
+  ctx: Ctx,
+  userId: string,
+  input: { to?: string; channel?: string; body: string; instanceId?: number },
+) {
   let channel = input.channel;
   if (input.to) {
     const other = await findUserByName(ctx.db, input.to);
@@ -240,7 +276,13 @@ export async function sendMessage(ctx: Ctx, userId: string, input: { to?: string
   if (!input.body.trim() && !card) throw badRequest("empty", "Message vide.");
   const [row] = await ctx.db
     .insert(m)
-    .values({ channel, senderId: userId, body: input.body.trim(), cardId: card?.cardId ?? null, cardSeason: card?.season ?? null })
+    .values({
+      channel,
+      senderId: userId,
+      body: input.body.trim(),
+      cardId: card?.cardId ?? null,
+      cardSeason: card?.season ?? null,
+    })
     .returning();
   await markChannelRead(ctx, userId, channel, row!.createdAt);
   const [dto] = await toMessageDTOs(ctx, [row!]);
@@ -262,7 +304,10 @@ export async function history(ctx: Ctx, userId: string, channel: string, before?
     .orderBy(desc(m.id))
     .limit(51);
   const page = rows.slice(0, 50);
-  return { items: (await toMessageDTOs(ctx, page)).reverse(), nextCursor: rows.length > 50 ? String(page[page.length - 1]!.id) : null };
+  return {
+    items: (await toMessageDTOs(ctx, page)).reverse(),
+    nextCursor: rows.length > 50 ? String(page[page.length - 1]!.id) : null,
+  };
 }
 
 export async function markChannelRead(ctx: Ctx, userId: string, channel: string, at = new Date()) {
@@ -304,10 +349,16 @@ export async function conversations(ctx: Ctx, userId: string) {
     join lateral (select body, created_at, sender_id from messages where channel = c.channel order by id desc limit 1) l on true
     order by l.created_at desc
   `);
-  const others = rows.map((r) => /^dm:([^:]+):([^:]+)$/.exec(r.channel)).flatMap((x) => (x ? [x[1] === userId ? x[2]! : x[1]!] : []));
+  const others = rows
+    .map((r) => /^dm:([^:]+):([^:]+)$/.exec(r.channel))
+    .flatMap((x) => (x ? [x[1] === userId ? x[2]! : x[1]!] : []));
   const users = others.length
     ? await ctx.db
-        .select({ id: schema.user.id, username: schema.user.username, name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
+        .select({
+          id: schema.user.id,
+          username: schema.user.username,
+          name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
+        })
         .from(schema.user)
         .where(inArray(schema.user.id, others))
     : [];
@@ -330,7 +381,17 @@ export async function conversations(ctx: Ctx, userId: string) {
   });
   // Le salon de guilde apparaît même vide.
   if (guildCh && !list.some((c) => c.channel === guildCh)) {
-    list.push({ channel: guildCh, kind: "guild", title: gm!.name, username: null, online: false, lastBody: "", lastAt: "", lastFromMe: false, unread: 0 });
+    list.push({
+      channel: guildCh,
+      kind: "guild",
+      title: gm!.name,
+      username: null,
+      online: false,
+      lastBody: "",
+      lastAt: "",
+      lastFromMe: false,
+      unread: 0,
+    });
   }
   return list;
 }

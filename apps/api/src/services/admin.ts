@@ -7,7 +7,11 @@ import { findUserByName } from "./profiles.js";
 import { seasonStatus } from "./seasons.js";
 
 /** Don (ou retrait) de PW et de paquets bonus par un admin : tracé dans le ledger avec l'auteur. */
-export async function grant(ctx: Ctx, adminId: string, input: { username: string; pw: number; packs: number; note?: string }) {
+export async function grant(
+  ctx: Ctx,
+  adminId: string,
+  input: { username: string; pw: number; packs: number; note?: string },
+) {
   if (input.pw === 0 && input.packs === 0) throw badRequest("empty", "Rien à donner.");
   const target = await findUserByName(ctx.db, input.username);
   const ref = `admin:${adminId}${input.note ? `:${input.note.slice(0, 80)}` : ""}`;
@@ -48,7 +52,12 @@ export async function economyStats(ctx: Ctx) {
            (select count(*)::int from trades where status = 'pending') as trades
   `);
   return {
-    supply: { total: Number(supply?.total ?? 0), locked: Number(supply?.locked ?? 0), players: supply?.players ?? 0, bonusPacks: Number(supply?.packs ?? 0) },
+    supply: {
+      total: Number(supply?.total ?? 0),
+      locked: Number(supply?.locked ?? 0),
+      players: supply?.players ?? 0,
+      bonusPacks: Number(supply?.packs ?? 0),
+    },
     // Échanges entre joueurs (trade, market_sale, market_purchase) se compensent ; la taxe est détruite.
     flows: flows.map((f) => ({ reason: f.reason, created: Number(f.created), destroyed: Number(f.destroyed) })),
     cards: cards ?? { instances: 0, auctions: 0, trades: 0 },

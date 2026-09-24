@@ -67,11 +67,7 @@ export interface Question {
   answer: number;
 }
 
-const normalize = (s: string) =>
-  s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
+const normalize = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 /** Masque le titre (et ses mots significatifs) dans le résumé, puis le tronque proprement. */
 export function maskExtract(extract: string, title: string, maxLength = 260): string {
@@ -119,7 +115,9 @@ export function makeQuestion(
   if (type === "who_am_i" && (withExtract.length || decoys.length >= 3)) {
     // Manche rejouée : l'autre article devient la cible quand il a lui aussi un résumé.
     const seenTitle = avoid?.type === "who_am_i" ? avoid.choices[avoid.answer] : undefined;
-    const targets = withExtract.some((c) => c.title !== seenTitle) ? withExtract.filter((c) => c.title !== seenTitle) : withExtract;
+    const targets = withExtract.some((c) => c.title !== seenTitle)
+      ? withExtract.filter((c) => c.title !== seenTitle)
+      : withExtract;
     const target = targets.length ? targets[Math.floor(rand() * targets.length)]! : a;
     // L'autre carte de la manche figure parmi les leurres : la réponse n'est jamais « la seule carte connue ».
     const other = target === a ? b : a;
@@ -135,12 +133,22 @@ export function makeQuestion(
   if (type === "longest") {
     const choices = shuffle([a.title, b.title], rand);
     const longest = a.pageLen > b.pageLen ? a.title : b.title;
-    return { type, prompt: "Lequel de ces deux articles est le plus long ?", choices, answer: choices.indexOf(longest) };
+    return {
+      type,
+      prompt: "Lequel de ces deux articles est le plus long ?",
+      choices,
+      answer: choices.indexOf(longest),
+    };
   }
   // most_viewed (et repli si aucune autre question n'est possible)
   const choices = shuffle([a.title, b.title], rand);
   const top = a.views12m >= b.views12m ? a.title : b.title;
-  return { type: "most_viewed", prompt: "Lequel de ces deux articles a été le plus lu cette année ?", choices, answer: choices.indexOf(top) };
+  return {
+    type: "most_viewed",
+    prompt: "Lequel de ces deux articles a été le plus lu cette année ?",
+    choices,
+    answer: choices.indexOf(top),
+  };
 }
 
 // ---------------------------------------------------------------------------

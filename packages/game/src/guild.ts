@@ -12,7 +12,10 @@ export type GuildRole = "leader" | "officer" | "member";
 export type GuildObjectiveKind = "pull_sr" | "open_packs" | "win_battles";
 
 /** Objectifs hebdomadaires, en rotation : cible par membre (plancher pour les petites guildes). */
-export const GUILD_OBJECTIVES: Record<GuildObjectiveKind, { label: (target: number) => string; perMember: number; min: number }> = {
+export const GUILD_OBJECTIVES: Record<
+  GuildObjectiveKind,
+  { label: (target: number) => string; perMember: number; min: number }
+> = {
   pull_sr: { label: (n) => `Tirer ${n} cartes Super rare ou mieux`, perMember: 3, min: 10 },
   open_packs: { label: (n) => `Ouvrir ${n} paquets`, perMember: 25, min: 60 },
   win_battles: { label: (n) => `Gagner ${n} duels`, perMember: 2, min: 5 },
@@ -35,7 +38,11 @@ export function weeklyObjective(week: string, members: number): { kind: GuildObj
 }
 
 /** Ce qu'un rôle peut faire sur un autre membre. */
-export function canManage(actor: GuildRole, target: GuildRole, action: "kick" | "promote" | "demote" | "transfer"): boolean {
+export function canManage(
+  actor: GuildRole,
+  target: GuildRole,
+  action: "kick" | "promote" | "demote" | "transfer",
+): boolean {
   if (action === "kick") return actor === "leader" ? target !== "leader" : actor === "officer" && target === "member";
   return actor === "leader" && target !== "leader";
 }

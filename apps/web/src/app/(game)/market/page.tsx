@@ -49,7 +49,11 @@ function Wishlist() {
         <div key={c.cardId} className="flex flex-col gap-1.5">
           <Card card={c} />
           <div className="flex items-center justify-between gap-2 text-xs">
-            {c.onSale ? <span className="font-semibold text-accent">En vente</span> : <span className="text-faint">Pas en vente</span>}
+            {c.onSale ? (
+              <span className="font-semibold text-accent">En vente</span>
+            ) : (
+              <span className="text-faint">Pas en vente</span>
+            )}
             <button
               type="button"
               className="btn btn-sm btn-ghost px-2 text-xs"
@@ -134,8 +138,8 @@ function Market() {
       <div>
         <h1 className="page-title">Marché</h1>
         <p className="hatnote mt-2">
-          Enchères en direct. Une offre dans la dernière minute prolonge la vente de 60 secondes. Les points de ton offre sont
-          bloqués et te sont rendus si quelqu’un surenchérit.
+          Enchères en direct. Une offre dans la dernière minute prolonge la vente de 60 secondes. Les points de ton
+          offre sont bloqués et te sont rendus si quelqu’un surenchérit.
         </p>
       </div>
 
@@ -161,8 +165,18 @@ function Market() {
         <>
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative min-w-44 flex-1">
-              <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint" />
-              <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Chercher une carte en vente" aria-label="Chercher une carte en vente" className="field h-9 min-h-0 pl-8 text-sm" />
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint"
+              />
+              <input
+                type="search"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Chercher une carte en vente"
+                aria-label="Chercher une carte en vente"
+                className="field h-9 min-h-0 pl-8 text-sm"
+              />
             </div>
             <RarityFilter value={rarity} onChange={setRarity} />
             <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />
@@ -173,7 +187,15 @@ function Market() {
           ) : !data ? (
             <div className="h-72 animate-pulse rounded-md bg-panel" aria-busy />
           ) : visible.length === 0 ? (
-            <Empty title={tab === "mine" ? "Tu n’as rien en vente" : tab === "bidding" ? "Aucune enchère en cours" : "Aucune vente en cours"}>
+            <Empty
+              title={
+                tab === "mine"
+                  ? "Tu n’as rien en vente"
+                  : tab === "bidding"
+                    ? "Aucune enchère en cours"
+                    : "Aucune vente en cours"
+              }
+            >
               {tab === "mine" ? (
                 <>
                   Choisis une carte dans ta{" "}

@@ -13,7 +13,13 @@ export const SESSION_COOKIE = "palawi_palacards_session";
 const DEV_SECRET = "dev-only-secret-palacards-change-me-in-prod";
 
 /** Routes qui révoquent des sessions : les sockets ouverts de ce joueur sont coupés (ceux encore valides se reconnectent). */
-const REVOKING_PATHS = new Set(["/change-password", "/revoke-sessions", "/revoke-other-sessions", "/revoke-session", "/sign-out"]);
+const REVOKING_PATHS = new Set([
+  "/change-password",
+  "/revoke-sessions",
+  "/revoke-other-sessions",
+  "/revoke-session",
+  "/sign-out",
+]);
 
 export function createAuth(db: Db, config: Config, events: { onSessionsRevoked?: (userId: string) => void } = {}) {
   const secure = config.BETTER_AUTH_URL.startsWith("https://");
