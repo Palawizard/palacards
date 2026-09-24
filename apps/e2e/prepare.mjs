@@ -2,10 +2,22 @@
 // base palacards_e2e neuve (migrée, 3 000 cartes synthétiques, saison 1), builds des packages,
 // de l'API et du front (dans .next-e2e, pointant sur l'API de test).
 import { execSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import postgres from "postgres";
 
 const root = new URL("../..", import.meta.url);
-const run = (cmd, env = {}) => execSync(cmd, { cwd: root, stdio: "inherit", env: { ...process.env, ...env } });
+const run = (cmd, env = {}) => {
+  try {
+    execSync(cmd, { cwd: root, stdio: "inherit", env: { ...process.env, ...env } });
+  } catch (err) {
+    summary(`Préparation E2E : échec de \`${cmd}\``);
+    throw err;
+  }
+};
+// GitHub Actions : les échecs de préparation apparaissent dans le résumé du run.
+function summary(text) {
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ${text}\n`);
+}
 
 try {
   process.loadEnvFile(new URL("../../.env", import.meta.url));

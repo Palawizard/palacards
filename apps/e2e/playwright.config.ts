@@ -22,7 +22,12 @@ export default defineConfig({
   workers: 1,
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  reporter: [["list"], ["html", { open: "never" }]],
+  reporter: [
+    ["list"],
+    ["html", { open: "never" }],
+    // GitHub Actions : échecs recopiés dans le résumé du run.
+    ...(process.env.GITHUB_STEP_SUMMARY ? ([["./summary-reporter.ts"]] as const) : []),
+  ],
   use: { baseURL: `${WEB}/palacards/`, trace: "retain-on-failure", locale: "fr-FR" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: [
