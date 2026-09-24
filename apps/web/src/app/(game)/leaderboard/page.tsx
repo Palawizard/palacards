@@ -27,7 +27,10 @@ const BOARDS: { value: Board; label: string; unit: string }[] = [
 export default function LeaderboardPage() {
   const [board, setBoard] = useState<Board>("collection");
   const [period, setPeriod] = useState<"season" | "all">("season");
-  const { data, error, mutate } = useSWR<{ season: number; rows: Row[] }>(`/leaderboard?board=${board}&period=${period}`);
+  // Garde l'ancien tableau (atténué) pendant le changement d'onglet : pas de flash de squelette.
+  const { data, error, mutate, isLoading } = useSWR<{ season: number; rows: Row[] }>(`/leaderboard?board=${board}&period=${period}`, {
+    keepPreviousData: true,
+  });
   const unit = BOARDS.find((b) => b.value === board)!.unit;
 
   return (
@@ -64,7 +67,7 @@ export default function LeaderboardPage() {
       ) : data.rows.length === 0 ? (
         <p className="text-muted">Personne au classement pour l’instant.</p>
       ) : (
-        <table className="tnum w-full overflow-hidden rounded-md border border-line bg-panel text-sm">
+        <table aria-busy={isLoading} className={`tnum w-full overflow-hidden rounded-md border border-line bg-panel text-sm transition-opacity duration-150 ${isLoading ? "opacity-60" : ""}`}>
           <thead>
             <tr className="border-b border-line text-left text-xs text-faint">
               <th scope="col" className="w-12 px-3 py-2 text-right font-semibold">

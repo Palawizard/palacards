@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { ConfirmDialog, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
-import { fmt, relative } from "@/lib/format";
+import { fmt, reasonLabel, relative } from "@/lib/format";
 import { useMe } from "@/lib/game";
 
 interface Overview {
@@ -28,6 +28,8 @@ interface LedgerRow {
   username: string | null;
 }
 
+const KINDS: Record<string, string> = { pw: "PW", card: "cartes", pack: "paquets", bonus_pack: "paquets bonus" };
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-panel px-4 py-3">
@@ -46,11 +48,14 @@ export default function AdminPage() {
   const [packs, setPacks] = useState("");
   const [note, setNote] = useState("");
   const [confirmSeason, setConfirmSeason] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   if (me && !me.isAdmin) return <p className="text-muted">Page réservée aux admins.</p>;
 
   async function grant(e: { preventDefault(): void }) {
     e.preventDefault();
+    if (busy) return;
+    setBusy(true);
     try {
       const res = await api<{ balance: number; bonusPacks: number }>("/admin/grant", {
         body: { username: username.trim(), pw: Number(pw) || 0, packs: Number(packs) || 0, note: note.trim() || undefined },
@@ -62,15 +67,22 @@ export default function AdminPage() {
       void ledger.mutate();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Don impossible.");
+    } finally {
+      setBusy(false);
     }
   }
 
   async function newSeason() {
+    if (!data) return;
+    const toastId = toast.loading(`Bascule vers la saison ${data.season.active + 1}… (jusqu’à quelques minutes)`);
     try {
-      const res = await api<{ from: number; to: number; copied: boolean }>("/admin/season", { method: "POST" });
+      // `from` : si la requête est relancée après un délai dépassé, le serveur refuse de rebasculer.
+      const res = await api<{ from: number; to: number; copied: boolean }>("/admin/season", { body: { from: data.season.active } });
+      toast.dismiss(toastId);
       toast.success(`Saison ${res.to} lancée${res.copied ? " (cartes de la saison précédente reconduites)" : ""}.`);
       void mutate();
     } catch (err) {
+      toast.dismiss(toastId);
       toast.error(err instanceof ApiError ? err.message : "Bascule impossible.");
     }
   }
@@ -106,9 +118,9 @@ export default function AdminPage() {
               <tbody>
                 {data.economy.flows.map((f) => (
                   <tr key={f.reason} className="border-t border-line">
-                    <td className="py-1.5">{f.reason}</td>
-                    <td className="py-1.5 text-right text-accent">{f.created ? `+${fmt(f.created)}` : "—"}</td>
-                    <td className="py-1.5 text-right text-danger">{f.destroyed ? `−${fmt(f.destroyed)}` : "—"}</td>
+                    <td className="py-1.5">{reasonLabel(f.reason)}</td>
+                    <td className={`py-1.5 text-right ${f.created ? "text-accent" : "text-faint"}`}>{f.created ? `+${fmt(f.created)}` : "—"}</td>
+                    <td className={`py-1.5 text-right ${f.destroyed ? "text-danger" : "text-faint"}`}>{f.destroyed ? `−${fmt(f.destroyed)}` : "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -121,7 +133,7 @@ export default function AdminPage() {
 
       <section>
         <h2 className="section-title mt-0">Donner des PW ou des paquets</h2>
-        <form onSubmit={grant} className="grid gap-3 sm:grid-cols-[1.4fr_1fr_1fr_1.6fr_auto] sm:items-end">
+        <form onSubmit={grant} className="grid grid-cols-1 gap-3 sm:grid-cols-[1.4fr_1fr_1fr_1.6fr_auto] sm:items-end">
           <label>
             <span className="label">Pseudo</span>
             <input className="field" value={username} onChange={(e) => setUsername(e.target.value)} required />
@@ -138,8 +150,8 @@ export default function AdminPage() {
             <span className="label">Note (journal)</span>
             <input className="field" value={note} onChange={(e) => setNote(e.target.value)} maxLength={80} />
           </label>
-          <button type="submit" className="btn btn-primary" disabled={!username.trim() || (!Number(pw) && !Number(packs))}>
-            Donner
+          <button type="submit" className="btn btn-primary" disabled={busy || !username.trim() || (!Number(pw) && !Number(packs))}>
+            {busy ? "Envoi…" : "Donner"}
           </button>
         </form>
       </section>
@@ -186,26 +198,31 @@ export default function AdminPage() {
 
       <section>
         <h2 className="section-title mt-0">Journal</h2>
-        <div className="overflow-x-auto">
-          <table className="tnum w-full min-w-[36rem] text-sm">
-            <tbody>
-              {(ledger.data ?? []).map((l) => (
-                <tr key={l.id} className="border-b border-line">
-                  <td className="whitespace-nowrap py-1.5 pr-3 text-faint">{relative(l.createdAt)}</td>
-                  <td className="py-1.5 pr-3 font-semibold">{l.username}</td>
-                  <td className="py-1.5 pr-3">
-                    {l.reason} <span className="text-faint">({l.kind})</span>
-                  </td>
-                  <td className={`py-1.5 pr-3 text-right ${l.delta > 0 ? "text-accent" : "text-danger"}`}>
-                    {l.delta > 0 ? "+" : ""}
-                    {fmt(l.delta)}
-                  </td>
-                  <td className="py-1.5 text-right text-faint">{fmt(l.balanceAfter)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        {ledger.error && <ErrorBox error={ledger.error} retry={() => ledger.mutate()} />}
+        {!ledger.data && !ledger.error && <div className="h-40 animate-pulse rounded-md bg-panel" />}
+        {ledger.data && !ledger.data.length && <p className="text-sm text-faint">Aucun mouvement pour l’instant.</p>}
+        <ul className="tnum text-sm">
+          {(ledger.data ?? []).map((l) => (
+            <li
+              key={l.id}
+              className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-line py-1.5 sm:grid-cols-[8rem_minmax(0,9rem)_minmax(0,1fr)_5rem_5rem]"
+            >
+              <span className="truncate font-semibold sm:order-2">{l.username ?? "—"}</span>
+              <span className={`text-right sm:order-4 ${l.delta > 0 ? "text-accent" : "text-danger"}`}>
+                {l.delta > 0 ? "+" : ""}
+                {fmt(l.delta)} <span className="text-faint sm:hidden">{KINDS[l.kind] ?? l.kind}</span>
+              </span>
+              <span className="truncate text-muted sm:order-3 sm:text-inherit">
+                {reasonLabel(l.reason)} <span className="hidden text-faint sm:inline">({KINDS[l.kind] ?? l.kind})</span>
+                {l.reason === "admin" && l.refId?.split(":")[2] && <span className="text-faint"> · {l.refId.split(":").slice(2).join(":")}</span>}
+              </span>
+              <span className="text-right text-xs text-faint sm:order-1 sm:text-left sm:text-sm">{relative(l.createdAt)}</span>
+              <span className="hidden text-right text-faint sm:order-5 sm:block" title="Solde après le mouvement">
+                {fmt(l.balanceAfter)}
+              </span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <ConfirmDialog

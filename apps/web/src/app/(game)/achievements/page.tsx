@@ -24,6 +24,9 @@ export default function AchievementsPage() {
   useSocketEvent("notification:new", (n) => {
     if (n.type === "achievement") void mutate();
   });
+  // Toute récompense (PW ou paquets) peut venir d'un succès, même si ses notifications sont coupées.
+  useSocketEvent("wallet:update", () => void mutate());
+  useSocketEvent("packs:update", () => void mutate());
   const unlocked = data?.filter((a) => a.unlockedAt).length ?? 0;
   const sorted = [...(data ?? [])].sort(
     (a, b) => Number(!!b.unlockedAt) - Number(!!a.unlockedAt) || b.progress / b.target - a.progress / a.target,
@@ -59,7 +62,7 @@ export default function AchievementsPage() {
                   ) : (
                     <>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2" role="progressbar" aria-valuenow={a.progress} aria-valuemax={a.target} aria-label={`Progression : ${a.name}`}>
-                        <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                        <div className="h-full rounded-full bg-accent transition-[width] duration-300 ease-(--ease-out)" style={{ width: `${pct}%` }} />
                       </div>
                       <p className="tnum mt-1 flex justify-between text-xs text-faint">
                         <span>
