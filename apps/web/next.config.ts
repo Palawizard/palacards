@@ -8,7 +8,7 @@ try {
 }
 
 const nextConfig: NextConfig = {
-  // Servi sous www.palawi.fr/palacards/
+  // Servi sous palawi.fr/palacards/ (www.palawi.fr redirige vers l'apex)
   basePath: "/palacards",
   output: "standalone",
   // Build séparé pour les E2E (API de test sur un autre port), sans écraser .next.
