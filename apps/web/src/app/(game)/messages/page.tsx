@@ -251,7 +251,7 @@ function Messages() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="page-title">Messages</h1>
-      <div className="grid gap-6 lg:grid-cols-[18rem_1fr]">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className={open ? "hidden lg:block" : ""}>
           {error ? (
             <ErrorBox error={error} retry={() => mutate()} />

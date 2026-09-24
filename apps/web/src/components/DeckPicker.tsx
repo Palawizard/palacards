@@ -24,7 +24,7 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
   };
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div>
         <h3 className="mb-2 text-sm font-semibold text-muted">
           Ton deck <span className="tnum text-faint">({deck.length}/{DECK_SIZE})</span>

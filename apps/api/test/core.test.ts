@@ -66,7 +66,9 @@ describe("paquets", () => {
     expect(["R", "SR", "UR", "L"]).toContain(res.body.cards[4].rarity);
     expect(res.body.packs.available).toBe(MAX_STORED_PACKS - 1);
     const ledger = await ctx.db.select().from(schema.ledger).where(eq(schema.ledger.userId, p.userId));
-    expect(ledger.map((l) => `${l.kind}:${l.delta}`).sort()).toEqual([
+    // Les succès (premier paquet…) sont crédités en arrière-plan : hors du périmètre de ce test.
+    const own = ledger.filter((l) => l.reason !== "achievement");
+    expect(own.map((l) => `${l.kind}:${l.delta}`).sort()).toEqual([
       "card:5",
       "pack:-1",
       `pw:${ECONOMY.startingBalance}`,
