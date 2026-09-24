@@ -1,6 +1,7 @@
 import { eq, schema, sql } from "@palacards/db";
 import { ECONOMY, ELO_START } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
+import { progressionIdle } from "../src/services/progression.js";
 import { rolloverSeason } from "../src/services/seasons.js";
 import { makeApp, signUp, uniqueName } from "./helpers.js";
 
@@ -12,8 +13,8 @@ describe("succès", () => {
     const p = await signUp(app);
     await p.post("/packs/open");
     await p.post("/packs/open");
-    // Les succès sont traités après la réponse : on laisse la file se vider.
-    await new Promise((r) => setTimeout(r, 300));
+    // Les succès sont traités après la réponse : on attend que la file se vide.
+    await progressionIdle();
     const list = await p.get("/achievements");
     const first = list.body.find((a: { key: string }) => a.key === "first_pack");
     expect(first.unlockedAt).not.toBeNull();
@@ -40,6 +41,8 @@ describe("fusion et niveaux", () => {
     // Pas de fusion d'articles différents ni avec soi-même.
     expect((await p.post(`/collection/${target.instanceId}/fuse`, { sourceId: target.instanceId })).status).toBe(400);
     expect((await p.post(`/collection/${opened.body.cards[1].instanceId}/fuse`, { sourceId: rest[3] })).body.error).toBe("different_cards");
+    // Jamais le meilleur exemplaire (ici le niveau 5) dans un moins bon.
+    expect((await p.post(`/collection/${rest[3]}/fuse`, { sourceId: target.instanceId })).body.error).toBe("source_better");
   });
 });
 
@@ -113,5 +116,42 @@ describe("paramètres et admin", () => {
     expect(grant.json()).toEqual({ balance: ECONOMY.startingBalance + 500, bonusPacks: 2 });
     const overview = await app.inject({ method: "GET", url: "/palacards/api/admin", headers: { cookie } });
     expect(overview.json().economy.supply.total).toBeGreaterThan(0);
+    // L'admin ne peut pas libérer son pseudo (il serait repris avec le rôle).
+    const rename = await app.inject({
+      method: "POST",
+      url: "/palacards/api/settings/username",
+      headers: { cookie, origin: "http://localhost:3000" },
+      payload: { username: uniqueName("ex") },
+    });
+    expect(rename.json().error).toBe("admin_username");
+    // Bascule forcée : une requête rejouée avec une saison déjà terminée est refusée.
+    const season = (await p.get("/me")).body.season as number;
+    const stale = await app.inject({
+      method: "POST",
+      url: "/palacards/api/admin/season",
+      headers: { cookie, origin: "http://localhost:3000" },
+      payload: { from: season - 1 },
+    });
+    expect(stale.json().error).toBe("season_changed");
+  });
+
+  it("ferme les routes Better Auth qui contourneraient nos contrôles et limite les avatars", async () => {
+    const p = await signUp(app);
+    const res = await app.inject({
+      method: "POST",
+      url: "/palacards/api/auth/update-user",
+      headers: { cookie: p.cookie, origin: "http://localhost:3000" },
+      payload: { username: "admin", displayUsername: "Admin" },
+    });
+    expect(res.statusCode).toBe(404);
+    const call = (avatar: unknown) =>
+      app.inject({
+        method: "PATCH",
+        url: "/palacards/api/me/settings",
+        headers: { cookie: p.cookie, origin: "http://localhost:3000" },
+        payload: { avatar },
+      });
+    expect((await call("ADMN")).statusCode).toBe(400);
+    expect((await call("🦉")).json().avatar).toBe("🦉");
   });
 });

@@ -13,7 +13,9 @@ export function registerProgressionHooks() {
   hooksRegistered = true;
   onBattleFinished(async (ctx, battle, winnerId) => {
     for (const userId of [battle.challengerId, battle.opponentId]) {
-      void emit(ctx, userId, { type: "battle_finished", won: winnerId === userId, winStreak: await winStreak(ctx.db, userId) });
+      // Anti-farm : seules les victoires récompensées en PW (quota par paire et par jour) comptent pour les succès.
+      const won = winnerId === userId && (await battleRewarded(ctx.db, userId, battle.id));
+      void emit(ctx, userId, { type: "battle_finished", won, winStreak: await winStreak(ctx.db, userId) });
     }
   });
 }
@@ -110,12 +112,26 @@ export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameE
   };
 }
 
-/** Série de victoires en cours (duels terminés, du plus récent au plus ancien). */
+const rewardedSql = (userId: string) =>
+  sql`exists (select 1 from ledger l where l.user_id = ${userId} and l.reason = 'battle' and l.ref_id = ${schema.battles.id}::text)`;
+
+async function battleRewarded(db: DbOrTx, userId: string, battleId: number): Promise<boolean> {
+  const [row] = await db.select({ id: schema.battles.id }).from(schema.battles).where(and(eq(schema.battles.id, battleId), rewardedSql(userId)));
+  return !!row;
+}
+
+/** Série de victoires en cours, sur les seuls duels récompensés (du plus récent au plus ancien). */
 export async function winStreak(db: DbOrTx, userId: string): Promise<number> {
   const rows = await db
     .select({ winnerId: schema.battles.winnerId })
     .from(schema.battles)
-    .where(and(eq(schema.battles.status, "finished"), sql`(${schema.battles.challengerId} = ${userId} or ${schema.battles.opponentId} = ${userId})`))
+    .where(
+      and(
+        eq(schema.battles.status, "finished"),
+        sql`(${schema.battles.challengerId} = ${userId} or ${schema.battles.opponentId} = ${userId})`,
+        rewardedSql(userId),
+      ),
+    )
     .orderBy(desc(schema.battles.finishedAt))
     .limit(50);
   let n = 0;

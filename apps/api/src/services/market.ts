@@ -145,7 +145,7 @@ export async function cancelAuction(ctx: Ctx, sellerId: string, auctionId: numbe
     if (auction.status !== "open") throw conflict("auction_closed", "Cette vente est déjà terminée.");
     if (auction.currentBidderId) throw conflict("has_bids", "Impossible d'annuler une vente qui a déjà une offre.");
     await tx.update(a).set({ status: "cancelled", closedAt: ctx.now() }).where(eq(a.id, auctionId));
-    await tx.update(schema.cardInstances).set({ lockedBy: null }).where(eq(schema.cardInstances.id, auction.instanceId));
+    await tx.update(schema.cardInstances).set({ lockedBy: null }).where(eq(schema.cardInstances.id, lotOf(auction)));
   });
   ctx.rt.toRoom(auctionRoom(auctionId), "auction:update", {
     id: auctionId,
@@ -180,7 +180,7 @@ async function settle(tx: Tx, fx: Effects, auction: Auction, players: Map<string
   await movePw(tx, winner, -price, "market_purchase", auction.id);
   await movePw(tx, seller, price, "market_sale", auction.id);
   await movePw(tx, seller, -saleTax(price), "market_tax", auction.id);
-  await transferInstances(tx, [auction.instanceId], winnerId, "market");
+  await transferInstances(tx, [lotOf(auction)], winnerId, "market");
   await logMovement(tx, winnerId, "card", 1, await ownedCount(tx, winnerId), "market_purchase", auction.id);
   await logMovement(tx, auction.sellerId, "card", -1, await ownedCount(tx, auction.sellerId), "market_sale", auction.id);
   await tx.insert(schema.sales).values({ cardId: auction.cardId, rarity: auction.rarity, price, auctionId: auction.id, soldAt: now });
@@ -284,7 +284,7 @@ export async function closeAuctionIfDue(ctx: Ctx, auctionId: number) {
     if (auction.status !== "open" || auction.endsAt > now) return null;
     if (!auction.currentBidderId || auction.currentBid === null) {
       await tx.update(a).set({ status: "expired", closedAt: now }).where(eq(a.id, auctionId));
-      await tx.update(schema.cardInstances).set({ lockedBy: null }).where(eq(schema.cardInstances.id, auction.instanceId));
+      await tx.update(schema.cardInstances).set({ lockedBy: null }).where(eq(schema.cardInstances.id, lotOf(auction)));
       await fx.notify(tx, auction.sellerId, "auction_expired", { auctionId, cardId: auction.cardId });
       return { auction: { ...auction, status: "expired" as const }, players: new Map<string, Player>() };
     }
@@ -324,10 +324,16 @@ export async function sweepAuctions(ctx: Ctx) {
 // ---------------------------------------------------------------------------
 
 
+/** Exemplaire d'une vente ouverte : jamais nul, il reste verrouillé (donc indestructible) tant que la vente court. */
+function lotOf(auction: Auction): number {
+  if (auction.instanceId === null) throw new Error(`vente ${auction.id} sans exemplaire`);
+  return auction.instanceId;
+}
+
 async function toDTOs(ctx: Ctx, rows: Auction[]): Promise<AuctionDTO[]> {
   const cards = await instancesByIds(
     ctx.db,
-    rows.map((r) => r.instanceId),
+    rows.flatMap((r) => (r.instanceId === null ? [] : [r.instanceId])),
   );
   const cardBy = new Map(cards.map((c) => [c.instanceId, c]));
   const names = await usernames(ctx.db, [...rows.map((r) => r.sellerId), ...rows.map((r) => r.currentBidderId)]);

@@ -1,6 +1,6 @@
 "use client";
 
-import { ECONOMY, LEVEL_BONUS, MAX_LEVEL, RARITY_LABELS } from "@palacards/game";
+import { ECONOMY, isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITY_LABELS } from "@palacards/game";
 import type { CardDTO, ReferencePriceDTO } from "@palacards/shared";
 import { ChevronsUp, ExternalLink, Gavel, Heart, Pin, Repeat, Star, Tag } from "lucide-react";
 import Link from "next/link";
@@ -26,10 +26,17 @@ export interface CardSheet {
 /** Stat au niveau suivant (les stats affichées incluent déjà le bonus du niveau actuel). */
 const nextLevelStat = (value: number, level: number) => Math.round((value / (1 + LEVEL_BONUS * (level - 1))) * (1 + LEVEL_BONUS * level));
 
-/** Exemplaire à sacrifier pour une fusion : le plus faible parmi les doublons libres (ni favori, ni épinglé). */
+const rank = (c: CardDTO) => ({ id: c.instanceId ?? 0, rarity: c.rarity, level: c.level, atk: c.atk, def: c.def });
+
+/**
+ * Exemplaire à sacrifier pour une fusion : le plus faible des doublons libres (ni favori, ni épinglé, ni engagé).
+ * On ne fusionne que dans le meilleur exemplaire (même règle que le serveur), jamais l'inverse.
+ */
 function fusionSource(target: CardDTO, siblings: CardDTO[]): CardDTO | null {
-  const free = siblings.filter((c) => c.instanceId !== target.instanceId && !c.locked && !c.favorite && !c.pinnedSlot);
-  return free.sort((a, b) => a.level - b.level || a.atk + a.def - (b.atk + b.def))[0] ?? null;
+  const others = siblings.filter((c) => c.instanceId !== target.instanceId);
+  if (others.some((c) => isBetterCopy(rank(c), rank(target)))) return null;
+  const free = others.filter((c) => !c.locked && !c.favorite && !c.pinnedSlot);
+  return free.sort((a, b) => (isBetterCopy(rank(a), rank(b)) ? 1 : -1))[0] ?? null;
 }
 
 function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: CardDTO[]; onChanged: () => void }) {

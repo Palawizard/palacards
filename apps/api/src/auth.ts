@@ -19,6 +19,8 @@ export function createAuth(db: Db, config: Config) {
     baseURL: config.BETTER_AUTH_URL,
     basePath: `${config.BASE_PATH}/api/auth`,
     trustedOrigins: [config.WEB_ORIGIN],
+    // Le profil (pseudo, avatar) passe par nos routes, qui protègent les pseudos admin : pas de modification directe.
+    disabledPaths: ["/update-user", "/change-email"],
     database: drizzleAdapter(db, { provider: "pg", schema }),
     emailAndPassword: { enabled: true, minPasswordLength: 8, maxPasswordLength: 128, autoSignIn: true },
     session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
