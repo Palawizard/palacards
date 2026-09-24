@@ -7,7 +7,7 @@ import { parse } from "../errors.js";
 import { adminOverview, grant, ledgerLog } from "../services/admin.js";
 import { NOTIFICATION_GROUPS } from "../services/notifications.js";
 import { leaderboard, listAchievements } from "../services/progression.js";
-import { purgeOldCards, rolloverSeason } from "../services/seasons.js";
+import { CARDS_PURGE_JOB, rolloverSeason } from "../services/seasons.js";
 import { changeUsername } from "../services/settings.js";
 import { me } from "./core.js";
 
@@ -68,8 +68,8 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
   api.post("/admin/season", admin, async (req) => {
     const { from } = parse(z.object({ from: z.number().int().positive() }), req.body);
     const res = await rolloverSeason(ctx, { expectedFrom: from });
-    // Nettoyage des vieilles cartes en tâche de fond (peut prendre une minute sur 2,7 M lignes).
-    void purgeOldCards(ctx).catch((err) => ctx.log.error({ err }, "purge des cartes"));
+    // Nettoyage des vieilles cartes en tâche de fond (job pg-boss dédié).
+    await ctx.jobs.sendAt(CARDS_PURGE_JOB, {}, ctx.now());
     return res;
   });
 }
