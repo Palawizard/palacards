@@ -92,7 +92,9 @@ function Sleeve({
         disabled={disabled}
         onPointerMove={track}
         onPointerLeave={reset}
-        aria-label="Ouvrir un paquet"
+        // Raccourci souris : le bouton « Ouvrir un paquet » sous la pochette reste l'action accessible.
+        aria-hidden
+        tabIndex={-1}
         className="group relative block aspect-[5/7.3] w-full [filter:drop-shadow(0_22px_24px_rgb(4_8_30/0.45))] disabled:cursor-default"
       >
         <motion.span className="absolute inset-0 block" style={{ transform: tilt }}>

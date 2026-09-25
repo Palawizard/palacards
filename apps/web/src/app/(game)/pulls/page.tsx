@@ -62,7 +62,7 @@ export default function PullsPage() {
         <h1 className="page-title">Paquets</h1>
         {me ? (
           <dl className="tnum flex flex-wrap items-end gap-x-6 gap-y-2 text-sm">
-            <div>
+            <div title={`Stock : ${me.packs.available}/${me.packs.max}`}>
               <dt className="text-xs font-semibold text-faint">Stock</dt>
               <dd className="flex items-center gap-2">
                 <span className="font-display text-2xl leading-none">
