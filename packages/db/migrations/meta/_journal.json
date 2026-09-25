@@ -8,6 +8,76 @@
       "when": 1789994492056,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790192021109,
+      "tag": "0001_cards_next",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790192023834,
+      "tag": "0002_card_load",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790192407423,
+      "tag": "0003_game_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790194862264,
+      "tag": "0004_catalog_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790197100365,
+      "tag": "0005_guild_objective_progress",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790233932096,
+      "tag": "0006_auction_instance_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790235279538,
+      "tag": "0007_cards_search_title",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790237126415,
+      "tag": "0008_fk_and_lookup_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790237265901,
+      "tag": "0009_battle_answers_pending",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790240081195,
+      "tag": "0010_user_is_admin",
+      "breakpoints": true
     }
   ]
 }

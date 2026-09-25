@@ -5,6 +5,8 @@
 AGENTS.md
 CLAUDE.md
 CLAUDE.local.md
+PRODUCT.md
+DESIGN.md
 GEMINI.md
 .claude/
 .agents/
@@ -51,6 +53,7 @@ __pycache__/
 venv/
 .pytest_cache/
 .ruff_cache/
+*.egg-info/
 
 # Tests / couverture
 coverage/
@@ -68,3 +71,15 @@ desktop.ini
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+# Artefacts de conception Impeccable (locaux)
+.impeccable/
+**/.impeccable/
+
+# Playwright
+playwright-report/
+test-results/
+.next-e2e/
+
+# CSV de cartes déposé sur le serveur (deploy/load-cards.sh)
+/import/

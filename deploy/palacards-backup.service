@@ -1,0 +1,12 @@
+[Unit]
+Description=Sauvegarde quotidienne de PalaCards (pg_dump sans les cartes)
+After=docker.service
+Requires=docker.service
+# Pas de sauvegarde sur le disque de la VM si le partage NAS n'est pas monté.
+RequiresMountsFor=/mnt/nas/backups/palacards
+
+[Service]
+Type=oneshot
+Environment=STACK_DIR=/opt/dockpanel/stacks/palacards
+Environment=BACKUP_DIR=/mnt/nas/backups/palacards
+ExecStart=/opt/dockpanel/stacks/palacards/deploy/backup.sh

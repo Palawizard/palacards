@@ -1,0 +1,10 @@
+docs/
+pnpm-lock.yaml
+**/dist/
+**/.next/
+**/migrations/meta/
+tools/import/data/
+tools/import/.venv/
+**/playwright-report/
+**/test-results/
+**/.next-e2e/
