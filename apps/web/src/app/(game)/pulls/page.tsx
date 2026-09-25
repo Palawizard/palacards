@@ -106,12 +106,13 @@ export default function PullsPage() {
             <div className="border-t border-line p-3">
               <button
                 type="button"
-                className="btn btn-sm w-full"
+                className="btn btn-sm h-auto w-full justify-between whitespace-normal py-1.5 text-left leading-tight"
                 disabled={buying || !me || me.wallet.available < ECONOMY.bonusPackPrice}
                 onClick={buyBonus}
                 title={me && me.wallet.available < ECONOMY.bonusPackPrice ? "Pas assez de points wiki" : undefined}
               >
-                Acheter un paquet bonus · {ECONOMY.bonusPackPrice} PW
+                <span>Acheter un paquet bonus</span>
+                <span className="tnum shrink-0">{ECONOMY.bonusPackPrice} PW</span>
               </button>
               <p className="mt-1.5 text-xs text-faint">Hors plafond de stock, ouvert après tes paquets gratuits.</p>
             </div>
