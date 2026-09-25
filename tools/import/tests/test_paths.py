@@ -35,6 +35,7 @@ def write_articles(path: Path, n: int) -> None:
                 "page_id": pa.array(ids, pa.int64()),
                 "title": [f"L'article {i}" for i in ids],
                 "page_len": pa.array([i * 10 for i in ids], pa.int32()),
+                "prose_len": pa.array([i * 6 for i in ids], pa.int32()),
                 "refs": pa.array([i % 5 for i in ids], pa.int32()),
                 "sections": pa.array([i % 7 for i in ids], pa.int32()),
                 "images": pa.array([i % 3 for i in ids], pa.int32()),

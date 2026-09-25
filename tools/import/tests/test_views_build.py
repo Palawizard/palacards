@@ -67,6 +67,7 @@ def test_build_rarity_stats_and_bonus(tmp_path):
                 "page_id": pa.array(ids, pa.int64()),
                 "title": [f"Article {i}" for i in ids],
                 "page_len": pa.array([i * 10 for i in ids], pa.int32()),
+                "prose_len": pa.array([i * 6 for i in ids], pa.int32()),
                 "refs": pa.array([i % 50 for i in ids], pa.int32()),
                 "sections": pa.array([i % 7 for i in ids], pa.int32()),
                 "images": pa.array([i % 3 for i in ids], pa.int32()),
@@ -137,8 +138,8 @@ def test_build_rarity_stats_and_bonus(tmp_path):
     assert int(rows[4]["def"]) == min(9_999, off[4] + 800)
 
 
-def write_pool(tmp_path, arts: list[tuple[int, int, int, int, int, int]]):
-    """arts : (page_id, page_len, refs, sections, images, links) ; vues décroissantes par page_id."""
+def write_pool(tmp_path, arts: list[tuple[int, ...]]):
+    """arts : (page_id, page_len, refs, sections, images, links[, prose_len]) ; vues décroissantes par page_id."""
     articles = tmp_path / "articles.parquet"
     cols = list(zip(*arts))
     pq.write_table(
@@ -147,6 +148,7 @@ def write_pool(tmp_path, arts: list[tuple[int, int, int, int, int, int]]):
                 "page_id": pa.array(cols[0], pa.int64()),
                 "title": [f"Article {i}" for i in cols[0]],
                 "page_len": pa.array(cols[1], pa.int32()),
+                "prose_len": pa.array(cols[6] if len(cols) > 6 else cols[1], pa.int32()),
                 "refs": pa.array(cols[2], pa.int32()),
                 "sections": pa.array(cols[3], pa.int32()),
                 "images": pa.array(cols[4], pa.int32()),
@@ -199,3 +201,14 @@ def test_def_is_quality_density_not_size(tmp_path):
     assert dfn[2] > dfn[1]  # plus sourcé à taille égale ou moindre : meilleure défense
     assert dfn[1] < 5_000  # la taille seule ne donne plus une DEF maximale
     assert dfn[3] < dfn[2]  # le lissage empêche une ébauche d'être « parfaite »
+
+
+def test_atk_follows_prose_not_wikitext(tmp_path):
+    # 1 : commune-type, énorme wikicode (modèles, tableaux) mais peu de prose ; 2 : vrai long article.
+    arts = [
+        (1, 55_000, 30, 15, 3, 200, 3_000),
+        (2, 40_000, 30, 15, 3, 200, 30_000),
+    ] + [(i, 4_000 + i * 20, i % 13, i % 6, i % 4, i % 40, 2_000 + i * 10) for i in range(3, 300)]
+    rows = write_pool(tmp_path, arts)
+    assert int(rows[2]["atk"]) > int(rows[1]["atk"])
+    assert int(rows[1]["page_len"]) == 55_000  # la taille du wikicode reste exportée (quiz « Plus long »)
