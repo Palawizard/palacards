@@ -4,6 +4,7 @@ import { ECONOMY, RARITY_LABELS, rarityRank } from "@palacards/game";
 import type { CardDTO, PackState } from "@palacards/shared";
 import { ChevronRight, Recycle, Scissors } from "lucide-react";
 import {
+  animate,
   AnimatePresence,
   motion,
   useMotionTemplate,
@@ -13,7 +14,7 @@ import {
   useTransform,
 } from "motion/react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -214,7 +215,7 @@ function FlipCard({
         }
       >
         <div className="[backface-visibility:hidden]">
-          <Card card={card} priority />
+          <Card card={card} priority prefetch={false} />
         </div>
         <button
           type="button"
@@ -305,17 +306,121 @@ function PackGrid({ cards, revealed, onReveal, recycled, onRecycle, speed }: Dea
  */
 const DECK_CARD_WIDTH = "min(17rem, 76vw, calc((100svh - 16rem) * 5 / 7))";
 
+/**
+ * Entrée et sortie des cartes de la pile : translation, rotation et opacité seulement (composées par le
+ * GPU). Pas d'échelle : sur téléphone, elle fait re-rastériser le texte de la vignette à chaque image.
+ */
 const deckMotion = {
   enter: (dir: number) =>
-    dir > 0
-      ? { opacity: 0, x: 0, y: 14, rotate: 0, scale: 0.95 }
-      : { opacity: 0, x: "-70%", y: 0, rotate: -8, scale: 1 },
-  center: { opacity: 1, x: 0, y: 0, rotate: 0, scale: 1 },
-  exit: (dir: number) =>
-    dir > 0
-      ? { opacity: 0, x: "-115%", y: 0, rotate: -9, scale: 1 }
-      : { opacity: 0, x: 0, y: 14, rotate: 0, scale: 0.95 },
+    dir > 0 ? { opacity: 0, x: 0, y: 12, rotate: 0 } : { opacity: 0, x: -140, y: 0, rotate: -6 },
+  center: { opacity: 1, x: 0, y: 0, rotate: 0 },
+  exit: (dir: number) => (dir > 0 ? { opacity: 0, x: -360, y: 0, rotate: -9 } : { opacity: 0, x: 0, y: 12, rotate: 0 }),
 };
+
+/** Seuils du glissement : distance (px) ou vitesse (px/ms) pour passer à la carte voisine. */
+const SWIPE_DISTANCE = 64;
+const SWIPE_SPEED = 0.45;
+
+/**
+ * La carte au sommet de la pile. Le glissement est géré à la main (événements pointeur + une valeur
+ * `x`) plutôt qu'avec `drag` de motion : `drag` active la projection de mise en page, qui mesure la
+ * page (layout forcé) à chaque rendu React, d'où la saccade à chaque carte sur téléphone.
+ */
+function DeckCard({
+  card,
+  dir,
+  index,
+  speed,
+  shown,
+  gone,
+  onReveal,
+  onSwipe,
+}: {
+  card: CardDTO;
+  /** Sens de navigation : 1 vers la suivante, -1 vers la précédente (variantes d'entrée). */
+  dir: number;
+  index: number;
+  speed: Speed;
+  shown: boolean;
+  gone: boolean;
+  onReveal: () => void;
+  onSwipe: (direction: "next" | "prev") => void;
+}) {
+  const x = useMotionValue(0);
+  const start = useRef<{ x: number; y: number; t: number } | null>(null);
+  const dragging = useRef(false);
+
+  function onPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    start.current = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+    dragging.current = false;
+  }
+  function onPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    const s = start.current;
+    if (!s) return;
+    const dx = e.clientX - s.x;
+    if (!dragging.current) {
+      // Geste horizontal franc seulement : le défilement vertical reste au navigateur.
+      if (Math.abs(dx) < 8 || Math.abs(dx) < Math.abs(e.clientY - s.y)) return;
+      dragging.current = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
+    x.set(dx);
+  }
+  function onPointerEnd(e: React.PointerEvent<HTMLDivElement>) {
+    const s = start.current;
+    start.current = null;
+    if (!s || !dragging.current) return;
+    const dx = e.clientX - s.x;
+    const speedX = dx / Math.max(1, e.timeStamp - s.t);
+    if (e.type === "pointerup" && (dx < -SWIPE_DISTANCE || speedX < -SWIPE_SPEED)) onSwipe("next");
+    else if (e.type === "pointerup" && (dx > SWIPE_DISTANCE || speedX > SWIPE_SPEED)) onSwipe("prev");
+    // Pas de changement de carte (ou retour impossible) : la carte revient se poser.
+    void animate(x, 0, { type: "spring", stiffness: 520, damping: 38 });
+  }
+
+  return (
+    <motion.div
+      custom={dir}
+      variants={deckMotion}
+      initial="enter"
+      animate="center"
+      exit="exit"
+      transition={{ duration: 0.3, ease: EASE_OUT }}
+      style={{ x }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+      // Un glissement ne doit pas ouvrir la fiche de la carte (lien sur toute la vignette).
+      onClickCapture={(e) => {
+        if (!dragging.current) return;
+        dragging.current = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      className="absolute inset-0 z-10 touch-pan-y will-change-transform"
+    >
+      <div className={`transition-[opacity,filter] duration-300 ${gone ? "opacity-40 grayscale" : ""}`}>
+        <FlipCard card={card} index={index} speed={speed} stagger={false} revealed={shown} onReveal={onReveal} />
+      </div>
+    </motion.div>
+  );
+}
+
+/** Précharge l'image d'une carte à venir : elle est déjà décodée quand la carte arrive au sommet. */
+function PreloadThumb({ card }: { card: CardDTO }) {
+  const live = useCardMedia(card.cardId);
+  const src = live?.thumbUrl ?? card.thumbUrl;
+  useEffect(() => {
+    if (!src) return;
+    const img = new Image();
+    img.decoding = "async";
+    img.src = src;
+    void img.decode?.().catch(() => {});
+  }, [src]);
+  return null;
+}
 
 /**
  * Téléphone : les cartes sortent de la pile une par une. Chaque carte posée se retourne seule (pause
@@ -333,7 +438,6 @@ function PackDeck({
   onCursor,
 }: DealtProps & { onRevealAll: () => void; cursor: number; onCursor: (i: number) => void }) {
   const [dir, setDir] = useState(1);
-  const dragged = useRef(false);
   const n = cards.length;
   const card = cards[cursor]!;
   const shown = revealed[cursor] ?? false;
@@ -368,7 +472,8 @@ function PackDeck({
             <li
               key={c.instanceId ?? i}
               data-rarity={revealed[i] ? c.rarity : undefined}
-              className={`h-2 flex-1 rounded-full border transition-[background-color,border-color] duration-300 ${
+              // Sans transition : un fondu de couleur repeindrait toute la page à chaque image, en pleine animation.
+              className={`h-2 flex-1 rounded-full border ${
                 revealed[i] ? "border-transparent bg-[var(--r)]" : "border-line-strong"
               } ${i === cursor ? "outline outline-2 outline-offset-2 outline-accent" : ""}`}
             />
@@ -379,60 +484,43 @@ function PackDeck({
         </span>
       </div>
 
-      {/* Marge basse : la pile déborde sous la carte en cours. */}
-      <div className={`relative isolate ${pile ? "mb-3" : ""}`} style={{ width: DECK_CARD_WIDTH }}>
+      {/*
+       * Scène de taille fixe (format vignette) : les cartes y sont posées en absolu, l'entrante et la
+       * sortante se croisent sans rien mesurer. Marge basse : la pile déborde sous la carte en cours.
+       */}
+      <div className={`relative isolate aspect-[5/7] ${pile ? "mb-3" : ""}`} style={{ width: DECK_CARD_WIDTH }}>
         {/* Le reste du paquet, face cachée, sous la carte en cours. */}
         {Array.from({ length: pile }, (_, i) => pile - i).map((depth) => (
           <div
             key={depth}
             aria-hidden
-            className="absolute inset-x-0 top-0 aspect-[5/7]"
+            className="absolute inset-0"
             style={{ transform: `translate(${depth * 5}px, ${depth * 5}px) rotate(${depth * 2.2}deg)` }}
           >
             <CardBack />
           </div>
         ))}
-        <AnimatePresence initial={false} custom={dir} mode="popLayout">
-          <motion.div
+        <AnimatePresence initial={false} custom={dir}>
+          <DeckCard
             key={cursor}
-            custom={dir}
-            variants={deckMotion}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.34, ease: EASE_OUT }}
-            drag="x"
-            dragSnapToOrigin
-            dragElastic={0.55}
-            onPointerDown={() => (dragged.current = false)}
-            onDragStart={() => (dragged.current = true)}
-            onDragEnd={(_, info) => {
-              if (info.offset.x < -64 || info.velocity.x < -450) advance();
-              else if ((info.offset.x > 64 || info.velocity.x > 450) && cursor > 0) go(cursor - 1);
-            }}
-            // Un glissement ne doit pas ouvrir la fiche de la carte (lien sur toute la vignette).
-            onClickCapture={(e) => {
-              if (!dragged.current) return;
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            className={`relative z-10 touch-pan-y transition-[filter,opacity] duration-300 ${gone ? "opacity-40 grayscale" : ""}`}
-          >
-            <FlipCard
-              card={card}
-              index={cursor}
-              speed={speed}
-              stagger={false}
-              revealed={shown}
-              onReveal={() => onReveal(cursor)}
-            />
-          </motion.div>
+            card={card}
+            dir={dir}
+            index={cursor}
+            speed={speed}
+            shown={shown}
+            gone={gone}
+            onReveal={() => onReveal(cursor)}
+            onSwipe={(d) => (d === "next" ? advance() : cursor > 0 && go(cursor - 1))}
+          />
         </AnimatePresence>
+        {cards.slice(cursor + 1, cursor + 3).map((c) => (
+          <PreloadThumb key={c.instanceId ?? c.cardId} card={c} />
+        ))}
       </div>
 
       <div
         inert={!shown}
-        className={`flex min-h-11 items-center justify-center transition-opacity duration-200 ${shown ? "opacity-100" : "opacity-0"}`}
+        className={`flex min-h-11 items-center justify-center transition-opacity duration-200 will-change-[opacity] ${shown ? "opacity-100" : "opacity-0"}`}
       >
         <RecycleAction card={card} recycled={gone} onRecycle={onRecycle} className="min-w-28" />
       </div>
@@ -531,7 +619,11 @@ function DeckRecap({
   );
 }
 
-export function PackOpener({ packs, season }: { packs: PackState; season: number }) {
+/**
+ * Mémoïsé : la page Paquets se redessine chaque seconde (compte à rebours du prochain paquet) ; sans
+ * `memo`, tout l'ouvreur et ses vignettes suivaient, en pleine animation.
+ */
+export const PackOpener = memo(function PackOpener({ packs, season }: { packs: PackState; season: number }) {
   const { me, mutateMe } = useMe();
   const speed: Speed = me?.animationSpeed ?? "normal";
   const phone = useMediaQuery(PHONE_QUERY);
@@ -697,4 +789,4 @@ export function PackOpener({ packs, season }: { packs: PackState; season: number
       )}
     </section>
   );
-}
+});
