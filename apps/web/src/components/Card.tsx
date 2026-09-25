@@ -44,13 +44,19 @@ interface CardProps {
   /** Carte sélectionnée (échanges, deck, recyclage en lot). */
   selected?: boolean;
   priority?: boolean;
+  /**
+   * Préchargement de la fiche par le lien (par défaut : à l'entrée dans l'écran). `false` quand les cartes
+   * défilent vite, comme à l'ouverture d'un paquet : sinon chaque carte lance une requête et du travail
+   * de routeur pendant l'animation.
+   */
+  prefetch?: boolean;
 }
 
 /**
  * Une carte = une vignette d'album : image de l'article, bande de titre à la couleur de la rareté,
  * relevé ATK / DEF, pied d'étiquette (rareté, édition, niveau) et lien vers l'article (CC BY-SA).
  */
-export function Card({ card, href, className = "", selected = false, priority = false }: CardProps) {
+export function Card({ card, href, className = "", selected = false, priority = false, prefetch }: CardProps) {
   const live = useCardMedia(card.cardId);
   const thumb = live?.thumbUrl ?? card.thumbUrl;
   const pageUrl = live?.pageUrl ?? card.pageUrl;
@@ -126,7 +132,11 @@ export function Card({ card, href, className = "", selected = false, priority = 
         <header className="pc-band relative z-[1] rounded-b-[6px] px-[3.5cqi] pb-[1.8cqi] pt-[2.2cqi]">
           <h3 className="line-clamp-2 min-h-[2em] font-display text-[1.3em] uppercase leading-[1] text-balance">
             {target ? (
-              <Link href={target} className="after:absolute after:inset-0 after:z-[1] after:content-['']">
+              <Link
+                href={target}
+                prefetch={prefetch === false ? false : undefined}
+                className="after:absolute after:inset-0 after:z-[1] after:content-['']"
+              >
                 {card.title}
               </Link>
             ) : (
