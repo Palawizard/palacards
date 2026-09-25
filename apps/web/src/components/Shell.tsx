@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Menu, Moon, Package, Search, Sun, X } from "lucide-react";
+import { Bell, Menu, Moon, Package, Search, Sun, Volume2, VolumeX, X } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { NAV } from "@/lib/nav";
 import { authClient } from "@/lib/auth-client";
+import { setSfxEnabled, useSfxEnabled } from "@/lib/sfx";
 import { setTheme, useResolvedTheme } from "@/lib/theme";
 
 /** Logo : capitales condensées sur une pastille couverture, comme le titre d'un album. */
@@ -139,6 +140,27 @@ function ThemeToggle() {
         <Sun className="size-[1.1rem]" strokeWidth={1.75} />
       ) : (
         <Moon className="size-[1.1rem]" strokeWidth={1.75} />
+      )}
+    </button>
+  );
+}
+
+/** Son du jeu : coupé ou non, retenu sur l'appareil (visible aussi sur téléphone). */
+function SoundToggle() {
+  const on = useSfxEnabled();
+  return (
+    <button
+      type="button"
+      className="flex size-9 items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-panel hover:text-text"
+      onClick={() => setSfxEnabled(!on)}
+      aria-pressed={on}
+      aria-label="Sons du jeu"
+      title={on ? "Couper les sons" : "Activer les sons"}
+    >
+      {on ? (
+        <Volume2 className="size-[1.1rem]" strokeWidth={1.75} />
+      ) : (
+        <VolumeX className="size-[1.1rem]" strokeWidth={1.75} />
       )}
     </button>
   );
@@ -278,6 +300,7 @@ export function Shell({ children }: { children: ReactNode }) {
               {me ? fmt(me.wallet.available) : "…"}
               <span className="text-xs font-normal text-faint">PW</span>
             </Link>
+            <SoundToggle />
             <ThemeToggle />
             <Link
               href="/notifications"
