@@ -84,6 +84,21 @@ export default function PullsPage() {
               <dt className="text-xs font-semibold text-faint">Prochain</dt>
               <dd className="font-display text-2xl leading-none">{full ? "Plein" : countdown(remaining)}</dd>
             </div>
+            <div title="Paquets ouverts depuis la dernière UR ou légendaire">
+              <dt className="text-xs font-semibold text-faint">Pity</dt>
+              <dd className="flex items-center gap-2">
+                <span className="font-display text-2xl leading-none">
+                  {me.packs.pity}
+                  <span className="text-faint">/{me.packs.pityThreshold}</span>
+                </span>
+                <span className="h-2 w-16 overflow-hidden rounded-full bg-panel-2" aria-hidden>
+                  <span
+                    className="block h-full rounded-full bg-rarity-ur transition-[width] duration-500"
+                    style={{ width: `${Math.min(100, (me.packs.pity / me.packs.pityThreshold) * 100)}%` }}
+                  />
+                </span>
+              </dd>
+            </div>
             {me.packs.bonus > 0 && (
               <div>
                 <dt className="text-xs font-semibold text-faint">Bonus</dt>
@@ -171,21 +186,9 @@ export default function PullsPage() {
             </table>
             {me && (
               <div className="border-t border-line p-3 text-sm">
-                <div className="mb-1.5 flex justify-between">
-                  <span className="text-muted">Pity</span>
-                  <span className="tnum">
-                    {me.packs.pity}/{me.packs.pityThreshold}
-                  </span>
-                </div>
-                <div className="h-2 overflow-hidden rounded-full bg-panel-2" aria-hidden>
-                  <div
-                    className="h-full rounded-full bg-[var(--color-rarity-ur)] transition-[width] duration-500"
-                    style={{ width: `${Math.min(100, (me.packs.pity / me.packs.pityThreshold) * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs leading-relaxed text-faint">
-                  Après {me.packs.pityThreshold} paquets sans UR ni légendaire, la 5e carte du suivant est forcément UR
-                  ou mieux. Un paquet bonus coûte {ECONOMY.bonusPackPrice} PW.
+                <p className="text-xs leading-relaxed text-faint">
+                  Pity : après {me.packs.pityThreshold} paquets sans UR ni légendaire, la 5e carte du suivant est
+                  forcément UR ou mieux. Un paquet bonus coûte {ECONOMY.bonusPackPrice} PW.
                 </p>
               </div>
             )}
