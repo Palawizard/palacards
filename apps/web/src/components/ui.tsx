@@ -1,24 +1,30 @@
 // Composants d'interface partagés, importés uniquement par des composants client.
 import { RARITIES, RARITY_LABELS, type Rarity } from "@palacards/game";
 import { useEffect, useRef, type ReactNode } from "react";
-import { RaritySigil } from "./Card";
 
-/** Filtre de raretés (bascules). */
+/** Filtre de raretés : les sigles eux-mêmes servent de bascules. Sans sélection, tout est affiché. */
 export function RarityFilter({ value, onChange }: { value: Rarity[]; onChange: (v: Rarity[]) => void }) {
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer par rareté">
+    <div
+      className="flex flex-wrap gap-1.5"
+      role="group"
+      aria-label="Filtrer par rareté"
+      data-active={value.length > 0 || undefined}
+    >
       {[...RARITIES].reverse().map((r) => {
         const on = value.includes(r);
         return (
           <button
             key={r}
             type="button"
-            className="chip px-1.5"
+            className="rarity-toggle"
+            data-rarity={r}
             aria-pressed={on}
+            aria-label={RARITY_LABELS[r]}
             title={RARITY_LABELS[r]}
             onClick={() => onChange(on ? value.filter((x) => x !== r) : [...value, r])}
           >
-            <RaritySigil rarity={r} />
+            {r}
           </button>
         );
       })}
