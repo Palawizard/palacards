@@ -303,13 +303,6 @@ export default function CollectionPage() {
           <div className="px-3 py-2">
             {summary.data ? <Completion summary={summary.data} /> : <div className="h-48 animate-pulse" />}
           </div>
-          <p className="border-t border-line px-3 py-2 text-xs leading-relaxed text-faint">
-            Un article compte une fois, quel que soit le nombre d’exemplaires. Recycler rapporte{" "}
-            {Object.entries(ECONOMY.recycleValue)
-              .map(([r, v]) => `${v} PW (${r})`)
-              .join(", ")}
-            .
-          </p>
         </aside>
       </div>
 
