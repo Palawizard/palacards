@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo } from "next/font/google";
 import type { ReactNode } from "react";
-import { Toaster } from "sonner";
 import "./globals.css";
+import { Toaster } from "@/components/Toaster";
 import { THEME_SCRIPT } from "@/lib/theme";
 
 // Une seule famille variable : largeur normale pour le texte, extra-condensée pour les titres.
@@ -35,19 +35,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body className="min-h-dvh antialiased">
         {children}
-        <Toaster
-          theme="system"
-          position="bottom-center"
-          toastOptions={{
-            style: {
-              background: "var(--color-panel-2)",
-              border: "1px solid var(--color-line-strong)",
-              borderRadius: "12px",
-              color: "var(--color-text)",
-              fontFamily: "var(--font-sans)",
-            },
-          }}
-        />
+        <Toaster />
       </body>
     </html>
   );

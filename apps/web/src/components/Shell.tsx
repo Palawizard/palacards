@@ -10,7 +10,7 @@ import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { NAV } from "@/lib/nav";
 import { authClient } from "@/lib/auth-client";
-import { setTheme, useTheme } from "@/lib/theme";
+import { setTheme, useResolvedTheme } from "@/lib/theme";
 
 /** Logo : capitales condensées sur une pastille couverture, comme le titre d'un album. */
 export function Wordmark({ className = "" }: { className?: string }) {
@@ -126,16 +126,7 @@ function SearchBox() {
 
 /** Bascule clair / sombre rapide ; le réglage « comme le système » est dans les paramètres. */
 function ThemeToggle() {
-  const pref = useTheme();
-  const [systemDark, setSystemDark] = useState(true);
-  useEffect(() => {
-    const mq = matchMedia("(prefers-color-scheme: dark)");
-    const sync = () => setSystemDark(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
-  const dark = pref === "system" ? systemDark : pref === "dark";
+  const dark = useResolvedTheme() === "dark";
   return (
     <button
       type="button"
