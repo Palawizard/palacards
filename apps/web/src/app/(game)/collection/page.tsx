@@ -79,9 +79,14 @@ export default function CollectionPage() {
   const [selected, setSelected] = useState<Map<number, Rarity>>(new Map());
   const [confirm, setConfirm] = useState<null | { ids: number[]; gain: number; label: string }>(null);
 
+  const [selectingAll, setSelectingAll] = useState(false);
+  /** Filtre pour lequel « Tout sélectionner » a été utilisé (le bouton devient « Tout désélectionner »). */
+  const [allFor, setAllFor] = useState<string | null>(null);
+
   const summary = useSWR<Summary>("/collection/summary");
-  const params = useMemo(() => {
-    const p = new URLSearchParams({ sort, limit: "60" });
+  /** Filtres en cours, partagés par la liste et « Tout sélectionner ». */
+  const filters = useMemo(() => {
+    const p = new URLSearchParams();
     if (rarity.length) p.set("rarity", rarity.join(","));
     if (query.trim()) p.set("q", query.trim());
     if (favorites) p.set("favorites", "true");
@@ -89,7 +94,8 @@ export default function CollectionPage() {
     if (tag) p.set("tag", tag);
     if (season) p.set("season", season);
     return p.toString();
-  }, [rarity, sort, query, favorites, duplicates, tag, season]);
+  }, [rarity, query, favorites, duplicates, tag, season]);
+  const params = `${filters}${filters ? "&" : ""}sort=${sort}&limit=60`;
 
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
     prev && !prev.nextCursor ? null : `/collection?${params}&page=${i}`,
@@ -118,6 +124,7 @@ export default function CollectionPage() {
         `${ids.length} carte${ids.length > 1 ? "s" : ""} recyclée${ids.length > 1 ? "s" : ""} : +${fmt(gain)} PW`,
       );
       setSelected(new Map());
+      setAllFor(null);
       setSelecting(false);
       refresh();
     } catch (err) {
@@ -136,6 +143,29 @@ export default function CollectionPage() {
       });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Impossible de lister les doublons.");
+    }
+  }
+
+  /** Sélectionne toutes les cartes recyclables du filtre en cours, y compris celles pas encore affichées. */
+  async function selectAll() {
+    setSelectingAll(true);
+    try {
+      const res = await api<{ items: { id: number; rarity: Rarity }[]; protected: number; truncated: boolean }>(
+        `/collection/selectable${filters ? `?${filters}` : ""}`,
+      );
+      setSelected(new Map(res.items.map((i) => [i.id, i.rarity])));
+      setAllFor(res.items.length ? filters : null);
+      if (res.items.length === 0) toast("Aucune carte recyclable dans ce filtre.");
+      if (res.protected > 0) {
+        toast(
+          `${fmt(res.protected)} carte${res.protected > 1 ? "s" : ""} laissée${res.protected > 1 ? "s" : ""} de côté : favorite, épinglée ou engagée dans une vente ou un échange.`,
+        );
+      }
+      if (res.truncated) toast("Sélection limitée aux 5 000 premières cartes.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Impossible de tout sélectionner.");
+    } finally {
+      setSelectingAll(false);
     }
   }
 
@@ -205,17 +235,36 @@ export default function CollectionPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="tnum text-muted">{list.data ? `${fmt(total)} carte${total > 1 ? "s" : ""}` : " "}</span>
+            <span className="tnum text-muted">{list.data ? `${fmt(total)} carte${total > 1 ? "s" : ""}` : " "}</span>
             <div className="flex flex-wrap gap-2">
               {selecting ? (
                 <>
                   <button
                     type="button"
                     className="btn btn-sm btn-ghost"
-                    onClick={() => (setSelecting(false), setSelected(new Map()))}
+                    onClick={() => (setSelecting(false), setSelected(new Map()), setAllFor(null))}
                   >
                     Annuler
                   </button>
+                  {allFor === filters && selected.size > 0 ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => (setSelected(new Map()), setAllFor(null))}
+                    >
+                      Tout désélectionner
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={selectAll}
+                      disabled={selectingAll || total === 0}
+                      aria-busy={selectingAll}
+                    >
+                      Tout sélectionner
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-sm btn-primary"
