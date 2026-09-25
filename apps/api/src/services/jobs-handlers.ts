@@ -1,0 +1,43 @@
+import type { Ctx } from "../context.js";
+import { sweepBattles } from "./battles.js";
+import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
+import { GUILD_WEEKLY_JOB, weeklyJob } from "./guilds.js";
+import { CARDS_PURGE_JOB, purgeOldCards, rolloverSeason, SEASON_ROLLOVER_JOB } from "./seasons.js";
+import { AUCTION_CLOSE_JOB, closeAuctionIfDue, sweepAuctions } from "./market.js";
+import { closeTrade, sweepTrades, TRADE_EXPIRE_JOB } from "./trades.js";
+
+/** Déclare les files pg-boss et leurs handlers (tous idempotents). */
+export function registerJobs(ctx: Ctx) {
+  ctx.jobs.define(AUCTION_CLOSE_JOB, async (data) => {
+    await closeAuctionIfDue(ctx, Number(data.auctionId));
+  });
+  ctx.jobs.define(TRADE_EXPIRE_JOB, async (data) => {
+    await closeTrade(ctx, Number(data.tradeId), { kind: "expire" });
+  });
+  ctx.jobs.define(PACKS_FULL_JOB, async (data) => {
+    await notifyPacksFull(ctx, String(data.userId), String(data.fullAt));
+  });
+  // Objectifs de guilde : nouvelle semaine le lundi à 0 h (heure de Paris).
+  ctx.jobs.schedule(GUILD_WEEKLY_JOB, "0 0 * * 1", async () => {
+    await weeklyJob(ctx);
+  });
+  // Saisons mensuelles : bascule le 1er du mois à 0 h (heure de Paris), puis purge des vieilles cartes (job à part).
+  ctx.jobs.schedule(SEASON_ROLLOVER_JOB, "0 0 1 * *", async () => {
+    if (await rolloverSeason(ctx, { onlyIfDue: true })) await ctx.jobs.sendAt(CARDS_PURGE_JOB, {}, ctx.now());
+  });
+  ctx.jobs.define(
+    CARDS_PURGE_JOB,
+    async () => {
+      const { deleted } = await purgeOldCards(ctx);
+      ctx.log.info({ deleted }, "purge des vieilles cartes");
+    },
+    // Idempotente : relancée à la bascule suivante si elle échoue ; pas de reprise pendant qu'elle tourne encore.
+    { expireInSeconds: 3 * 3600, retryLimit: 0 },
+  );
+  // Filet de sécurité : rattrape toute échéance manquée (redémarrage, job perdu).
+  ctx.jobs.schedule("market-sweep", "* * * * *", async () => {
+    await sweepAuctions(ctx);
+    await sweepTrades(ctx);
+    await sweepBattles(ctx);
+  });
+}

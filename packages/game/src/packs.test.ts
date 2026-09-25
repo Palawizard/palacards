@@ -9,6 +9,7 @@ import {
   PACK_REGEN_MS,
   PITY_THRESHOLD,
   availablePacks,
+  consumeFreePack,
   msUntilNextPack,
   rollPack,
 } from "./packs.js";
@@ -83,5 +84,28 @@ describe("rarityFromViewRank", () => {
     [1_000_001, "C"],
   ] as const)("rang %i → %s", (rank, expected) => {
     expect(rarityFromViewRank(rank)).toBe(expected);
+  });
+});
+
+describe("consumeFreePack", () => {
+  const t0 = new Date("2026-01-01T00:00:00Z");
+  const after = (ms: number) => new Date(t0.getTime() + ms);
+
+  it("garde la progression du minuteur", () => {
+    const now = after(PACK_REGEN_MS * 2 + 5 * 60_000); // 25 min : 3 + 2 = 5 dispo
+    const res = consumeFreePack(3, t0, now);
+    expect(res?.stored).toBe(4);
+    expect(msUntilNextPack(res!.stored, res!.updatedAt, now)).toBe(5 * 60_000);
+  });
+
+  it("relance le minuteur quand le stock était plein", () => {
+    const now = after(PACK_REGEN_MS * 50);
+    const res = consumeFreePack(10, t0, now);
+    expect(res).toEqual({ stored: MAX_STORED_PACKS - 1, updatedAt: now });
+    expect(msUntilNextPack(res!.stored, res!.updatedAt, now)).toBe(PACK_REGEN_MS);
+  });
+
+  it("renvoie null sans paquet", () => {
+    expect(consumeFreePack(0, t0, after(60_000))).toBeNull();
   });
 });

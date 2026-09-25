@@ -16,8 +16,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "echo \"(pas de tests db pour l'instant)\"",
     "generate": "drizzle-kit generate",
-    "migrate": "drizzle-kit migrate",
-    "studio": "drizzle-kit studio"
+    "migrate": "tsc -p tsconfig.json && node --env-file-if-exists=../../.env dist/migrate.js",
+    "studio": "drizzle-kit studio",
+    "lint": "eslint .",
+    "seed": "tsc -p tsconfig.json && node --env-file-if-exists=../../.env dist/seed.js"
   },
   "dependencies": {
     "drizzle-orm": "0.45.3",

@@ -1,0 +1,1 @@
+ALTER TABLE "guild_objectives" ADD COLUMN "progress" integer DEFAULT 0 NOT NULL;

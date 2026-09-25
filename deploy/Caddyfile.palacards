@@ -1,0 +1,63 @@
+# PalaCards dans la stack Caddy de vm-apps (/opt/dockpanel/stacks/caddy).
+#
+# Chaîne : navigateur --HTTPS--> Cloudflare --Cloudflare Tunnel (cloudflared)--> Caddy en HTTP --> conteneurs.
+# TLS est terminé par Cloudflare : le site est déclaré en `http://` pour que Caddy ne tente ni
+# certificat ni redirection vers HTTPS (le tunnel doit viser http://caddy:80).
+#
+# Réseau Docker : Caddy joint les conteneurs par leur NOM (palacards-api, palacards-web). Il doit donc
+# être branché sur le même réseau Docker externe que ces conteneurs, celui déclaré dans
+# docker-compose.yml (`networks.caddy.name` = CADDY_NETWORK du .env, « caddy » par défaut).
+# Sur vm-apps, le réseau de la stack Caddy s'appelle `web` : CADDY_NETWORK=web dans le .env de PalaCards.
+# Vérification : docker network inspect web --format '{{range .Containers}}{{.Name}} {{end}}'
+#   -> doit lister le conteneur Caddy, palacards-api et palacards-web.
+#
+# Installation, selon ce qui est monté dans le conteneur Caddy :
+# - le dossier de config : copier ce fichier à côté du Caddyfile (par ex. /etc/caddy/palacards.caddy)
+#   et ajouter en tête du Caddyfile : import /etc/caddy/palacards.caddy   (définit le snippet)
+# - le Caddyfile seul (cas de vm-apps) : un fichier posé à côté n'est pas visible du conteneur.
+#   Coller le snippet (palacards) ci-dessous en tête du Caddyfile, et éditer ce Caddyfile EN PLACE
+#   (réécriture du même fichier, par ex. `cat nouveau > Caddyfile`) : `sed -i`, `mv` ou un éditeur qui
+#   écrit un nouveau fichier changent l'inode, et le conteneur continue de voir l'ancienne version.
+#
+# Puis, dans le site public (palawi.fr ; www.palawi.fr redirige vers l'apex) :
+#
+#   http://palawi.fr {
+#   	import palacards                     # avant les autres applications du site
+#   	# … autres applications de palawi.fr, inchangées …
+#   }
+#
+# Vérifier puis recharger :
+#   docker exec <conteneur caddy> caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+#   docker exec <conteneur caddy> caddy reload --config /etc/caddy/Caddyfile
+# Les en-têtes de sécurité ci-dessous ne s'appliquent qu'à /palacards et /palacards/* : les autres
+# applications du site ne sont pas touchées.
+
+(palacards) {
+	@palacards path /palacards /palacards/*
+
+	# En-têtes posés à l'écriture de la réponse (defer) : ils remplacent ceux éventuels du front ou de l'API.
+	header @palacards {
+		defer
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		# Next.js (App Router) injecte des scripts et styles en ligne : 'unsafe-inline' requis sans nonce.
+		# Images des cartes : upload.wikimedia.org et thumb.wikimedia.org (miniatures Wikipédia, les deux
+		# sont servies en prod). Temps réel : Socket.IO en wss sur l'origine publique (à adapter si le domaine change).
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org; font-src 'self' data:; connect-src 'self' wss://palawi.fr; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; worker-src 'self' blob:; manifest-src 'self'"
+		-X-Powered-By
+	}
+
+	# L'API et le temps réel d'abord (plus spécifiques), puis le front.
+	# reverse_proxy transmet l'Upgrade WebSocket de Socket.IO sans configuration supplémentaire.
+	handle /palacards/api/* {
+		reverse_proxy palacards-api:4000
+	}
+	handle /palacards/socket.io/* {
+		reverse_proxy palacards-api:4000
+	}
+	handle @palacards {
+		reverse_proxy palacards-web:3000
+	}
+}

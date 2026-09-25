@@ -5,6 +5,7 @@ export const ECONOMY = {
   recycleValue: { C: 1, PC: 3, R: 10, SR: 40, UR: 150, L: 1_000 } satisfies Record<Rarity, number>,
   dailyLogin: { base: 20, perStreakDay: 5, max: 50 },
   battle: { win: 30, loss: 10 },
+  startingBalance: 100,
   bonusPackPrice: 150,
   marketTaxRate: 0.05,
   auctionListingFee: 2,

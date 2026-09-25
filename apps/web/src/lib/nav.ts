@@ -1,23 +1,69 @@
+import {
+  Award,
+  Gavel,
+  Layers,
+  LibraryBig,
+  MessageSquare,
+  Package,
+  Repeat,
+  Settings,
+  Shield,
+  Swords,
+  Trophy,
+  UserRound,
+  Users,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
+
 export interface NavItem {
-  slug: string;
+  href: string;
   label: string;
-  description: string;
+  icon: LucideIcon;
+  /** Badge de non-lus alimenté par /me. */
+  badge?: "messages";
+  admin?: boolean;
 }
 
-/** Les 13 entrées du menu + Admin (voir docs/ « Toutes les pages »). */
-export const NAV: NavItem[] = [
-  { slug: "pulls", label: "Paquets", description: "Ouvrir des paquets de 5 cartes." },
-  { slug: "collection", label: "Collection", description: "Tes cartes, filtres, fusion et recyclage." },
-  { slug: "trades", label: "Échanges", description: "Troc de cartes et de PW entre joueurs." },
-  { slug: "market", label: "Marché", description: "Enchères en direct avec anti-snipe." },
-  { slug: "profile", label: "Profil", description: "Vitrine, score de collection, Elo." },
-  { slug: "cards", label: "Toutes les cartes", description: "Catalogue des 2,7 M articles." },
-  { slug: "guild", label: "Guilde", description: "Membres, chat, objectifs communs." },
-  { slug: "friends", label: "Amis", description: "Demandes et statut en ligne." },
-  { slug: "messages", label: "Messages", description: "Messages privés en temps réel." },
-  { slug: "battle", label: "Bataille", description: "Duels quiz + stats, direct ou asynchrone." },
-  { slug: "achievements", label: "Succès", description: "Progression et récompenses." },
-  { slug: "leaderboard", label: "Classement", description: "Collection, Elo, richesse, guildes." },
-  { slug: "settings", label: "Paramètres", description: "Compte, notifications, animations." },
-  { slug: "admin", label: "Admin", description: "Paquets, PW, saisons, logs." },
+export interface NavGroup {
+  title: string;
+  items: NavItem[];
+}
+
+/** Menu « portail », groupé comme la colonne latérale de Wikipédia (voir docs « Toutes les pages »). */
+export const NAV: NavGroup[] = [
+  {
+    title: "Jouer",
+    items: [
+      { href: "/pulls", label: "Paquets", icon: Package },
+      { href: "/collection", label: "Collection", icon: Layers },
+      { href: "/cards", label: "Toutes les cartes", icon: LibraryBig },
+      { href: "/battle", label: "Bataille", icon: Swords },
+    ],
+  },
+  {
+    title: "Commerce",
+    items: [
+      { href: "/market", label: "Marché", icon: Gavel },
+      { href: "/trades", label: "Échanges", icon: Repeat },
+    ],
+  },
+  {
+    title: "Communauté",
+    items: [
+      { href: "/friends", label: "Amis", icon: Users },
+      { href: "/messages", label: "Messages", icon: MessageSquare, badge: "messages" },
+      { href: "/guild", label: "Guilde", icon: Shield },
+      { href: "/leaderboard", label: "Classement", icon: Trophy },
+    ],
+  },
+  {
+    title: "Moi",
+    items: [
+      { href: "/profile", label: "Profil", icon: UserRound },
+      { href: "/achievements", label: "Succès", icon: Award },
+      { href: "/settings", label: "Paramètres", icon: Settings },
+      { href: "/admin", label: "Admin", icon: Wrench, admin: true },
+    ],
+  },
 ];
