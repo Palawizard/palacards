@@ -11,5 +11,5 @@ export default function MyProfile() {
   useEffect(() => {
     if (me) router.replace(`/u/${me.username}`);
   }, [me, router]);
-  return <div className="h-40 animate-pulse rounded-md bg-panel" aria-busy />;
+  return <div className="h-40 animate-pulse rounded-xl bg-panel" aria-busy />;
 }

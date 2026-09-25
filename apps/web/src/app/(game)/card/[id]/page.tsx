@@ -222,7 +222,7 @@ function WishButton({ cardId, wishlisted, onChanged }: { cardId: number; wishlis
   return (
     <button
       type="button"
-      className={`btn w-full ${wishlisted ? "border-accent text-accent" : ""}`}
+      className={`btn w-full ${wishlisted ? "border-good text-good" : ""}`}
       aria-pressed={wishlisted}
       disabled={busy}
       onClick={async () => {
@@ -303,32 +303,34 @@ export default function CardPage({ params }: { params: Promise<{ id: string }> }
           <div className="mx-auto w-full max-w-[18rem]">
             <Card card={card} href={null} priority />
           </div>
-          <table className="infobox tnum w-full text-sm">
-            <tbody>
-              {[
-                ["Rareté", <RaritySigil key="r" rarity={card.rarity} withLabel />],
-                ["Vues (12 mois)", fmt(card.views12m ?? 0)],
-                ["Longueur", `${fmt(data.pageLen)} octets`],
-                ["Attaque", fmt(card.atk)],
-                ["Défense", fmt(card.def)],
-                ["Édition", `Saison ${card.season}`],
-              ].map(([k, v]) => (
-                <tr key={String(k)} className="border-b border-line last:border-0">
-                  <th scope="row" className="px-3 py-1.5 text-left font-semibold text-muted">
-                    {k}
-                  </th>
-                  <td className="px-3 py-1.5 text-right">{v}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="infobox overflow-hidden">
+            <table className="tnum w-full text-sm">
+              <tbody>
+                {[
+                  ["Rareté", <RaritySigil key="r" rarity={card.rarity} withLabel />],
+                  ["Vues (12 mois)", fmt(card.views12m ?? 0)],
+                  ["Longueur", `${fmt(data.pageLen)} octets`],
+                  ["Attaque", fmt(card.atk)],
+                  ["Défense", fmt(card.def)],
+                  ["Édition", `Saison ${card.season}`],
+                ].map(([k, v]) => (
+                  <tr key={String(k)} className="border-b border-line last:border-0">
+                    <th scope="row" className="px-3 py-1.5 text-left font-semibold text-muted">
+                      {k}
+                    </th>
+                    <td className="px-3 py-1.5 text-right">{v}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <WishButton cardId={card.cardId} wishlisted={data.wishlisted} onChanged={() => mutate()} />
           <PriceHistory cardId={card.cardId} />
         </aside>
 
         <div className="min-w-0">
           {data.extract ? (
-            <p className="max-w-[68ch] font-serif text-[1.12rem] leading-[1.65]">{data.extract}</p>
+            <p className="max-w-[68ch] text-[1.05rem] leading-[1.7]">{data.extract}</p>
           ) : (
             <p className="text-muted">Le résumé de l’article n’est pas encore chargé.</p>
           )}

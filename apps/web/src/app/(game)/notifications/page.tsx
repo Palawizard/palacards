@@ -32,8 +32,8 @@ export default function NotificationsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line-strong pb-1.5">
-        <h1 className="font-serif text-[clamp(1.75rem,1.4rem+1.4vw,2.35rem)] leading-tight">Notifications</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="page-title">Notifications</h1>
         {unread > 0 && (
           <button type="button" className="btn btn-sm" onClick={() => markRead()}>
             Tout marquer comme lu
@@ -44,11 +44,11 @@ export default function NotificationsPage() {
       {list.error ? (
         <ErrorBox error={list.error} retry={() => list.mutate()} />
       ) : !list.data ? (
-        <div className="h-60 animate-pulse rounded-md bg-panel" aria-busy />
+        <div className="h-60 animate-pulse rounded-xl bg-panel" aria-busy />
       ) : items.length === 0 ? (
         <Empty title="Rien de neuf">Les enchères, échanges, défis et succès apparaîtront ici.</Empty>
       ) : (
-        <ul className="divide-y divide-line rounded-md border border-line bg-panel">
+        <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
           {items.map((n) => {
             const { text, href } = describe(n);
             return (

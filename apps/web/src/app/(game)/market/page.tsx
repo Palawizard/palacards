@@ -32,7 +32,7 @@ const SORTS = [
 function Wishlist() {
   const { data, error, mutate } = useSWR<(CardDTO & { onSale: number | null })[]>("/wishlist");
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
-  if (!data) return <div className="h-60 animate-pulse rounded-md bg-panel" />;
+  if (!data) return <div className="h-60 animate-pulse rounded-xl bg-panel" />;
   if (!data.length) {
     return (
       <Empty title="Ta wishlist est vide">
@@ -50,7 +50,7 @@ function Wishlist() {
           <Card card={c} />
           <div className="flex items-center justify-between gap-2 text-xs">
             {c.onSale ? (
-              <span className="font-semibold text-accent">En vente</span>
+              <span className="font-semibold text-good">En vente</span>
             ) : (
               <span className="text-faint">Pas en vente</span>
             )}
@@ -185,7 +185,7 @@ function Market() {
           {error ? (
             <ErrorBox error={error} retry={() => mutate()} />
           ) : !data ? (
-            <div className="h-72 animate-pulse rounded-md bg-panel" aria-busy />
+            <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />
           ) : visible.length === 0 ? (
             <Empty
               title={
@@ -209,7 +209,7 @@ function Market() {
               )}
             </Empty>
           ) : (
-            <ul className="divide-y divide-line rounded-md border border-line bg-panel">
+            <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
               {visible.map((a) => (
                 <AuctionRow
                   key={a.id}
@@ -236,7 +236,7 @@ function Market() {
 
 export default function MarketPage() {
   return (
-    <Suspense fallback={<div className="h-72 animate-pulse rounded-md bg-panel" />}>
+    <Suspense fallback={<div className="h-72 animate-pulse rounded-xl bg-panel" />}>
       <Market />
     </Suspense>
   );

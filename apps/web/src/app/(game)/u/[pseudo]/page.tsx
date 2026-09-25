@@ -127,14 +127,14 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
   const { data: p, error, mutate } = useSWR<ProfileDTO>(`/players/${encodeURIComponent(pseudo)}`);
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
-  if (!p) return <div className="h-72 animate-pulse rounded-md bg-panel" aria-busy />;
+  if (!p) return <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />;
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-end gap-4 border-b border-line-strong pb-3">
+      <header className="flex flex-wrap items-end gap-4 border-b-2 border-dashed border-line pb-4">
         <Avatar name={p.displayName} avatar={p.avatar} online={p.isMe ? undefined : p.online} size="lg" />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-serif text-[clamp(1.75rem,1.4rem+1.4vw,2.35rem)] leading-tight">
+          <h1 className="truncate font-display text-[clamp(2rem,1.5rem+1.9vw,2.9rem)] uppercase leading-none">
             {p.displayName}
           </h1>
           <p className="text-sm text-muted">
@@ -159,7 +159,7 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
       </header>
 
       <dl
-        className="tnum grid grid-cols-2 overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4 [&>div]:bg-panel"
+        className="tnum grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-4 [&>div]:bg-panel"
         style={{ gap: 1 }}
       >
         {[

@@ -1,16 +1,17 @@
 import type { Metadata, Viewport } from "next";
-import { Libertinus_Serif } from "next/font/google";
+import { Archivo } from "next/font/google";
+import Script from "next/script";
 import type { ReactNode } from "react";
-import { Toaster } from "sonner";
 import "./globals.css";
+import { Toaster } from "@/components/Toaster";
+import { THEME_SCRIPT } from "@/lib/theme";
 
-const libertinus = Libertinus_Serif({
+// Une seule famille variable : largeur normale pour le texte, extra-condensée pour les titres.
+const archivo = Archivo({
   subsets: ["latin"],
-  weight: ["400", "600", "700"],
-  variable: "--font-libertinus",
+  axes: ["wdth"],
+  variable: "--font-archivo",
   display: "swap",
-  fallback: ["Georgia", "serif"],
-  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {
@@ -19,27 +20,23 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f1115",
-  colorScheme: "dark",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#eef0f5" },
+    { media: "(prefers-color-scheme: dark)", color: "#0c1027" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fr" className={libertinus.variable}>
+    // Le script de thème pose data-theme avant l'hydratation : React ne doit pas s'en plaindre.
+    <html lang="fr" className={archivo.variable} suppressHydrationWarning>
       <body className="min-h-dvh antialiased">
+        <Script id="theme" strategy="beforeInteractive">
+          {THEME_SCRIPT}
+        </Script>
         {children}
-        <Toaster
-          theme="dark"
-          position="bottom-center"
-          toastOptions={{
-            style: {
-              background: "var(--color-panel-2)",
-              border: "1px solid var(--color-line-strong)",
-              color: "var(--color-text)",
-              fontFamily: "var(--font-sans)",
-            },
-          }}
-        />
+        <Toaster />
       </body>
     </html>
   );

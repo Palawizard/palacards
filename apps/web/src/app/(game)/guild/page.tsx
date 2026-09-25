@@ -72,22 +72,22 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
         {error ? (
           <ErrorBox error={error} retry={() => mutate()} />
         ) : !data ? (
-          <div className="h-40 animate-pulse rounded-md bg-panel" />
+          <div className="h-40 animate-pulse rounded-xl bg-panel" />
         ) : data.length === 0 ? (
           <Empty title="Aucune guilde pour l’instant">Fonde la première !</Empty>
         ) : (
-          <ul className="divide-y divide-line rounded-md border border-line bg-panel">
+          <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
             {data.map((g, i) => (
               <li key={g.id} className="flex items-center gap-3 px-3 py-3">
                 <span className="tnum w-6 text-right text-sm text-faint">{i + 1}</span>
                 <span
-                  className="grid size-10 place-items-center rounded-md border border-line-strong bg-panel-2 text-xl"
+                  className="grid size-10 place-items-center rounded-xl border border-line-strong bg-panel-2 text-xl"
                   aria-hidden
                 >
                   {g.emblem}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-serif text-lg">
+                  <span className="block truncate font-display text-lg">
                     {g.name} <span className="text-sm text-faint">[{g.tag}]</span>
                   </span>
                   <span className="tnum text-xs text-muted">
@@ -148,7 +148,7 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
                   type="button"
                   aria-pressed={emblem === em}
                   onClick={() => setEmblem(em)}
-                  className="grid size-9 place-items-center rounded-md border border-line-strong text-lg aria-pressed:border-accent aria-pressed:bg-accent/15"
+                  className="grid size-9 place-items-center rounded-lg border border-line-strong text-lg transition-colors duration-150 hover:border-faint aria-pressed:border-accent aria-pressed:bg-accent/15"
                 >
                   {em}
                 </button>
@@ -192,7 +192,7 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
           {guild.emblem}
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-serif text-3xl leading-tight">
+          <h2 className="font-display text-3xl leading-tight">
             {guild.name} <span className="text-lg text-faint">[{guild.tag}]</span>
           </h2>
           {guild.description && <p className="text-muted">{guild.description}</p>}
@@ -243,7 +243,7 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
             ({guild.members.length}/{guild.maxMembers})
           </span>
         </h3>
-        <ul className="divide-y divide-line rounded-md border border-line bg-panel">
+        <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
           {guild.members.map((m) => (
             <li key={m.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5">
               <Avatar name={m.displayName} avatar={m.avatar} online={m.online} />
@@ -368,7 +368,7 @@ export default function GuildPage() {
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />
       ) : data === undefined ? (
-        <div className="h-60 animate-pulse rounded-md bg-panel" aria-busy />
+        <div className="h-60 animate-pulse rounded-xl bg-panel" aria-busy />
       ) : data ? (
         <MyGuild guild={data} onChanged={() => mutate()} />
       ) : (

@@ -29,7 +29,7 @@ function LevelPips({ level }: { level: number }) {
       {Array.from({ length: 5 }, (_, i) => (
         <span
           key={i}
-          className={`h-[0.45em] w-[0.45em] rotate-45 ${i < level ? "bg-[var(--r)]" : "border border-line-strong"}`}
+          className={`h-[0.5em] w-[0.5em] rotate-45 rounded-[1px] ${i < level ? "bg-[var(--r)]" : "border border-sticker-muted/50"}`}
         />
       ))}
     </span>
@@ -47,8 +47,8 @@ interface CardProps {
 }
 
 /**
- * Une carte = une mini-infobox Wikipédia : titre serif, image de l'article, table ATK / DEF,
- * pied d'étiquette (rareté, édition, niveau, marques) et lien vers l'article (CC BY-SA).
+ * Une carte = une vignette d'album : image de l'article, bande de titre à la couleur de la rareté,
+ * relevé ATK / DEF, pied d'étiquette (rareté, édition, niveau) et lien vers l'article (CC BY-SA).
  */
 export function Card({ card, href, className = "", selected = false, priority = false }: CardProps) {
   const live = useCardMedia(card.cardId);
@@ -58,14 +58,73 @@ export function Card({ card, href, className = "", selected = false, priority = 
 
   return (
     <article
-      className={`pc-card group ${selected ? "outline-2 outline-offset-2 outline-accent" : ""} ${className}`}
+      className={`pc-card group ${selected ? "outline-3 outline-offset-2 outline-accent" : ""} ${className}`}
       data-rarity={card.rarity}
       aria-label={`${card.title}, ${RARITY_LABELS[card.rarity]}, attaque ${card.atk}, défense ${card.def}`}
     >
       {/* Les unités cqi se rapportent à la carte (conteneur) : tout le contenu suit sa largeur. */}
-      <div className="flex h-full flex-col text-[length:max(10px,6cqi)]">
-        <header className="relative z-[1] px-[5cqi] pb-[2.5cqi] pt-[4cqi]">
-          <h3 className="line-clamp-2 min-h-[2.3em] font-serif text-[1.35em] leading-[1.12] text-balance">
+      <div className="pc-frame flex h-full flex-col p-[4cqi] text-[length:max(10px,6cqi)]">
+        <figure className="pc-art relative flex-1 overflow-hidden rounded-t-[6px] bg-sticker-line">
+          {thumb ? (
+            // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia servies telles quelles (pas d'optimiseur côté serveur)
+            <img
+              src={thumb}
+              alt=""
+              loading={priority ? "eager" : "lazy"}
+              decoding="async"
+              className="absolute inset-0 size-full object-cover"
+            />
+          ) : (
+            <div
+              aria-hidden
+              className="absolute inset-0 grid place-items-center font-display text-[5em] uppercase leading-none text-[color-mix(in_oklab,var(--r)_70%,var(--color-sticker-ink))]"
+              style={{
+                background:
+                  "repeating-linear-gradient(-45deg, color-mix(in oklab, var(--r) 10%, transparent) 0 2px, transparent 2px 9px), color-mix(in oklab, var(--r) 16%, var(--color-sticker))",
+              }}
+            >
+              {card.title.slice(0, 1)}
+            </div>
+          )}
+          {/* Pastille de rareté, comme celle de la pochette : le premier repère de la vignette. */}
+          <span className="pc-pastille" aria-hidden>
+            {card.rarity}
+          </span>
+          <div className="absolute bottom-[3cqi] left-[3cqi] flex gap-[1.5cqi]">
+            {card.locked && (
+              <span
+                className="grid size-[1.7em] place-items-center rounded-full bg-black/70 text-white"
+                title={card.locked === "auction" ? "En vente" : "Dans un échange"}
+              >
+                <Lock
+                  className="size-[0.95em]"
+                  aria-label={card.locked === "auction" ? "En vente" : "Dans un échange"}
+                />
+              </span>
+            )}
+            {card.favorite && (
+              <span
+                className="grid size-[1.7em] place-items-center rounded-full bg-black/70 text-accent"
+                title="Favori"
+              >
+                <Star className="size-[0.95em] fill-current" aria-label="Favori" />
+              </span>
+            )}
+          </div>
+          {card.owned && (
+            <span className="absolute right-[3cqi] top-[3cqi] rounded-full bg-accent px-[2.2cqi] py-[0.4cqi] text-[0.78em] font-bold text-accent-ink shadow-sm">
+              Possédée
+            </span>
+          )}
+          {!!card.copies && card.copies > 1 && (
+            <span className="tnum absolute bottom-[3cqi] right-[3cqi] rounded-full bg-black/75 px-[2.2cqi] text-[0.82em] font-bold text-white">
+              ×{card.copies}
+            </span>
+          )}
+        </figure>
+
+        <header className="pc-band relative z-[1] rounded-b-[6px] px-[3.5cqi] pb-[1.8cqi] pt-[2.2cqi]">
+          <h3 className="line-clamp-2 min-h-[2em] font-display text-[1.3em] uppercase leading-[1] text-balance">
             {target ? (
               <Link href={target} className="after:absolute after:inset-0 after:z-[1] after:content-['']">
                 {card.title}
@@ -76,73 +135,19 @@ export function Card({ card, href, className = "", selected = false, priority = 
           </h3>
         </header>
 
-        <figure className="relative mx-[5cqi] flex-1 overflow-hidden rounded-[4px] border border-line bg-panel-2">
-          {thumb ? (
-            // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia servies telles quelles (pas d'optimiseur côté serveur)
-            <img
-              src={thumb}
-              alt=""
-              loading={priority ? "eager" : "lazy"}
-              decoding="async"
-              className="absolute inset-0 size-full object-cover transition-opacity duration-300"
-            />
-          ) : (
-            <div
-              aria-hidden
-              className="absolute inset-0 grid place-items-center font-serif text-[4.2em] leading-none text-[color-mix(in_oklab,var(--r)_55%,var(--color-faint))]"
-              style={{
-                background: "radial-gradient(90% 70% at 50% 35%, color-mix(in oklab, var(--r) 14%, #1d222b), #151920)",
-              }}
-            >
-              {card.title.slice(0, 1)}
-            </div>
-          )}
-          <div className="absolute left-[3cqi] top-[3cqi] flex gap-[1.5cqi]">
-            {card.locked && (
-              <span
-                className="grid size-[1.7em] place-items-center rounded-full bg-black/70 text-warn"
-                title={card.locked === "auction" ? "En vente" : "Dans un échange"}
-              >
-                <Lock
-                  className="size-[0.95em]"
-                  aria-label={card.locked === "auction" ? "En vente" : "Dans un échange"}
-                />
-              </span>
-            )}
-            {card.favorite && (
-              <span className="grid size-[1.7em] place-items-center rounded-full bg-black/70 text-warn" title="Favori">
-                <Star className="size-[0.95em] fill-current" aria-label="Favori" />
-              </span>
-            )}
+        <dl className="tnum mt-[2.5cqi] grid grid-cols-2 text-center">
+          <div className="border-r-2 border-dashed border-sticker-line">
+            <dt className="text-[0.66em] font-bold tracking-[0.08em] text-sticker-muted">ATK</dt>
+            <dd className="font-display text-[1.55em] leading-[1.05]">{fmt(card.atk)}</dd>
           </div>
-          {card.owned && (
-            <span className="absolute right-[3cqi] top-[3cqi] rounded-full bg-accent px-[2.2cqi] py-[0.4cqi] text-[0.78em] font-bold text-accent-ink">
-              Possédée
-            </span>
-          )}
-          {!!card.copies && card.copies > 1 && (
-            <span className="tnum absolute bottom-[3cqi] right-[3cqi] rounded-full bg-black/75 px-[2.2cqi] text-[0.8em] font-semibold">
-              ×{card.copies}
-            </span>
-          )}
-        </figure>
-
-        <dl className="tnum mx-[5cqi] mt-[3cqi] grid grid-cols-2 border-y border-line text-center">
-          <div className="border-r border-line py-[1.6cqi]">
-            <dt className="text-[0.72em] font-semibold text-faint">ATK</dt>
-            <dd className="text-[1.2em] font-bold leading-tight">{fmt(card.atk)}</dd>
-          </div>
-          <div className="py-[1.6cqi]">
-            <dt className="text-[0.72em] font-semibold text-faint">DEF</dt>
-            <dd className="text-[1.2em] font-bold leading-tight">{fmt(card.def)}</dd>
+          <div>
+            <dt className="text-[0.66em] font-bold tracking-[0.08em] text-sticker-muted">DEF</dt>
+            <dd className="font-display text-[1.55em] leading-[1.05]">{fmt(card.def)}</dd>
           </div>
         </dl>
 
-        <footer className="relative z-[2] grid grid-cols-[auto_1fr_auto] items-center gap-[2cqi] px-[5cqi] pb-[3.5cqi] pt-[2.5cqi] text-[0.88em]">
-          <span className="pc-sigil" title={RARITY_LABELS[card.rarity]}>
-            {card.rarity}
-          </span>
-          <span className="flex items-center gap-[2cqi] text-faint">
+        <footer className="relative z-[2] mt-[2cqi] grid grid-cols-[1fr_auto] items-center gap-[2cqi] text-[0.85em]">
+          <span className="flex items-center gap-[2cqi] font-semibold text-sticker-muted">
             <span title={`Édition saison ${card.season}`}>S{card.season}</span>
             <LevelPips level={card.level} />
           </span>
@@ -151,10 +156,10 @@ export function Card({ card, href, className = "", selected = false, priority = 
               href={pageUrl}
               target="_blank"
               rel="noreferrer"
-              className="article-link whitespace-nowrap"
+              className="whitespace-nowrap font-semibold text-sticker-link hover:underline"
               title="Lire l'article sur Wikipédia (texte et image sous licence CC BY-SA)"
             >
-              W <span className="text-faint">· CC BY-SA</span>
+              W <span className="font-normal text-sticker-muted">· CC BY-SA</span>
             </a>
           )}
         </footer>
