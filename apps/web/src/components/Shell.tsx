@@ -142,7 +142,7 @@ function UserMenu() {
     <div ref={ref} className="relative">
       <button
         type="button"
-        className="flex size-9 items-center justify-center rounded-full border border-line-strong bg-panel-2 font-serif text-base"
+        className="flex size-9 items-center justify-center rounded-full border border-line-strong bg-panel-2 font-serif text-base transition-colors duration-150 hover:border-faint"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
