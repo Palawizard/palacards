@@ -2,8 +2,16 @@
 
 import { ECONOMY, RARITY_LABELS, rarityRank } from "@palacards/game";
 import type { CardDTO, PackState } from "@palacards/shared";
-import { Recycle } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { Recycle, Scissors } from "lucide-react";
+import {
+  AnimatePresence,
+  motion,
+  useMotionTemplate,
+  useMotionValue,
+  useReducedMotion,
+  useSpring,
+  useTransform,
+} from "motion/react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -28,51 +36,128 @@ const flipDelay = (card: CardDTO, speed: Speed) => {
   return rarityRank(card.rarity) >= rarityRank("SR") ? base * 2.2 : base;
 };
 
-/** Pochette scellée au format carte. */
-function Sleeve({ tearing, season }: { tearing: boolean; season: number }) {
+const SIGILS = ["C", "PC", "R", "SR", "UR", "L"] as const;
+
+/**
+ * Pochette alu d'album de vignettes : soudures dentelées, languette à déchirer en haut.
+ * Elle s'incline vers la souris (ressort) et son reflet suit ; un clic l'ouvre.
+ */
+function Sleeve({
+  tearing,
+  season,
+  stock,
+  onOpen,
+  disabled,
+}: {
+  tearing: boolean;
+  season: number;
+  stock: number;
+  onOpen: () => void;
+  disabled: boolean;
+}) {
   const reduce = useReducedMotion();
+  const px = useMotionValue(0);
+  const py = useMotionValue(0);
+  const spring = { stiffness: 170, damping: 18, mass: 0.6 };
+  const sx = useSpring(px, spring);
+  const sy = useSpring(py, spring);
+  const tilt = useMotionTemplate`perspective(900px) rotateX(${useTransform(sy, (v) => v * -16)}deg) rotateY(${useTransform(sx, (v) => v * 16)}deg)`;
+  const sheen = useMotionTemplate`translate(${useTransform(sx, (v) => v * 55)}%, ${useTransform(sy, (v) => v * 40)}%)`;
+
+  function track(e: React.PointerEvent<HTMLButtonElement>) {
+    if (reduce || disabled || e.pointerType !== "mouse") return;
+    const r = e.currentTarget.getBoundingClientRect();
+    px.set((e.clientX - r.left) / r.width - 0.5);
+    py.set((e.clientY - r.top) / r.height - 0.5);
+  }
+  function reset() {
+    px.set(0);
+    py.set(0);
+  }
+
   return (
-    <div className="relative mx-auto aspect-[5/7] w-[min(15rem,62vw)] select-none" aria-hidden>
-      {/* Corps de la pochette. */}
-      <motion.div
-        className="absolute inset-0 overflow-hidden rounded-[12px] border border-line-strong"
-        style={{
-          clipPath: "inset(11% 0 0 0 round 0 0 12px 12px)",
-          background:
-            "repeating-linear-gradient(135deg, rgb(255 255 255 / 0.03) 0 1px, transparent 1px 7px), radial-gradient(120% 90% at 30% 20%, #26303d 0%, #151a21 60%, #0f1216 100%)",
-          boxShadow: "0 24px 50px -24px rgb(0 0 0 / 0.9)",
-        }}
-        animate={
-          tearing
-            ? { transform: reduce ? "none" : "translateY(18%)", opacity: 0 }
-            : { transform: "translateY(0%)", opacity: 1 }
-        }
-        transition={{ duration: 0.42, ease: EASE_OUT, delay: tearing ? 0.16 : 0 }}
+    <div className="relative mx-auto w-[min(16rem,64vw)] select-none">
+      {/* Paquets suivants du stock, empilés derrière. */}
+      {Array.from({ length: Math.min(stock - 1, 2) }, (_, i) => (
+        <div
+          key={i}
+          aria-hidden
+          className="pc-pack pc-pack-foil absolute inset-0 opacity-70"
+          style={{ transform: `translate(${(i + 1) * 7}px, ${(i + 1) * 4}px) rotate(${(i + 1) * 3}deg)` }}
+        />
+      ))}
+      <button
+        type="button"
+        onClick={onOpen}
+        disabled={disabled}
+        onPointerMove={track}
+        onPointerLeave={reset}
+        aria-label="Ouvrir un paquet"
+        className="group relative block aspect-[5/7.3] w-full [filter:drop-shadow(0_22px_24px_rgb(4_8_30/0.45))] disabled:cursor-default"
       >
-        <div className="absolute inset-x-5 top-[22%] border-t border-line-strong" />
-        <div className="absolute inset-x-0 top-[34%] flex flex-col items-center gap-2 px-4 text-center">
-          <span className="font-display text-[2.1rem] leading-none tracking-[-0.01em]">
-            Pala<span className="text-accent">Cards</span>
-          </span>
-          <span className="text-xs text-muted">5 articles de Wikipédia</span>
-        </div>
-        <div className="absolute inset-x-5 bottom-[18%] border-t border-line" />
-        <span className="tnum absolute bottom-[8%] left-0 right-0 text-center text-[0.7rem] text-faint">
-          Édition saison {season}
-        </span>
-      </motion.div>
-      {/* Bande à arracher, séparée par des pointillés. */}
-      <motion.div
-        className="absolute inset-0 rounded-[12px] border border-line-strong bg-[#232b36]"
-        style={{ clipPath: "inset(0 0 89% 0 round 12px 12px 0 0)", transformOrigin: "85% 11%" }}
-        animate={
-          tearing
-            ? { transform: reduce ? "none" : "translate(18%, -30%) rotate(14deg)", opacity: 0 }
-            : { transform: "translate(0%, 0%) rotate(0deg)", opacity: 1 }
-        }
-        transition={{ duration: 0.36, ease: EASE_OUT }}
-      />
-      <div className="absolute inset-x-3 top-[11%] border-t border-dashed border-faint/60" />
+        <motion.span className="absolute inset-0 block" style={{ transform: tilt }}>
+          {/* Corps de la pochette. */}
+          <motion.span
+            className="pc-pack pc-pack-foil absolute inset-0 block overflow-hidden"
+            style={{ clipPath: "inset(9% 0 0 0)" }}
+            animate={
+              tearing
+                ? { transform: reduce ? "none" : "translateY(14%) scale(0.96)", opacity: 0 }
+                : { transform: "translateY(0%) scale(1)", opacity: 1 }
+            }
+            transition={{ duration: 0.42, ease: EASE_OUT, delay: tearing ? 0.18 : 0 }}
+          >
+            {/* Reflet qui suit la souris. */}
+            <motion.span
+              aria-hidden
+              className="pointer-events-none absolute -inset-1/2 block bg-[radial-gradient(closest-side,rgb(255_255_255/0.4),transparent)] mix-blend-soft-light"
+              style={{ transform: sheen }}
+            />
+            {/* Pastille de saison, comme une étiquette de prix. */}
+            <span className="absolute right-[7%] top-[14%] grid size-[4.4rem] rotate-[-12deg] place-items-center rounded-full bg-accent text-accent-ink shadow-[0_4px_10px_-4px_rgb(0_0_0/0.5)]">
+              <span className="absolute inset-[5px] rounded-full border-2 border-dashed border-accent-ink/25" />
+              <span className="font-display text-center text-[0.72rem] uppercase leading-none">
+                Saison
+                <span className="tnum block text-[1.9rem] leading-[0.9]">{season}</span>
+              </span>
+            </span>
+            <span className="absolute inset-x-[8%] top-[36%] block text-left font-display uppercase leading-[0.82] text-cover-ink [text-shadow:0_2px_0_#0b1f66,0_4px_14px_rgb(0_0_0/0.35)]">
+              <span className="block text-[3.7rem]">Pala</span>
+              <span className="block text-[3.7rem] text-accent">Cards</span>
+            </span>
+            {/* Les six raretés à tirer. */}
+            <span className="absolute inset-x-[8%] bottom-[12%] flex justify-between gap-1 text-[0.72rem]">
+              {SIGILS.map((r) => (
+                <span key={r} data-rarity={r} className="pc-sigil shadow-[0_2px_4px_-1px_rgb(0_0_0/0.4)]">
+                  {r}
+                </span>
+              ))}
+            </span>
+          </motion.span>
+
+          {/* Languette dentelée à déchirer. */}
+          <motion.span
+            aria-hidden
+            className="pc-pack pc-pack-foil pc-pack-strip absolute inset-0 block"
+            style={{ clipPath: "inset(0 0 91% 0)", transformOrigin: "88% 9%" }}
+            animate={
+              tearing
+                ? { transform: reduce ? "none" : "translate(16%, -40%) rotate(12deg)", opacity: 0 }
+                : { transform: "translate(0%, 0%) rotate(0deg)", opacity: 1 }
+            }
+            transition={{ duration: 0.38, ease: EASE_OUT }}
+          />
+          <motion.span
+            aria-hidden
+            className="absolute inset-x-[5%] top-[9%] flex items-center gap-1.5 text-cover-ink/70"
+            animate={{ opacity: tearing ? 0 : 1 }}
+            transition={{ duration: 0.12 }}
+          >
+            <Scissors className="size-3.5 shrink-0 -scale-x-100" strokeWidth={2} />
+            <span className="flex-1 border-t-2 border-dashed border-current" />
+          </motion.span>
+        </motion.span>
+      </button>
     </div>
   );
 }
@@ -131,7 +216,9 @@ function FlipCard({
           aria-label={`Retourner la carte ${index + 1}`}
         >
           <span className="pc-back">
-            <span className="font-display text-4xl text-muted">P</span>
+            <span className="relative grid aspect-square w-[44%] rotate-[-12deg] place-items-center rounded-full bg-accent font-display text-[2.4rem] uppercase leading-none text-cover shadow-[0_4px_10px_-4px_rgb(0_0_0/0.5)]">
+              <span className="absolute inset-[5px] rounded-full border-2 border-dashed border-accent-ink/25" />P
+            </span>
           </span>
         </button>
       </motion.div>
@@ -226,7 +313,13 @@ export function PackOpener({ packs, season }: { packs: PackState; season: number
       <AnimatePresence mode="wait" initial={false}>
         {phase !== "dealt" ? (
           <motion.div key="sleeve" exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="w-full py-2">
-            <Sleeve tearing={phase === "tearing"} season={season} />
+            <Sleeve
+              tearing={phase === "tearing"}
+              season={season}
+              stock={packs.available + packs.bonus}
+              onOpen={open}
+              disabled={!canOpen}
+            />
           </motion.div>
         ) : (
           <motion.div
