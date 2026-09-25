@@ -43,7 +43,7 @@ export default function AchievementsPage() {
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />
       ) : !data ? (
-        <div className="h-72 animate-pulse rounded-md bg-panel" />
+        <div className="h-72 animate-pulse rounded-xl bg-panel" />
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {sorted.map((a) => {
@@ -52,7 +52,7 @@ export default function AchievementsPage() {
             return (
               <li
                 key={a.key}
-                className={`flex gap-3 rounded-md border bg-panel p-3 ${done ? "border-warn/50" : "border-line"}`}
+                className={`flex gap-3 rounded-lg border bg-panel p-3 ${done ? "border-warn/50" : "border-line"}`}
               >
                 <span
                   className={`grid size-10 shrink-0 place-items-center rounded-full border ${done ? "border-warn/60 text-warn" : "border-line-strong text-faint"}`}
@@ -61,7 +61,7 @@ export default function AchievementsPage() {
                   {done ? <Award className="size-5" /> : <Lock className="size-4" />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className="font-serif text-lg leading-tight">{a.name}</p>
+                  <p className="font-display text-lg leading-tight">{a.name}</p>
                   <p className="text-sm text-muted">{a.description}</p>
                   {done ? (
                     <p className="mt-1.5 text-xs text-warn">

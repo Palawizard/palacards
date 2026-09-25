@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[26rem] flex-col justify-center px-5 py-10">
-      <p className="mb-8 font-serif text-[2.1rem] leading-none tracking-[-0.01em]">
+      <p className="mb-8 w-fit rotate-[-2deg] rounded-xl bg-cover px-3 pb-1 pt-1.5 font-display text-[2.6rem] uppercase leading-none text-cover-ink shadow-lift">
         Pala<span className="text-accent">Cards</span>
       </p>
       {children}

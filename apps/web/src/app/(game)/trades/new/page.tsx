@@ -51,7 +51,7 @@ function Picker({
           disabled={!source}
         />
       </div>
-      <ul className="flex max-h-[22rem] flex-col gap-1 overflow-y-auto rounded-md border border-line bg-bg p-1">
+      <ul className="flex max-h-[22rem] flex-col gap-1 overflow-y-auto rounded-xl border border-line bg-bg p-1">
         {!source ? (
           <li className="p-3 text-sm text-faint">{emptyText}</li>
         ) : error ? (
@@ -73,11 +73,11 @@ function Picker({
                   aria-pressed={on}
                   disabled={locked}
                   onClick={() => onToggle(c)}
-                  className={`flex w-full items-center gap-2 rounded-md p-1.5 text-left transition-colors duration-150 disabled:opacity-40 ${on ? "bg-accent/12 outline outline-1 outline-accent/60" : "hover:bg-panel-2"}`}
+                  className={`flex w-full items-center gap-2 rounded-lg p-1.5 text-left transition-colors duration-150 disabled:opacity-40 ${on ? "bg-accent/12 outline outline-1 outline-accent/60" : "hover:bg-panel-2"}`}
                 >
                   <Thumb card={c} size="sm" />
                   <span className="min-w-0 flex-1">
-                    <span className="line-clamp-1 font-serif">{c.title}</span>
+                    <span className="line-clamp-1 font-display">{c.title}</span>
                     <span className="tnum flex items-center gap-1.5 text-xs text-faint">
                       <RaritySigil rarity={c.rarity} /> ATK {fmt(c.atk)} · DEF {fmt(c.def)}
                       {locked && " · réservée"}
@@ -262,7 +262,7 @@ function Composer() {
 
 export default function NewTradePage() {
   return (
-    <Suspense fallback={<div className="h-72 animate-pulse rounded-md bg-panel" />}>
+    <Suspense fallback={<div className="h-72 animate-pulse rounded-xl bg-panel" />}>
       <Composer />
     </Suspense>
   );
