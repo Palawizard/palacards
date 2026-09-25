@@ -59,7 +59,7 @@ function Catalog() {
     <div className="flex flex-col gap-6">
       <h1 className="page-title">Toutes les cartes</h1>
 
-      <div className="flex flex-col gap-3 rounded-md border border-line bg-panel p-3">
+      <div className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-3">
         <form
           role="search"
           className="relative"
@@ -89,7 +89,7 @@ function Catalog() {
           <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />
           <details className="group relative">
             <summary className="chip cursor-pointer list-none">Stats minimales</summary>
-            <div className="absolute left-0 top-9 z-20 flex w-60 flex-col gap-2 rounded-md border border-line-strong bg-panel p-3 shadow-[0_12px_30px_-10px_rgb(0_0_0/0.8)]">
+            <div className="absolute left-0 top-9 z-20 flex w-60 flex-col gap-2 rounded-xl border border-line-strong bg-panel p-3 shadow-pop">
               <label className="text-sm">
                 <span className="label">ATK minimale</span>
                 <input

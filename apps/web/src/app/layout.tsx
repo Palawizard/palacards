@@ -1,16 +1,15 @@
 import type { Metadata, Viewport } from "next";
-import { Libertinus_Serif } from "next/font/google";
+import { Archivo } from "next/font/google";
 import type { ReactNode } from "react";
 import { Toaster } from "sonner";
 import "./globals.css";
 
-const libertinus = Libertinus_Serif({
+// Une seule famille variable : largeur normale pour le texte, extra-condensée pour les titres.
+const archivo = Archivo({
   subsets: ["latin"],
-  weight: ["400", "600", "700"],
-  variable: "--font-libertinus",
+  axes: ["wdth"],
+  variable: "--font-archivo",
   display: "swap",
-  fallback: ["Georgia", "serif"],
-  adjustFontFallback: false,
 });
 
 export const metadata: Metadata = {
@@ -19,13 +18,13 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f1115",
+  themeColor: "#0c1027",
   colorScheme: "dark",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="fr" className={libertinus.variable}>
+    <html lang="fr" className={archivo.variable}>
       <body className="min-h-dvh antialiased">
         {children}
         <Toaster
@@ -35,6 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             style: {
               background: "var(--color-panel-2)",
               border: "1px solid var(--color-line-strong)",
+              borderRadius: "12px",
               color: "var(--color-text)",
               fontFamily: "var(--font-sans)",
             },

@@ -40,10 +40,10 @@ function Side({ title, cards, pw }: { title: string; cards: CardDTO[]; pw: numbe
         <ul className="flex flex-col gap-1.5">
           {cards.map((c) => (
             <li key={c.instanceId}>
-              <Link href={`/card/${c.cardId}`} className="flex items-center gap-2 rounded-md p-1 hover:bg-panel-2">
+              <Link href={`/card/${c.cardId}`} className="flex items-center gap-2 rounded-lg p-1 hover:bg-panel-2">
                 <Thumb card={c} size="sm" />
                 <span className="min-w-0">
-                  <span className="line-clamp-1 font-serif">{c.title}</span>
+                  <span className="line-clamp-1 font-display">{c.title}</span>
                   <span className="tnum flex items-center gap-1.5 text-xs text-faint">
                     <RaritySigil rarity={c.rarity} /> ATK {fmt(c.atk)} · DEF {fmt(c.def)}
                   </span>
@@ -117,7 +117,7 @@ function TradeItem({
         </span>
       </p>
       {trade.message && (
-        <p className="rounded-md bg-panel-2 px-3 py-2 text-sm italic text-muted">« {trade.message} »</p>
+        <p className="rounded-xl bg-panel-2 px-3 py-2 text-sm italic text-muted">« {trade.message} »</p>
       )}
       <div className="flex flex-col gap-4 sm:flex-row">
         <Side title="Tu reçois" {...receive} />
@@ -186,8 +186,8 @@ function Trades() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3 border-b border-line-strong pb-1.5">
-        <h1 className="font-serif text-[clamp(1.75rem,1.4rem+1.4vw,2.35rem)] leading-tight">Échanges</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="page-title">Échanges</h1>
         <Link href="/trades/new" className="btn btn-sm btn-primary">
           Proposer un échange
         </Link>
@@ -214,7 +214,7 @@ function Trades() {
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />
       ) : !data || !me ? (
-        <div className="h-60 animate-pulse rounded-md bg-panel" aria-busy />
+        <div className="h-60 animate-pulse rounded-xl bg-panel" aria-busy />
       ) : data.length === 0 ? (
         <Empty
           title={
@@ -228,7 +228,7 @@ function Trades() {
           Propose un troc depuis la fiche d’une carte ou le profil d’un ami.
         </Empty>
       ) : (
-        <ul className="divide-y divide-line rounded-md border border-line bg-panel">
+        <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
           {data.map((t) => (
             <TradeItem key={t.id} trade={t} meId={me.id} now={now} onChanged={() => mutate()} />
           ))}
@@ -240,7 +240,7 @@ function Trades() {
 
 export default function TradesPage() {
   return (
-    <Suspense fallback={<div className="h-60 animate-pulse rounded-md bg-panel" />}>
+    <Suspense fallback={<div className="h-60 animate-pulse rounded-xl bg-panel" />}>
       <Trades />
     </Suspense>
   );

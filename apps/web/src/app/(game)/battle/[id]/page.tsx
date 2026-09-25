@@ -95,7 +95,7 @@ function QuestionPanel({
           ) : (
             // Carte adverse face cachée : ses stats trahiraient la réponse.
             <div className="pc-card grid place-items-center" aria-label="Carte adverse, révélée après ta réponse">
-              <span aria-hidden className="font-serif text-[length:max(1.5rem,22cqi)] text-faint">
+              <span aria-hidden className="font-display text-[length:max(1.5rem,22cqi)] text-faint">
                 ?
               </span>
             </div>
@@ -110,9 +110,7 @@ function QuestionPanel({
           </span>
         </h2>
         <div className="flex flex-col gap-4 p-4">
-          <p className={q.type === "who_am_i" ? "font-serif text-lg leading-relaxed" : "text-lg font-semibold"}>
-            {q.prompt}
-          </p>
+          <p className={q.type === "who_am_i" ? "text-lg leading-relaxed" : "text-lg font-semibold"}>{q.prompt}</p>
           {!locked && <Countdown endsAt={endsAt} total={q.timeLimitMs} />}
           <div className="grid gap-2 sm:grid-cols-2">
             {q.choices.map((choice, i) => {
@@ -124,12 +122,12 @@ function QuestionPanel({
                   type="button"
                   disabled={locked}
                   onClick={() => onAnswer(i)}
-                  className={`btn min-h-12 justify-start whitespace-normal text-left font-serif text-base font-normal ${
-                    isCorrect ? "border-accent bg-accent/15 text-text" : isMine ? "border-danger bg-danger/10" : ""
+                  className={`btn min-h-12 justify-start whitespace-normal text-left text-base font-medium ${
+                    isCorrect ? "border-good bg-good/15 text-text" : isMine ? "border-danger bg-danger/10" : ""
                   }`}
                 >
                   {isCorrect ? (
-                    <Check aria-hidden className="size-4 shrink-0 text-accent" />
+                    <Check aria-hidden className="size-4 shrink-0 text-good" />
                   ) : isMine ? (
                     <X aria-hidden className="size-4 shrink-0 text-danger" />
                   ) : null}
@@ -171,15 +169,15 @@ function Recap({ battle }: { battle: BattleDetail }) {
           initial={{ opacity: 0, transform: "translateY(8px)" }}
           animate={{ opacity: 1, transform: "translateY(0)" }}
           transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
-          className="rounded-md border border-line-strong bg-panel p-5 text-center"
+          className="rounded-xl border border-line-strong bg-panel p-5 text-center"
         >
-          <p className={`font-serif text-4xl ${won ? "text-accent" : draw ? "" : "text-danger"}`}>
+          <p className={`font-display text-5xl uppercase ${won ? "text-good" : draw ? "" : "text-danger"}`}>
             {won ? "Victoire" : draw ? "Match nul" : "Défaite"}
           </p>
           <p className="tnum mt-1 text-lg">
             {battle.score.you} – {battle.score.them}
             {battle.eloDelta !== null && (
-              <span className={`ml-3 text-base ${battle.eloDelta >= 0 ? "text-accent" : "text-danger"}`}>
+              <span className={`ml-3 text-base ${battle.eloDelta >= 0 ? "text-good" : "text-danger"}`}>
                 Elo {battle.eloDelta >= 0 ? "+" : ""}
                 {battle.eloDelta}
               </span>
@@ -192,7 +190,7 @@ function Recap({ battle }: { battle: BattleDetail }) {
           <h2 className="section-title mt-0">Manches</h2>
           <ol className="flex flex-col gap-2">
             {battle.rounds.map((r) => (
-              <li key={r.round} className="rounded-md border border-line bg-panel px-3 py-2.5 text-sm">
+              <li key={r.round} className="rounded-xl border border-line bg-panel px-3 py-2.5 text-sm">
                 <p className="flex flex-wrap justify-between gap-2">
                   <span className="font-semibold">
                     Manche {r.round} · {TYPE_LABEL[r.type]}
@@ -201,7 +199,7 @@ function Recap({ battle }: { battle: BattleDetail }) {
                     {fmt(r.yourPower)}
                     {r.theirPower !== null && ` contre ${fmt(r.theirPower)}`}
                     {r.winnerId && (
-                      <strong className={`ml-2 ${r.winnerId === battle.opponent.id ? "text-danger" : "text-accent"}`}>
+                      <strong className={`ml-2 ${r.winnerId === battle.opponent.id ? "text-danger" : "text-good"}`}>
                         {r.winnerId === battle.opponent.id ? "perdue" : "gagnée"}
                       </strong>
                     )}
@@ -329,22 +327,20 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
   });
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
-  if (!battle) return <div className="h-72 animate-pulse rounded-md bg-panel" aria-busy />;
+  if (!battle) return <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />;
 
   const score = liveScore ?? battle.score;
   const asyncDone = battle.mode === "async" && battle.status === "active" && (battle.nextRound ?? 1) > BATTLE_ROUNDS;
 
   return (
     <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line-strong pb-2">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="font-serif text-[clamp(1.6rem,1.3rem+1.3vw,2.2rem)] leading-tight">
-            Duel contre {battle.opponent.name}
-          </h1>
-          <p className="text-sm text-muted">{battle.mode === "live" ? "En direct" : "Asynchrone"}</p>
+          <h1 className="page-title">Duel contre {battle.opponent.name}</h1>
+          <p className="mt-2 text-sm text-muted">{battle.mode === "live" ? "En direct" : "Asynchrone"}</p>
         </div>
         {battle.status !== "pending" && (
-          <p className="tnum font-serif text-3xl" aria-label={`Score : ${score.you} à ${score.them}`}>
+          <p className="tnum font-display text-4xl" aria-label={`Score : ${score.you} à ${score.them}`}>
             {score.you} <span className="text-faint">–</span> {score.them}
           </p>
         )}

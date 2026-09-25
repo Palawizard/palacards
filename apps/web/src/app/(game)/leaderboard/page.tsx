@@ -72,13 +72,13 @@ export default function LeaderboardPage() {
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />
       ) : !data ? (
-        <div className="h-96 animate-pulse rounded-md bg-panel" />
+        <div className="h-96 animate-pulse rounded-xl bg-panel" />
       ) : data.rows.length === 0 ? (
         <p className="text-muted">Personne au classement pour l’instant.</p>
       ) : (
         <table
           aria-busy={isLoading}
-          className={`tnum w-full overflow-hidden rounded-md border border-line bg-panel text-sm transition-opacity duration-150 ${isLoading ? "opacity-60" : ""}`}
+          className={`tnum w-full overflow-hidden rounded-xl border border-line bg-panel text-sm transition-opacity duration-150 ${isLoading ? "opacity-60" : ""}`}
         >
           <thead>
             <tr className="border-b border-line text-left text-xs text-faint">
@@ -96,7 +96,9 @@ export default function LeaderboardPage() {
           <tbody>
             {data.rows.map((r) => (
               <tr key={r.id} className={`border-b border-line last:border-0 ${r.me ? "bg-accent/10" : ""}`}>
-                <td className={`px-3 py-2 text-right font-serif text-base ${r.rank <= 3 ? "text-warn" : "text-faint"}`}>
+                <td
+                  className={`px-3 py-2 text-right font-display text-base ${r.rank <= 3 ? "text-warn" : "text-faint"}`}
+                >
                   {r.rank}
                 </td>
                 <td className="px-3 py-2">
@@ -109,7 +111,7 @@ export default function LeaderboardPage() {
                       {r.name} {r.extra && <span className="text-faint">[{r.extra}]</span>}
                     </span>
                   )}
-                  {r.me && <span className="ml-2 text-xs text-accent">toi</span>}
+                  {r.me && <span className="ml-2 text-xs text-good">toi</span>}
                 </td>
                 <td className="px-3 py-2 text-right font-semibold">{fmt(r.value)}</td>
               </tr>
