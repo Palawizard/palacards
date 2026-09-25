@@ -2,14 +2,17 @@
 
 Règles (docs/05-cartes.md) :
 - rareté = rang en vues sur 12 mois (1 = le plus lu), paliers de `packages/game/src/rarity.ts` ;
-- ATK = 100 + floor(9899 × pct(prose_len)) : la longueur du texte lisible (sans modèles, tableaux,
-  références ni infobox : le wikicode brut gonflait les communes et autres articles générés) ;
-- DEF = densité de qualité, indépendante de la taille (sinon ATK et DEF mesurent la même chose et
-  une carte connue a 9 999 partout) : chaque critère est rapporté à la taille en Ko, lissée par
-  DENSITY_SMOOTHING_KB pour qu'une ébauche de 3 lignes avec une source ne soit pas « parfaite »,
+- chaque rareté a une fourchette de stats (STAT_BANDS, chevauchantes) : une PC ne peut pas avoir les
+  stats d'une L, mais une très bonne C bat une R moyenne. Le rang se fait DANS la rareté :
+    stat = bas + floor((haut − bas) × pct_rareté(critère))
+- ATK : critère = prose_len, la longueur du texte lisible (sans modèles, tableaux, références ni
+  infobox : le wikicode brut gonflait les communes et autres articles générés) ;
+- DEF : critère = densité de qualité, indépendante de la taille : chaque critère est rapporté à la
+  taille en Ko, lissée par DENSITY_SMOOTHING_KB pour qu'une ébauche de 3 lignes avec une source ne
+  soit pas « parfaite »,
     d(x) = x / (page_len / 1000 + DENSITY_SMOOTHING_KB)
     Q = 0,55·pct(d(refs)) + 0,20·pct(d(images)) + 0,15·pct(d(sections)) + 0,10·pct(d(liens))
-    DEF = min(9999, 100 + floor(9899 × pct(Q)) + bonus), bonus +1500 AdQ, +800 BA.
+  puis bonus +1500 AdQ, +800 BA (peut dépasser le haut de la fourchette), plafond 9999.
 Sous 2 M articles (échantillon), les paliers sont mis à l'échelle du pool (mêmes proportions),
 exactement comme le contrôle du chargement (finish_card_load).
 """
@@ -31,6 +34,16 @@ FEATURED_BONUS = 1_500
 # Ko ajoutés à la taille pour calculer les densités (lissage des très petits articles).
 DENSITY_SMOOTHING_KB = 5.0
 GOOD_BONUS = 800
+# Fourchettes (bas, haut) d'ATK et de DEF par rareté. Chevauchantes exprès : la rareté pèse, sans
+# rendre une carte d'un palier inférieur toujours perdante.
+STAT_BANDS = {
+    "C": (100, 5_000),
+    "PC": (1_000, 6_500),
+    "R": (2_500, 7_500),
+    "SR": (4_000, 8_500),
+    "UR": (5_500, 9_300),
+    "L": (7_000, 9_999),
+}
 CSV_COLUMNS = ["id", "title", "rarity", "atk", "def", "views_12m", "page_len"]
 
 
@@ -56,6 +69,11 @@ def scaled_ceilings(pool_size: int) -> dict[str, int]:
 def rarity_case(ceilings: dict[str, int]) -> str:
     whens = " ".join(f"WHEN rank <= {ceilings[r]} THEN '{r}'" for r in ["L", "UR", "SR", "R", "PC"])
     return f"CASE {whens} ELSE 'C' END"
+
+
+def band_case(index: int) -> str:
+    whens = " ".join(f"WHEN '{r}' THEN {b[index]}" for r, b in STAT_BANDS.items())
+    return f"CASE rarity {whens} END"
 
 
 def build(
@@ -92,19 +110,26 @@ def build(
         WITH ranked AS (
             SELECT *,
                    row_number() OVER (ORDER BY views_12m DESC, page_id) AS rank,
-                   percent_rank() OVER (ORDER BY prose_len) AS p_len,
                    0.55 * percent_rank() OVER (ORDER BY refs / kb)
                  + 0.20 * percent_rank() OVER (ORDER BY images / kb)
                  + 0.15 * percent_rank() OVER (ORDER BY sections / kb)
                  + 0.10 * percent_rank() OVER (ORDER BY links / kb) AS q
             FROM (SELECT *, page_len / 1000.0 + {DENSITY_SMOOTHING_KB} AS kb FROM pool)
+        ),
+        rated AS (SELECT *, {rarity_case(ceilings)} AS rarity FROM ranked),
+        banded AS (
+            SELECT *,
+                   percent_rank() OVER (PARTITION BY rarity ORDER BY prose_len) AS p_len,
+                   percent_rank() OVER (PARTITION BY rarity ORDER BY q) AS p_q,
+                   {band_case(0)} AS lo, {band_case(1)} AS hi
+            FROM rated
         )
-        SELECT page_id AS id, title, {rarity_case(ceilings)} AS rarity,
-               (100 + floor(9899 * p_len))::INTEGER AS atk,
-               least(9999, 100 + floor(9899 * percent_rank() OVER (ORDER BY q))
+        SELECT page_id AS id, title, rarity,
+               (lo + floor((hi - lo) * p_len))::INTEGER AS atk,
+               least(9999, lo + floor((hi - lo) * p_q)
                      + CASE WHEN featured THEN {FEATURED_BONUS} WHEN good THEN {GOOD_BONUS} ELSE 0 END)::INTEGER AS def,
                views_12m, page_len
-        FROM ranked
+        FROM banded
         """
     )
     con.execute(
