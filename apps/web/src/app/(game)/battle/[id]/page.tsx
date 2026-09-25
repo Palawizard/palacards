@@ -13,6 +13,7 @@ import { ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useConnection, useSocket, useSocketEvent } from "@/lib/game";
+import { play } from "@/lib/sfx";
 import { useNow } from "@/lib/use-now";
 
 interface RoundRecap {
@@ -316,6 +317,28 @@ export default function BattleScreen({ params }: { params: Promise<{ id: string 
       if (!auto) toast.error(err instanceof ApiError ? err.message : "Réponse non enregistrée.");
     }
   }
+
+  // Bruitages : bonne ou mauvaise réponse à chaque manche, puis victoire ou défaite si le duel se
+  // termine sous nos yeux (rouvrir un duel fini reste silencieux).
+  const soundedRound = useRef(0);
+  useEffect(() => {
+    if (!result || soundedRound.current === result.round) return;
+    soundedRound.current = result.round;
+    play(result.correct ? "correct" : "wrong");
+  }, [result]);
+  const sawActive = useRef(false);
+  const finishSounded = useRef(false);
+  useEffect(() => {
+    if (!battle) return;
+    if (battle.status !== "finished") {
+      sawActive.current = true;
+      return;
+    }
+    if (!sawActive.current || finishSounded.current) return;
+    finishSounded.current = true;
+    const won = battle.winnerId !== null && battle.winnerId !== battle.opponent.id;
+    play(battle.winnerId === null ? "correct" : won ? "victory" : "defeat", 500);
+  }, [battle]);
 
   // Temps écoulé sans réponse : on envoie « pas de réponse » une seule fois pour passer à la suite.
   const now = useNow(500);
