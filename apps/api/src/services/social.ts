@@ -358,8 +358,10 @@ export async function conversations(ctx: Ctx, userId: string) {
           id: schema.user.id,
           username: schema.user.username,
           name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
+          avatar: schema.players.avatar,
         })
         .from(schema.user)
+        .leftJoin(schema.players, eq(schema.players.userId, schema.user.id))
         .where(inArray(schema.user.id, others))
     : [];
   const userBy = new Map(users.map((u) => [u.id, u]));
@@ -372,6 +374,7 @@ export async function conversations(ctx: Ctx, userId: string) {
       kind: dm ? ("dm" as const) : ("guild" as const),
       title: dm ? (other?.name ?? "?") : (gm?.name ?? "Guilde"),
       username: other?.username ?? null,
+      avatar: other?.avatar ?? null,
       online: otherId ? ctx.rt.isOnline(otherId) : false,
       lastBody: r.last_body,
       lastAt: new Date(r.last_at).toISOString(),
@@ -386,6 +389,7 @@ export async function conversations(ctx: Ctx, userId: string) {
       kind: "guild",
       title: gm!.name,
       username: null,
+      avatar: null,
       online: false,
       lastBody: "",
       lastAt: "",
