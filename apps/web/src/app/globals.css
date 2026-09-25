@@ -60,6 +60,52 @@
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* Mode clair : la page d'album en carton gris-bleu, la couverture et les vignettes ne changent pas. */
+:root[data-theme="light"] {
+  --color-bg: #eef0f5;
+  --color-panel: #ffffff;
+  --color-panel-2: #e6e9f1;
+  --color-line: #d6dae6;
+  --color-line-strong: #b9bfd2;
+  --color-text: #12162b;
+  --color-muted: #4a5170;
+  --color-faint: #636a88;
+  --color-accent-strong: #ffdd5e;
+  --color-good: #15803d;
+  --color-link: #1d4ed8;
+  --color-danger: #c8321f;
+  --color-warn: #b45309;
+  --color-focus: #1537a8;
+  --color-highlight: #1537a8;
+  --color-sticker: #ffffff;
+  --shadow-lift: 0 1px 2px rgb(20 30 70 / 0.08), 0 8px 20px -12px rgb(20 30 70 / 0.28);
+  --shadow-pop: 0 2px 4px rgb(20 30 70 / 0.08), 0 18px 40px -16px rgb(20 30 70 / 0.38);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-bg: #eef0f5;
+    --color-panel: #ffffff;
+    --color-panel-2: #e6e9f1;
+    --color-line: #d6dae6;
+    --color-line-strong: #b9bfd2;
+    --color-text: #12162b;
+    --color-muted: #4a5170;
+    --color-faint: #636a88;
+    --color-accent-strong: #ffdd5e;
+    --color-good: #15803d;
+    --color-link: #1d4ed8;
+    --color-danger: #c8321f;
+    --color-warn: #b45309;
+    --color-focus: #1537a8;
+    --color-highlight: #1537a8;
+    --color-sticker: #ffffff;
+    --shadow-lift: 0 1px 2px rgb(20 30 70 / 0.08), 0 8px 20px -12px rgb(20 30 70 / 0.28);
+    --shadow-pop: 0 2px 4px rgb(20 30 70 / 0.08), 0 18px 40px -16px rgb(20 30 70 / 0.38);
+    color-scheme: light;
+  }
+}
+
 /* Capitales extra-condensées des titres, bandeaux et vignettes. */
 @utility font-display {
   font-family: var(--font-sans);
@@ -69,8 +115,10 @@
 }
 
 @layer base {
-  html {
+  :root {
     color-scheme: dark;
+  }
+  html {
     background: var(--color-bg);
     color: var(--color-text);
     -webkit-tap-highlight-color: transparent;
