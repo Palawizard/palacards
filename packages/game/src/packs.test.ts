@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  CARDS_PER_PACK,
   DROP_TABLE_GUARANTEED,
   DROP_TABLE_PITY,
   DROP_TABLE_STANDARD,
@@ -33,9 +34,9 @@ describe("tables de drop", () => {
     for (let i = 0; i < packs; i++) {
       const res = rollPack(pity, randomInt);
       pity = res.pityCounter;
-      res.rarities.slice(0, 4).forEach((r) => counts[r]++);
+      res.rarities.slice(0, CARDS_PER_PACK - 1).forEach((r) => counts[r]++);
     }
-    const slots = packs * 4;
+    const slots = packs * (CARDS_PER_PACK - 1);
     expect(counts.C / slots).toBeCloseTo(0.62, 2);
     expect(counts.PC / slots).toBeCloseTo(0.25, 2);
     expect(counts.R / slots).toBeCloseTo(0.095, 2);
@@ -43,15 +44,16 @@ describe("tables de drop", () => {
 });
 
 describe("rollPack", () => {
-  it("donne 5 cartes dont la dernière est au moins Rare", () => {
+  it("donne 10 cartes dont la dernière est au moins Rare", () => {
     const { rarities } = rollPack(0, randomInt);
-    expect(rarities).toHaveLength(5);
-    expect(["R", "SR", "UR", "L"]).toContain(rarities[4]);
+    expect(rarities).toHaveLength(CARDS_PER_PACK);
+    expect(CARDS_PER_PACK).toBe(10);
+    expect(["R", "SR", "UR", "L"]).toContain(rarities.at(-1));
   });
 
   it("déclenche la pity au seuil et remet le compteur à 0", () => {
     const { rarities, pityCounter } = rollPack(PITY_THRESHOLD, randomInt);
-    expect(["UR", "L"]).toContain(rarities[4]);
+    expect(["UR", "L"]).toContain(rarities.at(-1));
     expect(pityCounter).toBe(0);
   });
 });
@@ -64,7 +66,8 @@ describe("minuteur de paquets", () => {
     expect(availablePacks(3, t0, after(PACK_REGEN_MS * 2 + 1))).toBe(5);
   });
 
-  it("plafonne à 10", () => {
+  it("plafonne à 30", () => {
+    expect(MAX_STORED_PACKS).toBe(30);
     expect(availablePacks(8, t0, after(PACK_REGEN_MS * 50))).toBe(MAX_STORED_PACKS);
     expect(msUntilNextPack(8, t0, after(PACK_REGEN_MS * 50))).toBe(0);
   });
@@ -100,7 +103,7 @@ describe("consumeFreePack", () => {
 
   it("relance le minuteur quand le stock était plein", () => {
     const now = after(PACK_REGEN_MS * 50);
-    const res = consumeFreePack(10, t0, now);
+    const res = consumeFreePack(MAX_STORED_PACKS, t0, now);
     expect(res).toEqual({ stored: MAX_STORED_PACKS - 1, updatedAt: now });
     expect(msUntilNextPack(res!.stored, res!.updatedAt, now)).toBe(PACK_REGEN_MS);
   });

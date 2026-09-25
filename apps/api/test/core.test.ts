@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, MAX_STORED_PACKS } from "@palacards/game";
+import { CARDS_PER_PACK, ECONOMY, MAX_STORED_PACKS } from "@palacards/game";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { loadConfig } from "../src/config.js";
 import type { FastifyRequest } from "fastify";
@@ -183,18 +183,18 @@ describe("sessions", () => {
 });
 
 describe("paquets", () => {
-  it("ouvre un paquet de 5 cartes dont la dernière est au moins Rare", async () => {
+  it("ouvre un paquet de 10 cartes dont la dernière est au moins Rare", async () => {
     const p = await signUp(app);
     const res = await p.post("/packs/open");
     expect(res.status).toBe(200);
-    expect(res.body.cards).toHaveLength(5);
-    expect(["R", "SR", "UR", "L"]).toContain(res.body.cards[4].rarity);
+    expect(res.body.cards).toHaveLength(CARDS_PER_PACK);
+    expect(["R", "SR", "UR", "L"]).toContain(res.body.cards.at(-1).rarity);
     expect(res.body.packs.available).toBe(MAX_STORED_PACKS - 1);
     const ledger = await ctx.db.select().from(schema.ledger).where(eq(schema.ledger.userId, p.userId));
     // Les succès (premier paquet…) sont crédités en arrière-plan : hors du périmètre de ce test.
     const own = ledger.filter((l) => l.reason !== "achievement");
     expect(own.map((l) => `${l.kind}:${l.delta}`).sort()).toEqual([
-      "card:5",
+      `card:${CARDS_PER_PACK}`,
       "pack:-1",
       `pw:${ECONOMY.startingBalance}`,
     ]);
@@ -211,7 +211,7 @@ describe("paquets", () => {
     try {
       const res = await p.post("/packs/open");
       expect(res.status).toBe(200);
-      expect(res.body.cards).toHaveLength(5);
+      expect(res.body.cards).toHaveLength(CARDS_PER_PACK);
       expect(res.body.cards.every((c: { instanceId: number; title: string }) => c.instanceId > 0 && c.title)).toBe(
         true,
       );
@@ -223,7 +223,7 @@ describe("paquets", () => {
       load.mockRestore();
     }
     const owned = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.ownerId, p.userId));
-    expect(owned).toHaveLength(5);
+    expect(owned).toHaveLength(CARDS_PER_PACK);
   });
 
   it("refuse d'ouvrir sans paquet, puis utilise un paquet bonus hors plafond", async () => {
@@ -253,7 +253,7 @@ describe("paquets", () => {
       .select({ n: sql<number>`count(*)::int` })
       .from(schema.cardInstances)
       .where(eq(schema.cardInstances.ownerId, p.userId));
-    expect(row?.n).toBe(MAX_STORED_PACKS * 5);
+    expect(row?.n).toBe(MAX_STORED_PACKS * CARDS_PER_PACK);
   });
 
   it("déclenche la pity : UR ou mieux garantie après 50 paquets sans UR", async () => {
@@ -261,7 +261,7 @@ describe("paquets", () => {
     await ctx.db.update(schema.players).set({ pityCounter: 50 }).where(eq(schema.players.userId, p.userId));
     const res = await p.post("/packs/open");
     expect(res.body.pityTriggered).toBe(true);
-    expect(["UR", "L"]).toContain(res.body.cards[4].rarity);
+    expect(["UR", "L"]).toContain(res.body.cards.at(-1).rarity);
     const [pl] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, p.userId));
     expect(pl?.pityCounter).toBe(0);
   });
@@ -278,9 +278,9 @@ describe("collection et recyclage", () => {
 
   it("liste la collection avec la complétion par rareté", async () => {
     const list = await p.get("/collection?sort=rarity");
-    expect(list.body.total).toBe(5);
+    expect(list.body.total).toBe(CARDS_PER_PACK);
     const summary = await p.get("/collection/summary");
-    expect(summary.body.totalCards).toBe(5);
+    expect(summary.body.totalCards).toBe(CARDS_PER_PACK);
     expect(summary.body.byRarity.map((r: { rarity: string }) => r.rarity)).toEqual(["L", "UR", "SR", "R", "PC", "C"]);
   });
 

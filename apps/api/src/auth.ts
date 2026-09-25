@@ -1,5 +1,5 @@
 import { schema, type Db } from "@palacards/db";
-import { ECONOMY } from "@palacards/game";
+import { ECONOMY, MAX_STORED_PACKS } from "@palacards/game";
 import { usernameSchema } from "@palacards/shared";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -105,7 +105,8 @@ export async function ensurePlayer(db: Db, userId: string): Promise<void> {
   await db.transaction(async (tx) => {
     const created = await tx
       .insert(schema.players)
-      .values({ userId, balance: ECONOMY.startingBalance })
+      // Stock plein à l'inscription.
+      .values({ userId, balance: ECONOMY.startingBalance, packsStored: MAX_STORED_PACKS })
       .onConflictDoNothing()
       .returning({ userId: schema.players.userId });
     if (created.length > 0 && ECONOMY.startingBalance > 0) {
