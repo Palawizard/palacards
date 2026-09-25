@@ -78,6 +78,13 @@
       "when": 1790240081195,
       "tag": "0010_user_is_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790376577882,
+      "tag": "0011_player_avatars",
+      "breakpoints": true
     }
   ]
 }

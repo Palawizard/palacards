@@ -3,6 +3,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   date,
   doublePrecision,
   foreignKey,
@@ -211,6 +212,24 @@ export const players = pgTable(
     check("players_balance_ok", sql`${t.balance} >= ${t.lockedBalance} AND ${t.lockedBalance} >= 0`),
     check("players_packs_ok", sql`${t.packsStored} >= 0 AND ${t.bonusPacks} >= 0 AND ${t.pityCounter} >= 0`),
   ],
+);
+
+/** Octets bruts (bytea) : Buffer côté Node. */
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
+
+/**
+ * Photo de profil importée (256 px, webp / jpeg / png), à part de `players` pour ne jamais charger
+ * les octets avec l'état de jeu. `players.avatar` pointe dessus (`img:<userId>.<version>`).
+ */
+export const playerAvatars = pgTable(
+  "player_avatars",
+  {
+    userId: userRef("user_id").primaryKey(),
+    image: bytea("image").notNull(),
+    mime: text("mime", { enum: ["image/webp", "image/jpeg", "image/png"] }).notNull(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("player_avatars_size_ok", sql`octet_length(${t.image}) <= 150000`)],
 );
 
 /** Exemplaire possédé : stats figées au tirage (tampon d'édition = `season`). */
