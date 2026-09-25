@@ -34,17 +34,11 @@ export interface CollectionQuery {
   limit: number;
 }
 
-/**
- * Collection d'un joueur, filtrée et triée (pagination par page : quelques milliers de cartes au plus).
- * Vue par un autre joueur (`viewerId` ≠ `ownerId`) : ni vues ni tri par vues (« Plus lu » en duel).
- */
-export async function listCollection(
-  ctx: Ctx,
-  ownerId: string,
-  query: CollectionQuery,
-  viewerId: string,
-): Promise<Page<CardDTO>> {
-  const byViews = viewerId === ownerId ? sql`${c.views12m} desc` : sql`${c.title} asc`;
+/** Filtres de la collection (sans tri ni pagination). */
+export type CollectionFilters = Omit<CollectionQuery, "sort" | "page" | "limit">;
+
+/** Conditions SQL des filtres de collection (la requête joint `cards` pour la recherche par titre). */
+function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
   const where: SQL[] = [eq(ci.ownerId, ownerId)];
   if (query.rarity?.length) where.push(inArray(ci.rarity, query.rarity));
   if (query.season) where.push(eq(ci.season, query.season));
@@ -57,6 +51,21 @@ export async function listCollection(
     );
   }
   if (query.q?.trim()) where.push(sql`${c.searchTitle} like '%' || lower(f_unaccent(${query.q.trim()})) || '%'`);
+  return where;
+}
+
+/**
+ * Collection d'un joueur, filtrée et triée (pagination par page : quelques milliers de cartes au plus).
+ * Vue par un autre joueur (`viewerId` ≠ `ownerId`) : ni vues ni tri par vues (« Plus lu » en duel).
+ */
+export async function listCollection(
+  ctx: Ctx,
+  ownerId: string,
+  query: CollectionQuery,
+  viewerId: string,
+): Promise<Page<CardDTO>> {
+  const byViews = viewerId === ownerId ? sql`${c.views12m} desc` : sql`${c.title} asc`;
+  const where = collectionWhere(ownerId, query);
 
   const order: SQL[] = {
     date: [sql`${ci.obtainedAt} desc`],
@@ -265,6 +274,44 @@ export async function duplicateIds(
     )
     .filter((r) => !rarities || rarities.includes(r.rarity));
   return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + ECONOMY.recycleValue[r.rarity], 0) };
+}
+
+/** Plafond de « Tout sélectionner » : bien au-delà d'une collection réelle, borne la réponse. */
+export const SELECT_ALL_MAX = 5000;
+
+/**
+ * « Tout sélectionner » : exemplaires recyclables qui correspondent aux filtres en cours.
+ * Comme pour les doublons, on écarte d'office les favoris, les épinglés et les cartes engagées
+ * (vente, échange, demandées dans un échange en attente) ; `protected` les compte pour l'afficher.
+ */
+export async function selectableIds(
+  ctx: Ctx,
+  ownerId: string,
+  query: CollectionFilters,
+): Promise<{ items: { id: number; rarity: Rarity }[]; protected: number; truncated: boolean }> {
+  const rows = await ctx.db
+    .select({
+      id: ci.id,
+      rarity: ci.rarity,
+      lockedBy: ci.lockedBy,
+      favorite: ci.favorite,
+      pinned: ci.pinnedSlot,
+    })
+    .from(ci)
+    .innerJoin(c, and(eq(c.season, ci.season), eq(c.id, ci.cardId)))
+    .where(and(...collectionWhere(ownerId, query)))
+    .orderBy(ci.id)
+    .limit(SELECT_ALL_MAX + 1);
+  const truncated = rows.length > SELECT_ALL_MAX;
+  const page = rows.slice(0, SELECT_ALL_MAX);
+  const requested = await requestedInPendingTrades(
+    ctx.db,
+    page.map((r) => r.id),
+  );
+  const items = page
+    .filter((r) => !r.lockedBy && !r.favorite && r.pinned === null && !requested.has(r.id))
+    .map((r) => ({ id: r.id, rarity: r.rarity }));
+  return { items, protected: page.length - items.length, truncated };
 }
 
 /**

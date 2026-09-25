@@ -20,6 +20,7 @@ interface Conversation {
   kind: "dm" | "guild";
   title: string;
   username: string | null;
+  avatar: string | null;
   online: boolean;
   lastBody: string;
   lastAt: string;
@@ -324,7 +325,7 @@ function Messages() {
                         <Shield className="size-4 text-muted" />
                       </span>
                     ) : (
-                      <Avatar name={c.title} avatar={null} online={c.online} />
+                      <Avatar name={c.title} avatar={c.avatar} online={c.online} />
                     )}
                     <span className="min-w-0 flex-1">
                       <span className="flex items-baseline justify-between gap-2">
