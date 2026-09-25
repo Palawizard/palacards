@@ -18,7 +18,12 @@ services:
     image: postgres:17.6-alpine
     container_name: palacards-postgres
     restart: unless-stopped
-    env_file: .env
+    # Seulement ses variables, pas tout le .env : sinon toute modification du .env recrée Postgres
+    # (coupure de la base) au déploiement suivant.
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     command:
       - postgres
       - -c
