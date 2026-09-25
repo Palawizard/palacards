@@ -114,7 +114,6 @@ export default function PullsPage() {
                 <span>Acheter un paquet bonus</span>
                 <span className="tnum shrink-0">{ECONOMY.bonusPackPrice} PW</span>
               </button>
-              <p className="mt-1.5 text-xs text-faint">Hors plafond de stock, ouvert après tes paquets gratuits.</p>
             </div>
           </div>
 
