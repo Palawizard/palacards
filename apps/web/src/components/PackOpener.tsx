@@ -20,8 +20,10 @@ import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { useCardMedia } from "@/lib/media";
+import { play } from "@/lib/sfx";
 import { PHONE_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { Card } from "./Card";
+import { FX_DURATION, isFxTier, RevealFx, type FxTier } from "./RevealFx";
 
 type Speed = "normal" | "fast" | "instant";
 type Phase = "sealed" | "tearing" | "dealt";
@@ -179,7 +181,13 @@ function CardBack() {
   );
 }
 
-/** Une carte du paquet : face cachée, puis retournée en 3D. */
+/** Cartes dont l'effet de révélation a déjà été joué (revenir sur une carte ne le rejoue pas). */
+const playedFx = new Set<number>();
+/** Avance du jingle sur la face : son impact tombe pile quand la carte apparaît. */
+const JINGLE_LEAD: Record<FxTier, number> = { SR: 0, UR: 200, L: 360 };
+const JINGLE = { SR: "sr", UR: "ur", L: "l" } as const;
+
+/** Une carte du paquet : face cachée, puis retournée en 3D ; les grosses raretés s'allument. */
 function FlipCard({
   card,
   revealed,
@@ -187,6 +195,7 @@ function FlipCard({
   index,
   speed,
   stagger = true,
+  upNext = false,
 }: {
   card: CardDTO;
   revealed: boolean;
@@ -195,38 +204,85 @@ function FlipCard({
   speed: Speed;
   /** Distribution en cascade (grille). La pile du téléphone gère elle-même l'arrivée des cartes. */
   stagger?: boolean;
+  /** Prochaine carte à se retourner : une grosse rareté commence à luire (suspense). */
+  upNext?: boolean;
 }) {
   const reduce = useReducedMotion();
+  const tier = isFxTier(card.rarity) ? card.rarity : null;
+  const key = card.instanceId ?? card.cardId;
+  // Pic de lumière à mi-retournement, quand la face apparaît.
+  const peak = speed === "instant" ? 0 : speed === "fast" ? 150 : 260;
+  /** Délai (ms) avant le pic de l'effet en cours, ou null quand rien ne joue. */
+  const [fx, setFx] = useState<number | null>(() =>
+    // Posée face visible en mode instantané : l'effet joue tout de suite (une seule fois par carte).
+    revealed && speed === "instant" && tier && !playedFx.has(key) ? 0 : null,
+  );
+  // Retournée sous nos yeux : l'effet démarre au même rendu que le retournement.
+  const [prevRevealed, setPrevRevealed] = useState(revealed);
+  if (prevRevealed !== revealed) {
+    setPrevRevealed(revealed);
+    if (revealed && tier && !playedFx.has(key)) setFx(peak);
+  }
+
+  const wasRevealed = useRef(revealed);
+  useEffect(() => {
+    const fresh = revealed && !wasRevealed.current;
+    wasRevealed.current = revealed;
+    if (fresh && speed !== "instant") play("flip");
+  }, [revealed, speed]);
+
+  useEffect(() => {
+    if (fx === null || !tier) return;
+    playedFx.add(key);
+    if (speed !== "instant") play(JINGLE[tier], Math.max(0, fx - JINGLE_LEAD[tier]));
+    const t = setTimeout(() => setFx(null), fx + FX_DURATION[tier]);
+    return () => clearTimeout(t);
+  }, [fx, tier, key, speed]);
+
+  const anticip = upNext && !revealed && tier && speed !== "instant" ? tier : undefined;
+
   return (
     <motion.div
-      className="relative [perspective:1100px]"
+      // Pendant son effet, la carte passe au-dessus de ses voisines : sa lumière déborde sur la page.
+      className={`relative ${fx !== null ? "z-20" : ""}`}
       initial={speed === "instant" || !stagger ? false : { opacity: 0, transform: "translateY(24px) scale(0.96)" }}
       animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }}
       transition={{ duration: 0.4, ease: EASE_OUT, delay: speed === "instant" ? 0 : index * 0.06 }}
     >
-      <motion.div
-        className="relative [transform-style:preserve-3d]"
-        initial={false}
-        animate={{ transform: revealed ? "rotateY(0deg)" : "rotateY(180deg)" }}
-        transition={
-          reduce || speed === "instant"
-            ? { duration: 0 }
-            : { duration: speed === "fast" ? 0.32 : 0.55, ease: [0.77, 0, 0.175, 1] }
-        }
+      {fx !== null && tier && <RevealFx tier={tier} delay={fx} layer="back" />}
+      <div
+        className={`relative [perspective:1100px] ${fx !== null && tier && tier !== "SR" && !reduce ? "pc-fx-pop" : ""}`}
+        data-tier={tier ?? undefined}
+        style={fx !== null ? ({ "--fx-delay": `${fx}ms` } as React.CSSProperties) : undefined}
       >
-        <div className="[backface-visibility:hidden]">
-          <Card card={card} priority prefetch={false} />
-        </div>
-        <button
-          type="button"
-          onClick={onReveal}
-          disabled={revealed}
-          className="absolute inset-0 aspect-[5/7] [backface-visibility:hidden] [transform:rotateY(180deg)]"
-          aria-label={`Retourner la carte ${index + 1}`}
+        <motion.div
+          className="relative [transform-style:preserve-3d]"
+          initial={false}
+          animate={{ transform: revealed ? "rotateY(0deg)" : "rotateY(180deg)" }}
+          transition={
+            reduce || speed === "instant"
+              ? { duration: 0 }
+              : { duration: speed === "fast" ? 0.32 : 0.55, ease: [0.77, 0, 0.175, 1] }
+          }
         >
-          <CardBack />
-        </button>
-      </motion.div>
+          <div className="[backface-visibility:hidden]">
+            <Card card={card} priority prefetch={false} />
+          </div>
+          <button
+            type="button"
+            onClick={onReveal}
+            disabled={revealed}
+            data-anticip={anticip}
+            data-rarity={anticip}
+            className="absolute inset-0 aspect-[5/7] [backface-visibility:hidden] [transform:rotateY(180deg)]"
+            aria-label={`Retourner la carte ${index + 1}`}
+          >
+            {anticip && <span aria-hidden className="pc-anticip-glow" />}
+            <CardBack />
+          </button>
+        </motion.div>
+      </div>
+      {fx !== null && tier && <RevealFx tier={tier} delay={fx} layer="front" />}
     </motion.div>
   );
 }
@@ -272,6 +328,7 @@ const isRecycled = (card: CardDTO, recycled: Record<number, true>) => !!card.ins
 
 /** Tablette et ordinateur : deux rangées de cinq vignettes, comme une page d'album. */
 function PackGrid({ cards, revealed, onReveal, recycled, onRecycle, speed }: DealtProps) {
+  const next = revealed.indexOf(false);
   return (
     <ol className="grid grid-cols-5 gap-2.5 md:gap-3 lg:gap-4">
       {cards.map((card, i) => {
@@ -283,6 +340,7 @@ function PackGrid({ cards, revealed, onReveal, recycled, onRecycle, speed }: Dea
                 card={card}
                 index={i}
                 speed={speed}
+                upNext={i === next}
                 revealed={revealed[i] ?? false}
                 onReveal={() => onReveal(i)}
               />
@@ -402,7 +460,7 @@ function DeckCard({
       className="absolute inset-0 z-10 touch-pan-y will-change-transform"
     >
       <div className={`transition-[opacity,filter] duration-300 ${gone ? "opacity-40 grayscale" : ""}`}>
-        <FlipCard card={card} index={index} speed={speed} stagger={false} revealed={shown} onReveal={onReveal} />
+        <FlipCard card={card} index={index} speed={speed} stagger={false} upNext revealed={shown} onReveal={onReveal} />
       </div>
     </motion.div>
   );
@@ -453,6 +511,7 @@ function PackDeck({
   function go(to: number) {
     setDir(to > cursor ? 1 : -1);
     onCursor(to);
+    if (to < n) play("deal");
   }
   /** Action principale : retourner la carte, puis passer à la suivante (ou au récapitulatif). */
   function advance() {
@@ -677,7 +736,10 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
     setBusy(true);
     setAnnounce("");
     setRecycled({});
-    if (speed !== "instant") setPhase("tearing");
+    if (speed !== "instant") {
+      setPhase("tearing");
+      play("tear");
+    }
     try {
       const [res] = await Promise.all([
         api<OpenResponse>("/packs/open", { method: "POST" }),
@@ -687,6 +749,8 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
       setRevealed(res.cards.map(() => speed === "instant"));
       setCursor(0);
       setPhase("dealt");
+      // Distribution : un paquet de cartes qui glisse sur la table (une seule carte sur téléphone).
+      for (let i = 0; i < (phone ? 1 : 4); i++) play("deal", i * 70);
       // Sur téléphone, la pile se cale sous la barre du haut : la carte tient à l'écran sans défiler.
       if (phone)
         requestAnimationFrame(() =>
@@ -697,6 +761,8 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
       } else {
         const best = res.cards.reduce((a, b) => (rarityRank(b.rarity) > rarityRank(a.rarity) ? b : a));
         setAnnounce(`Meilleure carte : ${best.title} (${RARITY_LABELS[best.rarity]})`);
+        // Instantané : un seul jingle, celui de la meilleure carte.
+        if (isFxTier(best.rarity)) play(JINGLE[best.rarity], 60);
       }
       if (res.pityTriggered) toast("Pity déclenchée : UR ou mieux garantie !");
       void mutateMe((m) => (m ? { ...m, packs: res.packs } : m), { revalidate: false });
@@ -713,6 +779,7 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
     setRecycled((d) => ({ ...d, [card.instanceId!]: true }));
     try {
       const res = await api<{ gain: number }>("/collection/recycle", { body: { instanceIds: [card.instanceId] } });
+      play("coin");
       toast.success(`+${res.gain} PW : ${card.title} recyclée.`);
     } catch (err) {
       setRecycled(({ [card.instanceId!]: _, ...rest }) => rest);

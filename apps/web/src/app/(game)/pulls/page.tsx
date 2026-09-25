@@ -17,6 +17,7 @@ import { api, ApiError } from "@/lib/api";
 import { countdown } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { usePackCountdown } from "@/lib/packs";
+import { play } from "@/lib/sfx";
 
 const SPEEDS = [
   { value: "normal", label: "Animée" },
@@ -60,6 +61,7 @@ export default function PullsPage() {
     setBuying(true);
     try {
       await api("/packs/buy", { method: "POST" });
+      play("coin");
       toast.success("Paquet bonus ajouté à ton stock.");
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Achat impossible.");
