@@ -2,7 +2,7 @@
 
 import { ECONOMY, RARITY_LABELS, rarityRank } from "@palacards/game";
 import type { CardDTO, PackState } from "@palacards/shared";
-import { Check, Recycle } from "lucide-react";
+import { Recycle } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -13,7 +13,6 @@ import { Card } from "./Card";
 
 type Speed = "normal" | "fast" | "instant";
 type Phase = "sealed" | "tearing" | "dealt";
-type Decision = "kept" | "recycled";
 
 interface OpenResponse {
   cards: CardDTO[];
@@ -146,7 +145,7 @@ export function PackOpener({ packs, season }: { packs: PackState; season: number
   const [phase, setPhase] = useState<Phase>("sealed");
   const [cards, setCards] = useState<CardDTO[]>([]);
   const [revealed, setRevealed] = useState<boolean[]>([]);
-  const [decisions, setDecisions] = useState<Record<number, Decision>>({});
+  const [recycled, setRecycled] = useState<Record<number, true>>({});
   const [busy, setBusy] = useState(false);
   const [announce, setAnnounce] = useState("");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -179,7 +178,7 @@ export function PackOpener({ packs, season }: { packs: PackState; season: number
     timers.current = [];
     setBusy(true);
     setAnnounce("");
-    setDecisions({});
+    setRecycled({});
     if (speed !== "instant") setPhase("tearing");
     try {
       const [res] = await Promise.all([
@@ -206,12 +205,12 @@ export function PackOpener({ packs, season }: { packs: PackState; season: number
 
   async function recycleOne(card: CardDTO) {
     if (!card.instanceId) return;
-    setDecisions((d) => ({ ...d, [card.instanceId!]: "recycled" }));
+    setRecycled((d) => ({ ...d, [card.instanceId!]: true }));
     try {
       const res = await api<{ gain: number }>("/collection/recycle", { body: { instanceIds: [card.instanceId] } });
       toast.success(`+${res.gain} PW : ${card.title} recyclée.`);
     } catch (err) {
-      setDecisions(({ [card.instanceId!]: _, ...rest }) => rest);
+      setRecycled(({ [card.instanceId!]: _, ...rest }) => rest);
       toast.error(err instanceof ApiError ? err.message : "Recyclage impossible.");
     }
   }
@@ -239,14 +238,14 @@ export function PackOpener({ packs, season }: { packs: PackState; season: number
           >
             <ol className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
               {cards.map((card, i) => {
-                const decision = card.instanceId ? decisions[card.instanceId] : undefined;
+                const isRecycled = !!card.instanceId && recycled[card.instanceId];
                 return (
                   <li
                     key={card.instanceId ?? i}
                     className={`flex flex-col gap-2 ${i === 4 ? "col-span-2 mx-auto w-[calc(50%-0.375rem)] sm:col-span-1 sm:w-full" : ""}`}
                   >
                     <div
-                      className={`transition-[opacity,filter] duration-300 ${decision === "recycled" ? "opacity-35 grayscale" : ""}`}
+                      className={`transition-[opacity,filter] duration-300 ${isRecycled ? "opacity-35 grayscale" : ""}`}
                     >
                       <FlipCard
                         card={card}
@@ -258,35 +257,22 @@ export function PackOpener({ packs, season }: { packs: PackState; season: number
                     </div>
                     <div
                       inert={!revealed[i]}
-                      className={`grid grid-cols-2 gap-1.5 transition-opacity duration-200 ${revealed[i] ? "opacity-100" : "pointer-events-none opacity-0"}`}
+                      className={`flex justify-center transition-opacity duration-200 ${revealed[i] ? "opacity-100" : "pointer-events-none opacity-0"}`}
                     >
-                      {decision === "recycled" ? (
-                        <span className="col-span-2 text-center text-xs text-muted">
+                      {isRecycled ? (
+                        <span className="text-center text-xs text-muted">
                           Recyclée · +{ECONOMY.recycleValue[card.rarity]} PW
                         </span>
                       ) : (
-                        <>
-                          <button
-                            type="button"
-                            className="btn btn-sm gap-1 px-1.5 text-xs"
-                            onClick={() => recycleOne(card)}
-                            aria-label={`Recycler ${card.title} pour ${ECONOMY.recycleValue[card.rarity]} PW`}
-                          >
-                            <Recycle aria-hidden className="size-3.5 shrink-0" />
-                            <span className="tnum">+{ECONOMY.recycleValue[card.rarity]}</span>
-                          </button>
-                          <button
-                            type="button"
-                            aria-pressed={decision === "kept"}
-                            className={`btn btn-sm gap-1 px-1.5 text-xs ${decision === "kept" ? "border-accent text-accent" : ""}`}
-                            onClick={() =>
-                              card.instanceId && setDecisions((d) => ({ ...d, [card.instanceId!]: "kept" }))
-                            }
-                          >
-                            <Check aria-hidden className="size-3.5 shrink-0" />
-                            {decision === "kept" ? "Gardée" : "Garder"}
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          className="btn btn-sm w-full gap-1 px-1.5 text-xs"
+                          onClick={() => recycleOne(card)}
+                          aria-label={`Recycler ${card.title} pour ${ECONOMY.recycleValue[card.rarity]} PW`}
+                        >
+                          <Recycle aria-hidden className="size-3.5 shrink-0" />
+                          <span className="tnum">+{ECONOMY.recycleValue[card.rarity]}</span>
+                        </button>
                       )}
                     </div>
                   </li>
