@@ -4,7 +4,8 @@ import { avatarSchema, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
-import { conflict, parse } from "../errors.js";
+import { conflict, notFound, parse } from "../errors.js";
+import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
 import { answeringQuestion } from "../services/battles.js";
 import { cardSheet, catalog } from "../services/cards.js";
 import {
@@ -13,6 +14,7 @@ import {
   fuse,
   listCollection,
   recycle,
+  selectableIds,
   setFavorite,
   setPinned,
   setTags,
@@ -84,7 +86,34 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       req.body,
     );
     await ctx.db.update(schema.players).set(body).where(eq(schema.players.userId, req.user.id));
+    // Un emoji ou l'initiale remplace la photo importée : on ne garde pas d'image orpheline.
+    if (body.avatar !== undefined) await deleteAvatarImage(ctx, req.user.id);
     return me(ctx, req.user);
+  });
+
+  // Photo de profil : image recadrée et réduite par le navigateur, envoyée en base64 (sous la limite de corps).
+  api.put("/me/avatar", { ...auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req) => {
+    const { image } = parse(z.object({ image: z.base64().min(1).max(210_000) }), req.body);
+    await saveAvatarImage(ctx, req.user.id, image);
+    return me(ctx, req.user);
+  });
+  api.delete("/me/avatar", auth, async (req) => {
+    await deleteAvatarImage(ctx, req.user.id);
+    await ctx.db.update(schema.players).set({ avatar: null }).where(eq(schema.players.userId, req.user.id));
+    return me(ctx, req.user);
+  });
+  // L'URL porte la version (?v=…) : réponse immuable, remplacée dès que l'avatar change.
+  api.get("/avatars/:userId", auth, async (req, reply) => {
+    const { userId } = parse(z.object({ userId: z.string().min(1).max(64) }), req.params);
+    const row = await getAvatarImage(ctx, userId);
+    if (!row) throw notFound("Pas de photo de profil.");
+    return reply
+      .header("content-type", row.mime)
+      .header("cache-control", "private, max-age=31536000, immutable")
+      .header("x-content-type-options", "nosniff")
+      .header("content-security-policy", "default-src 'none'; sandbox")
+      .header("cross-origin-resource-policy", "same-site")
+      .send(row.image);
   });
 
   // --- Paquets ---
@@ -95,15 +124,17 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   );
 
   // --- Collection ---
+  const collectionFilters = z.object({
+    rarity: rarityList,
+    season: intParam.positive().optional(),
+    tag: z.string().max(24).optional(),
+    favorites: z.stringbool().optional(),
+    duplicates: z.stringbool().optional(),
+    q: z.string().max(100).optional(),
+  });
   api.get("/collection", auth, async (req) => {
     const q = parse(
-      z.object({
-        rarity: rarityList,
-        season: intParam.positive().optional(),
-        tag: z.string().max(24).optional(),
-        favorites: z.stringbool().optional(),
-        duplicates: z.stringbool().optional(),
-        q: z.string().max(100).optional(),
+      collectionFilters.extend({
         sort: z.enum(["date", "atk", "def", "views", "rarity", "title"]).default("date"),
         page: intParam.min(0).default(0),
         limit: intParam.min(1).max(120).default(60),
@@ -112,6 +143,10 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     return listCollection(ctx, req.user.id, q, req.user.id);
   });
+  // « Tout sélectionner » : les exemplaires recyclables du filtre en cours (paramètres de GET /collection).
+  api.get("/collection/selectable", auth, async (req) =>
+    selectableIds(ctx, req.user.id, parse(collectionFilters, req.query)),
+  );
   api.get("/collection/summary", auth, async (req) => completion(ctx, req.user.id));
   api.post("/collection/:id/favorite", auth, async (req) => {
     const { id } = parse(idParams, req.params);
