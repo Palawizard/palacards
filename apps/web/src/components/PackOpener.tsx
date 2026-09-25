@@ -177,8 +177,6 @@ function FlipCard({
   speed: Speed;
 }) {
   const reduce = useReducedMotion();
-  const rare = rarityRank(card.rarity) >= rarityRank("SR");
-  const glow = `var(--color-rarity-${card.rarity.toLowerCase()})`;
   return (
     <motion.div
       className="relative [perspective:1100px]"
@@ -186,15 +184,6 @@ function FlipCard({
       animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }}
       transition={{ duration: 0.4, ease: EASE_OUT, delay: speed === "instant" ? 0 : index * 0.07 }}
     >
-      {/* Lueur de rareté, allumée au retournement. */}
-      <motion.div
-        aria-hidden
-        className="pointer-events-none absolute -inset-3 rounded-[18px] blur-xl"
-        style={{ background: `radial-gradient(closest-side, ${glow}, transparent)` }}
-        initial={false}
-        animate={{ opacity: revealed ? (card.rarity === "L" ? 0.75 : rare ? 0.5 : card.rarity === "R" ? 0.22 : 0) : 0 }}
-        transition={{ duration: 0.6, ease: EASE_OUT }}
-      />
       <motion.div
         className="relative [transform-style:preserve-3d]"
         initial={false}
