@@ -9,6 +9,7 @@ import { api, ApiError } from "@/lib/api";
 import { authClient, authErrorMessage } from "@/lib/auth-client";
 import { fmt, reasonLabel, relative } from "@/lib/format";
 import { useMe } from "@/lib/game";
+import { setTheme, useTheme } from "@/lib/theme";
 
 const GROUPS: Record<string, string> = {
   market: "Marché (enchères, ventes, wishlist)",
@@ -18,6 +19,11 @@ const GROUPS: Record<string, string> = {
   packs: "Stock de paquets plein",
   achievements: "Succès",
 };
+const THEMES = [
+  { value: "system", label: "Comme le système" },
+  { value: "light", label: "Clair" },
+  { value: "dark", label: "Sombre" },
+] as const;
 const SPEEDS = [
   { value: "normal", label: "Animée" },
   { value: "fast", label: "Rapide" },
@@ -34,6 +40,7 @@ function Section({ title, id, children }: { title: string; id?: string; children
 
 export default function SettingsPage() {
   const { me, mutateMe } = useMe();
+  const theme = useTheme();
   const [username, setUsername] = useState("");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -54,7 +61,7 @@ export default function SettingsPage() {
     }
   }
 
-  if (!me) return <div className="h-96 animate-pulse rounded-md bg-panel" aria-busy />;
+  if (!me) return <div className="h-96 animate-pulse rounded-xl bg-panel" aria-busy />;
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
@@ -93,7 +100,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 aria-pressed={!me.avatar}
-                className="rounded-full p-0.5 aria-pressed:ring-2 aria-pressed:ring-accent"
+                className="rounded-full p-0.5 transition-shadow duration-150 hover:ring-2 hover:ring-line-strong aria-pressed:ring-2 aria-pressed:ring-accent"
                 onClick={() =>
                   run(
                     () =>
@@ -175,6 +182,24 @@ export default function SettingsPage() {
         </form>
       </Section>
 
+      <Section title="Apparence">
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Thème">
+          {THEMES.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              role="radio"
+              aria-checked={theme === t.value}
+              className="chip h-9 px-4 aria-checked:border-accent aria-checked:bg-accent aria-checked:text-accent-ink"
+              onClick={() => setTheme(t.value)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-faint">Enregistré sur cet appareil.</p>
+      </Section>
+
       <Section title="Ouverture des paquets">
         <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Vitesse d'ouverture">
           {SPEEDS.map((s) => (
@@ -183,7 +208,7 @@ export default function SettingsPage() {
               type="button"
               role="radio"
               aria-checked={me.animationSpeed === s.value}
-              className="chip h-9 px-4 aria-checked:border-accent aria-checked:bg-accent/15 aria-checked:text-accent-strong"
+              className="chip h-9 px-4 aria-checked:border-accent aria-checked:bg-accent aria-checked:text-accent-ink"
               onClick={() =>
                 run(
                   () =>
@@ -201,7 +226,7 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Notifications">
-        <ul className="flex flex-col divide-y divide-line rounded-md border border-line bg-panel">
+        <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-panel">
           {(prefs.data ?? []).map((p) => (
             <li key={p.group}>
               <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2.5">
@@ -248,7 +273,7 @@ export default function SettingsPage() {
                 <tr key={l.id} className="border-b border-line">
                   <td className="py-1.5 pr-3 text-faint">{relative(l.createdAt)}</td>
                   <td className="py-1.5 pr-3">{reasonLabel(l.reason)}</td>
-                  <td className={`py-1.5 pr-3 text-right font-semibold ${l.delta > 0 ? "text-accent" : "text-danger"}`}>
+                  <td className={`py-1.5 pr-3 text-right font-semibold ${l.delta > 0 ? "text-good" : "text-danger"}`}>
                     {l.delta > 0 ? "+" : ""}
                     {fmt(l.delta)}
                   </td>

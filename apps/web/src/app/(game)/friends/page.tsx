@@ -97,7 +97,7 @@ export default function FriendsPage() {
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />
       ) : !data ? (
-        <div className="h-60 animate-pulse rounded-md bg-panel" aria-busy />
+        <div className="h-60 animate-pulse rounded-xl bg-panel" aria-busy />
       ) : (
         <>
           {data.incoming.length > 0 && (
@@ -105,7 +105,7 @@ export default function FriendsPage() {
               <h2 className="section-title mt-0">Demandes reçues</h2>
               <ul className="flex flex-col gap-2">
                 {data.incoming.map((f) => (
-                  <li key={f.id} className="flex items-center gap-3 rounded-md border border-line bg-panel px-3 py-2">
+                  <li key={f.id} className="flex items-center gap-3 rounded-xl border border-line bg-panel px-3 py-2">
                     <Avatar name={f.displayName} avatar={f.avatar} />
                     <Link href={`/u/${f.username}`} className="flex-1 font-semibold hover:underline">
                       {f.displayName}
@@ -145,7 +145,7 @@ export default function FriendsPage() {
                   .map((f) => (
                     <li
                       key={f.id}
-                      className="flex items-center gap-3 rounded-md border border-line bg-panel px-3 py-2.5"
+                      className="flex items-center gap-3 rounded-xl border border-line bg-panel px-3 py-2.5"
                     >
                       <Avatar name={f.displayName} avatar={f.avatar} online={f.online} />
                       <div className="min-w-0 flex-1">

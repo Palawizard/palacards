@@ -58,18 +58,58 @@ export default function PullsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <h1 className="page-title">Paquets</h1>
         {me ? (
-          <p className="hatnote mt-2 tnum">
-            Stock : {me.packs.available}/{me.packs.max}
-            {full ? " (plein, le minuteur est en pause)" : ` · prochain paquet dans ${countdown(remaining)}`}
-            {me.packs.bonus > 0 && ` · ${me.packs.bonus} paquet${me.packs.bonus > 1 ? "s" : ""} bonus`}
-          </p>
+          <dl className="tnum flex flex-wrap items-end gap-x-6 gap-y-2 text-sm">
+            <div title={`Stock : ${me.packs.available}/${me.packs.max}`}>
+              <dt className="text-xs font-semibold text-faint">Stock</dt>
+              <dd className="flex items-center gap-2">
+                <span className="font-display text-2xl leading-none">
+                  {me.packs.available}
+                  <span className="text-faint">/{me.packs.max}</span>
+                </span>
+                {/* Jauge à cases : une case par paquet du stock. */}
+                <span className="flex gap-[3px]" aria-hidden>
+                  {Array.from({ length: me.packs.max }, (_, i) => (
+                    <span
+                      key={i}
+                      className={`h-3.5 w-2 rounded-[3px] transition-colors duration-300 ${i < me.packs.available ? "bg-accent shadow-[inset_0_0_0_1px_rgb(90_60_0/0.25)]" : "border border-line-strong"}`}
+                    />
+                  ))}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold text-faint">Prochain</dt>
+              <dd className="font-display text-2xl leading-none">{full ? "Plein" : countdown(remaining)}</dd>
+            </div>
+            <div title="Paquets ouverts depuis la dernière UR ou légendaire">
+              <dt className="text-xs font-semibold text-faint">Pity</dt>
+              <dd className="flex items-center gap-2">
+                <span className="font-display text-2xl leading-none">
+                  {me.packs.pity}
+                  <span className="text-faint">/{me.packs.pityThreshold}</span>
+                </span>
+                <span className="h-2 w-16 overflow-hidden rounded-full bg-panel-2" aria-hidden>
+                  <span
+                    className="block h-full rounded-full bg-rarity-ur transition-[width] duration-500"
+                    style={{ width: `${Math.min(100, (me.packs.pity / me.packs.pityThreshold) * 100)}%` }}
+                  />
+                </span>
+              </dd>
+            </div>
+            {me.packs.bonus > 0 && (
+              <div>
+                <dt className="text-xs font-semibold text-faint">Bonus</dt>
+                <dd className="font-display text-2xl leading-none text-highlight">+{me.packs.bonus}</dd>
+              </div>
+            )}
+          </dl>
         ) : (
-          <p className="hatnote mt-2">Chargement du stock…</p>
+          <p className="hatnote">Chargement du stock…</p>
         )}
-      </div>
+      </header>
 
       <div className="flex flex-col gap-10">
         <div className="min-w-0">
@@ -94,7 +134,7 @@ export default function PullsPage() {
                   aria-checked={me?.animationSpeed === s.value}
                   disabled={saving || !me}
                   onClick={() => setSpeed(s.value)}
-                  className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-panel-2 aria-checked:text-text [&:not([aria-checked=true])]:text-muted"
+                  className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm transition-colors duration-150 hover:bg-panel-2 aria-checked:text-text [&:not([aria-checked=true])]:text-muted"
                 >
                   <span className="grid size-4 place-items-center rounded-full border border-line-strong">
                     {me?.animationSpeed === s.value && <span className="size-2 rounded-full bg-accent" />}
@@ -106,14 +146,14 @@ export default function PullsPage() {
             <div className="border-t border-line p-3">
               <button
                 type="button"
-                className="btn btn-sm w-full"
+                className="btn btn-sm h-auto w-full justify-between whitespace-normal py-1.5 text-left leading-tight"
                 disabled={buying || !me || me.wallet.available < ECONOMY.bonusPackPrice}
                 onClick={buyBonus}
                 title={me && me.wallet.available < ECONOMY.bonusPackPrice ? "Pas assez de points wiki" : undefined}
               >
-                Acheter un paquet bonus · {ECONOMY.bonusPackPrice} PW
+                <span>Acheter un paquet bonus</span>
+                <span className="tnum shrink-0">{ECONOMY.bonusPackPrice} PW</span>
               </button>
-              <p className="mt-1.5 text-xs text-faint">Hors plafond de stock, ouvert après tes paquets gratuits.</p>
             </div>
           </div>
 
@@ -146,21 +186,9 @@ export default function PullsPage() {
             </table>
             {me && (
               <div className="border-t border-line p-3 text-sm">
-                <div className="mb-1.5 flex justify-between">
-                  <span className="text-muted">Pity</span>
-                  <span className="tnum">
-                    {me.packs.pity}/{me.packs.pityThreshold}
-                  </span>
-                </div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-panel-2" aria-hidden>
-                  <div
-                    className="h-full rounded-full bg-[var(--color-rarity-ur)] transition-[width] duration-500"
-                    style={{ width: `${Math.min(100, (me.packs.pity / me.packs.pityThreshold) * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-2 text-xs leading-relaxed text-faint">
-                  Après {me.packs.pityThreshold} paquets sans UR ni légendaire, la 5e carte du suivant est forcément UR
-                  ou mieux. Un paquet bonus coûte {ECONOMY.bonusPackPrice} PW.
+                <p className="text-xs leading-relaxed text-faint">
+                  Pity : après {me.packs.pityThreshold} paquets sans UR ni légendaire, la 5e carte du suivant est
+                  forcément UR ou mieux. Un paquet bonus coûte {ECONOMY.bonusPackPrice} PW.
                 </p>
               </div>
             )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Menu, Package, Search, X } from "lucide-react";
+import { Bell, Menu, Moon, Package, Search, Sun, X } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -10,10 +10,15 @@ import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { NAV } from "@/lib/nav";
 import { authClient } from "@/lib/auth-client";
+import { setTheme, useResolvedTheme } from "@/lib/theme";
 
-function Wordmark({ className = "" }: { className?: string }) {
+/** Logo : capitales condensées sur une pastille couverture, comme le titre d'un album. */
+export function Wordmark({ className = "" }: { className?: string }) {
   return (
-    <Link href="/pulls" className={`font-serif text-[1.45rem] leading-none tracking-[-0.01em] ${className}`}>
+    <Link
+      href="/pulls"
+      className={`inline-flex w-fit items-center rounded-lg bg-cover px-2 pb-[0.2rem] pt-[0.3rem] font-display text-[1.6rem] uppercase leading-none tracking-[0.01em] text-cover-ink ${className}`}
+    >
       Pala<span className="text-accent">Cards</span>
     </Link>
   );
@@ -26,7 +31,7 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
     <nav aria-label="Menu principal" className="flex flex-col gap-5">
       {NAV.map((group) => (
         <div key={group.title}>
-          <h2 className="mb-1.5 border-b border-line px-2 pb-1 text-[0.78rem] font-semibold text-faint">
+          <h2 className="mb-1 px-2.5 font-display text-[0.9rem] uppercase tracking-[0.06em] text-cover-muted">
             {group.title}
           </h2>
           <ul className="flex flex-col">
@@ -42,14 +47,16 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                       href={item.href}
                       onClick={onNavigate}
                       aria-current={active ? "page" : undefined}
-                      className={`flex items-center gap-2.5 rounded-md px-2 py-[0.42rem] text-[0.93rem] transition-colors duration-150 ${
-                        active ? "bg-panel-2 text-text" : "text-muted hover:bg-panel hover:text-text"
+                      className={`flex items-center gap-2.5 py-[0.45rem] pl-2.5 text-[0.93rem] font-medium transition-colors duration-150 ${
+                        active
+                          ? "-mr-4 rounded-l-[10px] bg-bg pr-6 text-text"
+                          : "rounded-[10px] pr-2.5 text-cover-ink/80 hover:bg-white/10 hover:text-cover-ink"
                       }`}
                     >
                       <Icon
                         aria-hidden
-                        className={`size-[1.05rem] ${active ? "text-accent" : ""}`}
-                        strokeWidth={1.75}
+                        className={`size-[1.05rem] ${active ? "text-highlight" : ""}`}
+                        strokeWidth={2}
                       />
                       <span className="flex-1">{item.label}</span>
                       {badge > 0 && (
@@ -71,11 +78,11 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
 function PackStock() {
   const { me } = useMe();
   const { remaining, full } = usePackCountdown(me?.packs);
-  if (!me) return <span className="h-8 w-24 animate-pulse rounded-md bg-panel" aria-hidden />;
+  if (!me) return <span className="h-8 w-24 animate-pulse rounded-xl bg-panel" aria-hidden />;
   return (
     <Link
       href="/pulls"
-      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm hover:bg-panel"
+      className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-sm transition-colors duration-150 hover:bg-panel"
       title={full ? "Stock plein" : `Prochain paquet dans ${countdown(remaining)}`}
     >
       <Package aria-hidden className="size-4 text-muted" strokeWidth={1.75} />
@@ -83,7 +90,7 @@ function PackStock() {
         {me.packs.available}
         <span className="text-faint">/{me.packs.max}</span>
       </span>
-      {me.packs.bonus > 0 && <span className="tnum text-xs text-accent">+{me.packs.bonus}</span>}
+      {me.packs.bonus > 0 && <span className="tnum text-xs font-semibold text-highlight">+{me.packs.bonus}</span>}
       <span className="tnum hidden text-xs text-faint sm:inline">{full ? "plein" : countdown(remaining)}</span>
     </Link>
   );
@@ -117,6 +124,26 @@ function SearchBox() {
   );
 }
 
+/** Bascule clair / sombre rapide ; le réglage « comme le système » est dans les paramètres. */
+function ThemeToggle() {
+  const dark = useResolvedTheme() === "dark";
+  return (
+    <button
+      type="button"
+      className="hidden size-9 items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-panel hover:text-text sm:flex"
+      onClick={() => setTheme(dark ? "light" : "dark")}
+      aria-label={dark ? "Passer en mode clair" : "Passer en mode sombre"}
+      title={dark ? "Mode clair" : "Mode sombre"}
+    >
+      {dark ? (
+        <Sun className="size-[1.1rem]" strokeWidth={1.75} />
+      ) : (
+        <Moon className="size-[1.1rem]" strokeWidth={1.75} />
+      )}
+    </button>
+  );
+}
+
 function UserMenu() {
   const { me } = useMe();
   const router = useRouter();
@@ -142,7 +169,7 @@ function UserMenu() {
     <div ref={ref} className="relative">
       <button
         type="button"
-        className="flex size-9 items-center justify-center rounded-full border border-line-strong bg-panel-2 font-serif text-base"
+        className="flex size-9 items-center justify-center rounded-full border border-line-strong bg-panel-2 font-display text-base transition-colors duration-150 hover:border-faint"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -154,9 +181,9 @@ function UserMenu() {
         role="menu"
         data-open={open}
         inert={!open}
-        className="absolute right-0 top-11 z-50 w-52 origin-top-right rounded-md border border-line-strong bg-panel p-1 text-sm shadow-[0_12px_30px_-10px_rgb(0_0_0/0.8)] transition-[opacity,transform] duration-150 ease-[var(--ease-out)] data-[open=false]:pointer-events-none data-[open=false]:scale-95 data-[open=false]:opacity-0"
+        className="absolute right-0 top-11 z-50 w-52 origin-top-right rounded-xl border border-line-strong bg-panel p-1 text-sm shadow-pop transition-[opacity,transform] duration-150 ease-[var(--ease-out)] data-[open=false]:pointer-events-none data-[open=false]:scale-95 data-[open=false]:opacity-0"
       >
-        <p className="border-b border-line px-2.5 py-2 font-semibold">{me.displayName}</p>
+        <p className="mb-1 border-b-2 border-dashed border-line px-2.5 pb-2 pt-1.5 font-semibold">{me.displayName}</p>
         <Link
           role="menuitem"
           href={`/u/${me.username}`}
@@ -196,8 +223,8 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_1fr]">
       {/* Menu portail : colonne fixe sur grand écran, tiroir sur mobile. */}
-      <aside className="sticky top-0 hidden h-dvh flex-col gap-6 overflow-y-auto border-r border-line px-4 py-5 lg:flex">
-        <Wordmark className="px-2" />
+      <aside className="cover-texture sticky top-0 hidden h-dvh flex-col gap-6 overflow-y-auto bg-cover px-4 py-5 lg:flex">
+        <Wordmark className="ml-0.5" />
         <Portal />
       </aside>
 
@@ -210,15 +237,15 @@ export function Shell({ children }: { children: ReactNode }) {
         aria-label="Menu"
         aria-hidden={!drawer}
         inert={!drawer}
-        className={`fixed inset-y-0 left-0 z-50 flex w-[17rem] max-w-[85vw] flex-col gap-6 overflow-y-auto border-r border-line bg-bg px-4 py-5 transition-transform duration-300 ease-[var(--ease-drawer)] lg:hidden ${
+        className={`cover-texture fixed inset-y-0 left-0 z-50 flex w-[17rem] max-w-[85vw] flex-col gap-6 overflow-y-auto bg-cover px-4 py-5 transition-transform duration-300 ease-[var(--ease-drawer)] lg:hidden ${
           drawer ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <div className="flex items-center justify-between">
-          <Wordmark className="px-2" />
+          <Wordmark className="ml-0.5" />
           <button
             type="button"
-            className="btn btn-ghost btn-sm"
+            className="btn btn-ghost btn-sm text-cover-ink hover:!bg-white/10"
             onClick={() => setDrawer(false)}
             aria-label="Fermer le menu"
           >
@@ -245,15 +272,16 @@ export function Shell({ children }: { children: ReactNode }) {
             <PackStock />
             <Link
               href="/settings#wallet"
-              className="tnum flex items-center gap-1 rounded-md px-2 py-1 text-sm font-semibold hover:bg-panel"
+              className="tnum flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold transition-colors duration-150 hover:bg-panel"
               title={me ? `${fmt(me.wallet.balance)} PW dont ${fmt(me.wallet.locked)} bloqués` : undefined}
             >
               {me ? fmt(me.wallet.available) : "…"}
               <span className="text-xs font-normal text-faint">PW</span>
             </Link>
+            <ThemeToggle />
             <Link
               href="/notifications"
-              className="relative flex size-9 items-center justify-center rounded-md hover:bg-panel"
+              className="relative flex size-9 items-center justify-center rounded-lg transition-colors duration-150 hover:bg-panel"
               aria-label={`Notifications${me?.unreadNotifications ? ` (${me.unreadNotifications} non lues)` : ""}`}
             >
               <Bell className="size-[1.15rem]" strokeWidth={1.75} />
