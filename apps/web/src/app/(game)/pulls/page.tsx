@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CARDS_PER_PACK,
   DROP_TABLE_GUARANTEED,
   DROP_TABLE_STANDARD,
   DROP_TABLE_TOTAL,
@@ -25,6 +26,29 @@ const SPEEDS = [
 
 const pct = (bp: number) =>
   `${((bp / DROP_TABLE_TOTAL) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} %`;
+
+/** Jauge du stock : une case par paquet, groupées par dix comme les rangées d'une planche. */
+function StockGauge({ available, max }: { available: number; max: number }) {
+  const groups = Array.from({ length: Math.ceil(max / 10) }, (_, g) =>
+    Array.from({ length: Math.min(10, max - g * 10) }, (_, i) => g * 10 + i),
+  );
+  return (
+    <span className="flex gap-1.5" aria-hidden>
+      {groups.map((group, g) => (
+        <span key={g} className="flex gap-[2px]">
+          {group.map((i) => (
+            <span
+              key={i}
+              className={`h-3.5 w-[5px] rounded-[2px] transition-colors duration-300 ${
+                i < available ? "bg-accent shadow-[inset_0_0_0_1px_rgb(90_60_0/0.25)]" : "border border-line-strong"
+              }`}
+            />
+          ))}
+        </span>
+      ))}
+    </span>
+  );
+}
 
 export default function PullsPage() {
   const { me, mutateMe } = useMe();
@@ -69,15 +93,7 @@ export default function PullsPage() {
                   {me.packs.available}
                   <span className="text-faint">/{me.packs.max}</span>
                 </span>
-                {/* Jauge à cases : une case par paquet du stock. */}
-                <span className="flex gap-[3px]" aria-hidden>
-                  {Array.from({ length: me.packs.max }, (_, i) => (
-                    <span
-                      key={i}
-                      className={`h-3.5 w-2 rounded-[3px] transition-colors duration-300 ${i < me.packs.available ? "bg-accent shadow-[inset_0_0_0_1px_rgb(90_60_0/0.25)]" : "border border-line-strong"}`}
-                    />
-                  ))}
-                </span>
+                <StockGauge available={me.packs.available} max={me.packs.max} />
               </dd>
             </div>
             <div>
@@ -163,8 +179,8 @@ export default function PullsPage() {
               <thead>
                 <tr className="text-left text-xs text-faint">
                   <th className="px-3 py-1.5 font-semibold">Rareté</th>
-                  <th className="px-2 py-1.5 text-right font-semibold">Cartes 1–4</th>
-                  <th className="px-3 py-1.5 text-right font-semibold">Carte 5</th>
+                  <th className="px-2 py-1.5 text-right font-semibold">Cartes 1–{CARDS_PER_PACK - 1}</th>
+                  <th className="px-3 py-1.5 text-right font-semibold">Carte {CARDS_PER_PACK}</th>
                 </tr>
               </thead>
               <tbody>
@@ -187,8 +203,9 @@ export default function PullsPage() {
             {me && (
               <div className="border-t border-line p-3 text-sm">
                 <p className="text-xs leading-relaxed text-faint">
-                  Pity : après {me.packs.pityThreshold} paquets sans UR ni légendaire, la 5e carte du suivant est
-                  forcément UR ou mieux. Un paquet bonus coûte {ECONOMY.bonusPackPrice} PW.
+                  {CARDS_PER_PACK} cartes par paquet, la dernière Rare ou mieux. Pity : après {me.packs.pityThreshold}{" "}
+                  paquets sans UR ni légendaire, la dernière carte du suivant est forcément UR ou mieux. Un paquet bonus
+                  coûte {ECONOMY.bonusPackPrice} PW.
                 </p>
               </div>
             )}
