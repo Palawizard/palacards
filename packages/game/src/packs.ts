@@ -1,7 +1,8 @@
 import type { Rarity } from "./rarity.js";
 
-export const CARDS_PER_PACK = 5;
-export const MAX_STORED_PACKS = 10;
+export const CARDS_PER_PACK = 10;
+/** Plafond du stock de paquets gratuits. Un nouveau joueur commence plein (ensurePlayer, côté API). */
+export const MAX_STORED_PACKS = 30;
 export const PACK_REGEN_MS = 10 * 60 * 1000;
 export const PITY_THRESHOLD = 50;
 
@@ -20,7 +21,7 @@ export const DROP_TABLE_STANDARD: DropTable = {
   L: 7,
 };
 
-/** 5e emplacement : Rare ou mieux garanti. */
+/** Dernier emplacement du paquet : Rare ou mieux garanti. */
 export const DROP_TABLE_GUARANTEED: DropTable = {
   C: 0,
   PC: 0,
