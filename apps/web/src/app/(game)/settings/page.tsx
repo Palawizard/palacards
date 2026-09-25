@@ -93,7 +93,7 @@ export default function SettingsPage() {
               <button
                 type="button"
                 aria-pressed={!me.avatar}
-                className="rounded-full p-0.5 aria-pressed:ring-2 aria-pressed:ring-accent"
+                className="rounded-full p-0.5 transition-shadow duration-150 hover:ring-2 hover:ring-line-strong aria-pressed:ring-2 aria-pressed:ring-accent"
                 onClick={() =>
                   run(
                     () =>

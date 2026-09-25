@@ -69,6 +69,19 @@
   select {
     caret-color: var(--color-accent);
   }
+  /* Tailwind 4 remet les boutons en curseur par défaut : tout ce qui se clique montre la main. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="menuitem"],
+  [role="radio"]:not(:disabled),
+  [role="tab"],
+  select:not(:disabled),
+  summary,
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  label:has(> input[type="checkbox"], > input[type="radio"]) {
+    cursor: pointer;
+  }
   ::placeholder {
     color: var(--color-faint);
     opacity: 1;
@@ -196,6 +209,17 @@
       background: var(--color-panel-2);
       border-color: transparent;
     }
+    .btn-danger:hover:not(:disabled) {
+      background: color-mix(in oklab, var(--color-danger) 12%, transparent);
+      border-color: var(--color-danger);
+    }
+    :is(button, summary).chip:hover:not(:disabled) {
+      border-color: var(--color-faint);
+      color: var(--color-text);
+    }
+    :is(button, summary).chip[aria-pressed="true"]:hover:not(:disabled) {
+      color: var(--color-accent-strong);
+    }
   }
 
   .field {
@@ -278,6 +302,17 @@
     0 6px 18px -8px rgb(0 0 0 / 0.7);
   overflow: hidden;
   isolation: isolate;
+}
+/* Carte cliquable (lien vers la fiche) : légère levée au survol. */
+@media (hover: hover) and (pointer: fine) {
+  .pc-card {
+    transition:
+      transform 200ms var(--ease-out),
+      box-shadow 200ms var(--ease-out);
+  }
+  .pc-card:has(h3 a:hover) {
+    transform: translateY(-3px);
+  }
 }
 .pc-card[data-rarity="C"] {
   --r: var(--color-rarity-c);

@@ -148,7 +148,7 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
                   type="button"
                   aria-pressed={emblem === em}
                   onClick={() => setEmblem(em)}
-                  className="grid size-9 place-items-center rounded-md border border-line-strong text-lg aria-pressed:border-accent aria-pressed:bg-accent/15"
+                  className="grid size-9 place-items-center rounded-md border border-line-strong text-lg transition-colors duration-150 hover:border-faint aria-pressed:border-accent aria-pressed:bg-accent/15"
                 >
                   {em}
                 </button>
