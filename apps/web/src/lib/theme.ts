@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 /** Thème choisi sur cet appareil ; « system » suit le réglage du système. */
 export type ThemePref = "system" | "light" | "dark";
@@ -41,4 +41,19 @@ export function useTheme(): ThemePref {
     read,
     () => "system",
   );
+}
+
+/** Thème réellement affiché : le choix de l'appareil, ou celui du système. */
+export function useResolvedTheme(): "light" | "dark" {
+  const pref = useTheme();
+  const [systemDark, setSystemDark] = useState(true);
+  useEffect(() => {
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setSystemDark(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  if (pref !== "system") return pref;
+  return systemDark ? "dark" : "light";
 }
