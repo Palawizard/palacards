@@ -319,6 +319,32 @@ describe("collection et recyclage", () => {
       expect((await p.get(`/collection?sort=${sort}`)).status).toBe(200);
     }
   });
+
+  it("« tout sélectionner » renvoie les cartes recyclables du filtre, sans les protégées", async () => {
+    // Restent : cards[1] engagée (vente), cards[3] favorite, et les autres libres (cards[0] est recyclée).
+    const all = await p.get("/collection/selectable");
+    expect(all.status).toBe(200);
+    const ids = all.body.items.map((i: { id: number }) => i.id).sort((a: number, b: number) => a - b);
+    const free = cards
+      .slice(2)
+      .filter((_, i) => i !== 1)
+      .map((c) => c.instanceId)
+      .sort((a, b) => a - b);
+    expect(ids).toEqual(free);
+    expect(all.body.protected).toBe(2);
+    expect(all.body.truncated).toBe(false);
+
+    // Même filtre que la liste : une rareté ne renvoie que les exemplaires de cette rareté.
+    const rarity = cards[2]!.rarity;
+    const filtered = await p.get(`/collection/selectable?rarity=${rarity}&sort=rarity`);
+    expect(filtered.body.items.length).toBeGreaterThan(0);
+    expect(filtered.body.items.every((i: { rarity: string }) => i.rarity === rarity)).toBe(true);
+    expect((await p.get("/collection/selectable?favorites=true")).body).toMatchObject({ items: [], protected: 1 });
+
+    // Chacun ne voit que sa collection.
+    const other = await signUp(app);
+    expect((await other.get("/collection/selectable")).body.items).toEqual([]);
+  });
 });
 
 describe("catalogue", () => {
