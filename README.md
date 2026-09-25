@@ -87,11 +87,13 @@ docker compose up -d --wait --no-deps postgres api web  # `up --wait` échoue su
 
 ## CI
 
-`.github/workflows/ci.yml` (push et PR vers `dev` et `main`) : build, typecheck, lint, tests Vitest et Playwright sur un Postgres 17 de service, plus `pytest` du pipeline d'import. Pas encore de `pnpm format:check` : le dépôt n'est pas formaté avec Prettier.
+`.github/workflows/ci.yml` (push et PR vers `dev` et `main`) : build, typecheck, lint, tests Vitest et Playwright sur un Postgres 17 de service, plus `pytest` du pipeline d'import, et `pnpm format:check` (Prettier).
 
 ## Branches
 
-`main` (stable) ← `dev` (intégration) ← `feat/*`, `fix/*`, `chore/*`.
+`main` (stable, déployée) ← `dev` (intégration) ← `feat/*`, `fix/*`, `chore/*`.
+
+La prod suit `main` : sur vm-apps, un timer systemd vérifie toutes les 5 minutes si `main` a avancé et déploie le nouveau commit une fois sa CI verte (sauvegarde avant, retour aux images précédentes si le contrôle de santé échoue). `dev` n'est jamais déployée.
 
 ## Licence des contenus
 
