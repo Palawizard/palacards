@@ -1,0 +1,133 @@
+/*
+ * Fenêtre superposée des routes interceptées (fiche carte). Bureau : feuille centrée ;
+ * téléphone : feuille qui monte du bas, poignée de pouce en haut, défilement interne.
+ */
+.pc-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgb(4 6 20 / 0.62);
+  animation: pc-sheet-fade 180ms var(--ease-out) both;
+}
+
+.pc-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(60rem, 100%);
+  max-height: calc(100dvh - 3rem);
+  border: 1px solid var(--color-line-strong);
+  border-radius: 18px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-shadow: var(--shadow-pop);
+  outline: none;
+  animation: pc-sheet-rise 260ms var(--ease-drawer) both;
+}
+
+.pc-sheet-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.75rem 1.75rem 2rem;
+  border-radius: inherit;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+
+.pc-sheet-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-panel-2);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lift);
+  transition:
+    background-color 150ms var(--ease-out),
+    transform 150ms var(--ease-out);
+}
+.pc-sheet-close:hover {
+  background: var(--color-panel);
+}
+.pc-sheet-close:active {
+  transform: scale(0.94);
+}
+
+/* Le titre de la fiche ne passe pas sous le bouton de fermeture. */
+.pc-sheet-body .page-title {
+  margin-right: 3rem;
+}
+
+@media (max-width: 639.98px) {
+  .pc-sheet-backdrop {
+    place-items: end stretch;
+    padding: 0;
+  }
+  /* Bandeau fixe en haut de la feuille (poignée + fermer) : le contenu défile dessous sans passer sous le bouton. */
+  .pc-sheet {
+    padding-top: 3.25rem;
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+    animation-name: pc-sheet-up;
+    animation-duration: 320ms;
+  }
+  /* Poignée : signale une feuille posée sur la page, pas une nouvelle page. */
+  .pc-sheet::before {
+    content: "";
+    position: absolute;
+    top: 0.5rem;
+    left: 50%;
+    width: 2.5rem;
+    height: 4px;
+    margin-left: -1.25rem;
+    border-radius: 999px;
+    background: var(--color-line-strong);
+  }
+  .pc-sheet-body {
+    padding: 0.25rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--color-line);
+    border-radius: 0;
+  }
+  .pc-sheet-close {
+    top: 0.25rem;
+    right: 0.5rem;
+  }
+  .pc-sheet-body .page-title {
+    margin-top: 0.75rem;
+    margin-right: 0;
+  }
+}
+
+@keyframes pc-sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes pc-sheet-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+}
+@keyframes pc-sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-sheet {
+    animation-name: pc-sheet-fade;
+  }
+}
