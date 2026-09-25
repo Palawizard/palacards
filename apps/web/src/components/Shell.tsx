@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, Menu, Package, Search, X } from "lucide-react";
+import { Bell, Menu, Moon, Package, Search, Sun, X } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { NAV } from "@/lib/nav";
 import { authClient } from "@/lib/auth-client";
+import { setTheme, useTheme } from "@/lib/theme";
 
 /** Logo : capitales condensées sur une pastille couverture, comme le titre d'un album. */
 export function Wordmark({ className = "" }: { className?: string }) {
@@ -120,6 +121,35 @@ function SearchBox() {
         className="field h-9 min-h-0 rounded-full pl-8 text-sm"
       />
     </form>
+  );
+}
+
+/** Bascule clair / sombre rapide ; le réglage « comme le système » est dans les paramètres. */
+function ThemeToggle() {
+  const pref = useTheme();
+  const [systemDark, setSystemDark] = useState(true);
+  useEffect(() => {
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setSystemDark(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  const dark = pref === "system" ? systemDark : pref === "dark";
+  return (
+    <button
+      type="button"
+      className="hidden size-9 items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-panel hover:text-text sm:flex"
+      onClick={() => setTheme(dark ? "light" : "dark")}
+      aria-label={dark ? "Passer en mode clair" : "Passer en mode sombre"}
+      title={dark ? "Mode clair" : "Mode sombre"}
+    >
+      {dark ? (
+        <Sun className="size-[1.1rem]" strokeWidth={1.75} />
+      ) : (
+        <Moon className="size-[1.1rem]" strokeWidth={1.75} />
+      )}
+    </button>
   );
 }
 
@@ -257,6 +287,7 @@ export function Shell({ children }: { children: ReactNode }) {
               {me ? fmt(me.wallet.available) : "…"}
               <span className="text-xs font-normal text-faint">PW</span>
             </Link>
+            <ThemeToggle />
             <Link
               href="/notifications"
               className="relative flex size-9 items-center justify-center rounded-lg transition-colors duration-150 hover:bg-panel"

@@ -89,7 +89,7 @@ export function Card({ card, href, className = "", selected = false, priority = 
           <div className="absolute left-[3cqi] top-[3cqi] flex gap-[1.5cqi]">
             {card.locked && (
               <span
-                className="grid size-[1.7em] place-items-center rounded-full bg-black/70 text-warn"
+                className="grid size-[1.7em] place-items-center rounded-full bg-black/70 text-white"
                 title={card.locked === "auction" ? "En vente" : "Dans un échange"}
               >
                 <Lock

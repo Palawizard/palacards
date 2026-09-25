@@ -9,6 +9,7 @@ import { api, ApiError } from "@/lib/api";
 import { authClient, authErrorMessage } from "@/lib/auth-client";
 import { fmt, reasonLabel, relative } from "@/lib/format";
 import { useMe } from "@/lib/game";
+import { setTheme, useTheme } from "@/lib/theme";
 
 const GROUPS: Record<string, string> = {
   market: "Marché (enchères, ventes, wishlist)",
@@ -18,6 +19,11 @@ const GROUPS: Record<string, string> = {
   packs: "Stock de paquets plein",
   achievements: "Succès",
 };
+const THEMES = [
+  { value: "system", label: "Comme le système" },
+  { value: "light", label: "Clair" },
+  { value: "dark", label: "Sombre" },
+] as const;
 const SPEEDS = [
   { value: "normal", label: "Animée" },
   { value: "fast", label: "Rapide" },
@@ -34,6 +40,7 @@ function Section({ title, id, children }: { title: string; id?: string; children
 
 export default function SettingsPage() {
   const { me, mutateMe } = useMe();
+  const theme = useTheme();
   const [username, setUsername] = useState("");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -173,6 +180,24 @@ export default function SettingsPage() {
             Modifier
           </button>
         </form>
+      </Section>
+
+      <Section title="Apparence">
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Thème">
+          {THEMES.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              role="radio"
+              aria-checked={theme === t.value}
+              className="chip h-9 px-4 aria-checked:border-accent aria-checked:bg-accent aria-checked:text-accent-ink"
+              onClick={() => setTheme(t.value)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-xs text-faint">Enregistré sur cet appareil.</p>
       </Section>
 
       <Section title="Ouverture des paquets">

@@ -74,7 +74,7 @@ export default function PullsPage() {
                   {Array.from({ length: me.packs.max }, (_, i) => (
                     <span
                       key={i}
-                      className={`h-3.5 w-2 rounded-[3px] transition-colors duration-300 ${i < me.packs.available ? "bg-accent" : "border border-line-strong"}`}
+                      className={`h-3.5 w-2 rounded-[3px] transition-colors duration-300 ${i < me.packs.available ? "bg-accent shadow-[inset_0_0_0_1px_rgb(90_60_0/0.25)]" : "border border-line-strong"}`}
                     />
                   ))}
                 </span>
