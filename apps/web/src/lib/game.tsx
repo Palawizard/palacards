@@ -8,6 +8,7 @@ import useSWR, { SWRConfig, type KeyedMutator } from "swr";
 import { toast } from "sonner";
 import { api, API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
 import { describe } from "./notifications";
+import { play, unlockAudioOnFirstGesture, type Sfx } from "./sfx";
 import { pushMedia } from "./media";
 
 type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -51,6 +52,14 @@ export function useSocketEvent<E extends keyof ServerToClientEvents>(event: E, h
   }, [socket, event]);
 }
 
+/** Bruitages des notifications reçues en direct (les autres restent silencieuses). */
+const NOTIFICATION_SFX: Partial<Record<string, Sfx>> = {
+  achievement: "achievement",
+  guild_objective: "achievement",
+  auction_sold: "coin",
+  auction_won: "coin",
+};
+
 /**
  * Session de jeu : profil (`/me`), connexion Socket.IO unique et mises à jour en direct
  * du solde, du stock de paquets et des compteurs de non-lus.
@@ -65,6 +74,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (error instanceof ApiError && error.status === 401) router.replace("/login");
   }, [error, router]);
 
+  // Les navigateurs n'autorisent le son qu'après un geste : on prépare l'audio au premier clic.
+  useEffect(() => unlockAudioOnFirstGesture(), []);
+
   useEffect(() => {
     const s: GameSocket = io(API_URL || undefined, { path: SOCKET_PATH, withCredentials: true });
     s.on("wallet:update", (wallet) => void mutateMe((m) => (m ? { ...m, wallet } : m), { revalidate: false }));
@@ -72,6 +84,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     s.on("notification:new", (n) => {
       void mutateMe((m) => (m ? { ...m, unreadNotifications: n.unread } : m), { revalidate: false });
       const { text, href } = describe(n);
+      const sound = NOTIFICATION_SFX[n.type];
+      if (sound) play(sound);
       toast(text, { action: { label: "Voir", onClick: () => router.push(href) } });
     });
     s.on("message:new", () => void mutateMe());
@@ -95,10 +109,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const claim = () =>
       api<{ claimed: boolean; reward?: number; streak?: number }>("/daily", { method: "POST" })
         .then((r) => {
-          if (r.claimed)
-            toast.success(
-              `Bonus du jour : +${r.reward} PW${r.streak && r.streak > 1 ? ` (série de ${r.streak} jours)` : ""}`,
-            );
+          if (!r.claimed) return;
+          play("coin");
+          toast.success(
+            `Bonus du jour : +${r.reward} PW${r.streak && r.streak > 1 ? ` (série de ${r.streak} jours)` : ""}`,
+          );
         })
         .catch(() => {});
     void claim();
