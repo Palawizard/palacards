@@ -40,14 +40,14 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
             return (
               <li
                 key={i}
-                className="flex min-h-12 items-center gap-2 rounded-md border border-line bg-panel px-2 py-1.5"
+                className={`flex min-h-12 items-center gap-2 rounded-xl px-2 py-1.5 ${c ? "border border-line bg-panel" : "slot"}`}
               >
-                <span className="tnum w-5 text-center font-serif text-lg text-faint">{i + 1}</span>
+                <span className="tnum w-5 text-center font-display text-lg text-faint">{i + 1}</span>
                 {c ? (
                   <>
                     <Thumb card={c} size="sm" />
                     <span className="min-w-0 flex-1">
-                      <span className="line-clamp-1 font-serif">{c.title}</span>
+                      <span className="line-clamp-1 font-display">{c.title}</span>
                       <span className="tnum flex items-center gap-1.5 text-xs text-faint">
                         <RaritySigil rarity={c.rarity} /> ATK {fmt(c.atk)} · DEF {fmt(c.def)}
                       </span>
@@ -110,7 +110,7 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
             aria-label="Chercher dans ma collection"
           />
         </div>
-        <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto rounded-md border border-line bg-bg p-1">
+        <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto rounded-xl border border-line bg-bg p-1">
           {data?.items.map((c) => (
             <li key={c.instanceId}>
               <button
@@ -120,7 +120,7 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
                 className="flex w-full items-center gap-2 rounded p-1.5 text-left transition-colors duration-150 hover:bg-panel-2 disabled:opacity-40"
               >
                 <Thumb card={c} size="sm" />
-                <span className="line-clamp-1 flex-1 font-serif">{c.title}</span>
+                <span className="line-clamp-1 flex-1 font-display">{c.title}</span>
                 <span className="tnum text-xs text-faint">
                   {fmt(c.atk)} / {fmt(c.def)}
                 </span>

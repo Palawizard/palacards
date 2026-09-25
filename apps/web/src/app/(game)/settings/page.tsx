@@ -54,7 +54,7 @@ export default function SettingsPage() {
     }
   }
 
-  if (!me) return <div className="h-96 animate-pulse rounded-md bg-panel" aria-busy />;
+  if (!me) return <div className="h-96 animate-pulse rounded-xl bg-panel" aria-busy />;
 
   return (
     <div className="flex max-w-3xl flex-col gap-8">
@@ -183,7 +183,7 @@ export default function SettingsPage() {
               type="button"
               role="radio"
               aria-checked={me.animationSpeed === s.value}
-              className="chip h-9 px-4 aria-checked:border-accent aria-checked:bg-accent/15 aria-checked:text-accent-strong"
+              className="chip h-9 px-4 aria-checked:border-accent aria-checked:bg-accent aria-checked:text-accent-ink"
               onClick={() =>
                 run(
                   () =>
@@ -201,7 +201,7 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Notifications">
-        <ul className="flex flex-col divide-y divide-line rounded-md border border-line bg-panel">
+        <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-panel">
           {(prefs.data ?? []).map((p) => (
             <li key={p.group}>
               <label className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2.5">
@@ -248,7 +248,7 @@ export default function SettingsPage() {
                 <tr key={l.id} className="border-b border-line">
                   <td className="py-1.5 pr-3 text-faint">{relative(l.createdAt)}</td>
                   <td className="py-1.5 pr-3">{reasonLabel(l.reason)}</td>
-                  <td className={`py-1.5 pr-3 text-right font-semibold ${l.delta > 0 ? "text-accent" : "text-danger"}`}>
+                  <td className={`py-1.5 pr-3 text-right font-semibold ${l.delta > 0 ? "text-good" : "text-danger"}`}>
                     {l.delta > 0 ? "+" : ""}
                     {fmt(l.delta)}
                   </td>

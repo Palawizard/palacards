@@ -51,7 +51,7 @@ function Sleeve({ tearing, season }: { tearing: boolean; season: number }) {
       >
         <div className="absolute inset-x-5 top-[22%] border-t border-line-strong" />
         <div className="absolute inset-x-0 top-[34%] flex flex-col items-center gap-2 px-4 text-center">
-          <span className="font-serif text-[2.1rem] leading-none tracking-[-0.01em]">
+          <span className="font-display text-[2.1rem] leading-none tracking-[-0.01em]">
             Pala<span className="text-accent">Cards</span>
           </span>
           <span className="text-xs text-muted">5 articles de Wikipédia</span>
@@ -131,7 +131,7 @@ function FlipCard({
           aria-label={`Retourner la carte ${index + 1}`}
         >
           <span className="pc-back">
-            <span className="font-serif text-4xl text-muted">P</span>
+            <span className="font-display text-4xl text-muted">P</span>
           </span>
         </button>
       </motion.div>
