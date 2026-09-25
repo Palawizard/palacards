@@ -1,11 +1,13 @@
 "use client";
 
-import { AVATARS, type MeDTO } from "@palacards/shared";
+import { avatarImage, AVATARS, type MeDTO } from "@palacards/shared";
+import { ImageUp, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
 import { api, ApiError } from "@/lib/api";
+import { prepareAvatar } from "@/lib/avatar-image";
 import { authClient, authErrorMessage } from "@/lib/auth-client";
 import { fmt, reasonLabel, relative } from "@/lib/format";
 import { useMe } from "@/lib/game";
@@ -96,6 +98,54 @@ export default function SettingsPage() {
           </form>
           <fieldset>
             <legend className="label">Avatar</legend>
+            <div className="mb-4 flex flex-wrap items-center gap-4">
+              <Avatar name={me.displayName} avatar={me.avatar} size="lg" />
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <label
+                    className="btn btn-sm cursor-pointer has-[:disabled]:cursor-default has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
+                    aria-busy={busy}
+                  >
+                    <ImageUp aria-hidden className="size-4" />
+                    {avatarImage(me.avatar) ? "Changer de photo" : "Importer une photo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="sr-only"
+                      disabled={busy}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = "";
+                        if (!file) return;
+                        void run(async () => {
+                          const image = await prepareAvatar(file);
+                          await mutateMe(api<MeDTO>("/me/avatar", { method: "PUT", body: { image } }), {
+                            revalidate: false,
+                          });
+                        }, "Photo de profil mise à jour.");
+                      }}
+                    />
+                  </label>
+                  {avatarImage(me.avatar) && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      disabled={busy}
+                      onClick={() =>
+                        run(
+                          () => mutateMe(api<MeDTO>("/me/avatar", { method: "DELETE" }), { revalidate: false }),
+                          "Photo retirée.",
+                        )
+                      }
+                    >
+                      <Trash2 aria-hidden className="size-4" />
+                      Retirer la photo
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-muted">Recadrée en carré au centre. Ou choisis un emblème :</p>
+              </div>
+            </div>
             <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
