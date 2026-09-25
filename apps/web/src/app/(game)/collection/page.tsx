@@ -23,8 +23,8 @@ interface Summary {
 }
 
 const SORTS = [
-  { value: "date", label: "Plus récentes" },
   { value: "rarity", label: "Rareté" },
+  { value: "date", label: "Plus récentes" },
   { value: "atk", label: "Attaque" },
   { value: "def", label: "Défense" },
   { value: "views", label: "Vues" },
@@ -68,7 +68,7 @@ function Completion({ summary }: { summary: Summary }) {
 
 export default function CollectionPage() {
   const [rarity, setRarity] = useState<Rarity[]>([]);
-  const [sort, setSort] = useState<Sort>("date");
+  const [sort, setSort] = useState<Sort>("rarity");
   const [q, setQ] = useState("");
   const query = useDeferredValue(q);
   const [favorites, setFavorites] = useState(false);
