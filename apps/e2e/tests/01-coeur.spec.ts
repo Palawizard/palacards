@@ -4,17 +4,17 @@ import { apiCall, instantPacks, newPlayer } from "./helpers";
 test("inscription → ouvrir un paquet → recycler un doublon", async ({ browser }) => {
   const { page } = await newPlayer(browser, "alice");
 
-  // Ouverture animée : la pochette, puis les 5 cartes retournées une à une.
+  // Ouverture animée : la pochette, puis les 10 cartes retournées une à une.
   await expect(page.getByRole("heading", { name: "Paquets", level: 1 })).toBeVisible();
-  await expect(page.getByRole("main").getByTitle("Stock : 10/10")).toBeVisible();
+  await expect(page.getByRole("main").getByTitle("Stock : 30/30")).toBeVisible();
   await page.getByRole("button", { name: "Ouvrir un paquet" }).click();
   const pack = page.getByRole("region", { name: "Ouverture de paquet" });
-  await expect(pack.locator("article.pc-card")).toHaveCount(5);
+  await expect(pack.locator("article.pc-card")).toHaveCount(10);
   await page
     .getByRole("button", { name: "Tout retourner" })
     .click({ timeout: 5_000 })
     .catch(() => {});
-  await expect(page.getByRole("main").getByTitle("Stock : 9/10")).toBeVisible();
+  await expect(page.getByRole("main").getByTitle("Stock : 29/30")).toBeVisible();
 
   // Mode instantané, puis quelques paquets pour obtenir un doublon.
   await instantPacks(page);
@@ -23,7 +23,7 @@ test("inscription → ouvrir un paquet → recycler un doublon", async ({ browse
 
   await page.goto("collection");
   await expect(page.getByRole("heading", { name: "Collection" })).toBeVisible();
-  await expect(page.getByText("45 cartes", { exact: true })).toBeVisible();
+  await expect(page.getByText("90 cartes", { exact: true })).toBeVisible();
 
   // Doublon garanti : un exemplaire de plus d'un article déjà possédé.
   await apiCall(page, "POST", "/test/grant-card", {});

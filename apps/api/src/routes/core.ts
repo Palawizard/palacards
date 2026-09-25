@@ -89,7 +89,8 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
 
   // --- Paquets ---
   api.get("/packs", auth, async (req) => getPackState(ctx, req.user.id));
-  api.post("/packs/open", { ...auth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) =>
+  // Limite au-dessus du stock plein (MAX_STORED_PACKS) : vider son stock en mode instantané doit passer.
+  api.post("/packs/open", { ...auth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req) =>
     openPack(ctx, req.user.id),
   );
 
