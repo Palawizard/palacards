@@ -48,7 +48,61 @@ test("fiche carte et catalogue", async ({ browser }) => {
   await expect(page.locator("article.pc-card").first()).toBeVisible();
   await page.locator("article.pc-card h3 a").first().click();
   await expect(page).toHaveURL(/\/card\/\d+$/);
+
+  // Depuis une vignette, la fiche s'ouvre par-dessus le catalogue, qui reste en place dessous.
+  const sheet = page.getByRole("dialog");
+  await expect(sheet.getByRole("heading", { name: "Détenteurs" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Toutes les cartes", level: 1 })).toBeAttached();
+  await page.keyboard.press("Escape");
+  await expect(sheet).toBeHidden();
+  await expect(page).toHaveURL(/\/cards\?q=/);
+
+  // Rouverte puis fermée au bouton ; un chargement direct de la fiche affiche la page complète.
+  await page.locator("article.pc-card h3 a").first().click();
+  await sheet.getByRole("button", { name: "Fermer la fiche" }).click();
+  await expect(sheet).toBeHidden();
+  await page.locator("article.pc-card h3 a").first().click();
+  await expect(sheet).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("dialog")).toBeHidden();
   await expect(page.getByRole("heading", { name: "Détenteurs" })).toBeVisible();
+});
+
+test("la fiche d'une carte tirée s'ouvre sans quitter l'ouverture du paquet", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "fiche");
+  await page.getByRole("button", { name: "Ouvrir un paquet" }).click();
+  const pack = page.getByRole("region", { name: "Ouverture de paquet" });
+  await page.getByRole("button", { name: "Tout retourner" }).click();
+  await pack.locator("article.pc-card h3 a").first().click();
+  await expect(page.getByRole("dialog").getByRole("heading", { name: "Mes exemplaires" })).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Fermer la fiche" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(pack.locator("article.pc-card")).toHaveCount(10);
+});
+
+test("tout sélectionner les cartes du filtre pour les recycler", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "tri");
+  await instantPacks(page);
+  for (let i = 0; i < 3; i++) await apiCall(page, "POST", "/packs/open");
+  const commons = await apiCall<{ total: number }>(page, "GET", "/collection?rarity=C&limit=1");
+  expect(commons.total).toBeGreaterThan(0);
+
+  await page.goto("collection");
+  await page.getByRole("button", { name: "Sélectionner", exact: true }).click();
+  await page
+    .getByRole("group", { name: /rareté/i })
+    .getByRole("button", { name: /^Commune/ })
+    .click();
+  await expect(page.getByText(`${commons.total} carte`, { exact: false }).first()).toBeVisible();
+  await page.getByRole("button", { name: "Tout sélectionner" }).click();
+  await expect(page.getByRole("button", { name: "Tout désélectionner" })).toBeVisible();
+  await page.getByRole("button", { name: new RegExp(`^Recycler ${commons.total} `) }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: /Recycler \(\+/ })
+    .click();
+  await expect(page.getByText(`${commons.total} cartes recyclées`, { exact: false })).toBeVisible();
+  expect((await apiCall<{ total: number }>(page, "GET", "/collection?rarity=C&limit=1")).total).toBe(0);
 });
 
 test("redirige vers la connexion sans session", async ({ page }) => {
