@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Archivo } from "next/font/google";
+import Script from "next/script";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { Toaster } from "@/components/Toaster";
@@ -28,12 +29,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    // Le script du <head> pose data-theme avant l'hydratation : React ne doit pas s'en plaindre.
+    // Le script de thème pose data-theme avant l'hydratation : React ne doit pas s'en plaindre.
     <html lang="fr" className={archivo.variable} suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
-      </head>
       <body className="min-h-dvh antialiased">
+        <Script id="theme" strategy="beforeInteractive">
+          {THEME_SCRIPT}
+        </Script>
         {children}
         <Toaster />
       </body>
