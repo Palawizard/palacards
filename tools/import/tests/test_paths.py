@@ -35,6 +35,7 @@ def write_articles(path: Path, n: int) -> None:
                 "page_id": pa.array(ids, pa.int64()),
                 "title": [f"L'article {i}" for i in ids],
                 "page_len": pa.array([i * 10 for i in ids], pa.int32()),
+                "prose_len": pa.array([i * 6 for i in ids], pa.int32()),
                 "refs": pa.array([i % 5 for i in ids], pa.int32()),
                 "sections": pa.array([i % 7 for i in ids], pa.int32()),
                 "images": pa.array([i % 3 for i in ids], pa.int32()),
@@ -137,7 +138,7 @@ def test_env_file_override_and_data_from_env_file(monkeypatch, tmp_path: Path, r
 
 
 def test_env_file_override_missing(monkeypatch, tmp_path: Path):
-    monkeypatch.setenv(cli.ENV_FILE_VAR, str(tmp_path / "absent.env"))
+    monkeypatch.setenv(cli.ENV_FILE_VAR, str(env := tmp_path / "absent.env")) if False else monkeypatch.setenv(cli.ENV_FILE_VAR, str(tmp_path / "absent.env"))
     with pytest.raises(SystemExit):
         cli.find_env_file()
 

@@ -1,7 +1,8 @@
 """Étape 2 : lit le XML multistream en streaming (mwxml) et écrit `articles.parquet`.
 
 Une ligne par article de l'espace principal (ns 0) hors redirections :
-page_id, title, page_len (octets du wikicode), refs, sections, images, links.
+page_id, title, page_len (octets du wikicode), prose_len (caractères de texte lisible), refs,
+sections, images, links.
 """
 
 from __future__ import annotations
@@ -16,13 +17,14 @@ import pyarrow.parquet as pq
 
 from . import paths
 from .download import open_dump
-from .wikitext import measure
+from .wikitext import measure, prose_length
 
 SCHEMA = pa.schema(
     [
         ("page_id", pa.int64()),
         ("title", pa.string()),
         ("page_len", pa.int32()),
+        ("prose_len", pa.int32()),
         ("refs", pa.int32()),
         ("sections", pa.int32()),
         ("images", pa.int32()),
@@ -51,6 +53,7 @@ def iter_articles(stream: BinaryIO) -> Iterator[dict[str, int | str]]:
             "page_id": int(page.id),
             "title": page.title.replace("_", " "),
             "page_len": int(main.bytes) if main and main.bytes is not None else len(text.encode("utf-8")),
+            "prose_len": prose_length(text),
             "refs": stats.refs,
             "sections": stats.sections,
             "images": stats.images,
