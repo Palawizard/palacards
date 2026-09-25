@@ -479,6 +479,73 @@
   }
 }
 
+/*
+ * Échelle de rareté sur la face : un cadre de la couleur de la rareté, de plus en plus épais,
+ * puis un papier « brillante » dès SR. La commune reste en papier nu.
+ */
+.pc-frame {
+  --frame: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--frame) var(--r);
+}
+.pc-card[data-rarity="PC"] .pc-frame {
+  --frame: 1cqi;
+}
+.pc-card[data-rarity="R"] .pc-frame {
+  --frame: 1.6cqi;
+}
+.pc-card[data-rarity="SR"] .pc-frame {
+  --frame: 2.2cqi;
+}
+.pc-card:is([data-rarity="UR"], [data-rarity="L"]) .pc-frame {
+  --frame: 2.6cqi;
+}
+.pc-card:is([data-rarity="SR"], [data-rarity="UR"], [data-rarity="L"]) .pc-frame {
+  background: linear-gradient(
+    125deg,
+    color-mix(in oklab, var(--r) 18%, var(--color-sticker)) 0%,
+    var(--color-sticker) 38%,
+    color-mix(in oklab, var(--r) 8%, var(--color-sticker)) 62%,
+    color-mix(in oklab, var(--r) 20%, var(--color-sticker)) 100%
+  );
+}
+
+/* Pastille de rareté, reprise de la pochette : ronde, inclinée, liseré pointillé. */
+.pc-pastille {
+  position: absolute;
+  left: 2.5cqi;
+  top: 2.5cqi;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 2.5em;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--r);
+  color: var(--r-ink);
+  font-weight: 800;
+  font-stretch: 62%;
+  font-size: 1em;
+  line-height: 1;
+  transform: rotate(-12deg);
+  box-shadow: 0 2px 6px -2px rgb(0 0 0 / 0.55);
+}
+.pc-pastille::before {
+  content: "";
+  position: absolute;
+  inset: 0.2em;
+  border-radius: inherit;
+  border: 1.5px dashed color-mix(in oklab, var(--r-ink) 40%, transparent);
+}
+.pc-card[data-rarity="C"] .pc-pastille {
+  width: 2.1em;
+  font-size: 0.9em;
+}
+.pc-card:is([data-rarity="UR"], [data-rarity="L"]) .pc-pastille {
+  width: 2.9em;
+  font-size: 1.12em;
+}
+
 /* Bande de titre à la couleur de la rareté. */
 .pc-band {
   background: var(--r);

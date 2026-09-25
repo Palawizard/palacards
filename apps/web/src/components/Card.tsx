@@ -63,7 +63,7 @@ export function Card({ card, href, className = "", selected = false, priority = 
       aria-label={`${card.title}, ${RARITY_LABELS[card.rarity]}, attaque ${card.atk}, défense ${card.def}`}
     >
       {/* Les unités cqi se rapportent à la carte (conteneur) : tout le contenu suit sa largeur. */}
-      <div className="flex h-full flex-col p-[4cqi] text-[length:max(10px,6cqi)]">
+      <div className="pc-frame flex h-full flex-col p-[4cqi] text-[length:max(10px,6cqi)]">
         <figure className="pc-art relative flex-1 overflow-hidden rounded-t-[6px] bg-sticker-line">
           {thumb ? (
             // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia servies telles quelles (pas d'optimiseur côté serveur)
@@ -86,7 +86,11 @@ export function Card({ card, href, className = "", selected = false, priority = 
               {card.title.slice(0, 1)}
             </div>
           )}
-          <div className="absolute left-[3cqi] top-[3cqi] flex gap-[1.5cqi]">
+          {/* Pastille de rareté, comme celle de la pochette : le premier repère de la vignette. */}
+          <span className="pc-pastille" aria-hidden>
+            {card.rarity}
+          </span>
+          <div className="absolute bottom-[3cqi] left-[3cqi] flex gap-[1.5cqi]">
             {card.locked && (
               <span
                 className="grid size-[1.7em] place-items-center rounded-full bg-black/70 text-white"
@@ -142,10 +146,7 @@ export function Card({ card, href, className = "", selected = false, priority = 
           </div>
         </dl>
 
-        <footer className="relative z-[2] mt-[2cqi] grid grid-cols-[auto_1fr_auto] items-center gap-[2cqi] text-[0.85em]">
-          <span className="pc-sigil" title={RARITY_LABELS[card.rarity]}>
-            {card.rarity}
-          </span>
+        <footer className="relative z-[2] mt-[2cqi] grid grid-cols-[1fr_auto] items-center gap-[2cqi] text-[0.85em]">
           <span className="flex items-center gap-[2cqi] font-semibold text-sticker-muted">
             <span title={`Édition saison ${card.season}`}>S{card.season}</span>
             <LevelPips level={card.level} />
