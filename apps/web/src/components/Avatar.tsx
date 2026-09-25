@@ -14,7 +14,7 @@ export function Avatar({
   return (
     <span className="relative shrink-0">
       <span
-        className={`grid ${dim} place-items-center rounded-full border border-line-strong bg-panel-2 font-serif`}
+        className={`grid ${dim} place-items-center rounded-full border border-line-strong bg-panel-2 font-display`}
         aria-hidden
       >
         {avatar ?? name.slice(0, 1).toUpperCase()}

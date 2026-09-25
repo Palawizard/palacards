@@ -1,24 +1,30 @@
 // Composants d'interface partagés, importés uniquement par des composants client.
 import { RARITIES, RARITY_LABELS, type Rarity } from "@palacards/game";
 import { useEffect, useRef, type ReactNode } from "react";
-import { RaritySigil } from "./Card";
 
-/** Filtre de raretés (bascules). */
+/** Filtre de raretés : les sigles eux-mêmes servent de bascules. Sans sélection, tout est affiché. */
 export function RarityFilter({ value, onChange }: { value: Rarity[]; onChange: (v: Rarity[]) => void }) {
   return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer par rareté">
+    <div
+      className="flex flex-wrap gap-1.5"
+      role="group"
+      aria-label="Filtrer par rareté"
+      data-active={value.length > 0 || undefined}
+    >
       {[...RARITIES].reverse().map((r) => {
         const on = value.includes(r);
         return (
           <button
             key={r}
             type="button"
-            className="chip px-1.5"
+            className="rarity-toggle"
+            data-rarity={r}
             aria-pressed={on}
+            aria-label={RARITY_LABELS[r]}
             title={RARITY_LABELS[r]}
             onClick={() => onChange(on ? value.filter((x) => x !== r) : [...value, r])}
           >
-            <RaritySigil rarity={r} />
+            {r}
           </button>
         );
       })}
@@ -74,8 +80,8 @@ export function Select<T extends string>({
 /** État vide : une phrase, et l'action qui en sort. */
 export function Empty({ title, children }: { title: string; children?: ReactNode }) {
   return (
-    <div className="rounded-md border border-dashed border-line-strong px-5 py-10 text-center">
-      <p className="font-serif text-xl">{title}</p>
+    <div className="slot px-5 py-10 text-center">
+      <p className="font-display text-2xl uppercase">{title}</p>
       {children && <div className="mx-auto mt-2 max-w-md text-sm text-muted">{children}</div>}
     </div>
   );
@@ -86,7 +92,7 @@ export function ErrorBox({ error, retry }: { error: unknown; retry?: () => void 
   return (
     <div
       role="alert"
-      className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-danger/40 bg-danger/10 px-4 py-3 text-sm text-danger"
     >
       <span>{message}</span>
       {retry && (
@@ -98,7 +104,7 @@ export function ErrorBox({ error, retry }: { error: unknown; retry?: () => void 
   );
 }
 
-/** Squelette de grille de cartes pendant le chargement. */
+/** Squelette de grille pendant le chargement : les cases numérotées d'un album encore vide. */
 export function CardSkeletons({ count = 12 }: { count?: number }) {
   return (
     <div
@@ -106,7 +112,12 @@ export function CardSkeletons({ count = 12 }: { count?: number }) {
       aria-hidden
     >
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="aspect-[5/7] animate-pulse rounded-[10px] border border-line bg-panel" />
+        <div
+          key={i}
+          className="slot grid aspect-[5/7] animate-pulse place-items-center font-display text-4xl text-line-strong"
+        >
+          {i + 1}
+        </div>
       ))}
     </div>
   );
@@ -163,13 +174,13 @@ export function ConfirmDialog({
     <dialog
       ref={ref}
       onClose={onClose}
-      className="m-auto w-[min(26rem,calc(100vw-2rem))] rounded-lg border border-line-strong bg-panel p-0 text-text backdrop:bg-black/60"
+      className="m-auto w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-line-strong bg-panel p-0 text-text shadow-pop backdrop:bg-black/60"
     >
       <div className="p-5">
-        <h2 className="font-serif text-xl">{title}</h2>
+        <h2 className="font-display text-2xl uppercase">{title}</h2>
         <div className="mt-2 text-sm text-muted">{children}</div>
       </div>
-      <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+      <div className="flex justify-end gap-2 border-t-2 border-dashed border-line px-5 py-3">
         <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
           Annuler
         </button>

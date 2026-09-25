@@ -23,7 +23,7 @@ export function Thumb({ card, size = "md" }: { card: CardDTO; size?: "sm" | "md"
   const dim = size === "sm" ? "size-10" : "size-14";
   return (
     <span
-      className={`${dim} relative grid shrink-0 place-items-center overflow-hidden rounded-md border bg-panel-2 font-serif text-xl`}
+      className={`${dim} relative grid shrink-0 place-items-center overflow-hidden rounded-lg border bg-panel-2 font-display text-xl`}
       style={{ borderColor: `var(--color-rarity-${card.rarity.toLowerCase()})` }}
       aria-hidden
     >
@@ -104,7 +104,7 @@ export function AuctionRow({
       <div className="min-w-0">
         <Link
           href={`/card/${auction.card.cardId}`}
-          className="line-clamp-1 font-serif text-lg leading-snug hover:underline"
+          className="line-clamp-1 font-display text-lg leading-snug hover:underline"
         >
           {auction.card.title}
         </Link>
@@ -131,7 +131,7 @@ export function AuctionRow({
         <span className={`text-xs ${open && left < 60_000 ? "font-semibold text-danger" : "text-faint"}`}>
           {open ? `fin dans ${countdown(left)}` : auction.status === "sold" ? "vendue" : "terminée"}
         </span>
-        {changed && <span className="text-xs font-semibold text-accent">Nouvelle offre</span>}
+        {changed && <span className="text-xs font-semibold text-good">Nouvelle offre</span>}
       </div>
       <div className="col-span-2 flex flex-wrap items-center gap-2 sm:col-span-1 sm:justify-end">
         {mine ? (
@@ -228,7 +228,7 @@ export function SellForm({ card, onDone }: { card: CardDTO; onDone: () => void }
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-3 rounded-md border border-line bg-panel-2 p-3 sm:grid-cols-3">
+    <form onSubmit={submit} className="grid gap-3 rounded-xl border border-line bg-panel-2 p-3 sm:grid-cols-3">
       <label>
         <span className="label">Mise à prix (PW)</span>
         <input

@@ -109,7 +109,7 @@ export default function AdminPage() {
         <h2 className="section-title mt-0">Masse monétaire</h2>
         {data ? (
           <>
-            <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-line bg-line sm:grid-cols-4">
+            <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-4">
               <Stat label="PW en circulation" value={fmt(data.economy.supply.total)} />
               <Stat label="dont bloqués" value={fmt(data.economy.supply.locked)} />
               <Stat label="Joueurs" value={fmt(data.economy.supply.players)} />
@@ -135,7 +135,7 @@ export default function AdminPage() {
                 {data.economy.flows.map((f) => (
                   <tr key={f.reason} className="border-t border-line">
                     <td className="py-1.5">{reasonLabel(f.reason)}</td>
-                    <td className={`py-1.5 text-right ${f.created ? "text-accent" : "text-faint"}`}>
+                    <td className={`py-1.5 text-right ${f.created ? "text-good" : "text-faint"}`}>
                       {f.created ? `+${fmt(f.created)}` : "—"}
                     </td>
                     <td className={`py-1.5 text-right ${f.destroyed ? "text-danger" : "text-faint"}`}>
@@ -147,7 +147,7 @@ export default function AdminPage() {
             </table>
           </>
         ) : (
-          <div className="h-40 animate-pulse rounded-md bg-panel" />
+          <div className="h-40 animate-pulse rounded-xl bg-panel" />
         )}
       </section>
 
@@ -235,7 +235,7 @@ export default function AdminPage() {
       <section>
         <h2 className="section-title mt-0">Journal</h2>
         {ledger.error && <ErrorBox error={ledger.error} retry={() => ledger.mutate()} />}
-        {!ledger.data && !ledger.error && <div className="h-40 animate-pulse rounded-md bg-panel" />}
+        {!ledger.data && !ledger.error && <div className="h-40 animate-pulse rounded-xl bg-panel" />}
         {ledger.data && !ledger.data.length && <p className="text-sm text-faint">Aucun mouvement pour l’instant.</p>}
         <ul className="tnum text-sm">
           {(ledger.data ?? []).map((l) => (
@@ -244,7 +244,7 @@ export default function AdminPage() {
               className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-line py-1.5 sm:grid-cols-[8rem_minmax(0,9rem)_minmax(0,1fr)_5rem_5rem]"
             >
               <span className="truncate font-semibold sm:order-2">{l.username ?? "—"}</span>
-              <span className={`text-right sm:order-4 ${l.delta > 0 ? "text-accent" : "text-danger"}`}>
+              <span className={`text-right sm:order-4 ${l.delta > 0 ? "text-good" : "text-danger"}`}>
                 {l.delta > 0 ? "+" : ""}
                 {fmt(l.delta)} <span className="text-faint sm:hidden">{KINDS[l.kind] ?? l.kind}</span>
               </span>

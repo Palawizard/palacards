@@ -45,7 +45,7 @@ function CardPicker({ onPick, onClose }: { onPick: (c: CardDTO) => void; onClose
     `/collection?limit=30&sort=rarity${q.trim().length >= 2 ? `&q=${encodeURIComponent(q.trim())}` : ""}`,
   );
   return (
-    <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-md border border-line-strong bg-panel p-2 shadow-[0_12px_30px_-10px_rgb(0_0_0/0.8)]">
+    <div className="absolute bottom-full left-0 right-0 z-20 mb-2 rounded-xl border border-line-strong bg-panel p-2 shadow-pop">
       <div className="mb-2 flex gap-2">
         <input
           className="field h-8 min-h-0 text-sm"
@@ -68,7 +68,7 @@ function CardPicker({ onPick, onClose }: { onPick: (c: CardDTO) => void; onClose
               onClick={() => onPick(c)}
             >
               <Thumb card={c} size="sm" />
-              <span className="line-clamp-1 flex-1 font-serif">{c.title}</span>
+              <span className="line-clamp-1 flex-1 font-display">{c.title}</span>
               <RaritySigil rarity={c.rarity} />
             </button>
           </li>
@@ -161,7 +161,7 @@ function Thread({
 
   return (
     <div className="flex min-h-[60dvh] flex-col">
-      <h2 className="border-b border-line pb-1 font-serif text-xl">Discussion : {title}</h2>
+      <h2 className="border-b border-line pb-1 font-display text-xl">Discussion : {title}</h2>
       <div
         ref={list}
         className="max-h-[65dvh] flex-1 overflow-y-auto py-3"
@@ -192,10 +192,10 @@ function Thread({
                   {msg.card && (
                     <Link
                       href={`/card/${msg.card.cardId}`}
-                      className="mt-1.5 inline-flex items-center gap-2 rounded-md border border-line bg-panel px-2 py-1.5 hover:border-faint"
+                      className="mt-1.5 inline-flex items-center gap-2 rounded-xl border border-line bg-panel px-2 py-1.5 hover:border-faint"
                     >
                       <RaritySigil rarity={msg.card.rarity} />
-                      <span className="font-serif">{msg.card.title}</span>
+                      <span className="font-display">{msg.card.title}</span>
                       <span className="text-xs text-faint">S{msg.card.season}</span>
                     </Link>
                   )}
@@ -298,7 +298,7 @@ function Messages() {
           {error ? (
             <ErrorBox error={error} retry={() => mutate()} />
           ) : !data ? (
-            <div className="h-60 animate-pulse rounded-md bg-panel" />
+            <div className="h-60 animate-pulse rounded-xl bg-panel" />
           ) : data.length === 0 ? (
             <Empty title="Aucune conversation">
               Écris à un ami depuis la page{" "}
@@ -308,7 +308,7 @@ function Messages() {
               .
             </Empty>
           ) : (
-            <ul className="divide-y divide-line rounded-md border border-line bg-panel">
+            <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
               {data.map((c) => (
                 <li key={c.channel}>
                   <Link
@@ -381,7 +381,7 @@ function Messages() {
 
 export default function MessagesPage() {
   return (
-    <Suspense fallback={<div className="h-60 animate-pulse rounded-md bg-panel" />}>
+    <Suspense fallback={<div className="h-60 animate-pulse rounded-xl bg-panel" />}>
       <Messages />
     </Suspense>
   );

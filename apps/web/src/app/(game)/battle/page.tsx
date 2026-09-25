@@ -180,7 +180,7 @@ function Battles() {
           <h2 className="section-title mt-0">Défis reçus</h2>
           <ul className="flex flex-col gap-2">
             {incoming.map((x) => (
-              <li key={x.id} className="rounded-md border border-accent/40 bg-panel">
+              <li key={x.id} className="rounded-lg border border-accent/40 bg-panel">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
                   <span>
                     <strong>{x.opponent.name}</strong> te défie{" "}
@@ -212,7 +212,7 @@ function Battles() {
       {ongoing.length > 0 && (
         <section>
           <h2 className="section-title mt-0">En cours</h2>
-          <ul className="divide-y divide-line rounded-md border border-line bg-panel">
+          <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
             {ongoing.map((x) => (
               <li key={x.id}>
                 <Link
@@ -242,11 +242,11 @@ function Battles() {
       <section>
         <h2 className="section-title">Historique</h2>
         {!data ? (
-          <div className="h-32 animate-pulse rounded-md bg-panel" />
+          <div className="h-32 animate-pulse rounded-xl bg-panel" />
         ) : history.length === 0 ? (
           <Empty title="Aucun duel terminé">Défie un ami pour commencer.</Empty>
         ) : (
-          <ul className="divide-y divide-line rounded-md border border-line bg-panel">
+          <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
             {history.map((x) => (
               <li key={x.id}>
                 <Link
@@ -255,7 +255,7 @@ function Battles() {
                 >
                   <span>
                     {x.status === "finished" ? (
-                      <strong className={x.result === "win" ? "text-accent" : x.result === "loss" ? "text-danger" : ""}>
+                      <strong className={x.result === "win" ? "text-good" : x.result === "loss" ? "text-danger" : ""}>
                         {RESULT[x.result ?? "draw"]}
                       </strong>
                     ) : (
@@ -266,7 +266,7 @@ function Battles() {
                   <span className="tnum text-sm">
                     {x.status === "finished" && `${x.score.you} – ${x.score.them}`}
                     {x.eloDelta !== null && x.status === "finished" && (
-                      <span className={`ml-2 ${x.eloDelta >= 0 ? "text-accent" : "text-danger"}`}>
+                      <span className={`ml-2 ${x.eloDelta >= 0 ? "text-good" : "text-danger"}`}>
                         {x.eloDelta >= 0 ? "+" : ""}
                         {x.eloDelta}
                       </span>
@@ -285,7 +285,7 @@ function Battles() {
 
 export default function BattlePage() {
   return (
-    <Suspense fallback={<div className="h-72 animate-pulse rounded-md bg-panel" />}>
+    <Suspense fallback={<div className="h-72 animate-pulse rounded-xl bg-panel" />}>
       <Battles />
     </Suspense>
   );
