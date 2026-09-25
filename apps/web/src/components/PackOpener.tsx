@@ -121,7 +121,7 @@ function Sleeve({
                 <span className="tnum block text-[1.9rem] leading-[0.9]">{season}</span>
               </span>
             </span>
-            <span className="absolute inset-x-[8%] top-[36%] block text-left font-display uppercase leading-[0.82] text-cover-ink [text-shadow:0_2px_0_#0b1f66,0_4px_14px_rgb(0_0_0/0.35)]">
+            <span className="absolute inset-x-[8%] top-[36%] block text-left font-display uppercase leading-[0.82] text-cover-ink [text-shadow:0_2px_0_var(--color-cover-2),0_4px_14px_rgb(0_0_0/0.35)]">
               <span className="block text-[3.7rem]">Pala</span>
               <span className="block text-[3.7rem] text-accent">Cards</span>
             </span>
