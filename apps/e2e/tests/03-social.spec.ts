@@ -47,3 +47,23 @@ test("ami → message en temps réel → guilde", async ({ browser }) => {
   await expect(bob.page.getByText("Objectif de la semaine")).toBeVisible();
   await expect(bob.page.getByRole("link", { name: alice.name })).toBeVisible();
 });
+
+test("photo de profil importée depuis les paramètres", async ({ browser }) => {
+  const { page, name } = await newPlayer(browser, "photo");
+  await page.goto("settings");
+  // Image de 40 × 30 px : recadrée en carré et réencodée par le navigateur avant l'envoi.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAALklEQVR4nO3NMQEAMAgAoLk0ZjKxsazg5wMFiM56F/7JKhaLxWKxWCwWi8XilQH91QGGD5y0UgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  await page.getByLabel("Importer une photo").setInputFiles({ name: "moi.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByText("Photo de profil mise à jour.")).toBeVisible();
+
+  const header = page.getByRole("button", { name: `Compte de ${name}` }).locator("img");
+  await expect(header).toHaveAttribute("src", /\/avatars\/.+\?v=/);
+  await expect.poll(() => header.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(256);
+
+  await page.getByRole("button", { name: "Retirer la photo" }).click();
+  await expect(page.getByText("Photo retirée.")).toBeVisible();
+  await expect(header).toHaveCount(0);
+});

@@ -5,6 +5,7 @@ import { MotionConfig } from "motion/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AvatarFace } from "@/components/Avatar";
 import { usePackCountdown } from "@/lib/packs";
 import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
@@ -191,13 +192,13 @@ function UserMenu() {
     <div ref={ref} className="relative">
       <button
         type="button"
-        className="flex size-9 items-center justify-center rounded-full border border-line-strong bg-panel-2 font-display text-base transition-colors duration-150 hover:border-faint"
+        className="flex size-9 items-center justify-center overflow-hidden rounded-full border border-line-strong bg-panel-2 font-display text-base transition-colors duration-150 hover:border-faint"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         aria-label={`Compte de ${me.displayName}`}
       >
-        {me.avatar ?? me.displayName.slice(0, 1).toUpperCase()}
+        <AvatarFace name={me.displayName} avatar={me.avatar} />
       </button>
       <div
         role="menu"
