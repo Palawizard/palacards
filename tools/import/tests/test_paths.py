@@ -138,7 +138,7 @@ def test_env_file_override_and_data_from_env_file(monkeypatch, tmp_path: Path, r
 
 
 def test_env_file_override_missing(monkeypatch, tmp_path: Path):
-    monkeypatch.setenv(cli.ENV_FILE_VAR, str(env := tmp_path / "absent.env")) if False else monkeypatch.setenv(cli.ENV_FILE_VAR, str(tmp_path / "absent.env"))
+    monkeypatch.setenv(cli.ENV_FILE_VAR, str(tmp_path / "absent.env"))
     with pytest.raises(SystemExit):
         cli.find_env_file()
 
