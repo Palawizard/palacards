@@ -2,6 +2,7 @@
 
 import type { Rarity } from "@palacards/game";
 import { useMemo, type CSSProperties } from "react";
+import "./reveal-fx.css";
 
 export type FxTier = "SR" | "UR" | "L";
 
