@@ -2,7 +2,8 @@
 
 Règles (docs/05-cartes.md) :
 - rareté = rang en vues sur 12 mois (1 = le plus lu), paliers de `packages/game/src/rarity.ts` ;
-- ATK = 100 + floor(9899 × pct(page_len)) : la taille de l'article ;
+- ATK = 100 + floor(9899 × pct(prose_len)) : la longueur du texte lisible (sans modèles, tableaux,
+  références ni infobox : le wikicode brut gonflait les communes et autres articles générés) ;
 - DEF = densité de qualité, indépendante de la taille (sinon ATK et DEF mesurent la même chose et
   une carte connue a 9 999 partout) : chaque critère est rapporté à la taille en Ko, lissée par
   DENSITY_SMOOTHING_KB pour qu'une ébauche de 3 lignes avec une source ne soit pas « parfaite »,
@@ -71,6 +72,11 @@ def build(
         WHERE NOT coalesce(f.disambiguation, false)
         """
     )
+    columns = {row[0] for row in con.execute("DESCRIBE pool").fetchall()}
+    if "prose_len" not in columns:
+        raise SystemExit(
+            "articles.parquet date d'avant la mesure de la prose : relance `palacards-import parse`."
+        )
     pool_size = con.execute("SELECT count(*) FROM pool").fetchone()[0]
     if pool_size == 0:
         raise SystemExit("Aucun article à exporter")
@@ -86,7 +92,7 @@ def build(
         WITH ranked AS (
             SELECT *,
                    row_number() OVER (ORDER BY views_12m DESC, page_id) AS rank,
-                   percent_rank() OVER (ORDER BY page_len) AS p_len,
+                   percent_rank() OVER (ORDER BY prose_len) AS p_len,
                    0.55 * percent_rank() OVER (ORDER BY refs / kb)
                  + 0.20 * percent_rank() OVER (ORDER BY images / kb)
                  + 0.15 * percent_rank() OVER (ORDER BY sections / kb)
