@@ -575,3 +575,40 @@
   display: grid;
   place-items: center;
 }
+
+/* ------------------------------------------------------------------ */
+/* Pochette alu : soudures dentelées en haut et en bas.               */
+/* ------------------------------------------------------------------ */
+
+.pc-pack {
+  --dent: 7px;
+  mask:
+    conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) top / calc(2 * var(--dent)) 51% repeat-x,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / calc(2 * var(--dent)) 51%
+      repeat-x;
+}
+.pc-pack-foil {
+  background:
+    /* Soudures sertie en haut et en bas : fines nervures verticales. */
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.16) 0 2px, rgb(0 0 0 / 0.08) 2px 5px) top / 100% 9% no-repeat,
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.16) 0 2px, rgb(0 0 0 / 0.08) 2px 5px) bottom / 100% 6%
+      no-repeat,
+    /* Reflets de l'alu. */
+    linear-gradient(
+        112deg,
+        transparent 18%,
+        rgb(255 255 255 / 0.22) 30%,
+        transparent 42%,
+        transparent 58%,
+        rgb(255 255 255 / 0.12) 68%,
+        transparent 80%
+      ),
+    repeating-linear-gradient(-45deg, rgb(255 255 255 / 0.05) 0 2px, transparent 2px 12px),
+    linear-gradient(165deg, #2f5be0 0%, var(--color-cover) 42%, #0b1f66 100%);
+}
+.pc-pack-strip {
+  background-color: #0f2a86;
+}
+button:disabled .pc-pack-foil {
+  filter: saturate(0.35) brightness(0.8);
+}
