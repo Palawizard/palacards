@@ -13,6 +13,30 @@ function nextPath(next: string | null): string {
   return next && next.startsWith("/") && !next.startsWith("//") ? next : "/pulls";
 }
 
+/** Lien vers l'autre page (connexion ↔ inscription), en gardant la page de retour `?next=`. */
+function AuthSwitchLink({ register, next }: { register: boolean; next: string | null }) {
+  const query = next && next.startsWith("/") && !next.startsWith("//") ? `?next=${encodeURIComponent(next)}` : "";
+  return (
+    <p className="text-center text-sm text-muted">
+      {register ? (
+        <>
+          Déjà inscrit ?{" "}
+          <Link href={`/login${query}`} className="article-link">
+            Se connecter
+          </Link>
+        </>
+      ) : (
+        <>
+          Pas encore de compte ?{" "}
+          <Link href={`/register${query}`} className="article-link">
+            Créer un compte
+          </Link>
+        </>
+      )}
+    </p>
+  );
+}
+
 /**
  * Connexion / inscription. En production, un bouton vers Authentik (auth.palawi.fr) ;
  * sans connexion unique configurée (dev, CI) : pseudo + mot de passe, email facultatif.
@@ -78,6 +102,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
               : "Ton compte palawi.fr sert pour toutes les apps : sur la page qui s’ouvre, choisis « Créer un compte »."
             : "Un seul compte pour toutes les apps de palawi.fr."}
         </p>
+        <AuthSwitchLink register={register} next={params.get("next")} />
       </div>
     );
   }
@@ -162,23 +187,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       <button type="submit" className="btn btn-primary mt-1 w-full" disabled={pending}>
         {pending ? "Un instant…" : register ? "Créer mon compte" : "Se connecter"}
       </button>
-      <p className="text-center text-sm text-muted">
-        {register ? (
-          <>
-            Déjà inscrit ?{" "}
-            <Link href="/login" className="article-link">
-              Se connecter
-            </Link>
-          </>
-        ) : (
-          <>
-            Pas encore de compte ?{" "}
-            <Link href="/register" className="article-link">
-              Créer un compte
-            </Link>
-          </>
-        )}
-      </p>
+      <AuthSwitchLink register={register} next={params.get("next")} />
     </form>
   );
 }
