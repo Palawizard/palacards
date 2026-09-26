@@ -4,9 +4,19 @@ import { usernameSchema } from "@palacards/shared";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
+import { BASE_PATH } from "@/lib/api";
 import { authClient, authErrorMessage } from "@/lib/auth-client";
+import { useAuthMode } from "@/lib/auth-mode";
 
-/** Formulaire de connexion / inscription : pseudo + mot de passe, email facultatif. */
+/** Chemin interne où revenir après la connexion (`?next=`), sinon les paquets. */
+function nextPath(next: string | null): string {
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/pulls";
+}
+
+/**
+ * Connexion / inscription. En production, un bouton vers Authentik (auth.palawi.fr) ;
+ * sans connexion unique configurée (dev, CI) : pseudo + mot de passe, email facultatif.
+ */
 export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const router = useRouter();
   const params = useSearchParams();
@@ -16,6 +26,54 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const register = mode === "register";
+  const authMode = useAuthMode();
+
+  if (!authMode) {
+    return <p className="text-sm text-muted">Un instant…</p>;
+  }
+
+  if (authMode.mode === "sso") {
+    const ssoFailed = params.get("erreur") === "sso";
+    return (
+      <div className="flex flex-col gap-4">
+        {ssoFailed && (
+          <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+            La connexion n&apos;a pas abouti. Réessaie.
+          </p>
+        )}
+        <button
+          type="button"
+          className="btn btn-primary w-full"
+          disabled={pending}
+          onClick={async () => {
+            setPending(true);
+            const origin = window.location.origin;
+            const res = await authClient.signIn.social({
+              provider: authMode.provider,
+              callbackURL: `${origin}${BASE_PATH}${nextPath(params.get("next"))}`,
+              errorCallbackURL: `${origin}${BASE_PATH}/login?erreur=sso`,
+            });
+            if (res.error) {
+              setPending(false);
+              setError(authErrorMessage(res.error.code, res.error.message));
+            }
+          }}
+        >
+          {pending ? "Un instant…" : register ? "Créer mon compte" : "Se connecter"}
+        </button>
+        {error && (
+          <p role="alert" className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        )}
+        <p className="text-center text-sm text-muted">
+          {register
+            ? "Ton compte palawi.fr sert pour toutes les apps : sur la page qui s’ouvre, choisis « Créer un compte »."
+            : "Un seul compte pour toutes les apps de palawi.fr."}
+        </p>
+      </div>
+    );
+  }
 
   async function submit(e: { preventDefault(): void }) {
     e.preventDefault();
@@ -37,8 +95,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
       : await authClient.signIn.username({ username: username.trim(), password });
     setPending(false);
     if (res.error) return setError(authErrorMessage(res.error.code, res.error.message));
-    const next = params.get("next");
-    router.replace(next && next.startsWith("/") && !next.startsWith("//") ? next : "/pulls");
+    router.replace(nextPath(params.get("next")));
   }
 
   return (
