@@ -4,8 +4,8 @@ import { createDb } from "@palacards/db";
 import { MAX_STORED_PACKS, PACK_REGEN_MS } from "@palacards/game";
 import { fromNodeHeaders } from "better-auth/node";
 import Fastify, { type FastifyRequest } from "fastify";
-import { createAuth, SESSION_COOKIE, type Auth } from "./auth.js";
-import type { Config } from "./config.js";
+import { createAuth, SESSION_COOKIE, SSO_PROVIDER_ID, type Auth } from "./auth.js";
+import { ssoConfig, type Config } from "./config.js";
 import { secureRandom, sessionUser, type Ctx } from "./context.js";
 import { registerErrorHandler } from "./errors.js";
 import { createJobs } from "./jobs.js";
@@ -114,7 +114,17 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
         return { status: "ok", database: db, time: new Date().toISOString() };
       });
 
-      api.get("/config", async () => ({ maxStoredPacks: MAX_STORED_PACKS, packRegenMs: PACK_REGEN_MS }));
+      api.get("/config", async () => {
+        const sso = ssoConfig(config);
+        return {
+          maxStoredPacks: MAX_STORED_PACKS,
+          packRegenMs: PACK_REGEN_MS,
+          // Le web choisit entre le bouton Authentik et le formulaire pseudo + mot de passe.
+          auth: sso
+            ? { mode: "sso" as const, provider: SSO_PROVIDER_ID, accountUrl: sso.accountUrl }
+            : { mode: "password" as const },
+        };
+      });
 
       if (!ctx || !auth) return;
 
