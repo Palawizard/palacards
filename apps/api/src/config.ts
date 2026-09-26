@@ -29,6 +29,14 @@ const schema = z.object({
   /** Derrière Caddy + Cloudflare : l'IP réelle vient des en-têtes. */
   TRUST_PROXY: bool,
   LOG_LEVEL: z.string().default("info"),
+  /**
+   * Connexion unique Authentik (OIDC), ex. https://auth.palawi.fr/application/o/palacards/.
+   * Renseignée (avec l'identifiant et le secret) : la connexion par mot de passe est désactivée.
+   * Absente (dev, CI) : pseudo + mot de passe comme avant.
+   */
+  AUTHENTIK_ISSUER: z.url().optional(),
+  AUTHENTIK_CLIENT_ID: z.string().min(1).optional(),
+  AUTHENTIK_CLIENT_SECRET: z.string().min(1).optional(),
 });
 
 export type Config = z.infer<typeof schema>;
@@ -51,5 +59,29 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (config.NODE_ENV === "production" && config.GAME_TEST_MODE) {
     throw new Error("GAME_TEST_MODE est interdit en production");
   }
+  const sso = [config.AUTHENTIK_ISSUER, config.AUTHENTIK_CLIENT_ID, config.AUTHENTIK_CLIENT_SECRET];
+  if (sso.some(Boolean) && !sso.every(Boolean)) {
+    throw new Error("AUTHENTIK_ISSUER, AUTHENTIK_CLIENT_ID et AUTHENTIK_CLIENT_SECRET vont ensemble");
+  }
   return config;
+}
+
+export interface SsoConfig {
+  issuer: string;
+  clientId: string;
+  clientSecret: string;
+  /** Page « Mon compte » d'Authentik (mot de passe, double authentification). */
+  accountUrl: string;
+}
+
+/** Réglages de la connexion unique, ou null si la connexion par mot de passe est active. */
+export function ssoConfig(config: Config): SsoConfig | null {
+  const { AUTHENTIK_ISSUER: issuer, AUTHENTIK_CLIENT_ID: clientId, AUTHENTIK_CLIENT_SECRET: clientSecret } = config;
+  if (!issuer || !clientId || !clientSecret) return null;
+  return {
+    issuer: issuer.endsWith("/") ? issuer : `${issuer}/`,
+    clientId,
+    clientSecret,
+    accountUrl: new URL("/if/user/#/settings", issuer).toString(),
+  };
 }
