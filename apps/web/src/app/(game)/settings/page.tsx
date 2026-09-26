@@ -9,6 +9,7 @@ import { Avatar } from "@/components/Avatar";
 import { api, ApiError } from "@/lib/api";
 import { prepareAvatar } from "@/lib/avatar-image";
 import { authClient, authErrorMessage } from "@/lib/auth-client";
+import { useAuthMode } from "@/lib/auth-mode";
 import { fmt, reasonLabel, relative } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { setTheme, useTheme } from "@/lib/theme";
@@ -43,6 +44,7 @@ function Section({ title, id, children }: { title: string; id?: string; children
 export default function SettingsPage() {
   const { me, mutateMe } = useMe();
   const theme = useTheme();
+  const authMode = useAuthMode();
   const [username, setUsername] = useState("");
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -189,47 +191,56 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Mot de passe">
-        <form
-          className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              const res = await authClient.changePassword({
-                currentPassword: current,
-                newPassword: next,
-                revokeOtherSessions: true,
-              });
-              if (res.error) throw new Error(authErrorMessage(res.error.code, "Mot de passe actuel incorrect."));
-              setCurrent("");
-              setNext("");
-            }, "Mot de passe modifié. Tes autres sessions sont déconnectées.");
-          }}
-        >
-          <label>
-            <span className="label">Mot de passe actuel</span>
-            <input
-              type="password"
-              className="field"
-              autoComplete="current-password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-            />
-          </label>
-          <label>
-            <span className="label">Nouveau (8 caractères min.)</span>
-            <input
-              type="password"
-              className="field"
-              autoComplete="new-password"
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              minLength={8}
-            />
-          </label>
-          <button type="submit" className="btn" disabled={busy || !current || next.length < 8}>
-            Modifier
-          </button>
-        </form>
+        {authMode?.mode === "sso" ? (
+          <p className="text-sm text-muted">
+            Ton mot de passe et ta double authentification se gèrent sur ton compte palawi.fr.{" "}
+            <a href={authMode.accountUrl} className="article-link" target="_blank" rel="noreferrer">
+              Ouvrir mon compte
+            </a>
+          </p>
+        ) : (
+          <form
+            className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void run(async () => {
+                const res = await authClient.changePassword({
+                  currentPassword: current,
+                  newPassword: next,
+                  revokeOtherSessions: true,
+                });
+                if (res.error) throw new Error(authErrorMessage(res.error.code, "Mot de passe actuel incorrect."));
+                setCurrent("");
+                setNext("");
+              }, "Mot de passe modifié. Tes autres sessions sont déconnectées.");
+            }}
+          >
+            <label>
+              <span className="label">Mot de passe actuel</span>
+              <input
+                type="password"
+                className="field"
+                autoComplete="current-password"
+                value={current}
+                onChange={(e) => setCurrent(e.target.value)}
+              />
+            </label>
+            <label>
+              <span className="label">Nouveau (8 caractères min.)</span>
+              <input
+                type="password"
+                className="field"
+                autoComplete="new-password"
+                value={next}
+                onChange={(e) => setNext(e.target.value)}
+                minLength={8}
+              />
+            </label>
+            <button type="submit" className="btn" disabled={busy || !current || next.length < 8}>
+              Modifier
+            </button>
+          </form>
+        )}
       </Section>
 
       <Section title="Apparence">

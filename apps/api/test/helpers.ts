@@ -19,7 +19,7 @@ export function testDatabaseUrl(): string {
   return url.toString();
 }
 
-export async function makeApp(options: BuildOptions = {}) {
+export async function makeApp(options: BuildOptions = {}, env: NodeJS.ProcessEnv = {}) {
   const config = loadConfig({
     ...process.env,
     DATABASE_URL: testDatabaseUrl(),
@@ -27,6 +27,7 @@ export async function makeApp(options: BuildOptions = {}) {
     LOG_LEVEL: "warn",
     NODE_ENV: "test",
     GAME_TEST_MODE: "1",
+    ...env,
   });
   const { app, ctx } = await buildApp(config, options);
   await app.ready();
