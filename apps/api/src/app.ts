@@ -121,7 +121,12 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
           packRegenMs: PACK_REGEN_MS,
           // Le web choisit entre le bouton Authentik et le formulaire pseudo + mot de passe.
           auth: sso
-            ? { mode: "sso" as const, provider: SSO_PROVIDER_ID, accountUrl: sso.accountUrl }
+            ? {
+                mode: "sso" as const,
+                provider: SSO_PROVIDER_ID,
+                accountUrl: sso.accountUrl,
+                ...(sso.signupUrl ? { signupUrl: sso.signupUrl } : {}),
+              }
             : { mode: "password" as const },
         };
       });

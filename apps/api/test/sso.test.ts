@@ -8,6 +8,7 @@ const SSO_ENV = {
   AUTHENTIK_ISSUER: "http://127.0.0.1:9/application/o/palacards/",
   AUTHENTIK_CLIENT_ID: "palacards-test",
   AUTHENTIK_CLIENT_SECRET: "secret-de-test",
+  AUTHENTIK_ENROLLMENT_URL: "http://127.0.0.1:9/if/flow/inscription/",
 };
 
 const password = await makeApp();
@@ -29,6 +30,15 @@ describe("connexion unique Authentik : configuration", () => {
     );
     expect(conf?.issuer).toBe("https://auth.palawi.fr/application/o/palacards/");
     expect(conf?.accountUrl).toBe("https://auth.palawi.fr/if/user/#/settings");
+    expect(conf?.signupUrl).toBeUndefined();
+  });
+
+  it("n'annonce la page d'inscription que sur l'hôte d'Authentik (?next= relatif)", () => {
+    const base = { ...SSO_ENV, AUTHENTIK_ISSUER: "https://auth.palawi.fr/application/o/palacards/" };
+    const same = "https://auth.palawi.fr/if/flow/inscription/";
+    expect(ssoConfig(loadConfig({ ...base, AUTHENTIK_ENROLLMENT_URL: same }))?.signupUrl).toBe(same);
+    const other = "https://ailleurs.example/if/flow/inscription/";
+    expect(ssoConfig(loadConfig({ ...base, AUTHENTIK_ENROLLMENT_URL: other }))?.signupUrl).toBeUndefined();
   });
 });
 
@@ -37,7 +47,11 @@ describe("connexion unique Authentik : API", () => {
     const off = await password.app.inject({ method: "GET", url: "/palacards/api/config" });
     expect(off.json().auth).toEqual({ mode: "password" });
     const on = await sso.app.inject({ method: "GET", url: "/palacards/api/config" });
-    expect(on.json().auth).toMatchObject({ mode: "sso", provider: "authentik" });
+    expect(on.json().auth).toMatchObject({
+      mode: "sso",
+      provider: "authentik",
+      signupUrl: "http://127.0.0.1:9/if/flow/inscription/",
+    });
   });
 
   it("coupe l'inscription et la connexion par mot de passe", async () => {
