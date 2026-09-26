@@ -1,6 +1,7 @@
 import {
   Award,
   Gavel,
+  Heart,
   Layers,
   LibraryBig,
   MessageSquare,
@@ -46,6 +47,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/market", label: "Marché", icon: Gavel },
       { href: "/trades", label: "Échanges", icon: Repeat },
+      { href: "/wishlist", label: "Wishlist", icon: Heart },
     ],
   },
   {
