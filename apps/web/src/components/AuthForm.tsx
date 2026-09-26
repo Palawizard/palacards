@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { BASE_PATH } from "@/lib/api";
 import { authClient, authErrorMessage } from "@/lib/auth-client";
-import { useAuthMode } from "@/lib/auth-mode";
+import { useAuthMode, withSignup } from "@/lib/auth-mode";
 
 /** Chemin interne où revenir après la connexion (`?next=`), sinon les paquets. */
 function nextPath(next: string | null): string {
@@ -48,15 +48,20 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
           onClick={async () => {
             setPending(true);
             const origin = window.location.origin;
+            const signup = register && authMode.signupUrl;
             const res = await authClient.signIn.social({
               provider: authMode.provider,
               callbackURL: `${origin}${BASE_PATH}${nextPath(params.get("next"))}`,
               errorCallbackURL: `${origin}${BASE_PATH}/login?erreur=sso`,
+              // Inscription : on récupère l'URL d'autorisation pour l'emballer dans la page d'inscription.
+              ...(signup ? { disableRedirect: true } : {}),
             });
             if (res.error) {
               setPending(false);
               setError(authErrorMessage(res.error.code, res.error.message));
+              return;
             }
+            if (signup && res.data?.url) window.location.assign(withSignup(res.data.url, authMode.signupUrl));
           }}
         >
           {pending ? "Un instant…" : register ? "Créer mon compte" : "Se connecter"}
@@ -68,7 +73,9 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
         )}
         <p className="text-center text-sm text-muted">
           {register
-            ? "Ton compte palawi.fr sert pour toutes les apps : sur la page qui s’ouvre, choisis « Créer un compte »."
+            ? authMode.signupUrl
+              ? "Ton compte palawi.fr servira pour toutes les apps de palawi.fr."
+              : "Ton compte palawi.fr sert pour toutes les apps : sur la page qui s’ouvre, choisis « Créer un compte »."
             : "Un seul compte pour toutes les apps de palawi.fr."}
         </p>
       </div>
