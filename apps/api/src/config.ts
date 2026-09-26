@@ -37,6 +37,11 @@ const schema = z.object({
   AUTHENTIK_ISSUER: z.url().optional(),
   AUTHENTIK_CLIENT_ID: z.string().min(1).optional(),
   AUTHENTIK_CLIENT_SECRET: z.string().min(1).optional(),
+  /**
+   * Page d'inscription d'Authentik (ex. https://auth.palawi.fr/if/flow/inscription/), facultative.
+   * « Créer mon compte » l'ouvre directement ; elle reprend ensuite la connexion par son ?next= relatif.
+   */
+  AUTHENTIK_ENROLLMENT_URL: z.url().optional(),
 });
 
 export type Config = z.infer<typeof schema>;
@@ -72,16 +77,20 @@ export interface SsoConfig {
   clientSecret: string;
   /** Page « Mon compte » d'Authentik (mot de passe, double authentification). */
   accountUrl: string;
+  /** Page d'inscription, seulement si elle est sur l'hôte d'Authentik (Authentik n'accepte qu'un ?next= relatif). */
+  signupUrl?: string;
 }
 
 /** Réglages de la connexion unique, ou null si la connexion par mot de passe est active. */
 export function ssoConfig(config: Config): SsoConfig | null {
   const { AUTHENTIK_ISSUER: issuer, AUTHENTIK_CLIENT_ID: clientId, AUTHENTIK_CLIENT_SECRET: clientSecret } = config;
   if (!issuer || !clientId || !clientSecret) return null;
+  const signup = config.AUTHENTIK_ENROLLMENT_URL;
   return {
     issuer: issuer.endsWith("/") ? issuer : `${issuer}/`,
     clientId,
     clientSecret,
     accountUrl: new URL("/if/user/#/settings", issuer).toString(),
+    ...(signup && new URL(signup).host === new URL(issuer).host ? { signupUrl: signup } : {}),
   };
 }
