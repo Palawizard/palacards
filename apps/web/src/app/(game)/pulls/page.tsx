@@ -155,19 +155,24 @@ function ThemeBox({ theme }: { theme: ThemeDTO }) {
               ? `En vente jusqu’à la fin, ${relative(theme.endsAt)}.`
               : "Vente terminée : tes boosters restent à ouvrir."}{" "}
           {fmt(theme.cardCount)} articles
-          {theme.category && (
+          {theme.categories.length > 0 && (
             <>
               {" "}
-              de la catégorie{" "}
-              <a
-                href={`https://fr.wikipedia.org/wiki/Catégorie:${encodeURIComponent(theme.category.replace(/ /g, "_"))}`}
-                target="_blank"
-                rel="noreferrer"
-                className="article-link"
-              >
-                {theme.category}
-                <ExternalLink aria-hidden className="ml-0.5 inline size-3 align-[-1px]" />
-              </a>
+              {theme.categories.length > 1 ? "des catégories" : "de la catégorie"}{" "}
+              {theme.categories.map((c, i) => (
+                <span key={c}>
+                  {i > 0 && (i === theme.categories.length - 1 ? " et " : ", ")}
+                  <a
+                    href={`https://fr.wikipedia.org/wiki/Catégorie:${encodeURIComponent(c.replace(/ /g, "_"))}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="article-link"
+                  >
+                    {c}
+                    <ExternalLink aria-hidden className="ml-0.5 inline size-3 align-[-1px]" />
+                  </a>
+                </span>
+              ))}
             </>
           )}
           .
