@@ -59,7 +59,11 @@ export type LedgerReason =
   | "admin"
   | "guild_objective"
   | "pack_open"
-  | "fusion";
+  | "fusion"
+  | "upgrade"
+  | "wheel"
+  | "promo_code"
+  | "theme_pack";
 
 /**
  * Change le solde de PW d'un joueur verrouillé et écrit la ligne de ledger correspondante.
@@ -112,7 +116,7 @@ export async function transferInstances(tx: Tx, instanceIds: number[], newOwner:
 export async function logMovement(
   tx: Tx,
   userId: string,
-  kind: "card" | "pack" | "bonus_pack",
+  kind: "card" | "pack" | "bonus_pack" | "theme_pack",
   delta: number,
   balanceAfter: number,
   reason: LedgerReason,
