@@ -8,7 +8,18 @@ import { schedulePacksFull } from "./economy.js";
 import { bumpObjective } from "./guilds.js";
 import { afterCommit } from "./notifications.js";
 import { emit } from "./progression.js";
-import { activeSeason, getPlayer, lockPlayer, logMovement, ownedCount, packState, type DbOrTx } from "./players.js";
+import {
+  activeSeason,
+  getPlayer,
+  lockPlayer,
+  logMovement,
+  movePw,
+  ownedCount,
+  packState,
+  pushWallet,
+  type DbOrTx,
+} from "./players.js";
+import { addThemePacks, drawThemeCard, getTheme, isOnSale, lockThemeStock, themeRarityCounts } from "./themes.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
 
@@ -40,6 +51,15 @@ export interface OpenedPack {
   packs: PackState;
   usedBonus: boolean;
   pityTriggered: boolean;
+  /** Booster à thème : articles du thème (les autres emplacements, sans article du thème à cette rareté, sont tirés dans toute la saison). */
+  theme?: { id: number; name: string; themedCardIds: number[]; owned: number };
+}
+
+export interface OpenPackOptions {
+  /** Ouvre un booster à thème au lieu d'un paquet du stock. */
+  themeId?: number;
+  /** Booster à thème sans stock : l'achète (prix du thème en PW, pendant la vente) et l'ouvre aussitôt. */
+  buy?: boolean;
 }
 
 /** Hook appelé dans la transaction après un tirage (succès, objectifs de guilde…). */
@@ -51,28 +71,50 @@ export const onPackOpened = (hook: AfterPackHook) => afterPackHooks.push(hook);
  * Ouvre un paquet : une seule transaction (joueur verrouillé, stock décrémenté, 5 exemplaires,
  * pity, ledger). La réponse part tout de suite ; les images manquantes arrivent ensuite par socket.
  */
-export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
+export async function openPack(ctx: Ctx, userId: string, options: OpenPackOptions = {}): Promise<OpenedPack> {
   const now = ctx.now();
   const result = await ctx.db.transaction(async (tx) => {
     const p = await lockPlayer(tx, userId);
     const season = await activeSeason(tx);
-    const free = consumeFreePack(p.packsStored, p.packsUpdatedAt, now);
+    const theme = options.themeId ? await getTheme(tx, options.themeId) : null;
+    let free: ReturnType<typeof consumeFreePack> = null;
     let usedBonus = false;
+    let themeOwned = 0;
     const update: Partial<typeof schema.players.$inferInsert> = {};
-    if (free) {
-      update.packsStored = free.stored;
-      update.packsUpdatedAt = free.updatedAt;
-    } else if (p.bonusPacks > 0) {
-      update.bonusPacks = p.bonusPacks - 1;
-      usedBonus = true;
+    if (theme) {
+      const stock = await lockThemeStock(tx, userId, theme.id);
+      if (stock > 0) {
+        themeOwned = await addThemePacks(tx, userId, theme.id, -1, "pack_open");
+      } else if (options.buy) {
+        if (!isOnSale(theme, now)) throw conflict("theme_not_on_sale", "Ce booster à thème n'est pas en vente.");
+        await movePw(tx, p, -theme.price, "theme_pack", `theme:${theme.id}`);
+      } else {
+        throw conflict("no_theme_packs", "Tu n'as pas de booster de ce thème.");
+      }
     } else {
-      throw conflict("no_packs", "Plus de paquet : le prochain arrive bientôt.");
+      free = consumeFreePack(p.packsStored, p.packsUpdatedAt, now);
+      if (free) {
+        update.packsStored = free.stored;
+        update.packsUpdatedAt = free.updatedAt;
+      } else if (p.bonusPacks > 0) {
+        update.bonusPacks = p.bonusPacks - 1;
+        usedBonus = true;
+      } else {
+        throw conflict("no_packs", "Plus de paquet : le prochain arrive bientôt.");
+      }
     }
 
-    const roll = rollPack(p.pityCounter, ctx.random);
+    const roll = rollPack(p.pityCounter, ctx.random, theme ? "themed" : "standard");
     update.pityCounter = roll.pityCounter;
     const drawn = [];
-    for (const rarity of roll.rarities) drawn.push({ rarity, ...(await drawCard(tx, season, rarity, ctx.random)) });
+    const counts = theme ? await themeRarityCounts(tx, theme.id, season) : null;
+    for (const rarity of roll.rarities) {
+      drawn.push(
+        theme && counts
+          ? { rarity, ...(await drawThemeCard(tx, season, theme.id, rarity, counts, ctx.random)) }
+          : { rarity, ...(await drawCard(tx, season, rarity, ctx.random)), themed: false },
+      );
+    }
 
     const inserted = await tx
       .insert(schema.cardInstances)
@@ -93,7 +135,7 @@ export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
 
     const ids = inserted.map((r) => r.id);
     if (usedBonus) await logMovement(tx, userId, "bonus_pack", -1, update.bonusPacks!, "pack_open", ids.join(","));
-    else await logMovement(tx, userId, "pack", -1, free!.stored, "pack_open", ids.join(","));
+    else if (free) await logMovement(tx, userId, "pack", -1, free.stored, "pack_open", ids.join(","));
     await logMovement(tx, userId, "card", ids.length, await ownedCount(tx, userId), "pack_open", ids.join(","));
 
     for (const hook of afterPackHooks) await hook(tx, userId, roll.rarities);
@@ -107,12 +149,21 @@ export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
       usedBonus,
       pityTriggered: p.pityCounter >= PITY_THRESHOLD,
       state,
+      theme: theme
+        ? {
+            id: theme.id,
+            name: theme.name,
+            themedCardIds: drawn.filter((d) => d.themed).map((d) => d.id),
+            owned: themeOwned,
+          }
+        : undefined,
     };
   });
 
   // Effets secondaires après le commit : une erreur est journalisée, jamais renvoyée au joueur.
   await afterCommit(ctx, async () => {
     ctx.rt.toUser(userId, "packs:update", result.packs);
+    if (result.theme) pushWallet(ctx, result.state);
   });
   await afterCommit(ctx, async () => {
     await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
@@ -130,5 +181,11 @@ export async function openPack(ctx: Ctx, userId: string): Promise<OpenedPack> {
       result.drawn.map((d) => ({ cardId: d.id, title: d.title })),
     ),
   );
-  return { cards: result.cards, packs: result.packs, usedBonus: result.usedBonus, pityTriggered: result.pityTriggered };
+  return {
+    cards: result.cards,
+    packs: result.packs,
+    usedBonus: result.usedBonus,
+    pityTriggered: result.pityTriggered,
+    ...(result.theme ? { theme: result.theme } : {}),
+  };
 }
