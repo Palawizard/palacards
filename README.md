@@ -1,6 +1,6 @@
 # PalaCards
 
-Jeu de cartes à collectionner où chaque carte est un article du Wikipédia FR (~2,7 M cartes). Paquets, collection, catalogue, marché aux enchères, échanges, amis, messages, guildes, duels quiz, succès, classements et saisons mensuelles. Auto-hébergé, pour jouer entre potes sur `palawi.fr/palacards/`.
+Jeu de cartes à collectionner où chaque carte est un article du Wikipédia FR (~2,7 M cartes). Paquets, boosters à thème temporaires, roue du jour, upgrader, codes promo, collection, catalogue, marché aux enchères, échanges, amis, messages, guildes, duels quiz, succès, classements et saisons mensuelles. Auto-hébergé, pour jouer entre potes sur `palawi.fr/palacards/`.
 
 ## Prérequis
 
@@ -24,7 +24,7 @@ pnpm dev
 - Front : http://localhost:3000/palacards/pulls
 - API : http://localhost:4000/palacards/api/health
 
-Pour jouer à plusieurs en local, ouvre un second navigateur (ou une fenêtre privée) et crée un autre compte. Pseudo : 3 à 20 caractères, lettres sans accent, chiffres, `_` et `.` uniquement (pas d'espace ni de `-`). Pour accéder à la page Admin, donne-toi le rôle : `pnpm --filter @palacards/api admin:grant <pseudo>` (en prod : `docker compose exec api node dist/cli/admin.js grant <pseudo>`).
+Pour jouer à plusieurs en local, ouvre un second navigateur (ou une fenêtre privée) et crée un autre compte. Pseudo : 3 à 20 caractères, lettres sans accent, chiffres, `_` et `.` uniquement (pas d'espace ni de `-`). Pour accéder à la page Admin, donne-toi le rôle : `pnpm --filter @palacards/api admin:grant <pseudo>` (en prod : `docker compose exec api node dist/cli/admin.js grant <pseudo>`). La page Admin crée les boosters à thème (catégorie Wikipédia lue par l'API MediaWiki, et/ou liste de titres) et les codes promo ; le pseudo `*` dans « Donner des PW ou des paquets » fait un cadeau à tous les joueurs.
 
 ## Structure
 
