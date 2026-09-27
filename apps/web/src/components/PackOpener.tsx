@@ -1,7 +1,7 @@
 "use client";
 
 import { ECONOMY, RARITY_LABELS, rarityRank } from "@palacards/game";
-import type { CardDTO, PackState } from "@palacards/shared";
+import type { CardDTO, PackState, ThemeDTO } from "@palacards/shared";
 import { ChevronRight, Recycle, Scissors } from "lucide-react";
 import {
   animate,
@@ -33,6 +33,7 @@ interface OpenResponse {
   packs: PackState;
   usedBonus: boolean;
   pityTriggered: boolean;
+  theme?: { id: number; name: string; themedCardIds: number[]; owned: number };
 }
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
@@ -54,12 +55,15 @@ function Sleeve({
   stock,
   onOpen,
   disabled,
+  theme,
 }: {
   tearing: boolean;
   season: number;
   stock: number;
   onOpen: () => void;
   disabled: boolean;
+  /** Booster à thème : alu violet « édition limitée », nom du thème à la place du logo. */
+  theme?: ThemeDTO | null;
 }) {
   const reduce = useReducedMotion();
   const px = useMotionValue(0);
@@ -82,7 +86,7 @@ function Sleeve({
   }
 
   return (
-    <div className="relative mx-auto w-[min(16rem,64vw)] select-none">
+    <div className="relative mx-auto w-[min(16rem,64vw)] select-none" data-edition={theme ? "theme" : undefined}>
       {/* Paquets suivants du stock, empilés derrière. */}
       {Array.from({ length: Math.min(stock - 1, 2) }, (_, i) => (
         <div
@@ -121,18 +125,37 @@ function Sleeve({
               className="pointer-events-none absolute -inset-1/2 block bg-[radial-gradient(closest-side,rgb(255_255_255/0.4),transparent)] mix-blend-soft-light"
               style={{ transform: sheen }}
             />
-            {/* Pastille de saison, comme une étiquette de prix. */}
+            {/* Pastille de saison (ou « édition limitée »), comme une étiquette de prix. */}
             <span className="absolute right-[7%] top-[14%] grid size-[4.4rem] rotate-[-12deg] place-items-center rounded-full bg-accent text-accent-ink shadow-[0_4px_10px_-4px_rgb(0_0_0/0.5)]">
               <span className="absolute inset-[5px] rounded-full border-2 border-dashed border-accent-ink/25" />
-              <span className="font-display text-center text-[0.72rem] uppercase leading-none">
-                Saison
-                <span className="tnum block text-[1.9rem] leading-[0.9]">{season}</span>
+              {theme ? (
+                <span className="font-display text-center text-[0.95rem] uppercase leading-[0.9]">
+                  Édition
+                  <span className="block">limitée</span>
+                </span>
+              ) : (
+                <span className="font-display text-center text-[0.72rem] uppercase leading-none">
+                  Saison
+                  <span className="tnum block text-[1.9rem] leading-[0.9]">{season}</span>
+                </span>
+              )}
+            </span>
+            {theme ? (
+              <span className="absolute inset-x-[8%] top-[36%] block text-left font-display uppercase leading-[0.86] text-cover-ink [text-shadow:0_2px_0_var(--foil-2),0_4px_14px_rgb(0_0_0/0.35)]">
+                <span className="block text-[1.05rem] tracking-[0.04em] text-accent">Booster</span>
+                <span
+                  className="line-clamp-3 block break-words [text-wrap:balance]"
+                  style={{ fontSize: theme.name.length > 18 ? "1.9rem" : theme.name.length > 10 ? "2.5rem" : "3.2rem" }}
+                >
+                  {theme.name}
+                </span>
               </span>
-            </span>
-            <span className="absolute inset-x-[8%] top-[36%] block text-left font-display uppercase leading-[0.82] text-cover-ink [text-shadow:0_2px_0_var(--color-cover-2),0_4px_14px_rgb(0_0_0/0.35)]">
-              <span className="block text-[3.7rem]">Pala</span>
-              <span className="block text-[3.7rem] text-accent">Cards</span>
-            </span>
+            ) : (
+              <span className="absolute inset-x-[8%] top-[36%] block text-left font-display uppercase leading-[0.82] text-cover-ink [text-shadow:0_2px_0_var(--color-cover-2),0_4px_14px_rgb(0_0_0/0.35)]">
+                <span className="block text-[3.7rem]">Pala</span>
+                <span className="block text-[3.7rem] text-accent">Cards</span>
+              </span>
+            )}
             {/* Les six raretés à tirer. */}
             <span className="absolute inset-x-[8%] bottom-[12%] flex justify-between gap-1 text-[0.72rem]">
               {SIGILS.map((r) => (
@@ -171,7 +194,7 @@ function Sleeve({
 }
 
 /** Dos de vignette (couverture de l'album et monogramme). */
-function CardBack() {
+export function CardBack() {
   return (
     <span className="pc-back">
       <span className="relative grid aspect-square w-[44%] rotate-[-12deg] place-items-center rounded-full bg-accent font-display text-[2.4rem] uppercase leading-none text-cover shadow-[0_4px_10px_-4px_rgb(0_0_0/0.5)]">
@@ -188,7 +211,7 @@ const JINGLE_LEAD: Record<FxTier, number> = { SR: 0, UR: 200, L: 360 };
 const JINGLE = { SR: "sr", UR: "ur", L: "l" } as const;
 
 /** Une carte du paquet : face cachée, puis retournée en 3D ; les grosses raretés s'allument. */
-function FlipCard({
+export function FlipCard({
   card,
   revealed,
   onReveal,
@@ -682,7 +705,19 @@ function DeckRecap({
  * Mémoïsé : la page Paquets se redessine chaque seconde (compte à rebours du prochain paquet) ; sans
  * `memo`, tout l'ouvreur et ses vignettes suivaient, en pleine animation.
  */
-export const PackOpener = memo(function PackOpener({ packs, season }: { packs: PackState; season: number }) {
+export const PackOpener = memo(function PackOpener({
+  packs,
+  season,
+  theme = null,
+  onOpened,
+}: {
+  packs: PackState;
+  season: number;
+  /** Booster à thème sélectionné (sinon : paquet du stock). */
+  theme?: ThemeDTO | null;
+  /** Après chaque ouverture réussie (relire les boosters à thème). */
+  onOpened?: () => void;
+}) {
   const { me, mutateMe } = useMe();
   const speed: Speed = me?.animationSpeed ?? "normal";
   const phone = useMediaQuery(PHONE_QUERY);
@@ -696,7 +731,10 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
   const [announce, setAnnounce] = useState("");
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const region = useRef<HTMLElement>(null);
-  const canOpen = packs.available + packs.bonus > 0;
+  const buying = !!theme && theme.owned === 0;
+  const canOpen = theme
+    ? theme.owned > 0 || (theme.onSale && (me?.wallet.available ?? 0) >= theme.price)
+    : packs.available + packs.bonus > 0;
 
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -742,7 +780,7 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
     }
     try {
       const [res] = await Promise.all([
-        api<OpenResponse>("/packs/open", { method: "POST" }),
+        api<OpenResponse>("/packs/open", theme ? { body: { themeId: theme.id, buy: buying } } : { method: "POST" }),
         new Promise((r) => setTimeout(r, speed === "instant" ? 0 : speed === "fast" ? 280 : 560)),
       ]);
       setCards(res.cards);
@@ -765,6 +803,8 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
         if (isFxTier(best.rarity)) play(JINGLE[best.rarity], 60);
       }
       if (res.pityTriggered) toast("Pity déclenchée : UR ou mieux garantie !");
+      if (buying) play("coin");
+      onOpened?.();
       void mutateMe((m) => (m ? { ...m, packs: res.packs } : m), { revalidate: false });
     } catch (err) {
       setPhase("sealed");
@@ -808,9 +848,10 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
             <Sleeve
               tearing={phase === "tearing"}
               season={season}
-              stock={packs.available + packs.bonus}
+              stock={theme ? Math.max(1, theme.owned) : packs.available + packs.bonus}
               onOpen={open}
               disabled={!canOpen}
+              theme={theme}
             />
           </motion.div>
         ) : (
@@ -845,7 +886,17 @@ export const PackOpener = memo(function PackOpener({ packs, season }: { packs: P
             onClick={open}
             disabled={busy || !canOpen}
           >
-            {busy ? "Ouverture…" : phase === "dealt" ? "Ouvrir le suivant" : "Ouvrir un paquet"}
+            {busy
+              ? "Ouverture…"
+              : theme
+                ? buying
+                  ? `${phase === "dealt" ? "En racheter un" : "Acheter et ouvrir"} · ${fmt(theme.price)} PW`
+                  : phase === "dealt"
+                    ? "Ouvrir le suivant"
+                    : "Ouvrir le booster"
+                : phase === "dealt"
+                  ? "Ouvrir le suivant"
+                  : "Ouvrir un paquet"}
           </button>
           {phase === "dealt" && allRevealed && (
             <Link href="/collection" className="btn btn-ghost">

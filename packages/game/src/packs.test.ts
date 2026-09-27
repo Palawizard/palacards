@@ -5,6 +5,8 @@ import {
   DROP_TABLE_GUARANTEED,
   DROP_TABLE_PITY,
   DROP_TABLE_STANDARD,
+  DROP_TABLE_THEMED,
+  DROP_TABLE_THEMED_GUARANTEED,
   DROP_TABLE_TOTAL,
   MAX_STORED_PACKS,
   PACK_REGEN_MS,
@@ -23,6 +25,8 @@ describe("tables de drop", () => {
     ["standard", DROP_TABLE_STANDARD],
     ["garantie", DROP_TABLE_GUARANTEED],
     ["pity", DROP_TABLE_PITY],
+    ["thème", DROP_TABLE_THEMED],
+    ["thème garantie", DROP_TABLE_THEMED_GUARANTEED],
   ])("la table %s somme à 10 000", (_, table) => {
     expect(sum(table)).toBe(DROP_TABLE_TOTAL);
   });
@@ -40,6 +44,23 @@ describe("tables de drop", () => {
     expect(counts.C / slots).toBeCloseTo(0.62, 2);
     expect(counts.PC / slots).toBeCloseTo(0.25, 2);
     expect(counts.R / slots).toBeCloseTo(0.095, 2);
+  });
+});
+
+describe("booster à thème", () => {
+  it("a de meilleurs taux que le paquet standard à partir de Rare (Super rare sur la dernière carte)", () => {
+    for (const r of ["R", "SR", "UR", "L"] as const)
+      expect(DROP_TABLE_THEMED[r]).toBeGreaterThan(DROP_TABLE_STANDARD[r]);
+    for (const r of ["SR", "UR", "L"] as const)
+      expect(DROP_TABLE_THEMED_GUARANTEED[r]).toBeGreaterThan(DROP_TABLE_GUARANTEED[r]);
+  });
+
+  it("garde la garantie Rare ou mieux et la pity", () => {
+    const { rarities, pityCounter } = rollPack(PITY_THRESHOLD, randomInt, "themed");
+    expect(["UR", "L"]).toContain(rarities[CARDS_PER_PACK - 1]);
+    expect(pityCounter).toBe(0);
+    const last = rollPack(0, () => 0, "themed").rarities[CARDS_PER_PACK - 1];
+    expect(["R", "SR", "UR", "L"]).toContain(last);
   });
 });
 

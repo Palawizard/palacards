@@ -6,6 +6,24 @@ import type { Config } from "../config.js";
 
 const MAX_PARALLEL = 5;
 const REST = "https://fr.wikipedia.org/api/rest_v1/page/summary/";
+const ACTION_API = "https://fr.wikipedia.org/w/api.php";
+/** Plafonds d'une catégorie de booster à thème : articles gardés et appels à l'API. */
+export const CATEGORY_MAX_PAGES = 5_000;
+const CATEGORY_MAX_REQUESTS = 60;
+
+/** Nom de catégorie sans préfixe (« Catégorie:Jeu vidéo », URL ou « Jeu vidéo » → « Jeu vidéo »). */
+export function cleanCategory(input: string): string {
+  let name = input.trim();
+  try {
+    if (/^https?:\/\//.test(name)) name = decodeURIComponent(new URL(name).pathname.split("/").pop() ?? "");
+  } catch {
+    // pas une URL valide : on garde la saisie
+  }
+  return name
+    .replace(/^(catégorie|category)\s*:/i, "")
+    .replace(/_/g, " ")
+    .trim();
+}
 
 interface Summary {
   extract?: string;
@@ -140,7 +158,57 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     return row?.title ?? null;
   }
 
-  return { cached, load, titleOf };
+  /**
+   * Articles d'une catégorie Wikipédia et de ses sous-catégories jusqu'à `depth` niveaux (API MediaWiki,
+   * parcours en largeur). Au plus CATEGORY_MAX_PAGES articles et CATEGORY_MAX_REQUESTS appels.
+   */
+  async function categoryMembers(category: string, depth: number): Promise<number[]> {
+    if (config.WIKIMEDIA_DISABLED) throw new Error("API Wikipédia désactivée (WIKIMEDIA_DISABLED)");
+    const pages = new Set<number>();
+    const seen = new Set<string>();
+    let level = [cleanCategory(category)];
+    let requests = 0;
+    for (let d = 0; d <= depth && level.length && pages.size < CATEGORY_MAX_PAGES; d++) {
+      const next: string[] = [];
+      for (const cat of level) {
+        if (seen.has(cat)) continue;
+        seen.add(cat);
+        let cont: string | undefined;
+        do {
+          if (++requests > CATEGORY_MAX_REQUESTS || pages.size >= CATEGORY_MAX_PAGES) break;
+          const url = new URL(ACTION_API);
+          url.search = new URLSearchParams({
+            action: "query",
+            list: "categorymembers",
+            cmtitle: `Catégorie:${cat}`,
+            cmtype: d < depth ? "page|subcat" : "page",
+            cmlimit: "500",
+            format: "json",
+            formatversion: "2",
+            ...(cont ? { cmcontinue: cont } : {}),
+          }).toString();
+          const res = await fetch(url, {
+            headers: { "User-Agent": config.WIKIMEDIA_USER_AGENT, Accept: "application/json" },
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (!res.ok) throw new Error(`API Wikipédia : HTTP ${res.status}`);
+          const body = (await res.json()) as {
+            query?: { categorymembers?: { pageid: number; ns: number; title: string }[] };
+            continue?: { cmcontinue?: string };
+          };
+          for (const m of body.query?.categorymembers ?? []) {
+            if (m.ns === 0) pages.add(m.pageid);
+            else if (m.ns === 14) next.push(cleanCategory(m.title));
+          }
+          cont = body.continue?.cmcontinue;
+        } while (cont);
+      }
+      level = next;
+    }
+    return [...pages].slice(0, CATEGORY_MAX_PAGES);
+  }
+
+  return { cached, load, titleOf, categoryMembers };
 }
 
 export type Wiki = ReturnType<typeof createWiki>;

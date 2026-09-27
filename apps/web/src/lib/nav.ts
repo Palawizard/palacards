@@ -1,5 +1,7 @@
 import {
+  ArrowBigUpDash,
   Award,
+  CircleDot,
   Gavel,
   Heart,
   Layers,
@@ -22,7 +24,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   /** Badge de non-lus alimenté par /me. */
-  badge?: "messages";
+  badge?: "messages" | "wheel" | "themes";
   admin?: boolean;
 }
 
@@ -36,8 +38,10 @@ export const NAV: NavGroup[] = [
   {
     title: "Jouer",
     items: [
-      { href: "/pulls", label: "Paquets", icon: Package },
+      { href: "/pulls", label: "Paquets", icon: Package, badge: "themes" },
+      { href: "/wheel", label: "Roue du jour", icon: CircleDot, badge: "wheel" },
       { href: "/collection", label: "Collection", icon: Layers },
+      { href: "/upgrade", label: "Upgrader", icon: ArrowBigUpDash },
       { href: "/cards", label: "Toutes les cartes", icon: LibraryBig },
       { href: "/battle", label: "Bataille", icon: Swords },
     ],
