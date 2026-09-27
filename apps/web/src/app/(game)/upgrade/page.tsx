@@ -37,6 +37,8 @@ const SOURCES = RARITIES.filter((r) => nextRarity(r) !== null);
 const SPIN_DURATION = { normal: 3.6, fast: 1.6, instant: 0 } as const;
 /** Un cliquetis tous les 30° parcourus par l'aiguille. */
 const TICK_EVERY = 30;
+/** Espace insécable (avant « : » et « % », entre un nombre et son unité). */
+const NBSP = String.fromCharCode(160);
 
 type Phase = "idle" | "fusing" | "spinning" | "done";
 
@@ -301,7 +303,7 @@ export default function UpgradePage() {
               </div>
               <p className="tnum text-center text-xs text-muted lg:max-w-32 lg:text-left" aria-live="polite">
                 {phase === "done" && result && (
-                  <span className="sr-only">{result.success ? "Réussi : " : "Raté : "}</span>
+                  <span className="sr-only">{result.success ? `Réussi${NBSP}: ` : `Raté${NBSP}: `}</span>
                 )}
                 {phase === "done" && result
                   ? result.success
@@ -309,16 +311,16 @@ export default function UpgradePage() {
                       ? result.card.title
                       : "Retourne la carte."
                     : result.refund
-                      ? `+${fmt(result.refund)} PW récupérés`
+                      ? `+${fmt(result.refund)}${NBSP}PW récupérés`
                       : "Cartes perdues."
                   : phase === "spinning"
                     ? "L’aiguille tourne…"
                     : chance !== null
                       ? capped
-                        ? "Chance au maximum : inutile d’ajouter des cartes."
+                        ? `Chance au maximum${NBSP}: inutile d’ajouter des cartes.`
                         : upgradeRefund(rarity, count)
-                          ? `Raté : +${fmt(upgradeRefund(rarity, count))} PW`
-                          : "Raté : cartes perdues."
+                          ? `Raté${NBSP}: +${fmt(upgradeRefund(rarity, count))}${NBSP}PW`
+                          : `Raté${NBSP}: cartes perdues.`
                       : "Pose des cartes dans les cases."}
               </p>
             </div>
@@ -420,7 +422,7 @@ export default function UpgradePage() {
                 {busy
                   ? "Upgrade en cours…"
                   : chance !== null
-                    ? `Tenter l’upgrade · ${chanceText(chance)} %`
+                    ? `Tenter l’upgrade · ${chanceText(chance)}${NBSP}%`
                     : "Choisis des cartes"}
               </button>
             </>
