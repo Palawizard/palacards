@@ -13,7 +13,8 @@
     "bench": "tsx bench/run.ts",
     "admin:grant": "tsx --env-file-if-exists=../../.env src/cli/admin.ts grant",
     "admin:revoke": "tsx --env-file-if-exists=../../.env src/cli/admin.ts revoke",
-    "admin:list": "tsx --env-file-if-exists=../../.env src/cli/admin.ts list"
+    "admin:list": "tsx --env-file-if-exists=../../.env src/cli/admin.ts list",
+    "theme:create": "tsx --env-file-if-exists=../../.env src/cli/theme.ts create"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",

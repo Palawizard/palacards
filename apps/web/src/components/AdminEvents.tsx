@@ -13,7 +13,7 @@ import { useNow } from "@/lib/use-now";
 interface AdminTheme {
   id: number;
   name: string;
-  category: string | null;
+  categories: string[];
   price: number;
   startsAt: string;
   endsAt: string;
@@ -57,11 +57,11 @@ function themeState(t: AdminTheme, now: number) {
   return { label: "Terminé", className: "bg-panel-2 text-faint" };
 }
 
-/** Boosters à thème : création (catégorie Wikipédia et/ou titres) et liste. */
+/** Boosters à thème : création (catégories Wikipédia et/ou titres) et liste. */
 export function AdminThemes() {
   const list = useSWR<AdminTheme[]>("/admin/themes");
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState("");
   const [depth, setDepth] = useState("1");
   const [titles, setTitles] = useState("");
   const [description, setDescription] = useState("");
@@ -72,10 +72,13 @@ export function AdminThemes() {
   const [ending, setEnding] = useState<AdminTheme | null>(null);
   const now = useNow(30_000);
 
-  const titleList = titles
-    .split("\n")
-    .map((t) => t.trim())
-    .filter(Boolean);
+  const lines = (v: string) =>
+    v
+      .split("\n")
+      .map((t) => t.trim())
+      .filter(Boolean);
+  const titleList = lines(titles);
+  const categoryList = lines(categories);
 
   async function create(e: { preventDefault(): void }) {
     e.preventDefault();
@@ -86,7 +89,7 @@ export function AdminThemes() {
         body: {
           name: name.trim(),
           description: description.trim() || undefined,
-          category: category.trim() || undefined,
+          categories: categoryList,
           depth: Number(depth),
           titles: titleList,
           price: Number(price) || ECONOMY.themePackPrice,
@@ -96,7 +99,7 @@ export function AdminThemes() {
       });
       toast.success(`Booster « ${res.name} » créé : ${fmt(res.cardCount)} articles.`);
       setName("");
-      setCategory("");
+      setCategories("");
       setTitles("");
       setDescription("");
       void list.mutate();
@@ -133,13 +136,12 @@ export function AdminThemes() {
           />
         </label>
         <label className="sm:col-span-3">
-          <span className="label">Catégorie Wikipédia</span>
-          <input
-            className="field"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            maxLength={200}
-            placeholder="Jeu vidéo, ou l’URL de la catégorie"
+          <span className="label">Catégories Wikipédia (une par ligne)</span>
+          <textarea
+            className="field min-h-20 py-2"
+            value={categories}
+            onChange={(e) => setCategories(e.target.value)}
+            placeholder={"Chanteur français\nChanteuse française, ou l’URL de la catégorie"}
           />
         </label>
         <label>
@@ -201,7 +203,7 @@ export function AdminThemes() {
           <button
             type="submit"
             className="btn btn-primary w-full"
-            disabled={busy || name.trim().length < 2 || (!category.trim() && !titleList.length)}
+            disabled={busy || name.trim().length < 2 || (!categoryList.length && !titleList.length)}
           >
             {busy ? "Lecture de Wikipédia…" : "Créer"}
           </button>
@@ -230,7 +232,9 @@ export function AdminThemes() {
                   <tr key={t.id} className="border-t border-line">
                     <td className="py-1.5 pr-3">
                       <span className="font-semibold">{t.name}</span>
-                      {t.category && <span className="block text-xs text-faint">{t.category}</span>}
+                      {t.categories.length > 0 && (
+                        <span className="block text-xs text-faint">{t.categories.join(" · ")}</span>
+                      )}
                     </td>
                     <td className="py-1.5 pr-3 text-muted">
                       {short(t.startsAt)} → {short(t.endsAt)}

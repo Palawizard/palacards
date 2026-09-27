@@ -1,6 +1,7 @@
 import { sql } from "@palacards/db";
 import { upgradeChance, upgradeRefund, WHEEL_SEGMENTS, type Rarity } from "@palacards/game";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { createTheme } from "../src/services/themes.js";
 import { nextParisMidnight } from "../src/services/wheel.js";
 import { cleanCategory, createWiki } from "../src/services/wiki.js";
 import { makeApp, signUp, signUpAdmin, uniqueName, type Client } from "./helpers.js";
@@ -223,6 +224,61 @@ describe("boosters à thème", () => {
     expect(tiny.body.error).toBe("theme_too_small");
     // Un joueur n'accède pas à l'admin.
     expect((await p.post("/admin/themes", { name: "x" })).status).toBe(403);
+  });
+
+  it("réunit plusieurs catégories (et l'ancien champ `category`), avec un essai à blanc", async () => {
+    const admin = await signUpAdmin(app, ctx);
+    const pool = await ctx.db.execute<{ id: string }>(sql`
+      select id from cards where season = (select id from seasons where status = 'active') order by id limit 12
+    `);
+    const ids = pool.map((r) => Number(r.id));
+    const members: Record<string, number[]> = {
+      "Chanteur français": ids.slice(0, 6),
+      "Chanteuse française": ids.slice(6),
+    };
+    const spy = vi.spyOn(ctx.wiki, "categoryMembers").mockImplementation(async (c) => members[c] ?? []);
+    try {
+      const window = {
+        startsAt: new Date(Date.now() - 60_000).toISOString(),
+        endsAt: new Date(Date.now() + 3_600_000).toISOString(),
+      };
+      const dry = await createTheme(ctx, admin.userId, {
+        name: "Essai",
+        categories: ["Catégorie:Chanteur_français", "Chanteuse française"],
+        depth: 1,
+        titles: [],
+        price: 250,
+        startsAt: new Date(window.startsAt),
+        endsAt: new Date(window.endsAt),
+        dryRun: true,
+      });
+      expect(dry).toMatchObject({
+        dryRun: true,
+        cardCount: 12,
+        categories: ["Chanteur français", "Chanteuse française"],
+      });
+      const [row] = await ctx.db.execute<{ n: number }>(
+        sql`select count(*)::int as n from themes where name = 'Essai'`,
+      );
+      expect(row!.n).toBe(0);
+
+      const created = await admin.post("/admin/themes", {
+        name: `Voix ${uniqueName("v")}`,
+        category: "Chanteur français",
+        categories: ["Chanteuse française"],
+        ...window,
+      });
+      expect(created.status).toBe(200);
+      expect(created.body.cardCount).toBe(12);
+      const listed = (await (await signUp(app)).get("/themes")).body.find(
+        (t: { id: number }) => t.id === created.body.id,
+      );
+      expect(listed.categories).toEqual(["Chanteur français", "Chanteuse française"]);
+      const inAdmin = (await admin.get("/admin/themes")).body.find((t: { id: number }) => t.id === created.body.id);
+      expect(inAdmin.categories).toEqual(["Chanteur français", "Chanteuse française"]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("l'admin peut terminer un thème", async () => {
