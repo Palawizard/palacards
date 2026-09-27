@@ -41,7 +41,29 @@ export const DROP_TABLE_PITY: DropTable = {
   L: 280,
 };
 
+/** Booster à thème (événement temporaire) : meilleurs taux que le paquet standard. */
+export const DROP_TABLE_THEMED: DropTable = {
+  C: 4_500,
+  PC: 3_000,
+  R: 1_700,
+  SR: 600,
+  UR: 170,
+  L: 30,
+};
+
+/** Dernier emplacement d'un booster à thème : Rare ou mieux, avec plus d'UR et de légendaires. */
+export const DROP_TABLE_THEMED_GUARANTEED: DropTable = {
+  C: 0,
+  PC: 0,
+  R: 8_000,
+  SR: 1_500,
+  UR: 430,
+  L: 70,
+};
+
 export const DROP_TABLE_TOTAL = 10_000;
+
+export type PackKind = "standard" | "themed";
 
 /** Générateur d'entiers uniformes dans [0, max[. En prod : crypto.randomInt. */
 export type RandomInt = (max: number) => number;
@@ -64,16 +86,20 @@ export interface PackRollResult {
 }
 
 /**
- * Tire les raretés d'un paquet. Le choix de l'article dans chaque palier
+ * Tire les raretés d'un paquet (standard ou booster à thème, pity commune). Le choix de l'article dans chaque palier
  * se fait ensuite en base (index `(rarity, rand_key)`).
  */
-export function rollPack(pityCounter: number, randomInt: RandomInt): PackRollResult {
+export function rollPack(pityCounter: number, randomInt: RandomInt, kind: PackKind = "standard"): PackRollResult {
   const pityTriggered = pityCounter >= PITY_THRESHOLD;
+  const [table, last] =
+    kind === "themed"
+      ? [DROP_TABLE_THEMED, DROP_TABLE_THEMED_GUARANTEED]
+      : [DROP_TABLE_STANDARD, DROP_TABLE_GUARANTEED];
   const rarities: Rarity[] = [];
   for (let slot = 0; slot < CARDS_PER_PACK - 1; slot++) {
-    rarities.push(rollRarity(DROP_TABLE_STANDARD, randomInt));
+    rarities.push(rollRarity(table, randomInt));
   }
-  rarities.push(rollRarity(pityTriggered ? DROP_TABLE_PITY : DROP_TABLE_GUARANTEED, randomInt));
+  rarities.push(rollRarity(pityTriggered ? DROP_TABLE_PITY : last, randomInt));
 
   const gotUrOrBetter = rarities.some((r) => r === "UR" || r === "L");
   return { rarities, pityCounter: gotUrOrBetter ? 0 : pityCounter + 1 };

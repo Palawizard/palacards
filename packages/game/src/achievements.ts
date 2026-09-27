@@ -4,7 +4,7 @@ import type { Rarity } from "./rarity.js";
 export type GameEvent =
   | { type: "pack_opened"; rarities: Rarity[] }
   /**
-   * État de la collection, sur les seuls exemplaires tirés par le joueur lui-même (`source = 'pack'`) :
+   * État de la collection, sur les seuls exemplaires obtenus par le joueur lui-même (paquet, upgrader, roue) :
    * une carte reçue par échange, achetée au marché ou donnée par l'admin ne compte pas (anti-farm entre amis).
    */
   | { type: "collection"; uniqueCards: number; uniqueLegendary: number; uniqueUR: number; totalUR: number }
