@@ -235,7 +235,7 @@ export default function CollectionPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="tnum text-muted">{list.data ? `${fmt(total)} carte${total > 1 ? "s" : ""}` : " "}</span>
+            <span className="tnum text-muted">{list.data ? `${fmt(total)} carte${total > 1 ? "s" : ""}` : " "}</span>
             <div className="flex flex-wrap gap-2">
               {selecting ? (
                 <>
