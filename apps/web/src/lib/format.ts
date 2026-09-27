@@ -44,6 +44,10 @@ const REASONS: Record<string, string> = {
   trade: "Échange",
   admin: "Admin",
   guild_objective: "Objectif de guilde",
+  upgrade: "Upgrader",
+  wheel: "Roue du jour",
+  promo_code: "Code promo",
+  theme_pack: "Booster à thème",
   test: "Test",
 };
 /** Motif d'une ligne du ledger, en français (code brut si inconnu). */
