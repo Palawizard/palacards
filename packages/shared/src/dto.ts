@@ -96,6 +96,8 @@ export interface UpgradeResultDTO {
   success: boolean;
   /** Chance de réussite (sur 10 000). */
   chance: number;
+  /** Tirage (0 à 9 999) : réussite si inférieur à `chance`. La roue de l'upgrader s'arrête dessus. */
+  roll: number;
   card: CardDTO | null;
   /** PW rendus en cas d'échec. */
   refund: number;

@@ -1,5 +1,5 @@
 import { sql } from "@palacards/db";
-import { ECONOMY, upgradeRefund, WHEEL_SEGMENTS, type Rarity } from "@palacards/game";
+import { upgradeChance, upgradeRefund, WHEEL_SEGMENTS, type Rarity } from "@palacards/game";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { nextParisMidnight } from "../src/services/wheel.js";
 import { cleanCategory, createWiki } from "../src/services/wiki.js";
@@ -43,7 +43,7 @@ describe("upgrader", () => {
     ctx.random = () => 0;
     const res = await p.post("/upgrade", { instanceIds: ids });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ success: true, chance: 6_000, refund: 0 });
+    expect(res.body).toMatchObject({ success: true, chance: upgradeChance("R", 4), roll: 0, refund: 0 });
     expect(res.body.card.rarity).toBe("SR");
     const [left] = await ctx.db.execute<{ n: number }>(
       sql`select count(*)::int as n from card_instances where id in (${sql.join(
@@ -58,16 +58,34 @@ describe("upgrader", () => {
     expect(src!.source).toBe("upgrade");
   });
 
-  it("échec : cartes perdues, la moitié de leur valeur de recyclage rendue en PW", async () => {
+  it("échec : cartes perdues, un quart de leur valeur de recyclage rendu en PW", async () => {
     const p = await signUp(app);
     const ids = await grantCards(p, "UR", 3);
     const before = await balance(p);
-    ctx.random = (max) => max - 1;
+    const chance = upgradeChance("UR", 3);
+    // Tirage pile sur la chance : raté (réussite seulement en dessous).
+    ctx.random = () => chance;
     const res = await p.post("/upgrade", { instanceIds: ids });
-    expect(res.body).toMatchObject({ success: false, chance: 2_000, card: null, refund: upgradeRefund("UR", 3) });
-    expect(res.body.refund).toBe((ECONOMY.recycleValue.UR * 3) / 2);
+    expect(res.body).toMatchObject({
+      success: false,
+      chance,
+      roll: chance,
+      card: null,
+      refund: upgradeRefund("UR", 3),
+    });
+    expect(res.body.refund).toBe(112);
     expect(await balance(p)).toBe(before + res.body.refund);
     await expectLedgerConsistent(p);
+  });
+
+  it("une seule carte suffit, avec une petite chance", async () => {
+    const p = await signUp(app);
+    const ids = await grantCards(p, "SR", 1);
+    const chance = upgradeChance("SR", 1);
+    ctx.random = (max) => (max === 10_000 ? chance - 1 : 0);
+    const res = await p.post("/upgrade", { instanceIds: ids });
+    expect(res.body).toMatchObject({ success: true, chance, roll: chance - 1 });
+    expect(res.body.card.rarity).toBe("UR");
   });
 
   it("refuse les raretés mélangées, les légendaires, le mauvais nombre et les cartes des autres", async () => {
@@ -76,7 +94,9 @@ describe("upgrader", () => {
     const c = await grantCards(p, "C", 2);
     const pc = await grantCards(p, "PC", 1);
     expect((await p.post("/upgrade", { instanceIds: [...c, ...pc] })).body.error).toBe("mixed_rarities");
-    expect((await p.post("/upgrade", { instanceIds: c })).status).toBe(400);
+    expect((await p.post("/upgrade", { instanceIds: [] })).status).toBe(400);
+    const eleven = await grantCards(p, "C", 11);
+    expect((await p.post("/upgrade", { instanceIds: eleven })).status).toBe(400);
     const l = await grantCards(p, "L", 3);
     expect((await p.post("/upgrade", { instanceIds: l })).body.error).toBe("max_rarity");
     const theirs = await grantCards(other, "C", 3);
