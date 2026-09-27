@@ -54,6 +54,15 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
       return { text: "Ton stock de paquets est plein : ouvre-les pour relancer le minuteur.", href: "/pulls" };
     case "achievement":
       return { text: `Succès débloqué : ${s(p.name)}.`, href: "/achievements" };
+    case "gift": {
+      const parts = [
+        n(p.pw) ? `${fmt(n(p.pw))} PW` : "",
+        n(p.packs) ? `${n(p.packs)} paquet${n(p.packs) > 1 ? "s" : ""} bonus` : "",
+      ]
+        .filter(Boolean)
+        .join(" et ");
+      return { text: `Cadeau pour tout le monde : ${parts} !${s(p.note) ? ` « ${s(p.note)} »` : ""}`, href: "/pulls" };
+    }
     case "guild_objective":
       return { text: `Objectif de guilde atteint : un paquet bonus pour chacun !`, href: "/guild" };
     default:

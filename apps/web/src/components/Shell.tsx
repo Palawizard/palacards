@@ -42,7 +42,13 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
               .map((item) => {
                 const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const Icon = item.icon;
-                const badge = item.badge === "messages" ? (me?.unreadMessages ?? 0) : 0;
+                const badge =
+                  item.badge === "messages"
+                    ? (me?.unreadMessages ?? 0)
+                    : item.badge === "themes"
+                      ? (me?.themesOnSale ?? 0)
+                      : 0;
+                const dot = item.badge === "wheel" && !!me?.wheelReady && !active;
                 return (
                   <li key={item.href}>
                     <Link
@@ -62,8 +68,19 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                       />
                       <span className="flex-1">{item.label}</span>
                       {badge > 0 && (
-                        <span className="tnum rounded-full bg-accent px-1.5 text-[0.72rem] font-bold text-accent-ink">
+                        <span
+                          className="tnum rounded-full bg-accent px-1.5 text-[0.72rem] font-bold text-accent-ink"
+                          title={item.badge === "themes" ? "Booster à thème en vente" : undefined}
+                        >
                           {badge}
+                        </span>
+                      )}
+                      {dot && (
+                        <span
+                          className="mr-1 size-2 rounded-full bg-accent shadow-[0_0_0_3px_rgb(255_210_63/0.25)]"
+                          title="Tour gratuit disponible"
+                        >
+                          <span className="sr-only">Tour gratuit disponible</span>
                         </span>
                       )}
                     </Link>

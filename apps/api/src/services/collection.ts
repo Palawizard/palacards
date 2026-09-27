@@ -10,7 +10,7 @@ const ci = schema.cardInstances;
 const c = schema.cards;
 
 /** Exemplaires demandés dans un échange en attente : ni recyclables ni fusionnables (le destinataire peut refuser l'échange). */
-async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promise<Set<number>> {
+export async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promise<Set<number>> {
   if (!ids.length) return new Set();
   const rows = await tx
     .select({ id: schema.tradeItems.instanceId })

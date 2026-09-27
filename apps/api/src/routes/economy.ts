@@ -1,4 +1,11 @@
-import { ECONOMY, MAX_PRICE, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
+import {
+  ECONOMY,
+  MAX_PRICE,
+  RARITIES,
+  TRADE_MAX_CARDS_PER_SIDE,
+  UPGRADE_MAX_CARDS,
+  UPGRADE_MIN_CARDS,
+} from "@palacards/game";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
@@ -18,6 +25,10 @@ import { listCollection } from "../services/collection.js";
 import { listNotifications, markRead } from "../services/notifications.js";
 import { findUserByName } from "../services/profiles.js";
 import { acceptTrade, closeTrade, counterTrade, listTrades, proposeTrade } from "../services/trades.js";
+import { redeemCode } from "../services/codes.js";
+import { listThemes } from "../services/themes.js";
+import { upgrade } from "../services/upgrade.js";
+import { spinWheel, wheelState } from "../services/wheel.js";
 
 const id = z.coerce.number().int().positive();
 const idParams = z.object({ id });
@@ -149,6 +160,25 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   api.post("/notifications/read", auth, async (req) => {
     const { ids } = parse(z.object({ ids: z.array(z.number().int().positive()).max(200).optional() }), req.body ?? {});
     return markRead(ctx, req.user.id, ids);
+  });
+
+  // --- Événements : boosters à thème, upgrader, roue, codes promo ---
+  api.get("/themes", auth, async (req) => listThemes(ctx, req.user.id));
+  api.post("/upgrade", limited(30), async (req) => {
+    const { instanceIds } = parse(
+      z.object({
+        instanceIds: z.array(z.number().int().positive()).min(UPGRADE_MIN_CARDS).max(UPGRADE_MAX_CARDS),
+      }),
+      req.body,
+    );
+    return upgrade(ctx, req.user.id, instanceIds);
+  });
+  api.get("/wheel", auth, async (req) => wheelState(ctx, req.user.id));
+  api.post("/wheel/spin", limited(10), async (req) => spinWheel(ctx, req.user.id));
+  // Limite serrée : pas de devinette de codes à la chaîne.
+  api.post("/codes/redeem", limited(10), async (req) => {
+    const { code } = parse(z.object({ code: z.string().trim().min(1).max(40) }), req.body);
+    return redeemCode(ctx, req.user.id, code);
   });
 
   // --- Portefeuille ---

@@ -282,6 +282,9 @@ export default function CollectionPage() {
                 </>
               ) : (
                 <>
+                  <Link href="/upgrade" className="btn btn-sm">
+                    Upgrader
+                  </Link>
                   <button type="button" className="btn btn-sm" onClick={askRecycleDuplicates}>
                     Recycler les doublons
                   </button>

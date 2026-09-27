@@ -6,3 +6,5 @@ export * from "./market.js";
 export * from "./guild.js";
 export * from "./battle.js";
 export * from "./achievements.js";
+export * from "./upgrade.js";
+export * from "./wheel.js";

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { AdminCodes, AdminThemes } from "@/components/AdminEvents";
 import { ConfirmDialog, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt, reasonLabel, relative } from "@/lib/format";
@@ -34,7 +35,13 @@ interface LedgerRow {
   username: string | null;
 }
 
-const KINDS: Record<string, string> = { pw: "PW", card: "cartes", pack: "paquets", bonus_pack: "paquets bonus" };
+const KINDS: Record<string, string> = {
+  pw: "PW",
+  card: "cartes",
+  pack: "paquets",
+  bonus_pack: "paquets bonus",
+  theme_pack: "boosters à thème",
+};
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -54,16 +61,23 @@ export default function AdminPage() {
   const [packs, setPacks] = useState("");
   const [note, setNote] = useState("");
   const [confirmSeason, setConfirmSeason] = useState(false);
+  const [confirmAll, setConfirmAll] = useState(false);
+  const toAll = username.trim() === "*";
   const [busy, setBusy] = useState(false);
 
   if (me && !me.isAdmin) return <p className="text-muted">Page réservée aux admins.</p>;
 
-  async function grant(e: { preventDefault(): void }) {
+  function submitGrant(e: { preventDefault(): void }) {
     e.preventDefault();
+    if (toAll) setConfirmAll(true);
+    else void grant();
+  }
+
+  async function grant() {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await api<{ balance: number; bonusPacks: number }>("/admin/grant", {
+      const res = await api<{ balance: number; bonusPacks: number } | { players: number }>("/admin/grant", {
         body: {
           username: username.trim(),
           pw: Number(pw) || 0,
@@ -71,7 +85,11 @@ export default function AdminPage() {
           note: note.trim() || undefined,
         },
       });
-      toast.success(`Fait : ${username} a ${fmt(res.balance)} PW et ${res.bonusPacks} paquet(s) bonus.`);
+      toast.success(
+        "players" in res
+          ? `Cadeau envoyé à ${fmt(res.players)} joueur${res.players > 1 ? "s" : ""}.`
+          : `Fait : ${username} a ${fmt(res.balance)} PW et ${res.bonusPacks} paquet(s) bonus.`,
+      );
       setPw("");
       setPacks("");
       void mutate();
@@ -153,13 +171,16 @@ export default function AdminPage() {
 
       <section>
         <h2 className="section-title mt-0">Donner des PW ou des paquets</h2>
-        <form onSubmit={grant} className="grid grid-cols-1 gap-3 sm:grid-cols-[1.4fr_1fr_1fr_1.6fr_auto] sm:items-end">
+        <form
+          onSubmit={submitGrant}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-[1.4fr_1fr_1fr_1.6fr_auto] sm:items-end"
+        >
           <label>
-            <span className="label">Pseudo</span>
+            <span className="label">Pseudo (* : tous les joueurs)</span>
             <input className="field" value={username} onChange={(e) => setUsername(e.target.value)} required />
           </label>
           <label>
-            <span className="label">PW (négatif pour retirer)</span>
+            <span className="label">{toAll ? "PW pour chacun" : "PW (négatif pour retirer)"}</span>
             <input
               className="field tnum"
               inputMode="numeric"
@@ -183,12 +204,27 @@ export default function AdminPage() {
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={busy || !username.trim() || (!Number(pw) && !Number(packs))}
+            disabled={
+              busy ||
+              !username.trim() ||
+              (!Number(pw) && !Number(packs)) ||
+              (toAll && (Number(pw) < 0 || Number(packs) < 0))
+            }
           >
-            {busy ? "Envoi…" : "Donner"}
+            {busy ? "Envoi…" : toAll ? "Donner à tous" : "Donner"}
           </button>
         </form>
+        {toAll && (
+          <p className="mt-2 text-xs text-faint">
+            Chaque joueur reçoit le cadeau et une notification (avec la note). Pas de retrait possible sur tout le
+            monde.
+          </p>
+        )}
       </section>
+
+      <AdminThemes />
+
+      <AdminCodes />
 
       <section>
         <h2 className="section-title mt-0">Saison</h2>
@@ -264,6 +300,19 @@ export default function AdminPage() {
           ))}
         </ul>
       </section>
+
+      <ConfirmDialog
+        open={confirmAll}
+        title="Cadeau à tous les joueurs ?"
+        confirmLabel="Envoyer le cadeau"
+        onConfirm={() => void grant()}
+        onClose={() => setConfirmAll(false)}
+      >
+        Chaque joueur ({fmt(data?.economy.supply.players ?? 0)}) reçoit
+        {Number(pw) ? ` ${fmt(Number(pw))} PW` : ""}
+        {Number(pw) && Number(packs) ? " et" : ""}
+        {Number(packs) ? ` ${Number(packs)} paquet${Number(packs) > 1 ? "s" : ""} bonus` : ""}, avec une notification.
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={confirmSeason}

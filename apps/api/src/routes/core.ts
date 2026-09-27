@@ -1,5 +1,5 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
-import { RARITIES } from "@palacards/game";
+import { parisDay, RARITIES } from "@palacards/game";
 import { avatarSchema, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -20,6 +20,7 @@ import {
   setTags,
 } from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
+import { themesOnSale } from "../services/themes.js";
 import { emit } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
 import { getProfile } from "../services/profiles.js";
@@ -68,6 +69,8 @@ export async function me(
     unreadMessages: await unreadMessages(ctx, user.id),
     season: await activeSeason(ctx.db),
     elo: p.elo,
+    wheelReady: p.lastWheelDay !== parisDay(ctx.now()),
+    themesOnSale: await themesOnSale(ctx),
   };
 }
 
@@ -119,9 +122,13 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   // --- Paquets ---
   api.get("/packs", auth, async (req) => getPackState(ctx, req.user.id));
   // Limite au-dessus du stock plein (MAX_STORED_PACKS) : vider son stock en mode instantané doit passer.
-  api.post("/packs/open", { ...auth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req) =>
-    openPack(ctx, req.user.id),
-  );
+  api.post("/packs/open", { ...auth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req) => {
+    const body = parse(
+      z.object({ themeId: z.number().int().positive().optional(), buy: z.boolean().optional() }),
+      req.body ?? {},
+    );
+    return openPack(ctx, req.user.id, body);
+  });
 
   // --- Collection ---
   const collectionFilters = z.object({
