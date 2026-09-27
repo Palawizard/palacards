@@ -1,10 +1,12 @@
 import { eq, schema, sql } from "@palacards/db";
-import { MAX_PRICE } from "@palacards/game";
+import { ECONOMY, MAX_PRICE } from "@palacards/game";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import { adminOverview, grant, ledgerLog } from "../services/admin.js";
+import { createCode, listCodes, setCodeDisabled } from "../services/codes.js";
+import { adminThemes, createTheme, endTheme } from "../services/themes.js";
 import { NOTIFICATION_GROUPS } from "../services/notifications.js";
 import { leaderboard, listAchievements } from "../services/progression.js";
 import { CARDS_PURGE_JOB, rolloverSeason } from "../services/seasons.js";
@@ -73,6 +75,56 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     return grant(ctx, req.user.id, body);
   });
+  // Boosters à thème : lecture de la catégorie sur Wikipédia (jusqu'à 60 appels), d'où la limite.
+  api.get("/admin/themes", admin, async () => adminThemes(ctx));
+  api.post("/admin/themes", { ...admin, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req) => {
+    const body = parse(
+      z
+        .object({
+          name: z.string().trim().min(2).max(40),
+          description: z.string().trim().max(200).optional(),
+          category: z.string().trim().max(200).optional(),
+          depth: z.number().int().min(0).max(2).default(1),
+          titles: z.array(z.string().trim().min(1).max(300)).max(500).default([]),
+          price: z.number().int().min(1).max(MAX_PRICE).default(ECONOMY.themePackPrice),
+          startsAt: z.coerce.date(),
+          endsAt: z.coerce.date(),
+        })
+        .refine((b) => b.endsAt > b.startsAt, { message: "La fin doit être après le début", path: ["endsAt"] }),
+      req.body,
+    );
+    return createTheme(ctx, req.user.id, body);
+  });
+  api.post("/admin/themes/:id/end", admin, async (req) => {
+    const { id } = parse(z.object({ id: z.coerce.number().int().positive() }), req.params);
+    await endTheme(ctx, id);
+    return { ok: true };
+  });
+
+  // Codes promo.
+  api.get("/admin/codes", admin, async () => listCodes(ctx));
+  api.post("/admin/codes", admin, async (req) => {
+    const body = parse(
+      z.object({
+        code: z.string().trim().min(3).max(32),
+        pw: z.number().int().min(0).max(MAX_PRICE).default(0),
+        packs: z.number().int().min(0).max(100).default(0),
+        themeId: z.number().int().positive().nullable().default(null),
+        themePacks: z.number().int().min(0).max(20).default(0),
+        maxUses: z.number().int().min(1).max(100_000).nullable().default(null),
+        expiresAt: z.coerce.date().nullable().default(null),
+      }),
+      req.body,
+    );
+    return createCode(ctx, req.user.id, body);
+  });
+  api.post("/admin/codes/:code/disabled", admin, async (req) => {
+    const { code } = parse(z.object({ code: z.string().min(1).max(40) }), req.params);
+    const { disabled } = parse(z.object({ disabled: z.boolean() }), req.body);
+    await setCodeDisabled(ctx, code, disabled);
+    return { ok: true };
+  });
+
   api.post("/admin/season", admin, async (req) => {
     const { from } = parse(z.object({ from: z.number().int().positive() }), req.body);
     const res = await rolloverSeason(ctx, { expectedFrom: from });
