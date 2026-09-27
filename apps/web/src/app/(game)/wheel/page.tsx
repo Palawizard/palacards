@@ -195,7 +195,13 @@ export default function WheelPage() {
       const base = current - (((current % 360) + 360) % 360);
       let end = base + 360 * 6 + (((target % 360) + 360) % 360);
       if (end - current < 360 * 5) end += 360;
-      await animate(rotation, end, reduce ? { duration: 0 } : { duration: 4.8, ease: [0.12, 0.72, 0.16, 1] });
+      // Toujours un vrai tour de roue (le réglage de vitesse ne concerne que les paquets) ; mouvement réduit :
+      // pas de tours, un court glissement jusqu'à la case gagnante.
+      await animate(
+        rotation,
+        reduce ? end - 360 * Math.floor((end - current) / 360) : end,
+        reduce ? { duration: 0.6, ease: [0.23, 1, 0.32, 1] } : { duration: 4.8, ease: [0.12, 0.72, 0.16, 1] },
+      );
       setResult(res);
       void mutateMe((m) => (m ? { ...m, wallet: res.wallet, packs: res.packs, wheelReady: false } : m), {
         revalidate: false,
@@ -275,7 +281,7 @@ export default function WheelPage() {
                         revealed={revealed}
                         onReveal={() => setRevealed(true)}
                         index={0}
-                        speed={me?.animationSpeed ?? "normal"}
+                        speed="normal"
                         stagger={false}
                       />
                     </div>
