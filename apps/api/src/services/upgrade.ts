@@ -20,9 +20,10 @@ import { emit } from "./progression.js";
 const ci = schema.cardInstances;
 
 /**
- * Upgrader : 3 à 5 exemplaires d'une même rareté sont détruits pour tenter une carte aléatoire de la
- * rareté au-dessus (40, 60 ou 80 % ; moitié moins vers une légendaire). Échec : la moitié de leur valeur
- * de recyclage en PW. Une transaction : joueur puis exemplaires verrouillés, ledger des cartes et des PW.
+ * Upgrader : 1 à 10 exemplaires d'une même rareté sont détruits pour tenter une carte aléatoire de la
+ * rareté au-dessus, avec une chance au prorata de leur rareté (voir `upgradeChance`). Échec : un quart
+ * de leur valeur de recyclage en PW. Une transaction : joueur puis exemplaires verrouillés, ledger des
+ * cartes et des PW. Le tirage (0 à 9 999) est renvoyé : la roue de la page s'arrête dessus.
  */
 export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]): Promise<UpgradeResultDTO> {
   const ids = [...new Set(instanceIds)];
@@ -49,7 +50,8 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
       throw conflict("card_requested", "Une carte est demandée dans un échange en attente : refuse-le d'abord.");
 
     const chance = upgradeChance(from, ids.length);
-    const success = ctx.random(10_000) < chance;
+    const roll = ctx.random(10_000);
+    const success = roll < chance;
     const ref = `${from}>${target}:${ids.join(",")}`;
     await tx.delete(ci).where(inArray(ci.id, ids));
     await logMovement(tx, ownerId, "card", -ids.length, await ownedCount(tx, ownerId), "upgrade", ref);
@@ -57,7 +59,7 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
     if (!success) {
       const refund = upgradeRefund(from, ids.length);
       if (refund) await movePw(tx, p, refund, "upgrade", ref);
-      return { success, chance, refund, instanceId: null, drawn: null, player: p };
+      return { success, chance, roll, refund, instanceId: null, drawn: null, player: p };
     }
     const season = await activeSeason(tx);
     const drawn = await drawCard(tx, season, target, ctx.random);
@@ -75,7 +77,7 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
       })
       .returning({ id: ci.id });
     await logMovement(tx, ownerId, "card", 1, await ownedCount(tx, ownerId), "upgrade", ref);
-    return { success, chance, refund: 0, instanceId: inserted!.id, drawn, player: p };
+    return { success, chance, roll, refund: 0, instanceId: inserted!.id, drawn, player: p };
   });
 
   const card = res.instanceId ? ((await instancesByIds(ctx.db, [res.instanceId], ownerId))[0] ?? null) : null;
@@ -86,5 +88,12 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
       void emit(ctx, ownerId, "collection");
     }
   });
-  return { success: res.success, chance: res.chance, card, refund: res.refund, wallet: wallet(res.player) };
+  return {
+    success: res.success,
+    chance: res.chance,
+    roll: res.roll,
+    card,
+    refund: res.refund,
+    wallet: wallet(res.player),
+  };
 }
