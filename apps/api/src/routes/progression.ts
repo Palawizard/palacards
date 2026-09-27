@@ -6,7 +6,7 @@ import { requireAdmin, requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import { adminOverview, grant, ledgerLog } from "../services/admin.js";
 import { createCode, listCodes, setCodeDisabled } from "../services/codes.js";
-import { adminThemes, createTheme, endTheme } from "../services/themes.js";
+import { adminThemes, createTheme, endTheme, THEME_MAX_CATEGORIES } from "../services/themes.js";
 import { NOTIFICATION_GROUPS } from "../services/notifications.js";
 import { leaderboard, listAchievements } from "../services/progression.js";
 import { CARDS_PURGE_JOB, rolloverSeason } from "../services/seasons.js";
@@ -83,6 +83,8 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
         .object({
           name: z.string().trim().min(2).max(40),
           description: z.string().trim().max(200).optional(),
+          // Une ou plusieurs catégories (`category` : ancien champ, une seule).
+          categories: z.array(z.string().trim().min(1).max(200)).max(THEME_MAX_CATEGORIES).default([]),
           category: z.string().trim().max(200).optional(),
           depth: z.number().int().min(0).max(2).default(1),
           titles: z.array(z.string().trim().min(1).max(300)).max(500).default([]),
@@ -93,7 +95,11 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
         .refine((b) => b.endsAt > b.startsAt, { message: "La fin doit être après le début", path: ["endsAt"] }),
       req.body,
     );
-    return createTheme(ctx, req.user.id, body);
+    const { category, ...rest } = body;
+    return createTheme(ctx, req.user.id, {
+      ...rest,
+      categories: category ? [category, ...rest.categories] : rest.categories,
+    });
   });
   api.post("/admin/themes/:id/end", admin, async (req) => {
     const { id } = parse(z.object({ id: z.coerce.number().int().positive() }), req.params);

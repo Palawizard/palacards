@@ -58,7 +58,8 @@ export interface ThemeDTO {
   id: number;
   name: string;
   description: string;
-  category: string | null;
+  /** Catégories Wikipédia du thème (vide : liste de titres seulement). */
+  categories: string[];
   price: number;
   startsAt: string;
   endsAt: string;
