@@ -12,34 +12,61 @@ type Theme = typeof schema.themes.$inferSelect;
 
 /** Un thème en dessous de ce nombre d'articles tirerait presque toujours hors thème. */
 export const THEME_MIN_CARDS = 5;
+/** Catégories Wikipédia par thème (chacune lue avec ses sous-catégories). */
+export const THEME_MAX_CATEGORIES = 10;
+/** Séparateur des catégories en base (colonne `category`) : « | » est interdit dans les titres MediaWiki. */
+const CATEGORY_SEP = "|";
+/** Catégories d'un thème telles qu'enregistrées. */
+export const splitCategories = (stored: string | null) => (stored ? stored.split(CATEGORY_SEP).filter(Boolean) : []);
 const PREVIEW_SIZE = 4;
 
 export interface ThemeInput {
   name: string;
   description?: string;
-  category?: string;
+  categories: string[];
   depth: number;
   titles: string[];
   price: number;
   startsAt: Date;
   endsAt: Date;
+  /** Essai à blanc : tout est calculé puis annulé (rien n'est créé). */
+  dryRun?: boolean;
+}
+
+/** Annule la transaction d'un essai à blanc en emportant son résultat. */
+class DryRun<T> extends Error {
+  constructor(readonly result: T) {
+    super("dry run");
+  }
 }
 
 /**
- * Crée un booster à thème : articles de la catégorie Wikipédia (sous-catégories comprises jusqu'à `depth`)
+ * Crée un booster à thème : articles des catégories Wikipédia (sous-catégories comprises jusqu'à `depth`)
  * et titres ajoutés à la main, gardés seulement s'ils existent dans les cartes de la saison active.
  */
 export async function createTheme(ctx: Ctx, adminId: string, input: ThemeInput) {
-  const category = input.category ? cleanCategory(input.category) : null;
-  if (!category && !input.titles.length)
+  try {
+    return await buildTheme(ctx, adminId, input);
+  } catch (err) {
+    if (err instanceof DryRun) return err.result as Awaited<ReturnType<typeof buildTheme>>;
+    throw err;
+  }
+}
+
+async function buildTheme(ctx: Ctx, adminId: string, input: ThemeInput) {
+  const categories = [...new Set(input.categories.map(cleanCategory).filter(Boolean))].slice(0, THEME_MAX_CATEGORIES);
+  if (!categories.length && !input.titles.length)
     throw badRequest("empty_theme", "Donne une catégorie Wikipédia ou une liste de titres.");
-  let pageIds: number[] = [];
-  if (category) {
+  const pageIds = new Set<number>();
+  for (const category of categories) {
     try {
-      pageIds = await ctx.wiki.categoryMembers(category, input.depth);
+      for (const id of await ctx.wiki.categoryMembers(category, input.depth)) pageIds.add(id);
     } catch (err) {
       ctx.log.warn({ err, category }, "catégorie Wikipédia");
-      throw conflict("wiki_unavailable", "Impossible de lire la catégorie sur Wikipédia pour l'instant.");
+      throw conflict(
+        "wiki_unavailable",
+        `Impossible de lire la catégorie « ${category} » sur Wikipédia pour l'instant.`,
+      );
     }
   }
   const season = await activeSeason(ctx.db);
@@ -51,7 +78,7 @@ export async function createTheme(ctx: Ctx, adminId: string, input: ThemeInput) 
       .values({
         name: input.name,
         description: input.description ?? "",
-        category,
+        category: categories.length ? categories.join(CATEGORY_SEP) : null,
         price: input.price,
         startsAt: input.startsAt,
         endsAt: input.endsAt,
@@ -64,7 +91,7 @@ export async function createTheme(ctx: Ctx, adminId: string, input: ThemeInput) 
       insert into theme_cards (theme_id, card_id)
       select ${theme!.id}, id from cards
       where season = ${season}
-        and (id in (select jsonb_array_elements_text(${JSON.stringify(pageIds)}::jsonb)::bigint)
+        and (id in (select jsonb_array_elements_text(${JSON.stringify([...pageIds])}::jsonb)::bigint)
           or title in (select jsonb_array_elements_text(${JSON.stringify(byTitle)}::jsonb)))
       on conflict do nothing
       returning card_id
@@ -75,7 +102,15 @@ export async function createTheme(ctx: Ctx, adminId: string, input: ThemeInput) 
         `Seulement ${inserted.length} article(s) de ce thème dans les cartes (minimum ${THEME_MIN_CARDS}) : élargis la catégorie ou la profondeur.`,
       );
     await tx.update(schema.themes).set({ cardCount: inserted.length }).where(eq(schema.themes.id, theme!.id));
-    return { ...theme!, cardCount: inserted.length };
+    const result = {
+      ...theme!,
+      categories,
+      cardCount: inserted.length,
+      byRarity: await rarityCounts(tx, theme!.id, season),
+      dryRun: !!input.dryRun,
+    };
+    if (input.dryRun) throw new DryRun(result);
+    return result;
   });
 }
 
@@ -168,7 +203,7 @@ export async function listThemes(ctx: Ctx, userId: string): Promise<ThemeDTO[]> 
       id,
       name: r.name,
       description: r.description,
-      category: r.category,
+      categories: splitCategories(r.category),
       price: r.price,
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
@@ -210,8 +245,9 @@ export async function adminThemes(ctx: Ctx) {
     .orderBy(desc(schema.themes.id))
     .limit(50);
   const now = ctx.now();
-  return rows.map((r) => ({
+  return rows.map(({ category, ...r }) => ({
     ...r,
+    categories: splitCategories(category),
     startsAt: r.startsAt.toISOString(),
     endsAt: r.endsAt.toISOString(),
     onSale: isOnSale(r, now),
