@@ -47,6 +47,59 @@ export interface MeDTO {
   unreadMessages: number;
   season: number;
   elo: number;
+  /** Tour de roue quotidienne disponible aujourd'hui. */
+  wheelReady: boolean;
+  /** Boosters à thème en vente en ce moment (pastille du menu). */
+  themesOnSale: number;
+}
+
+/** Booster à thème temporaire (page Paquets). */
+export interface ThemeDTO {
+  id: number;
+  name: string;
+  description: string;
+  category: string | null;
+  price: number;
+  startsAt: string;
+  endsAt: string;
+  /** En vente maintenant (sinon : à venir, ou terminé avec des boosters encore à ouvrir). */
+  onSale: boolean;
+  cardCount: number;
+  /** Boosters de ce thème achetés ou reçus, pas encore ouverts. */
+  owned: number;
+  byRarity: Record<Rarity, number>;
+  /** Cartes phares du thème (les plus rares). */
+  preview: CardDTO[];
+}
+
+/** Roue quotidienne : état et cases (dans l'ordre d'affichage). */
+export interface WheelDTO {
+  ready: boolean;
+  /** Prochain tour possible (minuit, heure de Paris). */
+  nextAt: string;
+  segments: { reward: WheelRewardDTO; weight: number }[];
+}
+
+export type WheelRewardDTO =
+  { kind: "pw"; amount: number } | { kind: "packs"; amount: number } | { kind: "card"; rarity: "UR" | "L" };
+
+export interface WheelSpinDTO {
+  segment: number;
+  reward: WheelRewardDTO;
+  card: CardDTO | null;
+  wallet: Wallet;
+  packs: PackState;
+  nextAt: string;
+}
+
+export interface UpgradeResultDTO {
+  success: boolean;
+  /** Chance de réussite (sur 10 000). */
+  chance: number;
+  card: CardDTO | null;
+  /** PW rendus en cas d'échec. */
+  refund: number;
+  wallet: Wallet;
 }
 
 export interface ReferencePriceDTO {

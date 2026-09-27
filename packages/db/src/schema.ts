@@ -205,6 +205,8 @@ export const players = pgTable(
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
     loginStreak: integer("login_streak").notNull().default(0),
     lastLoginDay: date("last_login_day"),
+    /** Dernier jour (Paris) où la roue quotidienne a été tournée. */
+    lastWheelDay: date("last_wheel_day"),
     lastSeenAt: tstz("last_seen_at"),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
@@ -248,7 +250,8 @@ export const cardInstances = pgTable(
     /** Engagée dans une enchère ou un échange : ni recyclage, ni fusion, ni double vente. */
     lockedBy: text("locked_by", { enum: ["auction", "trade"] }),
     pinnedSlot: smallint("pinned_slot"),
-    source: text("source", { enum: ["pack", "market", "trade", "admin"] }).notNull(),
+    /** `upgrade` (upgrader) et `wheel` (roue quotidienne) comptent, comme `pack`, pour les succès de collection. */
+    source: text("source", { enum: ["pack", "market", "trade", "admin", "upgrade", "wheel"] }).notNull(),
     obtainedAt: tstz("obtained_at").notNull().defaultNow(),
   },
   (t) => [
@@ -279,13 +282,16 @@ export const userTags = pgTable(
   ],
 );
 
-/** Grand livre (ajout seulement) : points wiki (`pw`), paquets gratuits (`pack`), paquets bonus (`bonus_pack`) et cartes (`card`). */
+/**
+ * Grand livre (ajout seulement) : points wiki (`pw`), paquets gratuits (`pack`), paquets bonus (`bonus_pack`),
+ * boosters à thème (`theme_pack`, `ref_id` = `theme:<id>`) et cartes (`card`).
+ */
 export const ledger = pgTable(
   "ledger",
   {
     id: id(),
     userId: userRef("user_id").notNull(),
-    kind: text("kind", { enum: ["pw", "bonus_pack", "pack", "card"] })
+    kind: text("kind", { enum: ["pw", "bonus_pack", "pack", "card", "theme_pack"] })
       .notNull()
       .default("pw"),
     delta: bigint("delta", { mode: "number" }).notNull(),
@@ -423,6 +429,104 @@ export const notifications = pgTable(
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [index("notifications_user_idx").on(t.userId, t.createdAt)],
+);
+
+// ---------------------------------------------------------------------------
+// Événements : boosters à thème, codes promo
+// ---------------------------------------------------------------------------
+
+/**
+ * Booster à thème temporaire : articles d'une catégorie Wikipédia (et titres ajoutés à la main),
+ * meilleurs taux, vendu en PW entre `starts_at` et `ends_at`. Les boosters achetés restent ouvrables après.
+ */
+export const themes = pgTable(
+  "themes",
+  {
+    id: id(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    /** Catégorie Wikipédia source (sans le préfixe « Catégorie: »), null si liste de titres seule. */
+    category: text("category"),
+    price: integer("price").notNull(),
+    startsAt: tstz("starts_at").notNull(),
+    endsAt: tstz("ends_at").notNull(),
+    /** Articles du thème présents dans les cartes au moment de la création. */
+    cardCount: integer("card_count").notNull().default(0),
+    /** Admin qui a créé le thème (sans clé étrangère : le thème survit au compte). */
+    createdBy: text("created_by"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("themes_ends_idx").on(t.endsAt),
+    check("themes_price_ok", sql`${t.price} > 0`),
+    check("themes_dates_ok", sql`${t.endsAt} > ${t.startsAt}`),
+  ],
+);
+
+/** Articles d'un thème (identifiant de page Wikipédia, valable pour toutes les saisons). */
+export const themeCards = pgTable(
+  "theme_cards",
+  {
+    themeId: bigint("theme_id", { mode: "number" })
+      .notNull()
+      .references(() => themes.id, { onDelete: "cascade" }),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.themeId, t.cardId] })],
+);
+
+/** Boosters à thème achetés (ou reçus par code) pas encore ouverts. */
+export const playerThemePacks = pgTable(
+  "player_theme_packs",
+  {
+    userId: userRef("user_id").notNull(),
+    themeId: bigint("theme_id", { mode: "number" })
+      .notNull()
+      .references(() => themes.id, { onDelete: "cascade" }),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.themeId] }),
+    index("player_theme_packs_theme_idx").on(t.themeId),
+    check("player_theme_packs_count_ok", sql`${t.count} >= 0`),
+  ],
+);
+
+/** Code promo : PW, paquets bonus et/ou boosters à thème, une fois par joueur. */
+export const promoCodes = pgTable(
+  "promo_codes",
+  {
+    /** En majuscules (saisie insensible à la casse). */
+    code: text("code").primaryKey(),
+    pw: integer("pw").notNull().default(0),
+    packs: integer("packs").notNull().default(0),
+    themeId: bigint("theme_id", { mode: "number" }).references(() => themes.id, { onDelete: "set null" }),
+    themePacks: integer("theme_packs").notNull().default(0),
+    /** Utilisations maximum, tous joueurs confondus (null : illimité). */
+    maxUses: integer("max_uses"),
+    uses: integer("uses").notNull().default(0),
+    expiresAt: tstz("expires_at"),
+    disabled: boolean("disabled").notNull().default(false),
+    createdBy: text("created_by"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    check("promo_codes_amounts_ok", sql`${t.pw} >= 0 AND ${t.packs} >= 0 AND ${t.themePacks} >= 0`),
+    check("promo_codes_uses_ok", sql`${t.uses} >= 0 AND (${t.maxUses} IS NULL OR ${t.uses} <= ${t.maxUses})`),
+    check("promo_codes_code_ok", sql`${t.code} ~ '^[A-Z0-9_-]{3,32}$'`),
+  ],
+);
+
+export const promoRedemptions = pgTable(
+  "promo_redemptions",
+  {
+    code: text("code")
+      .notNull()
+      .references(() => promoCodes.code, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.code, t.userId] }), index("promo_redemptions_user_idx").on(t.userId)],
 );
 
 // ---------------------------------------------------------------------------

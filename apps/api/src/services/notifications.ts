@@ -20,7 +20,8 @@ export type NotificationType =
   | "battle_result"
   | "packs_full"
   | "achievement"
-  | "guild_objective";
+  | "guild_objective"
+  | "gift";
 
 /** Catégories réglables dans les paramètres (une notification désactivée n'est ni stockée ni envoyée). */
 export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {
@@ -28,7 +29,7 @@ export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {
   trades: ["trade_received", "trade_accepted", "trade_declined", "trade_countered", "trade_expired"],
   social: ["friend_request", "friend_accepted", "guild_objective"],
   battles: ["battle_challenge", "battle_result"],
-  packs: ["packs_full"],
+  packs: ["packs_full", "gift"],
   achievements: ["achievement"],
 };
 
