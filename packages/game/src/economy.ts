@@ -7,6 +7,8 @@ export const ECONOMY = {
   battle: { win: 30, loss: 10 },
   startingBalance: 100,
   bonusPackPrice: 150,
+  /** Prix par défaut d'un booster à thème (réglable par thème dans l'admin). */
+  themePackPrice: 250,
   marketTaxRate: 0.05,
   auctionListingFee: 2,
   auctionAntiSnipeMs: 60_000,
