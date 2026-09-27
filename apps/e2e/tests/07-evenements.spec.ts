@@ -56,16 +56,20 @@ test("roue du jour : un tour par jour", async ({ browser }) => {
   expect((await apiCall<Me>(page, "GET", "/me")).wheelReady).toBe(false);
 });
 
-test("upgrader : 3 cartes communes pour tenter une peu commune", async ({ browser }) => {
+test("upgrader : des cartes communes pour tenter une peu commune, sur le cadran", async ({ browser }) => {
   const { page } = await newPlayer(browser, "upgrade");
   const common = await apiCall<{ items: { cardId: number }[] }>(page, "GET", "/cards?rarity=C&limit=1");
   await apiCall(page, "POST", "/test/grant-card", { cardId: common.items[0]!.cardId, count: 3 });
   await page.goto("upgrade");
   const cards = page.locator("button[aria-pressed]:has(article)");
   await expect(cards).toHaveCount(3);
-  for (let i = 0; i < 3; i++) await cards.nth(i).click();
-  await page.getByRole("button", { name: "Tenter l’upgrade · 40 %" }).click();
-  await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible();
+  await cards.nth(0).click();
+  // Une carte : 20,16 % sur le cadran, puis « Remplir » pose les deux autres.
+  await expect(page.getByRole("img", { name: "Chance de réussite : 20,16 %" })).toBeVisible();
+  await page.getByRole("button", { name: "Remplir" }).click();
+  await expect(page.getByRole("img", { name: "Chance de réussite : 60,48 %" })).toBeVisible();
+  await page.getByRole("button", { name: "Tenter l’upgrade · 60,48 %" }).click();
+  await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Nouvel essai" })).toBeVisible();
   // Les cartes sacrifiées ont quitté la collection.
   await expect(cards).toHaveCount(0);
