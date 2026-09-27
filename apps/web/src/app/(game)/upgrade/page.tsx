@@ -26,15 +26,17 @@ import { CardSkeletons, Empty, ErrorBox, LoadMore, Toggle } from "@/components/u
 import { chanceText, UpgradeDial, type DialState } from "@/components/UpgradeDial";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import { useMe } from "@/lib/game";
 import { useCardMedia } from "@/lib/media";
 import { play } from "@/lib/sfx";
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 /** Raretés qu'on peut sacrifier (une légendaire n'a rien au-dessus). */
 const SOURCES = RARITIES.filter((r) => nextRarity(r) !== null);
-/** Durée du tour d'aiguille selon la vitesse d'animation choisie (page Paquets). */
-const SPIN_DURATION = { normal: 3.6, fast: 1.6, instant: 0 } as const;
+/**
+ * Tour d'aiguille, comme sur un vrai upgrader : toujours joué, quel que soit le réglage de vitesse des
+ * paquets (il ne concerne que l'ouverture des paquets). Départ vif puis longue décélération jusqu'au tirage.
+ */
+const SPIN = { turns: 5, duration: 4.6, ease: [0.1, 0.7, 0.12, 1] } as const;
 /** Un cliquetis tous les 30° parcourus par l'aiguille. */
 const TICK_EVERY = 30;
 /** Espace insécable (avant « : » et « % », entre un nombre et son unité). */
@@ -86,7 +88,6 @@ function SlotTile({ card }: { card: CardDTO }) {
 }
 
 export default function UpgradePage() {
-  const { me } = useMe();
   const reduce = useReducedMotion();
   const [rarity, setRarity] = useState<Rarity>("C");
   const [duplicates, setDuplicates] = useState(true);
@@ -106,7 +107,6 @@ export default function UpgradePage() {
   const capped = chance !== null && chance >= UPGRADE_MAX_CHANCE;
   /** Au-delà, une carte de plus ne change plus rien : la chance est déjà au plafond. */
   const useful = upgradeCardsToCap(rarity) ?? UPGRADE_MAX_CARDS;
-  const speed = reduce ? "instant" : (me?.animationSpeed ?? "normal");
   const dial: DialState =
     phase === "spinning" ? "spinning" : phase === "done" && result ? (result.success ? "win" : "lose") : "idle";
 
@@ -139,7 +139,7 @@ export default function UpgradePage() {
     const r = rotation.get();
     const mod = ((r % 360) + 360) % 360;
     const home = mod > 180 ? r + 360 - mod : r - mod;
-    void animate(rotation, home, speed === "instant" ? { duration: 0 } : { duration: 0.4, ease: EASE_OUT });
+    void animate(rotation, home, { duration: reduce ? 0.2 : 0.4, ease: EASE_OUT });
   }
 
   function chooseRarity(r: Rarity) {
@@ -187,29 +187,30 @@ export default function UpgradePage() {
     requestAnimationFrame(() => {
       const box = dialRef.current?.getBoundingClientRect();
       if (box && (box.top < 64 || box.bottom > window.innerHeight))
-        dialRef.current?.scrollIntoView({ block: "center", behavior: speed === "instant" ? "auto" : "smooth" });
+        dialRef.current?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
     });
     try {
       const [res] = await Promise.all([
         api<UpgradeResultDTO>("/upgrade", { body: { instanceIds: picked.map((c) => c.instanceId) } }),
-        new Promise((r) => setTimeout(r, speed === "instant" ? 0 : 450)),
+        new Promise((r) => setTimeout(r, reduce ? 150 : 450)),
       ]);
       setResult(res);
       setPicked([]);
       setPhase("spinning");
       // L'aiguille fait plusieurs tours puis s'arrête sur le tirage : dans l'arc si c'est gagné.
+      // Mouvement réduit : pas de tours, un court glissement jusqu'au tirage.
       const current = rotation.get();
       lastTick.current = Math.floor(current / TICK_EVERY);
       const angle = ((res.roll + Math.random()) / 10_000) * 360;
       const base = current - (((current % 360) + 360) % 360);
-      const end = base + 360 * (speed === "fast" ? 3 : 5) + angle;
+      const end = base + (reduce ? 0 : 360 * SPIN.turns) + angle;
       await animate(
         rotation,
         end,
-        speed === "instant" ? { duration: 0 } : { duration: SPIN_DURATION[speed], ease: [0.12, 0.8, 0.18, 1] },
+        reduce ? { duration: 0.6, ease: EASE_OUT } : { duration: SPIN.duration, ease: SPIN.ease },
       );
       setPhase("done");
-      if (res.success) setTimeout(() => setRevealed(true), speed === "instant" ? 0 : 380);
+      if (res.success) setTimeout(() => setRevealed(true), reduce ? 0 : 380);
       else play("wrong");
       void list.mutate();
     } catch (err) {
@@ -285,7 +286,7 @@ export default function UpgradePage() {
                     revealed={revealed}
                     onReveal={() => setRevealed(true)}
                     index={0}
-                    speed={me?.animationSpeed ?? "normal"}
+                    speed="normal"
                     stagger={false}
                   />
                 ) : (
