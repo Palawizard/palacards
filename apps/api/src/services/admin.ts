@@ -1,18 +1,25 @@
 import { desc, eq, schema, sql } from "@palacards/db";
 import type { Ctx } from "../context.js";
 import { badRequest } from "../errors.js";
-import { afterCommit } from "./notifications.js";
-import { lockPlayer, logMovement, movePw, packState, pushWallet } from "./players.js";
+import { afterCommit, Effects } from "./notifications.js";
+import { lockPlayer, logMovement, movePw, packState, PLAYER_LOCK_ORDER, pushWallet, type Player } from "./players.js";
 import { findUserByName } from "./profiles.js";
 import { seasonStatus } from "./seasons.js";
 
-/** Don (ou retrait) de PW et de paquets bonus par un admin : tracé dans le ledger avec l'auteur. */
+/** Pseudo spécial du formulaire de don : tous les joueurs (aucun pseudo valide ne contient `*`). */
+export const ALL_PLAYERS = "*";
+
+/**
+ * Don (ou retrait) de PW et de paquets bonus par un admin : tracé dans le ledger avec l'auteur.
+ * Pseudo `*` : don à tous les joueurs (jamais de retrait), une ligne de ledger et une notification chacun.
+ */
 export async function grant(
   ctx: Ctx,
   adminId: string,
   input: { username: string; pw: number; packs: number; note?: string },
 ) {
   if (input.pw === 0 && input.packs === 0) throw badRequest("empty", "Rien à donner.");
+  if (input.username.trim() === ALL_PLAYERS) return grantAll(ctx, adminId, input);
   const target = await findUserByName(ctx.db, input.username);
   const ref = `admin:${adminId}${input.note ? `:${input.note.slice(0, 80)}` : ""}`;
   const player = await ctx.db.transaction(async (tx) => {
@@ -32,6 +39,43 @@ export async function grant(
     ctx.rt.toUser(target.id, "packs:update", packState(player, ctx.now()));
   });
   return { balance: player.balance, bonusPacks: player.bonusPacks };
+}
+
+/**
+ * Cadeau à tous les joueurs : une transaction, joueurs verrouillés dans l'ordre (comme la bascule de saison),
+ * puis soldes et stocks poussés aux onglets ouverts. Moins de quelques centaines de joueurs : une boucle suffit.
+ */
+async function grantAll(ctx: Ctx, adminId: string, input: { pw: number; packs: number; note?: string }) {
+  if (input.pw < 0 || input.packs < 0)
+    throw badRequest("negative_gift", "Pas de retrait sur tous les joueurs : seulement des dons.");
+  const note = input.note?.slice(0, 80);
+  const ref = `admin:${adminId}${note ? `:${note}` : ""}`;
+  const fx = new Effects();
+  const players = await ctx.db.transaction(async (tx) => {
+    const ids = await tx.execute<{ user_id: string }>(sql`select user_id from players order by ${PLAYER_LOCK_ORDER}`);
+    const out: Player[] = [];
+    for (const { user_id } of ids) {
+      const p = await lockPlayer(tx, user_id);
+      if (input.pw) await movePw(tx, p, input.pw, "admin", ref);
+      if (input.packs) {
+        const bonusPacks = p.bonusPacks + input.packs;
+        await tx.update(schema.players).set({ bonusPacks }).where(eq(schema.players.userId, user_id));
+        await logMovement(tx, user_id, "bonus_pack", input.packs, bonusPacks, "admin", ref);
+        p.bonusPacks = bonusPacks;
+      }
+      await fx.notify(tx, user_id, "gift", { pw: input.pw, packs: input.packs, ...(note ? { note } : {}) });
+      out.push(p);
+    }
+    return out;
+  });
+  await afterCommit(ctx, async () => {
+    for (const p of players) {
+      pushWallet(ctx, p);
+      ctx.rt.toUser(p.userId, "packs:update", packState(p, ctx.now()));
+    }
+    await fx.flush(ctx);
+  });
+  return { players: players.length, pw: input.pw, packs: input.packs };
 }
 
 /** Masse monétaire et flux des 30 derniers jours, pour repérer l'inflation. */

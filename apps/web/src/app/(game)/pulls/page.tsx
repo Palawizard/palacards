@@ -4,19 +4,26 @@ import {
   CARDS_PER_PACK,
   DROP_TABLE_GUARANTEED,
   DROP_TABLE_STANDARD,
+  DROP_TABLE_THEMED,
+  DROP_TABLE_THEMED_GUARANTEED,
   DROP_TABLE_TOTAL,
   ECONOMY,
   RARITIES,
   RARITY_LABELS,
+  type DropTable,
 } from "@palacards/game";
+import type { ThemeDTO } from "@palacards/shared";
+import { ExternalLink, Ticket } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { RaritySigil } from "@/components/Card";
+import useSWR from "swr";
+import { Card, RaritySigil } from "@/components/Card";
 import { PackOpener } from "@/components/PackOpener";
 import { api, ApiError } from "@/lib/api";
-import { countdown } from "@/lib/format";
+import { countdown, fmt, relative } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { usePackCountdown } from "@/lib/packs";
+import { useNow } from "@/lib/use-now";
 import { play } from "@/lib/sfx";
 
 const SPEEDS = [
@@ -51,11 +58,208 @@ function StockGauge({ available, max }: { available: number; max: number }) {
   );
 }
 
+/** Taux d'un paquet : cartes 1 à 9, puis la dernière (Rare ou mieux). */
+function RatesTable({ table, last }: { table: DropTable; last: DropTable }) {
+  return (
+    <table className="tnum w-full text-sm">
+      <thead>
+        <tr className="text-left text-xs text-faint">
+          <th className="px-3 py-1.5 font-semibold">Rareté</th>
+          <th className="px-2 py-1.5 text-right font-semibold">Cartes 1–{CARDS_PER_PACK - 1}</th>
+          <th className="px-3 py-1.5 text-right font-semibold">Carte {CARDS_PER_PACK}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {[...RARITIES].reverse().map((r) => (
+          <tr key={r} className="border-t border-line">
+            <td className="px-3 py-1.5">
+              <RaritySigil rarity={r} />
+              <span className="sr-only">{RARITY_LABELS[r]}</span>
+            </td>
+            <td className="px-2 py-1.5 text-right">{table[r] ? pct(table[r]) : "—"}</td>
+            <td className="px-3 py-1.5 text-right">{last[r] ? pct(last[r]) : "—"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+/** Choix du paquet à ouvrir : le paquet du stock ou un booster à thème. */
+function EditionSwitch({
+  themes,
+  value,
+  onChange,
+  stock,
+}: {
+  themes: ThemeDTO[];
+  value: number | null;
+  onChange: (id: number | null) => void;
+  stock: number;
+}) {
+  const options = [
+    { id: null, label: "PalaCards", hint: `${stock} en stock` },
+    ...themes.map((t) => ({
+      id: t.id,
+      label: t.name,
+      hint: t.owned ? `${t.owned} à ouvrir` : t.onSale ? `${fmt(t.price)} PW` : "Bientôt",
+    })),
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Paquet à ouvrir"
+      className="mx-auto flex max-w-full gap-1 overflow-x-auto rounded-xl border border-line bg-panel p-1"
+    >
+      {options.map((o) => {
+        const on = o.id === value;
+        return (
+          <button
+            key={o.id ?? "std"}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(o.id)}
+            data-edition={o.id === null ? undefined : "theme"}
+            className={`flex shrink-0 flex-col items-start rounded-lg px-3 py-1.5 text-left transition-[background-color,color,transform] duration-150 active:scale-[0.97] ${
+              on ? "bg-[var(--foil-1)] text-cover-ink" : "text-muted hover:bg-panel-2 hover:text-text"
+            }`}
+          >
+            <span className="max-w-44 truncate font-display text-base uppercase leading-tight">{o.label}</span>
+            <span className={`tnum text-xs ${on ? "text-cover-ink/75" : "text-faint"}`}>{o.hint}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Encart du booster à thème : fin de la vente, articles phares, taux. */
+function ThemeBox({ theme }: { theme: ThemeDTO }) {
+  const now = useNow(30_000);
+  const upcoming = new Date(theme.startsAt).getTime() > now;
+  return (
+    <div className="infobox" data-edition="theme">
+      <h2 className="infobox-head flex items-center justify-between gap-2">
+        <span className="truncate">{theme.name}</span>
+        <span className="shrink-0 rounded-full bg-[var(--foil-1)] px-2 py-0.5 text-[0.72rem] tracking-[0.04em] text-white">
+          Édition limitée
+        </span>
+      </h2>
+      <div className="flex flex-col gap-3 p-3 text-sm">
+        {theme.description && <p className="text-muted">{theme.description}</p>}
+        <p className="tnum text-muted">
+          {upcoming
+            ? `En vente ${relative(theme.startsAt)}.`
+            : theme.onSale
+              ? `En vente jusqu’à la fin, ${relative(theme.endsAt)}.`
+              : "Vente terminée : tes boosters restent à ouvrir."}{" "}
+          {fmt(theme.cardCount)} articles
+          {theme.category && (
+            <>
+              {" "}
+              de la catégorie{" "}
+              <a
+                href={`https://fr.wikipedia.org/wiki/Catégorie:${encodeURIComponent(theme.category.replace(/ /g, "_"))}`}
+                target="_blank"
+                rel="noreferrer"
+                className="article-link"
+              >
+                {theme.category}
+                <ExternalLink aria-hidden className="ml-0.5 inline size-3 align-[-1px]" />
+              </a>
+            </>
+          )}
+          .
+        </p>
+        {theme.preview.length > 0 && (
+          <div>
+            <p className="label">À gagner</p>
+            <div className="grid grid-cols-2 gap-2">
+              {theme.preview.map((c) => (
+                <Card key={c.cardId} card={c} prefetch={false} />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="border-t border-line">
+        <RatesTable table={DROP_TABLE_THEMED} last={DROP_TABLE_THEMED_GUARANTEED} />
+      </div>
+      <p className="border-t border-line p-3 text-xs leading-relaxed text-faint">
+        Chaque carte est tirée parmi les articles du thème de sa rareté (dans toute la saison si le thème n’en a pas).
+        La pity est commune avec les paquets PalaCards.
+      </p>
+    </div>
+  );
+}
+
+/** Saisie d'un code promo (insensible à la casse). */
+function PromoCode({ onRedeemed }: { onRedeemed: () => void }) {
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  async function redeem(e: { preventDefault(): void }) {
+    e.preventDefault();
+    if (busy || !code.trim()) return;
+    setBusy(true);
+    try {
+      const res = await api<{ pw: number; packs: number; themePacks: number; theme: { name: string } | null }>(
+        "/codes/redeem",
+        { body: { code: code.trim() } },
+      );
+      const parts = [
+        res.pw ? `${fmt(res.pw)} PW` : "",
+        res.packs ? `${res.packs} paquet${res.packs > 1 ? "s" : ""} bonus` : "",
+        res.themePacks && res.theme
+          ? `${res.themePacks} booster${res.themePacks > 1 ? "s" : ""} ${res.theme.name}`
+          : "",
+      ].filter(Boolean);
+      play("coin");
+      toast.success(`Code utilisé : ${parts.join(", ")} !`);
+      setCode("");
+      onRedeemed();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Code refusé.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <form onSubmit={redeem} className="flex gap-2 p-3">
+      <label className="min-w-0 flex-1">
+        <span className="sr-only">Code promo</span>
+        <input
+          className="field h-9 min-h-0 font-semibold uppercase tracking-[0.08em] placeholder:font-normal placeholder:normal-case placeholder:tracking-normal"
+          value={code}
+          onChange={(e) => setCode(e.target.value.replace(/\s/g, "").slice(0, 32))}
+          placeholder="Code promo"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+        />
+      </label>
+      <button
+        type="submit"
+        className="btn btn-sm h-9 w-9 shrink-0 px-0"
+        disabled={busy || code.trim().length < 3}
+        aria-label="Utiliser le code"
+        title="Utiliser le code"
+      >
+        <Ticket aria-hidden className="size-4" />
+      </button>
+    </form>
+  );
+}
+
 export default function PullsPage() {
   const { me, mutateMe } = useMe();
   const { remaining, full } = usePackCountdown(me?.packs);
   const [saving, setSaving] = useState(false);
   const [buying, setBuying] = useState(false);
+  const themes = useSWR<ThemeDTO[]>("/themes");
+  const [themeId, setThemeId] = useState<number | null>(null);
+  const theme = themes.data?.find((t) => t.id === themeId) ?? null;
+  const now = useNow(30_000);
 
   async function buyBonus() {
     setBuying(true);
@@ -130,9 +334,37 @@ export default function PullsPage() {
       </header>
 
       <div className="flex flex-col gap-10">
-        <div className="min-w-0">
-          {me && <PackOpener packs={me.packs} season={me.season} />}
-          {me && me.packs.available + me.packs.bonus === 0 && (
+        <div className="flex min-w-0 flex-col gap-5">
+          {!!themes.data?.length && (
+            <EditionSwitch
+              themes={themes.data}
+              value={theme?.id ?? null}
+              onChange={setThemeId}
+              stock={(me?.packs.available ?? 0) + (me?.packs.bonus ?? 0)}
+            />
+          )}
+          {me && (
+            <PackOpener
+              key={theme?.id ?? "std"}
+              packs={me.packs}
+              season={me.season}
+              theme={theme}
+              onOpened={theme ? () => void themes.mutate() : undefined}
+            />
+          )}
+          {me && theme && theme.owned === 0 && !theme.onSale && (
+            <p className="text-center text-sm text-muted">
+              {new Date(theme.startsAt).getTime() > now
+                ? `Ce booster sera en vente ${relative(theme.startsAt)}.`
+                : "La vente de ce booster est terminée."}
+            </p>
+          )}
+          {me && theme && theme.owned === 0 && theme.onSale && me.wallet.available < theme.price && (
+            <p className="text-center text-sm text-muted">
+              Il te manque <span className="tnum">{fmt(theme.price - me.wallet.available)} PW</span> pour ce booster.
+            </p>
+          )}
+          {me && !theme && me.packs.available + me.packs.bonus === 0 && (
             <p className="mt-4 text-center text-sm text-muted">
               Plus de paquet pour l’instant. Le prochain arrive dans{" "}
               <span className="tnum">{countdown(remaining)}</span>.
@@ -173,45 +405,28 @@ export default function PullsPage() {
                 <span className="tnum shrink-0">{ECONOMY.bonusPackPrice} PW</span>
               </button>
             </div>
+            <div className="border-t border-line">
+              <PromoCode onRedeemed={() => void themes.mutate()} />
+            </div>
           </div>
 
-          <div className="infobox">
-            <h2 className="infobox-head">Taux de tirage</h2>
-            <table className="tnum w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-faint">
-                  <th className="px-3 py-1.5 font-semibold">Rareté</th>
-                  <th className="px-2 py-1.5 text-right font-semibold">Cartes 1–{CARDS_PER_PACK - 1}</th>
-                  <th className="px-3 py-1.5 text-right font-semibold">Carte {CARDS_PER_PACK}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...RARITIES].reverse().map((r) => (
-                  <tr key={r} className="border-t border-line">
-                    <td className="px-3 py-1.5">
-                      <RaritySigil rarity={r} />
-                      <span className="sr-only">{RARITY_LABELS[r]}</span>
-                    </td>
-                    <td className="px-2 py-1.5 text-right">
-                      {DROP_TABLE_STANDARD[r] ? pct(DROP_TABLE_STANDARD[r]) : "—"}
-                    </td>
-                    <td className="px-3 py-1.5 text-right">
-                      {DROP_TABLE_GUARANTEED[r] ? pct(DROP_TABLE_GUARANTEED[r]) : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {me && (
-              <div className="border-t border-line p-3 text-sm">
-                <p className="text-xs leading-relaxed text-faint">
-                  {CARDS_PER_PACK} cartes par paquet, la dernière Rare ou mieux. Pity : après {me.packs.pityThreshold}{" "}
-                  paquets sans UR ni légendaire, la dernière carte du suivant est forcément UR ou mieux. Un paquet bonus
-                  coûte {ECONOMY.bonusPackPrice} PW.
-                </p>
-              </div>
-            )}
-          </div>
+          {theme ? (
+            <ThemeBox theme={theme} />
+          ) : (
+            <div className="infobox">
+              <h2 className="infobox-head">Taux de tirage</h2>
+              <RatesTable table={DROP_TABLE_STANDARD} last={DROP_TABLE_GUARANTEED} />
+              {me && (
+                <div className="border-t border-line p-3 text-sm">
+                  <p className="text-xs leading-relaxed text-faint">
+                    {CARDS_PER_PACK} cartes par paquet, la dernière Rare ou mieux. Pity : après {me.packs.pityThreshold}{" "}
+                    paquets sans UR ni légendaire, la dernière carte du suivant est forcément UR ou mieux. Un paquet
+                    bonus coûte {ECONOMY.bonusPackPrice} PW.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </aside>
       </div>
     </div>
