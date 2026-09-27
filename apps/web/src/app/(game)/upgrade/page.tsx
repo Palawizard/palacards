@@ -5,21 +5,25 @@ import {
   RARITIES,
   RARITY_LABELS,
   UPGRADE_MAX_CARDS,
+  UPGRADE_MAX_CHANCE,
   UPGRADE_MIN_CARDS,
   upgradeChance,
+  upgradeCardsToCap,
+  upgradeChancePerCard,
   upgradeRefund,
   type Rarity,
 } from "@palacards/game";
 import type { CardDTO, Page, UpgradeResultDTO } from "@palacards/shared";
 import { ArrowRight, X } from "lucide-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { animate, AnimatePresence, motion, useMotionValue, useReducedMotion } from "motion/react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
 import { CardBack, FlipCard } from "@/components/PackOpener";
 import { CardSkeletons, Empty, ErrorBox, LoadMore, Toggle } from "@/components/ui";
+import { chanceText, UpgradeDial, type DialState } from "@/components/UpgradeDial";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
@@ -29,9 +33,12 @@ import { play } from "@/lib/sfx";
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 /** Raretés qu'on peut sacrifier (une légendaire n'a rien au-dessus). */
 const SOURCES = RARITIES.filter((r) => nextRarity(r) !== null);
-const pct = (bp: number) => `${Math.round(bp / 100)} %`;
+/** Durée du tour d'aiguille selon la vitesse d'animation choisie (page Paquets). */
+const SPIN_DURATION = { normal: 3.6, fast: 1.6, instant: 0 } as const;
+/** Un cliquetis tous les 30° parcourus par l'aiguille. */
+const TICK_EVERY = 30;
 
-type Phase = "idle" | "fusing" | "done";
+type Phase = "idle" | "fusing" | "spinning" | "done";
 
 /** Dos de la carte visée, teinté de sa rareté : ce qu'on tente d'obtenir. */
 function TargetBack({ rarity, failed }: { rarity: Rarity; failed: boolean }) {
@@ -47,20 +54,24 @@ function TargetBack({ rarity, failed }: { rarity: Rarity; failed: boolean }) {
   );
 }
 
-/** Case remplie sur téléphone : la vignette entière serait illisible à cette taille. */
+/** Case remplie quand l'établi est étroit : la vignette entière serait illisible à cette taille. */
 function SlotTile({ card }: { card: CardDTO }) {
   const media = useCardMedia(card.cardId);
   const thumb = media?.thumbUrl ?? card.thumbUrl;
   return (
     <div
-      className="relative flex aspect-[5/7] flex-col overflow-hidden rounded-[10px] bg-sticker text-sticker-ink shadow-[var(--shadow-lift)] sm:hidden"
+      className="relative flex aspect-[5/7] flex-col overflow-hidden rounded-[10px] bg-sticker text-sticker-ink shadow-[var(--shadow-lift)] @min-[44rem]:hidden"
       style={{ ["--r" as string]: `var(--color-rarity-${card.rarity.toLowerCase()})` }}
       title={card.title}
     >
       <div className="relative flex-1 bg-[color-mix(in_oklab,var(--r)_18%,var(--color-sticker))]">
-        {thumb && (
+        {thumb ? (
           // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia servies telles quelles
           <img src={thumb} alt="" className="absolute inset-0 size-full object-cover" />
+        ) : (
+          <span className="grid size-full place-items-center font-display text-2xl uppercase text-sticker-muted">
+            {card.title.slice(0, 1)}
+          </span>
         )}
       </div>
       <p
@@ -81,10 +92,21 @@ export default function UpgradePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [result, setResult] = useState<UpgradeResultDTO | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const rotation = useMotionValue(0);
+  const lastTick = useRef(0);
+  const dialRef = useRef<HTMLDivElement>(null);
 
   const target = nextRarity(rarity)!;
   const count = picked.length;
-  const chance = count >= UPGRADE_MIN_CARDS ? upgradeChance(rarity, count) : null;
+  // Pendant et après le tour, le cadran garde la chance jouée (les cartes ont quitté l'établi).
+  const chance = result?.chance ?? (count >= UPGRADE_MIN_CARDS ? upgradeChance(rarity, count) : null);
+  const perCard = upgradeChancePerCard(rarity);
+  const capped = chance !== null && chance >= UPGRADE_MAX_CHANCE;
+  /** Au-delà, une carte de plus ne change plus rien : la chance est déjà au plafond. */
+  const useful = upgradeCardsToCap(rarity) ?? UPGRADE_MAX_CARDS;
+  const speed = reduce ? "instant" : (me?.animationSpeed ?? "normal");
+  const dial: DialState =
+    phase === "spinning" ? "spinning" : phase === "done" && result ? (result.success ? "win" : "lose") : "idle";
 
   const params = `rarity=${rarity}${duplicates ? "&duplicates=true" : ""}&sort=date&limit=60`;
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
@@ -96,20 +118,41 @@ export default function UpgradePage() {
     if (!list.isValidating) void list.setSize((s) => s + 1);
   }, [list]);
 
+  // Cliquetis de l'aiguille, comme la roue du jour.
+  useEffect(
+    () =>
+      rotation.on("change", (r) => {
+        if (phase !== "spinning") return;
+        const n = Math.floor(r / TICK_EVERY);
+        if (n !== lastTick.current) {
+          lastTick.current = n;
+          play("deal");
+        }
+      }),
+    [rotation, phase],
+  );
+
+  /** L'aiguille revient en haut, au départ de l'arc. */
+  function homeNeedle() {
+    const r = rotation.get();
+    const mod = ((r % 360) + 360) % 360;
+    const home = mod > 180 ? r + 360 - mod : r - mod;
+    void animate(rotation, home, speed === "instant" ? { duration: 0 } : { duration: 0.4, ease: EASE_OUT });
+  }
+
   function chooseRarity(r: Rarity) {
-    if (phase === "fusing") return;
+    if (phase === "fusing" || phase === "spinning") return;
     setRarity(r);
-    setPicked([]);
-    setPhase("idle");
-    setResult(null);
+    reset();
   }
 
   function toggle(card: CardDTO) {
-    if (phase !== "idle") return reset(card);
+    if (phase === "done") return reset(card);
+    if (phase !== "idle") return;
     setPicked((p) =>
       p.some((c) => c.instanceId === card.instanceId)
         ? p.filter((c) => c.instanceId !== card.instanceId)
-        : p.length >= UPGRADE_MAX_CARDS
+        : p.length >= useful
           ? p
           : [...p, card],
     );
@@ -121,44 +164,76 @@ export default function UpgradePage() {
     setResult(null);
     setRevealed(false);
     setPicked(card ? [card] : []);
+    homeNeedle();
+  }
+
+  /** Les cartes suivantes de la liste (jusqu'à remplir l'établi), pour ne pas cliquer dix fois. */
+  function fill() {
+    if (phase !== "idle") return;
+    setPicked((p) => {
+      const free = items.filter((c) => !c.locked && !p.some((x) => x.instanceId === c.instanceId));
+      return [...p, ...free.slice(0, Math.max(0, useful - p.length))];
+    });
   }
 
   async function attempt() {
     if (count < UPGRADE_MIN_CARDS || phase !== "idle") return;
     setPhase("fusing");
     play("tear");
+    // Sur téléphone, le bouton est sous les cases : on remonte au cadran pour voir l'aiguille tourner.
+    // (après le rendu : un défilement lancé pendant le clic est interrompu par la mise à jour de l'établi).
+    requestAnimationFrame(() => {
+      const box = dialRef.current?.getBoundingClientRect();
+      if (box && (box.top < 64 || box.bottom > window.innerHeight))
+        dialRef.current?.scrollIntoView({ block: "center", behavior: speed === "instant" ? "auto" : "smooth" });
+    });
     try {
       const [res] = await Promise.all([
         api<UpgradeResultDTO>("/upgrade", { body: { instanceIds: picked.map((c) => c.instanceId) } }),
-        new Promise((r) => setTimeout(r, reduce ? 0 : 750)),
+        new Promise((r) => setTimeout(r, speed === "instant" ? 0 : 450)),
       ]);
       setResult(res);
-      setPhase("done");
       setPicked([]);
-      if (res.success) setTimeout(() => setRevealed(true), reduce ? 0 : 380);
+      setPhase("spinning");
+      // L'aiguille fait plusieurs tours puis s'arrête sur le tirage : dans l'arc si c'est gagné.
+      const current = rotation.get();
+      lastTick.current = Math.floor(current / TICK_EVERY);
+      const angle = ((res.roll + Math.random()) / 10_000) * 360;
+      const base = current - (((current % 360) + 360) % 360);
+      const end = base + 360 * (speed === "fast" ? 3 : 5) + angle;
+      await animate(
+        rotation,
+        end,
+        speed === "instant" ? { duration: 0 } : { duration: SPIN_DURATION[speed], ease: [0.12, 0.8, 0.18, 1] },
+      );
+      setPhase("done");
+      if (res.success) setTimeout(() => setRevealed(true), speed === "instant" ? 0 : 380);
       else play("wrong");
       void list.mutate();
     } catch (err) {
       setPhase("idle");
+      setResult(null);
       toast.error(err instanceof ApiError ? err.message : "Upgrade impossible.");
       void list.mutate();
     }
   }
 
   const slots = Array.from({ length: UPGRADE_MAX_CARDS }, (_, i) => picked[i] ?? null);
+  const busy = phase === "fusing" || phase === "spinning";
 
   return (
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="page-title">Upgrader</h1>
         <p className="hatnote mt-2">
-          Sacrifie {UPGRADE_MIN_CARDS} à {UPGRADE_MAX_CARDS} cartes d’une même rareté pour tenter une carte de la rareté
-          au-dessus. Plus tu en mets, plus tes chances montent. Raté : les cartes sont perdues, tu récupères la moitié
-          de leur valeur de recyclage.
+          Sacrifie de {UPGRADE_MIN_CARDS} à {UPGRADE_MAX_CARDS} cartes d’une même rareté pour tenter une carte de la
+          rareté au-dessus. Chaque carte ajoute sa part de chance, jusqu’à {chanceText(UPGRADE_MAX_CHANCE)}&nbsp;% au
+          plus. Si l’aiguille s’arrête hors de l’arc, les cartes sont perdues et tu récupères un quart de leur valeur de
+          recyclage.
         </p>
       </div>
 
-      {/* L'établi : cartes posées, flèche, carte visée et chances. */}
+      {/* L'établi : cadran, carte visée et cartes posées. */}
       <section className="infobox" aria-label="Établi de l'upgrader">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b-2 border-dashed border-line px-4 py-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
@@ -173,7 +248,7 @@ export default function UpgradePage() {
                   aria-pressed={r === rarity}
                   aria-label={RARITY_LABELS[r]}
                   title={RARITY_LABELS[r]}
-                  disabled={phase === "fusing"}
+                  disabled={busy}
                   onClick={() => chooseRarity(r)}
                   style={{ ["--r" as string]: `var(--color-rarity-${r.toLowerCase()})` }}
                 >
@@ -182,128 +257,133 @@ export default function UpgradePage() {
               ))}
             </div>
           </div>
-          <p className="text-sm text-muted">
-            {RARITY_LABELS[rarity]} <ArrowRight aria-hidden className="inline size-3.5 align-[-2px]" />{" "}
-            <strong className="text-text">{RARITY_LABELS[target]}</strong>
-            {target === "L" && <span className="text-faint"> · chances divisées par deux</span>}
+          <p className="flex flex-wrap items-baseline gap-x-2 text-sm text-muted">
+            <span>
+              {RARITY_LABELS[rarity]} <ArrowRight aria-hidden className="inline size-3.5 align-[-2px]" />{" "}
+              <strong className="text-text">{RARITY_LABELS[target]}</strong>
+            </span>
+            <span className="tnum whitespace-nowrap text-faint">
+              +{chanceText(perCard)} % par carte
+              {useful < UPGRADE_MAX_CARDS && ` · ${useful} cartes pour le maximum`}
+            </span>
           </p>
         </div>
 
-        <div className="grid items-center gap-5 p-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,11rem)]">
-          <ol className="grid grid-cols-5 gap-2 sm:gap-3" aria-label="Cartes à sacrifier">
-            {slots.map((card, i) => (
-              <li key={card?.instanceId ?? `slot-${i}`} className="relative">
-                <AnimatePresence mode="popLayout" initial={false}>
-                  {card ? (
-                    <motion.div
-                      key={card.instanceId}
-                      initial={{ opacity: 0, transform: "translateY(10px) scale(0.94)" }}
-                      animate={
-                        phase === "fusing" && !reduce
-                          ? {
-                              opacity: 0,
-                              transform: `translateX(${(2 - i) * 40}%) translateY(-6%) scale(0.82)`,
-                              filter: "blur(3px)",
-                            }
-                          : { opacity: 1, transform: "translateX(0%) translateY(0px) scale(1)", filter: "blur(0px)" }
-                      }
-                      exit={{ opacity: 0, transform: "scale(0.94)" }}
-                      transition={{
-                        duration: phase === "fusing" ? 0.6 : 0.22,
-                        ease: EASE_OUT,
-                        delay: phase === "fusing" ? i * 0.04 : 0,
-                      }}
-                      className="relative"
-                    >
-                      <div className="hidden sm:block">
-                        <Card card={card} href={null} />
-                      </div>
-                      <SlotTile card={card} />
-                      {phase === "idle" && (
-                        <button
-                          type="button"
-                          onClick={() => toggle(card)}
-                          className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full border border-line-strong bg-panel text-muted shadow-sm transition-transform duration-150 hover:text-text active:scale-95"
-                          aria-label={`Retirer ${card.title}`}
-                        >
-                          <X className="size-3.5" aria-hidden />
-                        </button>
-                      )}
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key={`empty-${i}`}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className={`slot grid aspect-[5/7] place-items-center font-display text-3xl ${
-                        i < UPGRADE_MIN_CARDS ? "text-line-strong" : "border-line text-line"
-                      }`}
-                      aria-label={i < UPGRADE_MIN_CARDS ? `Case ${i + 1}, obligatoire` : `Case ${i + 1}, facultative`}
-                    >
-                      {i + 1}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </li>
-            ))}
-          </ol>
-
-          <ArrowRight aria-hidden className="mx-auto hidden size-7 text-faint md:block" />
-
-          <div className="mx-auto flex w-40 flex-col items-center gap-3 md:w-full">
-            <div className="w-32">
-              {phase === "done" && result?.success && result.card ? (
-                <FlipCard
-                  card={result.card}
-                  revealed={revealed}
-                  onReveal={() => setRevealed(true)}
-                  index={0}
-                  speed={me?.animationSpeed ?? "normal"}
-                  stagger={false}
-                />
-              ) : (
-                <motion.div
-                  animate={
-                    phase === "fusing" && !reduce
-                      ? { transform: ["scale(1)", "scale(1.04)", "scale(1)"] }
-                      : phase === "done" && !reduce
-                        ? { transform: ["translateX(0px)", "translateX(-6px)", "translateX(5px)", "translateX(0px)"] }
-                        : { transform: "scale(1)" }
-                  }
-                  transition={{ duration: phase === "fusing" ? 0.75 : 0.32, ease: "easeInOut" }}
-                >
-                  <TargetBack rarity={target} failed={phase === "done" && !result?.success} />
-                </motion.div>
-              )}
+        <div className="grid items-center gap-6 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,19rem)] lg:gap-8">
+          {/* Cadran et carte visée. */}
+          <div className="flex items-center justify-center gap-4 sm:gap-6 lg:order-2 lg:flex-col lg:gap-4">
+            <div ref={dialRef} className="w-[min(15rem,58vw)] lg:w-full lg:max-w-[17rem]">
+              <UpgradeDial chance={chance} target={target} rotation={rotation} state={dial} />
             </div>
-            <div className="text-center" aria-live="polite">
-              {phase === "done" && result ? (
-                result.success ? (
-                  <p className="text-sm">
-                    <strong className="font-display text-xl uppercase text-good">Réussi !</strong>
-                    <span className="block text-muted">
-                      {revealed && result.card ? result.card.title : "Retourne la carte."}
-                    </span>
-                  </p>
+            <div className="flex w-24 shrink-0 flex-col items-center gap-2 sm:w-28 lg:w-auto lg:flex-row lg:gap-4">
+              <div className="w-24 sm:w-28 lg:w-24">
+                {phase === "done" && result?.success && result.card ? (
+                  <FlipCard
+                    card={result.card}
+                    revealed={revealed}
+                    onReveal={() => setRevealed(true)}
+                    index={0}
+                    speed={me?.animationSpeed ?? "normal"}
+                    stagger={false}
+                  />
                 ) : (
-                  <p className="text-sm">
-                    <strong className="font-display text-xl uppercase text-danger">Raté</strong>
-                    <span className="tnum block text-muted">+{fmt(result.refund)} PW récupérés</span>
-                  </p>
-                )
-              ) : (
-                <>
-                  <p className="font-display text-4xl leading-none">{chance !== null ? pct(chance) : "—"}</p>
-                  <p className="tnum mt-1 text-xs text-faint">
-                    {chance !== null
-                      ? `Raté : +${fmt(upgradeRefund(rarity, count))} PW`
-                      : `Encore ${UPGRADE_MIN_CARDS - count} carte${UPGRADE_MIN_CARDS - count > 1 ? "s" : ""}`}
-                  </p>
-                </>
-              )}
+                  <motion.div
+                    animate={
+                      phase === "done" && !reduce
+                        ? { transform: ["translateX(0px)", "translateX(-6px)", "translateX(5px)", "translateX(0px)"] }
+                        : { transform: "translateX(0px)" }
+                    }
+                    transition={{ duration: 0.32, ease: "easeInOut" }}
+                  >
+                    <TargetBack rarity={target} failed={phase === "done" && !result?.success} />
+                  </motion.div>
+                )}
+              </div>
+              <p className="tnum text-center text-xs text-muted lg:max-w-32 lg:text-left" aria-live="polite">
+                {phase === "done" && result && (
+                  <span className="sr-only">{result.success ? "Réussi : " : "Raté : "}</span>
+                )}
+                {phase === "done" && result
+                  ? result.success
+                    ? revealed && result.card
+                      ? result.card.title
+                      : "Retourne la carte."
+                    : result.refund
+                      ? `+${fmt(result.refund)} PW récupérés`
+                      : "Cartes perdues."
+                  : phase === "spinning"
+                    ? "L’aiguille tourne…"
+                    : chance !== null
+                      ? capped
+                        ? "Chance au maximum : inutile d’ajouter des cartes."
+                        : upgradeRefund(rarity, count)
+                          ? `Raté : +${fmt(upgradeRefund(rarity, count))} PW`
+                          : "Raté : cartes perdues."
+                      : "Pose des cartes dans les cases."}
+              </p>
             </div>
+          </div>
+
+          {/* Cartes posées : deux rangées de cinq cases. */}
+          <div className="@container lg:order-1">
+            <ol className="grid grid-cols-5 gap-2 sm:gap-3" aria-label="Cartes à sacrifier">
+              {slots.map((card, i) => (
+                <li key={card?.instanceId ?? `slot-${i}`} className="relative">
+                  <AnimatePresence mode="popLayout" initial={false}>
+                    {card ? (
+                      <motion.div
+                        key={card.instanceId}
+                        initial={{ opacity: 0, transform: "translateY(10px) scale(0.94)" }}
+                        animate={
+                          phase === "fusing" && !reduce
+                            ? { opacity: 0, transform: "translateY(-8%) scale(0.86)", filter: "blur(3px)" }
+                            : { opacity: 1, transform: "translateY(0px) scale(1)", filter: "blur(0px)" }
+                        }
+                        exit={{ opacity: 0, transform: "scale(0.94)" }}
+                        transition={{
+                          duration: phase === "fusing" ? 0.4 : 0.22,
+                          ease: EASE_OUT,
+                          delay: phase === "fusing" ? i * 0.03 : 0,
+                        }}
+                        className="relative"
+                      >
+                        <div className="hidden @min-[44rem]:block">
+                          <Card card={card} href={null} />
+                        </div>
+                        <SlotTile card={card} />
+                        {phase === "idle" && (
+                          <button
+                            type="button"
+                            onClick={() => toggle(card)}
+                            className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full border border-line-strong bg-panel text-muted shadow-sm transition-transform duration-150 after:absolute after:-inset-2.5 after:content-[''] hover:text-text active:scale-95"
+                            aria-label={`Retirer ${card.title}`}
+                          >
+                            <X className="size-3.5" aria-hidden />
+                          </button>
+                        )}
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key={`empty-${i}`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className={`slot grid aspect-[5/7] place-items-center font-display text-2xl text-line-strong transition-opacity duration-200 ${
+                          i >= useful ? "opacity-35" : ""
+                        }`}
+                        aria-label={
+                          i >= useful ? `Case ${i + 1}, inutile : chance déjà au maximum` : `Case ${i + 1}, vide`
+                        }
+                        title={i >= useful ? "Chance déjà au maximum" : undefined}
+                      >
+                        {i + 1}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </li>
+              ))}
+            </ol>
           </div>
         </div>
 
@@ -326,17 +406,22 @@ export default function UpgradePage() {
                   Vider
                 </button>
               )}
+              {phase === "idle" && count < useful && items.some((c) => !c.locked) && (
+                <button type="button" className="btn" onClick={fill}>
+                  Remplir
+                </button>
+              )}
               <button
                 type="button"
-                className="btn btn-primary min-w-44"
+                className="btn btn-primary min-w-44 max-sm:w-full"
                 disabled={count < UPGRADE_MIN_CARDS || phase !== "idle"}
                 onClick={attempt}
               >
-                {phase === "fusing"
+                {busy
                   ? "Upgrade en cours…"
                   : chance !== null
-                    ? `Tenter l’upgrade · ${pct(chance)}`
-                    : `Choisis ${UPGRADE_MIN_CARDS} cartes ou plus`}
+                    ? `Tenter l’upgrade · ${chanceText(chance)} %`
+                    : "Choisis des cartes"}
               </button>
             </>
           )}
@@ -371,13 +456,13 @@ export default function UpgradePage() {
             <CardGrid dense>
               {items.map((card) => {
                 const on = picked.some((c) => c.instanceId === card.instanceId);
-                const full = !on && picked.length >= UPGRADE_MAX_CARDS;
+                const full = !on && picked.length >= useful;
                 return (
                   <button
                     key={card.instanceId}
                     type="button"
                     aria-pressed={on}
-                    disabled={!!card.locked || phase === "fusing" || (full && phase === "idle")}
+                    disabled={!!card.locked || busy || (full && phase === "idle")}
                     title={card.locked ? "Engagée dans une vente ou un échange" : undefined}
                     className="text-left transition-[transform,opacity] duration-150 active:scale-[0.98] disabled:opacity-40"
                     onClick={() => toggle(card)}
