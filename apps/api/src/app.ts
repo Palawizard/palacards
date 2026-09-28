@@ -15,6 +15,8 @@ import { economyRoutes } from "./routes/economy.js";
 import { socialRoutes } from "./routes/social.js";
 import { battleRoutes } from "./routes/battles.js";
 import { progressionRoutes } from "./routes/progression.js";
+import { privacyRoutes } from "./routes/privacy.js";
+import { prepareAccountDeletion } from "./services/privacy.js";
 import { progressionIdle, registerProgressionHooks } from "./services/progression.js";
 import { wirePresence } from "./services/social.js";
 import { registerJobs } from "./services/jobs-handlers.js";
@@ -65,9 +67,14 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
   const apiPrefix = `${config.BASE_PATH}/api`;
   const database = config.DATABASE_URL ? createDb(config.DATABASE_URL) : undefined;
   // Le temps réel a besoin de l'auth (handshake) et l'auth coupe les sockets à la révocation d'une session.
-  const late: { rt?: { disconnectUser(userId: string): void } } = {};
+  const late: { rt?: { disconnectUser(userId: string): void }; ctx?: Ctx } = {};
   const auth = database
-    ? createAuth(database.db, config, { onSessionsRevoked: (userId) => late.rt?.disconnectUser(userId) })
+    ? createAuth(database.db, config, {
+        onSessionsRevoked: (userId) => late.rt?.disconnectUser(userId),
+        beforeDeleteUser: async (userId) => {
+          if (late.ctx) await prepareAccountDeletion(late.ctx, userId);
+        },
+      })
     : undefined;
 
   await app.register(rateLimit, {
@@ -94,6 +101,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
       now: options.now ?? (() => new Date()),
       random: secureRandom,
     };
+    late.ctx = ctx;
     registerJobs(ctx);
     wirePresence(ctx);
     registerProgressionHooks();
@@ -161,6 +169,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
       socialRoutes(api, ctx);
       battleRoutes(api, ctx);
       progressionRoutes(api, ctx);
+      privacyRoutes(api, ctx);
       if (config.GAME_TEST_MODE) testRoutes(api, ctx);
     },
     { prefix: apiPrefix },

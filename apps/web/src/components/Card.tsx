@@ -4,6 +4,7 @@ import { RARITY_LABELS, type Rarity } from "@palacards/game";
 import type { CardDTO } from "@palacards/shared";
 import { Lock, Star } from "lucide-react";
 import Link from "next/link";
+import { thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useCardMedia } from "@/lib/media";
 
@@ -58,7 +59,8 @@ interface CardProps {
  */
 export function Card({ card, href, className = "", selected = false, priority = false, prefetch }: CardProps) {
   const live = useCardMedia(card.cardId);
-  const thumb = live?.thumbUrl ?? card.thumbUrl;
+  const thumbUrl = live?.thumbUrl ?? card.thumbUrl;
+  const thumb = thumbUrl && thumbSrc(thumbUrl);
   const pageUrl = live?.pageUrl ?? card.pageUrl;
   const target = href === undefined ? `/card/${card.cardId}` : href;
 
@@ -72,7 +74,7 @@ export function Card({ card, href, className = "", selected = false, priority = 
       <div className="pc-frame flex h-full flex-col p-[4cqi] text-[length:max(10px,6cqi)]">
         <figure className="pc-art relative flex-1 overflow-hidden rounded-t-[6px] bg-sticker-line">
           {thumb ? (
-            // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia servies telles quelles (pas d'optimiseur côté serveur)
+            // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API (pas d'optimiseur Next)
             <img
               src={thumb}
               alt=""
