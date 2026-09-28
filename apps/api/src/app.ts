@@ -133,6 +133,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
                 mode: "sso" as const,
                 provider: SSO_PROVIDER_ID,
                 accountUrl: sso.accountUrl,
+                deleteAccountUrl: sso.deleteAccountUrl,
                 ...(sso.signupUrl ? { signupUrl: sso.signupUrl } : {}),
               }
             : { mode: "password" as const },
