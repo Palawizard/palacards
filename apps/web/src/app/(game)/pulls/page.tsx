@@ -14,13 +14,14 @@ import {
 } from "@palacards/game";
 import type { ThemeDTO } from "@palacards/shared";
 import { ExternalLink, Ticket } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { AutoRecycle } from "@/components/AutoRecycle";
 import { Card, RaritySigil } from "@/components/Card";
 import { PackOpener } from "@/components/PackOpener";
 import { api, ApiError } from "@/lib/api";
-import { countdown, fmt, relative } from "@/lib/format";
+import { countdown, fmt, relative, timeLeft } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { usePackCountdown } from "@/lib/packs";
 import { useNow } from "@/lib/use-now";
@@ -131,6 +132,113 @@ function EditionSwitch({
         );
       })}
     </div>
+  );
+}
+
+/** Vitrine des boosters spéciaux : une bande « édition limitée » par booster, en tête de la page. */
+function ThemeShowcase({
+  themes,
+  selected,
+  onPick,
+}: {
+  themes: ThemeDTO[];
+  selected: number | null;
+  onPick: (id: number) => void;
+}) {
+  const now = useNow(30_000);
+  const list = themes.filter((t) => t.onSale || t.owned > 0 || new Date(t.startsAt).getTime() > now);
+  if (!list.length) return null;
+  return (
+    <section aria-label="Boosters spéciaux" className="flex flex-col gap-3">
+      {list.map((t) => {
+        const upcoming = new Date(t.startsAt).getTime() > now;
+        const on = t.id === selected;
+        return (
+          <article
+            key={t.id}
+            data-edition="theme"
+            data-selected={on || undefined}
+            className="pc-showcase group grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 p-4 sm:gap-x-6 sm:px-6 md:grid-cols-[auto_minmax(0,1fr)_auto]"
+          >
+            <div className="relative self-start sm:self-center" aria-hidden>
+              <div className="pc-showcase-pack [filter:drop-shadow(0_10px_12px_rgb(4_8_30/0.45))]">
+                <div className="pc-pack pc-pack-foil relative aspect-[5/7.3] w-[4.6rem] sm:w-[5.6rem]">
+                  <span className="absolute inset-x-[10%] top-[34%] block font-display uppercase leading-[0.86] text-cover-ink [text-shadow:0_1px_0_var(--foil-2)]">
+                    <span className="block text-[0.55rem] tracking-[0.06em] text-accent sm:text-[0.62rem]">
+                      Booster
+                    </span>
+                    <span className="line-clamp-3 block break-words text-[0.85rem] sm:text-[1rem]">{t.name}</span>
+                  </span>
+                </div>
+              </div>
+              <span className="absolute -right-3 -top-2 grid size-[2.9rem] rotate-[-12deg] place-items-center rounded-full bg-accent text-center font-display text-[0.55rem] uppercase leading-[0.95] text-accent-ink shadow-[0_4px_10px_-4px_rgb(0_0_0/0.55)]">
+                <span className="absolute inset-[3px] rounded-full border border-dashed border-accent-ink/30" />
+                Édition
+                <br />
+                limitée
+              </span>
+            </div>
+
+            <div className="min-w-0">
+              <h2 className="font-display text-[clamp(1.55rem,1.15rem+1.5vw,2.35rem)] uppercase leading-[0.9] text-balance">
+                {t.name}
+              </h2>
+              {t.description && <p className="mt-1.5 line-clamp-2 text-sm text-cover-ink/80">{t.description}</p>}
+              <dl className="tnum mt-3 flex flex-wrap gap-x-5 gap-y-2">
+                <div>
+                  <dt className="text-xs font-semibold text-cover-ink/65">
+                    {upcoming ? "En vente dans" : t.onSale ? "Fin dans" : "Vente"}
+                  </dt>
+                  <dd className="font-display text-xl leading-none">
+                    {upcoming
+                      ? timeLeft(new Date(t.startsAt).getTime() - now)
+                      : t.onSale
+                        ? timeLeft(new Date(t.endsAt).getTime() - now)
+                        : "Terminée"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs font-semibold text-cover-ink/65">Prix</dt>
+                  <dd className="font-display text-xl leading-none">
+                    {fmt(t.price)} <span className="text-sm">PW</span>
+                  </dd>
+                </div>
+                {t.owned > 0 && (
+                  <div>
+                    <dt className="text-xs font-semibold text-cover-ink/65">À ouvrir</dt>
+                    <dd className="font-display text-xl leading-none text-accent">{t.owned}</dd>
+                  </div>
+                )}
+              </dl>
+              <button
+                type="button"
+                className={`btn btn-sm mt-3 ${on ? "pc-showcase-picked" : "btn-primary"}`}
+                aria-pressed={on}
+                onClick={() => onPick(t.id)}
+              >
+                {on
+                  ? "Booster choisi"
+                  : t.owned > 0
+                    ? "Ouvrir ce booster"
+                    : upcoming
+                      ? "Voir le booster"
+                      : "Choisir ce booster"}
+              </button>
+            </div>
+
+            {t.preview.length > 0 && (
+              <div className="pc-fan hidden md:flex" aria-label="Cartes phares">
+                {t.preview.slice(0, 3).map((c) => (
+                  <div key={c.cardId} className="w-[6.4rem] lg:w-[7rem]">
+                    <Card card={c} prefetch={false} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+        );
+      })}
+    </section>
   );
 }
 
@@ -263,6 +371,7 @@ export default function PullsPage() {
   const [buying, setBuying] = useState(false);
   const themes = useSWR<ThemeDTO[]>("/themes");
   const [themeId, setThemeId] = useState<number | null>(null);
+  const opener = useRef<HTMLDivElement>(null);
   const theme = themes.data?.find((t) => t.id === themeId) ?? null;
   const now = useNow(30_000);
 
@@ -338,8 +447,20 @@ export default function PullsPage() {
         )}
       </header>
 
+      {themes.data && (
+        <ThemeShowcase
+          themes={themes.data}
+          selected={theme?.id ?? null}
+          onPick={(id) => {
+            setThemeId(id);
+            const smooth = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            opener.current?.scrollIntoView({ block: "start", behavior: smooth ? "smooth" : "auto" });
+          }}
+        />
+      )}
+
       <div className="flex flex-col gap-10">
-        <div className="flex min-w-0 flex-col gap-5">
+        <div ref={opener} className="flex min-w-0 scroll-mt-20 flex-col gap-5">
           {!!themes.data?.length && (
             <EditionSwitch
               themes={themes.data}
@@ -377,7 +498,7 @@ export default function PullsPage() {
           )}
         </div>
 
-        <aside className="grid items-start gap-4 md:grid-cols-[minmax(0,15rem)_minmax(0,24rem)] md:justify-center">
+        <aside className="grid items-start gap-4 md:grid-cols-[minmax(0,18.5rem)_minmax(0,24rem)] md:justify-center">
           <div className="infobox">
             <h2 className="infobox-head">Ouverture</h2>
             <div className="flex flex-col gap-2 p-3" role="radiogroup" aria-label="Vitesse d'ouverture">
@@ -397,6 +518,10 @@ export default function PullsPage() {
                   {s.label}
                 </button>
               ))}
+            </div>
+            <div className="border-t border-line p-3">
+              <p className="label">Recyclage auto</p>
+              <AutoRecycle />
             </div>
             <div className="border-t border-line p-3">
               <button

@@ -1,5 +1,5 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
-import { parisDay, RARITIES } from "@palacards/game";
+import { AUTO_RECYCLE_RARITIES, parisDay, RARITIES } from "@palacards/game";
 import { avatarSchema, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -63,6 +63,7 @@ export async function me(
     ...user,
     avatar: p.avatar,
     animationSpeed: p.animationSpeed,
+    autoRecycle: { max: p.autoRecycleMax, keepNew: p.autoRecycleKeepNew },
     wallet: wallet(p),
     packs: packState(p, ctx.now()),
     unreadNotifications: notif?.n ?? 0,
@@ -84,6 +85,8 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
         .object({
           animationSpeed: z.enum(["normal", "fast", "instant"]).optional(),
           avatar: avatarSchema.nullable().optional(),
+          autoRecycleMax: z.enum(AUTO_RECYCLE_RARITIES).nullable().optional(),
+          autoRecycleKeepNew: z.boolean().optional(),
         })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
       req.body,

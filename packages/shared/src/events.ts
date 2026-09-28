@@ -56,8 +56,18 @@ export interface ServerToClientEvents {
     channel: string;
     senderId: string;
     sender: string;
+    senderUsername: string | null;
+    senderAvatar: string | null;
     body: string;
-    card: { cardId: number; season: number; title: string; rarity: Rarity } | null;
+    card: {
+      cardId: number;
+      season: number;
+      title: string;
+      rarity: Rarity;
+      atk: number;
+      def: number;
+      thumbUrl: string | null;
+    } | null;
     createdAt: string;
   }) => void;
   "battle:update": (b: { battleId: number }) => void;
