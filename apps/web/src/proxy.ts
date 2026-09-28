@@ -1,7 +1,15 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 const SESSION_COOKIE = "palawi_palacards_session";
-const PUBLIC = ["/login", "/register", "/confidentialite"];
+// Pages publiques, plus les fichiers lus par les robots et les aperçus de liens (sans session).
+const PUBLIC = [
+  "/login",
+  "/register",
+  "/confidentialite",
+  "/opengraph-image",
+  "/sitemap.xml",
+  "/manifest.webmanifest",
+];
 
 /** Redirige vers la connexion sans cookie de session (le serveur revérifie la session à chaque appel). */
 export function proxy(request: NextRequest) {

@@ -1,6 +1,8 @@
 /** Base de l'API vue depuis le navigateur. En prod, même origine (chaîne vide). */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 export const BASE_PATH = "/palacards";
+/** Adresse publique du site (URL absolues des métadonnées, sitemap). */
+export const SITE_URL = `https://palawi.fr${BASE_PATH}`;
 export const API_BASE = `${API_URL}${BASE_PATH}/api`;
 export const SOCKET_PATH = `${BASE_PATH}/socket.io`;
 
