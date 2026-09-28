@@ -90,6 +90,13 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
           </ul>
         </div>
       ))}
+      <Link
+        href="/confidentialite"
+        onClick={onNavigate}
+        className="px-2.5 text-xs text-cover-muted underline-offset-2 hover:text-cover-ink hover:underline"
+      >
+        Confidentialité et mentions légales
+      </Link>
     </nav>
   );
 }

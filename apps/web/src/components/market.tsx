@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, thumbSrc } from "@/lib/api";
 import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { RaritySigil } from "./Card";
@@ -29,7 +29,7 @@ export function Thumb({ card, size = "md" }: { card: CardDTO; size?: "sm" | "md"
     >
       {card.thumbUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- vignette Wikimedia
-        <img src={card.thumbUrl} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
+        <img src={thumbSrc(card.thumbUrl)} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
       ) : (
         card.title.slice(0, 1)
       )}
