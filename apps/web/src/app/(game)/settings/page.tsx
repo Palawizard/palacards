@@ -1,5 +1,6 @@
 "use client";
 
+import { AutoRecycle } from "@/components/AutoRecycle";
 import { avatarImage, AVATARS, type MeDTO } from "@palacards/shared";
 import { Download, ImageUp, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -315,6 +316,10 @@ export default function SettingsPage() {
             </button>
           ))}
         </div>
+      </Section>
+
+      <Section title="Recyclage automatique">
+        <AutoRecycle />
       </Section>
 
       <Section title="Notifications">

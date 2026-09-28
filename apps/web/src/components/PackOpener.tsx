@@ -34,6 +34,7 @@ interface OpenResponse {
   usedBonus: boolean;
   pityTriggered: boolean;
   theme?: { id: number; name: string; themedCardIds: number[]; owned: number };
+  autoRecycled?: { instanceIds: number[]; gain: number };
 }
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
@@ -358,7 +359,9 @@ function PackGrid({ cards, revealed, onReveal, recycled, onRecycle, speed }: Dea
         const gone = isRecycled(card, recycled);
         return (
           <li key={card.instanceId ?? i} className="flex min-w-0 flex-col gap-2">
-            <div className={`transition-[opacity,filter] duration-300 ${gone ? "opacity-35 grayscale" : ""}`}>
+            <div
+              className={`transition-[opacity,filter] duration-300 ${gone && revealed[i] ? "opacity-35 grayscale" : ""}`}
+            >
               <FlipCard
                 card={card}
                 index={i}
@@ -482,7 +485,7 @@ function DeckCard({
       }}
       className="absolute inset-0 z-10 touch-pan-y will-change-transform"
     >
-      <div className={`transition-[opacity,filter] duration-300 ${gone ? "opacity-40 grayscale" : ""}`}>
+      <div className={`transition-[opacity,filter] duration-300 ${gone && shown ? "opacity-40 grayscale" : ""}`}>
         <FlipCard card={card} index={index} speed={speed} stagger={false} upNext revealed={shown} onReveal={onReveal} />
       </div>
     </motion.div>
@@ -786,6 +789,8 @@ export const PackOpener = memo(function PackOpener({
         new Promise((r) => setTimeout(r, speed === "instant" ? 0 : speed === "fast" ? 280 : 560)),
       ]);
       setCards(res.cards);
+      // Recyclage automatique : les cartes concernées s'affichent déjà « recyclées ».
+      if (res.autoRecycled) setRecycled(Object.fromEntries(res.autoRecycled.instanceIds.map((id) => [id, true])));
       setRevealed(res.cards.map(() => speed === "instant"));
       setCursor(0);
       setPhase("dealt");
@@ -805,6 +810,10 @@ export const PackOpener = memo(function PackOpener({
         if (isFxTier(best.rarity)) play(JINGLE[best.rarity], 60);
       }
       if (res.pityTriggered) toast("Pity déclenchée : UR ou mieux garantie !");
+      if (res.autoRecycled) {
+        const n = res.autoRecycled.instanceIds.length;
+        toast.success(`Recyclage auto : ${n} carte${n > 1 ? "s" : ""}, +${fmt(res.autoRecycled.gain)} PW`);
+      }
       if (buying) play("coin");
       onOpened?.();
       void mutateMe((m) => (m ? { ...m, packs: res.packs } : m), { revalidate: false });

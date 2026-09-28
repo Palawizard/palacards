@@ -47,3 +47,31 @@ export function collectionScore(owned: Iterable<{ cardId: number; rarity: Rarity
   for (const r of best.values()) score += COLLECTION_POINTS[r];
   return score;
 }
+
+/** Seuils proposés au recyclage automatique : jamais au-delà de Super rare (une UR ou une L se garde). */
+export const AUTO_RECYCLE_RARITIES = ["C", "PC", "R", "SR"] as const satisfies readonly Rarity[];
+export type AutoRecycleRarity = (typeof AUTO_RECYCLE_RARITIES)[number];
+
+/**
+ * Recyclage automatique d'un paquet : indices des cartes tirées à recycler, celles dont la rareté est
+ * au plus `max`. Avec `keepNew`, un article jamais possédé est gardé (une seule fois s'il sort en double).
+ */
+export function autoRecyclePicks(
+  drawn: readonly { cardId: number; rarity: Rarity }[],
+  max: AutoRecycleRarity | null,
+  keepNew: boolean,
+  ownedBefore: ReadonlySet<number>,
+): number[] {
+  if (!max) return [];
+  const kept = new Set(ownedBefore);
+  const picks: number[] = [];
+  drawn.forEach((d, i) => {
+    if (rarityRank(d.rarity) > rarityRank(max)) return;
+    if (keepNew && !kept.has(d.cardId)) {
+      kept.add(d.cardId);
+      return;
+    }
+    picks.push(i);
+  });
+  return picks;
+}
