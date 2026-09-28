@@ -4,7 +4,11 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { AuthForm } from "@/components/AuthForm";
 
-export const metadata: Metadata = { title: "Créer un compte" };
+export const metadata: Metadata = {
+  title: "Créer un compte",
+  description: "Crée ton compte PalaCards : chaque article de Wikipédia est une carte à collectionner.",
+  alternates: { canonical: "/register" },
+};
 
 export default function Page() {
   return (
