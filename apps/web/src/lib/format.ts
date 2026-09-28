@@ -13,6 +13,16 @@ export function countdown(ms: number): string {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
+/** Durée restante lisible : « 2 j 4 h », « 5 h 12 min », « 8 min ». */
+export function timeLeft(ms: number): string {
+  const min = Math.max(0, Math.floor(ms / 60_000));
+  const d = Math.floor(min / 1440);
+  const h = Math.floor((min % 1440) / 60);
+  if (d > 0) return h ? `${d} j ${h} h` : `${d} j`;
+  if (h > 0) return `${h} h ${String(min % 60).padStart(2, "0")} min`;
+  return `${Math.max(1, min)} min`;
+}
+
 const rtf = new Intl.RelativeTimeFormat("fr", { numeric: "auto" });
 /** « il y a 5 min », « dans 2 h ». */
 export function relative(iso: string, now = Date.now()): string {

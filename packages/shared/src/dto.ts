@@ -1,4 +1,4 @@
-import type { Rarity } from "@palacards/game";
+import type { AutoRecycleRarity, Rarity } from "@palacards/game";
 import type { PackState, Wallet } from "./events.js";
 
 /** Carte telle qu'affichée par le composant `Card` (exemplaire possédé ou article du catalogue). */
@@ -41,6 +41,8 @@ export interface MeDTO {
   isAdmin: boolean;
   avatar: string | null;
   animationSpeed: "normal" | "fast" | "instant";
+  /** Recyclage automatique des cartes tirées (rareté maximale, null : désactivé). */
+  autoRecycle: { max: AutoRecycleRarity | null; keepNew: boolean };
   wallet: Wallet;
   packs: PackState;
   unreadNotifications: number;

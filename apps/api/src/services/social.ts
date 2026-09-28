@@ -221,16 +221,28 @@ async function toMessageDTOs(ctx: Ctx, rows: MessageRow[]) {
         .select({
           id: schema.user.id,
           name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
+          username: schema.user.username,
+          avatar: schema.players.avatar,
         })
         .from(schema.user)
+        .leftJoin(schema.players, eq(schema.players.userId, schema.user.id))
         .where(inArray(schema.user.id, senders))
     : [];
-  const nameBy = new Map(names.map((n) => [n.id, n.name]));
+  const senderBy = new Map(names.map((n) => [n.id, n]));
   const withCard = rows.filter((r) => r.cardId !== null);
   const cards = withCard.length
-    ? await ctx.db.execute<{ id: string; season: number; title: string; rarity: Rarity }>(sql`
-        select id, season, title, rarity from cards
-        where (season, id) in (${sql.join(
+    ? await ctx.db.execute<{
+        id: string;
+        season: number;
+        title: string;
+        rarity: Rarity;
+        atk: number;
+        def: number;
+        thumb_url: string | null;
+      }>(sql`
+        select c.id, c.season, c.title, c.rarity, c.atk, c.def, w.thumb_url
+        from cards c left join wiki_summaries w on w.page_id = c.id
+        where (c.season, c.id) in (${sql.join(
           withCard.map((r) => sql`(${r.cardSeason}::smallint, ${r.cardId}::bigint)`),
           sql`, `,
         )})
@@ -243,9 +255,21 @@ async function toMessageDTOs(ctx: Ctx, rows: MessageRow[]) {
       id: r.id,
       channel: r.channel,
       senderId: r.senderId,
-      sender: nameBy.get(r.senderId) ?? "?",
+      sender: senderBy.get(r.senderId)?.name ?? "?",
+      senderUsername: senderBy.get(r.senderId)?.username ?? null,
+      senderAvatar: senderBy.get(r.senderId)?.avatar ?? null,
       body: r.body,
-      card: c ? { cardId: Number(c.id), season: c.season, title: c.title, rarity: c.rarity } : null,
+      card: c
+        ? {
+            cardId: Number(c.id),
+            season: c.season,
+            title: c.title,
+            rarity: c.rarity,
+            atk: c.atk,
+            def: c.def,
+            thumbUrl: c.thumb_url,
+          }
+        : null,
       createdAt: r.createdAt.toISOString(),
     };
   });
@@ -324,7 +348,7 @@ export async function markChannelRead(ctx: Ctx, userId: string, channel: string,
 /** Conversations du joueur (MP + guilde), avec dernier message et non-lus. */
 export async function conversations(ctx: Ctx, userId: string) {
   const [gm] = await ctx.db
-    .select({ guildId: schema.guildMembers.guildId, name: schema.guilds.name })
+    .select({ guildId: schema.guildMembers.guildId, name: schema.guilds.name, emblem: schema.guilds.emblem })
     .from(schema.guildMembers)
     .innerJoin(schema.guilds, eq(schema.guilds.id, schema.guildMembers.guildId))
     .where(eq(schema.guildMembers.userId, userId));
@@ -374,7 +398,7 @@ export async function conversations(ctx: Ctx, userId: string) {
       kind: dm ? ("dm" as const) : ("guild" as const),
       title: dm ? (other?.name ?? "?") : (gm?.name ?? "Guilde"),
       username: other?.username ?? null,
-      avatar: other?.avatar ?? null,
+      avatar: dm ? (other?.avatar ?? null) : (gm?.emblem ?? null),
       online: otherId ? ctx.rt.isOnline(otherId) : false,
       lastBody: r.last_body,
       lastAt: new Date(r.last_at).toISOString(),
@@ -389,7 +413,7 @@ export async function conversations(ctx: Ctx, userId: string) {
       kind: "guild",
       title: gm!.name,
       username: null,
-      avatar: null,
+      avatar: gm!.emblem,
       online: false,
       lastBody: "",
       lastAt: "",

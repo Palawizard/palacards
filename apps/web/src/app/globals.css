@@ -655,6 +655,12 @@
   opacity: 0.35;
   filter: saturate(0.5);
 }
+/* Seuil du recyclage automatique : le palier choisi porte l'anneau, ceux du dessous restent allumés. */
+[data-active] > .rarity-toggle[role="radio"]:not([data-on]) {
+  opacity: 0.35;
+  filter: saturate(0.5);
+}
+.rarity-toggle[aria-checked="true"],
 .rarity-toggle[aria-pressed="true"] {
   box-shadow:
     0 0 0 2px var(--color-panel),
@@ -739,4 +745,228 @@
 }
 button:disabled .pc-pack-foil {
   filter: saturate(0.35) brightness(0.8);
+}
+
+/* ------------------------------------------------------------------ */
+/* Vitrine des boosters spéciaux : bande d'alu violet, cousue.         */
+/* ------------------------------------------------------------------ */
+
+.pc-showcase {
+  position: relative;
+  isolation: isolate;
+  border-radius: 14px;
+  color: var(--color-cover-ink);
+  background:
+    repeating-linear-gradient(-45deg, rgb(255 255 255 / 0.05) 0 2px, transparent 2px 12px),
+    radial-gradient(90% 130% at 0% 0%, color-mix(in oklab, var(--foil-1) 80%, #fff), transparent 62%),
+    linear-gradient(165deg, var(--foil-1), color-mix(in oklab, var(--foil-2) 82%, #000));
+  box-shadow:
+    inset 0 -3px 0 color-mix(in oklab, var(--foil-2) 70%, #000),
+    var(--shadow-lift);
+}
+/* Couture pointillée de l'album, à l'intérieur de la bande. */
+.pc-showcase::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  z-index: -1;
+  border: 2px dashed rgb(255 255 255 / 0.16);
+  border-radius: 10px;
+  pointer-events: none;
+}
+.pc-showcase[data-selected] {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.pc-showcase-picked {
+  background: rgb(255 255 255 / 0.14);
+  border-color: rgb(255 255 255 / 0.35);
+  color: var(--color-cover-ink);
+}
+.pc-showcase-pack {
+  transform: rotate(-6deg);
+  transition: transform 240ms var(--ease-out);
+}
+/* Éventail des cartes phares : il s'ouvre un peu au survol de la bande. */
+.pc-fan {
+  align-items: center;
+  padding-inline: 0.5rem 0.75rem;
+}
+.pc-fan > * {
+  transition: transform 240ms var(--ease-out);
+}
+.pc-fan > * + * {
+  margin-left: -2.6rem;
+}
+.pc-fan > :nth-child(1) {
+  transform: rotate(-9deg) translateY(6px);
+}
+.pc-fan > :nth-child(2) {
+  transform: rotate(-1deg) translateY(-4px);
+  z-index: 1;
+}
+.pc-fan > :nth-child(3) {
+  transform: rotate(8deg) translateY(8px);
+}
+@media (hover: hover) and (pointer: fine) {
+  .pc-showcase:hover .pc-showcase-pack {
+    transform: rotate(-2deg) translateY(-3px);
+  }
+  .pc-showcase:hover .pc-fan > :nth-child(1) {
+    transform: rotate(-13deg) translate(-14px, 4px);
+  }
+  .pc-showcase:hover .pc-fan > :nth-child(2) {
+    transform: rotate(-1deg) translateY(-10px);
+  }
+  .pc-showcase:hover .pc-fan > :nth-child(3) {
+    transform: rotate(12deg) translate(14px, 6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-showcase-pack,
+  .pc-fan > * {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Marché : la vignette posée sur son étiquette de prix.              */
+/* ------------------------------------------------------------------ */
+
+.pc-lot-tag {
+  border: 1px solid var(--color-line);
+  border-radius: 0 0 14px 14px;
+  background: var(--color-panel);
+  box-shadow: var(--shadow-lift);
+  transition: background-color 500ms ease;
+}
+.pc-lot[data-changed] .pc-lot-tag {
+  background: color-mix(in oklab, var(--color-accent) 12%, var(--color-panel));
+}
+/* Choix d'une carte à vendre : la vignette entière est le bouton. */
+.pc-pick {
+  transition: transform 160ms var(--ease-out);
+}
+.pc-pick:active {
+  transform: scale(0.97);
+}
+.pc-pick:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Messages : bulles, séparateurs de jour, compositeur.               */
+/* ------------------------------------------------------------------ */
+
+.pc-bubble {
+  padding: 0.45rem 0.8rem;
+  border-radius: 16px;
+  background: var(--color-panel-2);
+  border: 1px solid var(--color-line);
+  color: var(--color-text);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+/* Les bulles d'un même groupe se resserrent côté auteur ; la dernière porte la pointe. */
+.pc-bubble:not([data-mine]):not([data-first]) {
+  border-top-left-radius: 6px;
+}
+.pc-bubble:not([data-mine]):not([data-last]) {
+  border-bottom-left-radius: 6px;
+}
+.pc-bubble:not([data-mine])[data-last] {
+  border-bottom-left-radius: 4px;
+}
+/* Mes bulles : bleu couverture, identique dans les deux thèmes. */
+.pc-bubble[data-mine] {
+  background: var(--color-cover);
+  border-color: var(--color-cover);
+  color: var(--color-cover-ink);
+  box-shadow: inset 0 -2px 0 var(--color-cover-2);
+}
+.pc-bubble[data-mine]:not([data-first]) {
+  border-top-right-radius: 6px;
+}
+.pc-bubble[data-mine]:not([data-last]) {
+  border-bottom-right-radius: 6px;
+}
+.pc-bubble[data-mine][data-last] {
+  border-bottom-right-radius: 4px;
+}
+.pc-bubble ::selection,
+.pc-bubble[data-mine]::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+.pc-bubble-in {
+  animation: pc-bubble-in 220ms var(--ease-out);
+}
+@keyframes pc-bubble-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+/* Jour : une couture pointillée, l'étiquette au milieu. */
+.pc-day {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--color-faint);
+  text-transform: capitalize;
+}
+.pc-day::before,
+.pc-day::after {
+  content: "";
+  flex: 1;
+  border-top: 2px dashed var(--color-line);
+}
+.pc-chat {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+.pc-composer {
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.pc-composer:focus-within {
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-focus) 22%, transparent);
+}
+.pc-convo {
+  color: var(--color-muted);
+  transition: background-color 150ms ease;
+}
+.pc-convo:hover {
+  background: var(--color-panel-2);
+}
+.pc-convo[aria-current="page"] {
+  background: var(--color-panel-2);
+  box-shadow: inset 0 0 0 1px var(--color-line-strong);
+}
+.pc-popover {
+  transform-origin: bottom left;
+  animation: pc-popover-in 180ms var(--ease-out);
+}
+@keyframes pc-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-bubble-in,
+  .pc-popover {
+    animation-name: pc-fade-in;
+  }
+}
+@keyframes pc-fade-in {
+  from {
+    opacity: 0;
+  }
 }
