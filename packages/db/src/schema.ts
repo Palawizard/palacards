@@ -202,6 +202,10 @@ export const players = pgTable(
     animationSpeed: text("animation_speed", { enum: ["normal", "fast", "instant"] })
       .notNull()
       .default("normal"),
+    /** Recyclage automatique à l'ouverture des paquets : rareté maximale recyclée (null : désactivé). */
+    autoRecycleMax: text("auto_recycle_max", { enum: ["C", "PC", "R", "SR"] }),
+    /** Garder les articles jamais possédés malgré le recyclage automatique. */
+    autoRecycleKeepNew: boolean("auto_recycle_keep_new").notNull().default(true),
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
     loginStreak: integer("login_streak").notNull().default(0),
     lastLoginDay: date("last_login_day"),

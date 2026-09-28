@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { collectionScore, effectiveStats, isBetterCopy, MAX_LEVEL } from "./collection.js";
+import { autoRecyclePicks, collectionScore, effectiveStats, isBetterCopy, MAX_LEVEL } from "./collection.js";
 
 describe("effectiveStats", () => {
   it("+4 % par niveau au-delà du premier", () => {
@@ -39,5 +39,28 @@ describe("isBetterCopy", () => {
     expect(isBetterCopy({ ...base, atk: 501, id: 9 }, base)).toBe(true);
     expect(isBetterCopy(base, { ...base, id: 2 })).toBe(true);
     expect(isBetterCopy({ ...base, id: 2 }, base)).toBe(false);
+  });
+});
+
+describe("autoRecyclePicks", () => {
+  const drawn = [
+    { cardId: 1, rarity: "C" as const },
+    { cardId: 2, rarity: "PC" as const },
+    { cardId: 2, rarity: "PC" as const },
+    { cardId: 3, rarity: "R" as const },
+    { cardId: 4, rarity: "UR" as const },
+  ];
+
+  it("désactivé : ne recycle rien", () => {
+    expect(autoRecyclePicks(drawn, null, false, new Set())).toEqual([]);
+  });
+
+  it("recycle la rareté choisie et en dessous", () => {
+    expect(autoRecyclePicks(drawn, "PC", false, new Set())).toEqual([0, 1, 2]);
+    expect(autoRecyclePicks(drawn, "SR", false, new Set())).toEqual([0, 1, 2, 3]);
+  });
+
+  it("garde les nouveaux articles, une seule fois", () => {
+    expect(autoRecyclePicks(drawn, "R", true, new Set([1]))).toEqual([0, 2]);
   });
 });

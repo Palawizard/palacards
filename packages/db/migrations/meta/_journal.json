@@ -92,6 +92,13 @@
       "when": 1790506812632,
       "tag": "0012_events_upgrader_wheel",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790587725645,
+      "tag": "0013_player_auto_recycle",
+      "breakpoints": true
     }
   ]
 }

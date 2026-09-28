@@ -1,5 +1,5 @@
-import { eq, schema, sql } from "@palacards/db";
-import { consumeFreePack, PITY_THRESHOLD, rollPack, type Rarity } from "@palacards/game";
+import { and, eq, inArray, schema, sql } from "@palacards/db";
+import { autoRecyclePicks, consumeFreePack, ECONOMY, PITY_THRESHOLD, rollPack, type Rarity } from "@palacards/game";
 import type { CardDTO, PackState } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { conflict } from "../errors.js";
@@ -53,6 +53,8 @@ export interface OpenedPack {
   pityTriggered: boolean;
   /** Booster à thème : articles du thème (les autres emplacements, sans article du thème à cette rareté, sont tirés dans toute la saison). */
   theme?: { id: number; name: string; themedCardIds: number[]; owned: number };
+  /** Recyclage automatique (réglage du joueur) : exemplaires recyclés dès l'ouverture et PW gagnés. */
+  autoRecycled?: { instanceIds: number[]; gain: number };
 }
 
 export interface OpenPackOptions {
@@ -116,6 +118,27 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       );
     }
 
+    // Recyclage automatique : articles déjà possédés avant ce paquet (pour garder les nouveaux).
+    const ownedBefore =
+      p.autoRecycleMax && p.autoRecycleKeepNew
+        ? new Set(
+            (
+              await tx
+                .selectDistinct({ cardId: schema.cardInstances.cardId })
+                .from(schema.cardInstances)
+                .where(
+                  and(
+                    eq(schema.cardInstances.ownerId, userId),
+                    inArray(
+                      schema.cardInstances.cardId,
+                      drawn.map((d) => d.id),
+                    ),
+                  ),
+                )
+            ).map((r) => r.cardId),
+          )
+        : new Set<number>();
+
     const inserted = await tx
       .insert(schema.cardInstances)
       .values(
@@ -141,9 +164,26 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     for (const hook of afterPackHooks) await hook(tx, userId, roll.rarities);
 
     // Réponse lue dans la transaction : une fois le paquet consommé, plus rien ne peut faire échouer la requête.
+    const cards = await instancesByIds(tx, ids, userId);
+    const picks = autoRecyclePicks(
+      drawn.map((d) => ({ cardId: d.id, rarity: d.rarity })),
+      p.autoRecycleMax,
+      p.autoRecycleKeepNew,
+      ownedBefore,
+    );
+    let autoRecycled: OpenedPack["autoRecycled"];
+    if (picks.length) {
+      const gone = picks.map((i) => ids[i]!);
+      const gain = picks.reduce((s, i) => s + ECONOMY.recycleValue[roll.rarities[i]!], 0);
+      await tx.delete(schema.cardInstances).where(inArray(schema.cardInstances.id, gone));
+      await logMovement(tx, userId, "card", -gone.length, await ownedCount(tx, userId), "recycle", gone.join(","));
+      await movePw(tx, p, gain, "recycle", gone.join(","));
+      autoRecycled = { instanceIds: gone, gain };
+    }
     const state = { ...p, ...update } as typeof p;
     return {
-      cards: await instancesByIds(tx, ids, userId),
+      cards,
+      autoRecycled,
       packs: packState(state, now),
       drawn,
       usedBonus,
@@ -163,7 +203,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
   // Effets secondaires après le commit : une erreur est journalisée, jamais renvoyée au joueur.
   await afterCommit(ctx, async () => {
     ctx.rt.toUser(userId, "packs:update", result.packs);
-    if (result.theme) pushWallet(ctx, result.state);
+    if (result.theme || result.autoRecycled) pushWallet(ctx, result.state);
   });
   await afterCommit(ctx, async () => {
     await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
@@ -187,5 +227,6 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     usedBonus: result.usedBonus,
     pityTriggered: result.pityTriggered,
     ...(result.theme ? { theme: result.theme } : {}),
+    ...(result.autoRecycled ? { autoRecycled: result.autoRecycled } : {}),
   };
 }
