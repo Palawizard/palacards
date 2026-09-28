@@ -43,9 +43,10 @@
 		X-Frame-Options "DENY"
 		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 		# Next.js (App Router) injecte des scripts et styles en ligne : 'unsafe-inline' requis sans nonce.
-		# Images des cartes : upload.wikimedia.org et thumb.wikimedia.org (miniatures Wikipédia, les deux
-		# sont servies en prod). Temps réel : Socket.IO en wss sur l'origine publique (à adapter si le domaine change).
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://upload.wikimedia.org https://thumb.wikimedia.org; font-src 'self' data:; connect-src 'self' wss://palawi.fr; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; worker-src 'self' blob:; manifest-src 'self'"
+		# Images des cartes : relayées par l'API (/palacards/api/thumb), jamais chargées depuis Wikimedia par le
+		# navigateur (RGPD : l'IP des joueurs ne part pas chez un tiers).
+		# Temps réel : Socket.IO en wss sur l'origine publique (à adapter si le domaine change).
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://palawi.fr; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'; worker-src 'self' blob:; manifest-src 'self'"
 		-X-Powered-By
 	}
 

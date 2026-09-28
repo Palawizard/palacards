@@ -30,6 +30,12 @@ export function authErrorMessage(code: string | undefined, fallback?: string): s
       return "Pseudo trop long (20 caractères maximum).";
     case "INVALID_USERNAME":
       return "Pseudo invalide : lettres, chiffres, _ et . uniquement.";
+    case "INVALID_PASSWORD":
+      return "Mot de passe incorrect.";
+    case "PASSWORD_REQUIRED":
+      return "Entre ton mot de passe pour confirmer.";
+    case "SESSION_EXPIRED":
+      return "Par sécurité, reconnecte-toi puis réessaie (connexion de moins de 10 minutes).";
     default:
       return fallback ?? "Connexion impossible pour le moment.";
   }
