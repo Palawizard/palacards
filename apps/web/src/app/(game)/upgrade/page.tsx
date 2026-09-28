@@ -24,7 +24,7 @@ import { Card, CardGrid } from "@/components/Card";
 import { CardBack, FlipCard } from "@/components/PackOpener";
 import { CardSkeletons, Empty, ErrorBox, LoadMore, Toggle } from "@/components/ui";
 import { chanceText, UpgradeDial, type DialState } from "@/components/UpgradeDial";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useCardMedia } from "@/lib/media";
 import { play } from "@/lib/sfx";
@@ -61,7 +61,8 @@ function TargetBack({ rarity, failed }: { rarity: Rarity; failed: boolean }) {
 /** Case remplie quand l'établi est étroit : la vignette entière serait illisible à cette taille. */
 function SlotTile({ card }: { card: CardDTO }) {
   const media = useCardMedia(card.cardId);
-  const thumb = media?.thumbUrl ?? card.thumbUrl;
+  const thumbUrl = media?.thumbUrl ?? card.thumbUrl;
+  const thumb = thumbUrl && thumbSrc(thumbUrl);
   return (
     <div
       className="relative flex aspect-[5/7] flex-col overflow-hidden rounded-[10px] bg-sticker text-sticker-ink shadow-[var(--shadow-lift)] @min-[44rem]:hidden"

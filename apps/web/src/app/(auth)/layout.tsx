@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 /** Pages publiques : une colonne étroite, comme la page « Se connecter » de Wikipédia. */
@@ -10,7 +11,10 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       {children}
       <p className="mt-10 text-xs leading-relaxed text-faint">
         Chaque carte est un article de Wikipédia en français. Textes et images sous licence CC BY-SA, crédités sur
-        chaque carte.
+        chaque carte.{" "}
+        <Link href="/confidentialite" className="underline underline-offset-2 hover:text-muted">
+          Confidentialité et mentions légales
+        </Link>
       </p>
     </main>
   );

@@ -16,7 +16,7 @@ import {
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { useCardMedia } from "@/lib/media";
@@ -492,7 +492,8 @@ function DeckCard({
 /** Précharge l'image d'une carte à venir : elle est déjà décodée quand la carte arrive au sommet. */
 function PreloadThumb({ card }: { card: CardDTO }) {
   const live = useCardMedia(card.cardId);
-  const src = live?.thumbUrl ?? card.thumbUrl;
+  const thumbUrl = live?.thumbUrl ?? card.thumbUrl;
+  const src = thumbUrl && thumbSrc(thumbUrl);
   useEffect(() => {
     if (!src) return;
     const img = new Image();
@@ -630,7 +631,8 @@ function PackDeck({
 /** Miniature de l'image de l'article, bordée à la couleur de la rareté. */
 function Thumb({ card }: { card: CardDTO }) {
   const live = useCardMedia(card.cardId);
-  const src = live?.thumbUrl ?? card.thumbUrl;
+  const thumbUrl = live?.thumbUrl ?? card.thumbUrl;
+  const src = thumbUrl && thumbSrc(thumbUrl);
   return (
     <span
       data-rarity={card.rarity}
