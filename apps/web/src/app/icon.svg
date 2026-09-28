@@ -1,1 +1,25 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="12" fill="#0f1115"/><rect x="14" y="8" width="36" height="48" rx="5" fill="none" stroke="#34d399" stroke-width="3"/><text x="32" y="42" font-family="Georgia,serif" font-size="26" text-anchor="middle" fill="#e9e7e3">P</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="c" cx="50%" cy="22%" r="85%">
+      <stop offset="0" stop-color="#1537a8"/>
+      <stop offset=".8" stop-color="#0f2a86"/>
+    </radialGradient>
+    <pattern id="s" width="4.5" height="4.5" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+      <rect width="1" height="4.5" fill="#fff" fill-opacity=".07"/>
+    </pattern>
+  </defs>
+  <!-- Dos de vignette : couverture de l'album, pastille jaune inclinée comme au dos des cartes. -->
+  <g transform="translate(1 0)">
+    <g transform="rotate(12 26 58)">
+      <rect x="7" y="5" width="38" height="53" rx="5.5" fill="#fff" stroke="#0f2a86"/>
+      <rect x="9.4" y="7.4" width="33.2" height="48.2" rx="3.6" fill="#0f2a86"/>
+    </g>
+    <rect x="7" y="5" width="38" height="53" rx="5.5" fill="#fff" stroke="#0f2a86"/>
+    <rect x="9.4" y="7.4" width="33.2" height="48.2" rx="3.6" fill="url(#c)"/>
+    <rect x="9.4" y="7.4" width="33.2" height="48.2" rx="3.6" fill="url(#s)"/>
+    <circle cx="26" cy="32.9" r="13" fill="#0a1d5e" fill-opacity=".55"/>
+    <circle cx="26" cy="31.5" r="13" fill="#ffd23f"/>
+    <circle cx="26" cy="31.5" r="10.7" fill="none" stroke="#1f1600" stroke-opacity=".22" stroke-width="1.1" stroke-dasharray="2 1.7"/>
+    <path transform="translate(26 31.8) rotate(-12) scale(.0182 -.0182) translate(-254.5 -343.8)" fill="#1537a8" d="M45.48 0V687.54H282.74Q350.02 687.54 389.52 659.73Q429.02 631.91 446.29 581.74Q463.56 531.57 463.56 464.76Q463.56 395.5 444.34 342.83Q425.11 290.15 385.34 260.07Q345.56 229.98 282.93 229.98H197.89V0ZM197.89 356.61H251.33Q283.83 356.61 296.76 385.3Q309.7 414 309.7 459.22Q309.7 492.89 304.23 515.36Q298.76 537.83 285.28 548.83Q271.8 559.83 247.67 559.83H197.89Z"/>
+  </g>
+</svg>
