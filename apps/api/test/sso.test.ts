@@ -9,6 +9,7 @@ const SSO_ENV = {
   AUTHENTIK_CLIENT_ID: "palacards-test",
   AUTHENTIK_CLIENT_SECRET: "secret-de-test",
   AUTHENTIK_ENROLLMENT_URL: "http://127.0.0.1:9/if/flow/inscription/",
+  AUTHENTIK_UNENROLLMENT_URL: "http://127.0.0.1:9/if/flow/suppression-compte/",
 };
 
 const password = await makeApp();
@@ -31,6 +32,18 @@ describe("connexion unique Authentik : configuration", () => {
     expect(conf?.issuer).toBe("https://auth.palawi.fr/application/o/palacards/");
     expect(conf?.accountUrl).toBe("https://auth.palawi.fr/if/user/#/settings");
     expect(conf?.signupUrl).toBeUndefined();
+    // Sans page de suppression dédiée : « Mon compte » d'Authentik, qui porte le bouton de suppression.
+    expect(conf?.deleteAccountUrl).toBe("https://auth.palawi.fr/if/user/#/settings");
+  });
+
+  it("n'envoie vers la suppression du compte palawi.fr que sur l'hôte d'Authentik", () => {
+    const base = { ...SSO_ENV, AUTHENTIK_ISSUER: "https://auth.palawi.fr/application/o/palacards/" };
+    const same = "https://auth.palawi.fr/if/flow/suppression-compte/";
+    expect(ssoConfig(loadConfig({ ...base, AUTHENTIK_UNENROLLMENT_URL: same }))?.deleteAccountUrl).toBe(same);
+    const other = "https://ailleurs.example/if/flow/suppression-compte/";
+    expect(ssoConfig(loadConfig({ ...base, AUTHENTIK_UNENROLLMENT_URL: other }))?.deleteAccountUrl).toBe(
+      "https://auth.palawi.fr/if/user/#/settings",
+    );
   });
 
   it("n'annonce la page d'inscription que sur l'hôte d'Authentik (?next= relatif)", () => {
@@ -51,6 +64,7 @@ describe("connexion unique Authentik : API", () => {
       mode: "sso",
       provider: "authentik",
       signupUrl: "http://127.0.0.1:9/if/flow/inscription/",
+      deleteAccountUrl: "http://127.0.0.1:9/if/flow/suppression-compte/",
     });
   });
 

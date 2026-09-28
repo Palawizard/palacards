@@ -90,7 +90,8 @@ export default function PrivacyPage() {
         <p className="max-w-prose">
           Les sauvegardes de la base sont gardées 14 jours : une donnée supprimée en disparaît au plus tard 14 jours
           après. Si tu te connectes avec ton compte palawi.fr, le jeu reçoit seulement ton identifiant et ton pseudo ;
-          ce compte-là se gère sur auth.palawi.fr, sous la même responsabilité.
+          ce compte-là se gère sur auth.palawi.fr, sous la même responsabilité, et se supprime depuis la page « Mon
+          compte » d&apos;auth.palawi.fr.
         </p>
       </Section>
 
@@ -151,7 +152,8 @@ export default function PrivacyPage() {
             <Link className="article-link" href="/settings#donnees">
               Paramètres → Mes données
             </Link>
-            . La suppression est immédiate et définitive.
+            . La suppression est immédiate et définitive. Avec un compte palawi.fr, tu es ensuite envoyé sur
+            auth.palawi.fr pour supprimer aussi ce compte-là (tu confirmes avec ton mot de passe).
           </li>
           <li>
             <strong>Corriger</strong> ton pseudo ou ton avatar : dans les Paramètres. Pour le reste, écris à{" "}

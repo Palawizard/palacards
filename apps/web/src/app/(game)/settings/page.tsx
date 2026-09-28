@@ -89,8 +89,11 @@ export default function SettingsPage() {
       } else toast.error(message);
       return;
     }
-    // Rechargement complet : plus aucun cache du compte supprimé.
-    window.location.assign(`${BASE_PATH}/login`);
+    // Rechargement complet : plus aucun cache du compte supprimé. Connexion palawi.fr : on enchaîne sur
+    // la suppression du compte Authentik (droit à l'effacement), que le joueur confirme là-bas.
+    window.location.assign(
+      authMode?.mode === "sso" ? (authMode.deleteAccountUrl ?? authMode.accountUrl) : `${BASE_PATH}/login`,
+    );
   }
 
   if (!me) return <div className="h-96 animate-pulse rounded-xl bg-panel" aria-busy />;
@@ -400,7 +403,9 @@ export default function SettingsPage() {
           <p className="max-w-prose text-sm text-muted">
             Définitif et immédiat : cartes, points wiki, historique, amis et messages sont effacés. Tes ventes sans
             offre, échanges et défis en attente sont annulés ; si tu diriges une guilde, elle passe à un autre membre.
-            {authMode?.mode === "sso" && " Ton compte palawi.fr, lui, reste en place."}
+            {authMode?.mode === "sso" &&
+              " Tu arrives ensuite sur auth.palawi.fr pour supprimer aussi ton compte palawi.fr (mot de passe" +
+                " demandé) ; tu peux t'arrêter là si tu veux le garder pour d'autres apps."}
           </p>
           <div className="flex flex-wrap items-end gap-2">
             {authMode?.mode !== "sso" && (
@@ -434,6 +439,8 @@ export default function SettingsPage() {
           onClose={() => setConfirmDelete(false)}
         >
           {me.displayName}, ta collection et tout ton historique seront effacés. Impossible de revenir en arrière.
+          {authMode?.mode === "sso" &&
+            " Ensuite : suppression de ton compte palawi.fr, à confirmer sur auth.palawi.fr."}
         </ConfirmDialog>
       </Section>
     </div>
