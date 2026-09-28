@@ -2,13 +2,12 @@
 
 import { minNextBid, type Rarity } from "@palacards/game";
 import type { AuctionDTO } from "@palacards/shared";
-import { Search } from "lucide-react";
-import Link from "next/link";
+import { Plus, Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
-import { AuctionRow } from "@/components/market";
-import { Empty, ErrorBox, RarityFilter, Select } from "@/components/ui";
+import { AuctionTile, SellDialog } from "@/components/market";
+import { CardSkeletons, Empty, ErrorBox, RarityFilter, Select } from "@/components/ui";
 import { useConnection, useSocket, useSocketEvent } from "@/lib/game";
 import { useNow } from "@/lib/use-now";
 import { useDebounced } from "@/lib/use-debounced";
@@ -39,6 +38,7 @@ function Market() {
   const [q, setQ] = useState("");
   const query = useDebounced(q);
   const [changed, setChanged] = useState<Set<number>>(new Set());
+  const [selling, setSelling] = useState(false);
   const now = useNow(1000);
   const socket = useSocket();
   const connection = useConnection();
@@ -89,13 +89,26 @@ function Market() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="page-title">Marché</h1>
-        <p className="hatnote mt-2">
-          Enchères en direct. Une offre dans la dernière minute prolonge la vente de 60 secondes. Les points de ton
-          offre sont bloqués et te sont rendus si quelqu’un surenchérit.
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+        <div className="max-w-2xl">
+          <h1 className="page-title">Marché</h1>
+          <p className="hatnote mt-2">
+            Enchères en direct. Une offre dans la dernière minute prolonge la vente de 60 secondes. Les points de ton
+            offre sont bloqués et te sont rendus si quelqu’un surenchérit.
+          </p>
+        </div>
+        <button type="button" className="btn btn-primary" onClick={() => setSelling(true)}>
+          <Plus aria-hidden className="size-4" /> Mettre en vente
+        </button>
       </div>
+      <SellDialog
+        open={selling}
+        onClose={() => setSelling(false)}
+        onListed={() => {
+          void mutate();
+          if (tab !== "all" && tab !== "mine") router.replace("/market?scope=mine");
+        }}
+      />
 
       <nav aria-label="Onglets du marché" className="-mb-2 flex gap-1 border-b border-line">
         {TABS.map((t) => (
@@ -135,7 +148,7 @@ function Market() {
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />
       ) : !data ? (
-        <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />
+        <CardSkeletons count={8} />
       ) : visible.length === 0 ? (
         <Empty
           title={
@@ -146,22 +159,25 @@ function Market() {
                 : "Aucune vente en cours"
           }
         >
-          {tab === "mine" ? (
-            <>
-              Choisis une carte dans ta{" "}
-              <Link href="/collection" className="article-link">
-                collection
-              </Link>{" "}
-              puis « Vendre » sur sa fiche.
-            </>
+          {tab === "bidding" ? (
+            "Tes offres en cours apparaîtront ici."
           ) : (
-            "Reviens plus tard, ou mets une carte en vente depuis sa fiche."
+            <>
+              <p>
+                {tab === "mine"
+                  ? "Choisis une carte de ta collection et fixe ton prix."
+                  : "Reviens plus tard, ou lance la première vente."}
+              </p>
+              <button type="button" className="btn btn-primary btn-sm mt-3" onClick={() => setSelling(true)}>
+                <Plus aria-hidden className="size-4" /> Mettre en vente
+              </button>
+            </>
           )}
         </Empty>
       ) : (
-        <ul className="divide-y divide-line rounded-xl border border-line bg-panel">
+        <ul className="grid grid-cols-2 gap-x-3 gap-y-5 sm:gap-x-4 sm:gap-y-6 sm:grid-cols-[repeat(auto-fill,minmax(14rem,1fr))]">
           {visible.map((a) => (
-            <AuctionRow
+            <AuctionTile
               key={a.id}
               auction={a}
               now={now}
