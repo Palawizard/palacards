@@ -16,7 +16,7 @@ const archivo = Archivo({
 
 export const metadata: Metadata = {
   title: { default: "PalaCards", template: "%s · PalaCards" },
-  description: "Le jeu de cartes à collectionner du Wikipédia FR, entre potes.",
+  description: "WikiMasters, en mieux.",
 };
 
 export const viewport: Viewport = {
