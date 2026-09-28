@@ -32,6 +32,9 @@ test("booster à thème créé par l'admin, code promo, ouverture du booster", a
   const player = await newPlayer(browser, "joueur");
   await instantPacks(player.page);
   await player.page.reload();
+  // Le bonus du jour (+20 PW) est réclamé par la page en arrière-plan : on le réclame aussi (idempotent,
+  // joueur verrouillé) pour qu'il soit déjà compté dans `before` et ne tombe pas pendant le code promo.
+  await apiCall(player.page, "POST", "/daily");
   const before = (await apiCall<Me>(player.page, "GET", "/me")).wallet.balance;
   await player.page.getByPlaceholder("Code promo").fill(code.toLowerCase());
   await player.page.getByRole("button", { name: "Utiliser le code" }).click();
