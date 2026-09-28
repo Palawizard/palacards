@@ -3,7 +3,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Wordmark } from "@/components/Shell";
 
-export const metadata: Metadata = { title: "Confidentialité et mentions légales" };
+export const metadata: Metadata = {
+  title: "Confidentialité et mentions légales",
+  description: "Données gardées par PalaCards, durées de conservation, export et suppression du compte.",
+  alternates: { canonical: "/confidentialite" },
+};
 
 const CONTACT = "palawi.pro@gmail.com";
 const UPDATED = "28 septembre 2026";

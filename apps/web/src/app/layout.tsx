@@ -4,6 +4,7 @@ import Script from "next/script";
 import type { ReactNode } from "react";
 import "./globals.css";
 import { Toaster } from "@/components/Toaster";
+import { SITE_URL } from "@/lib/api";
 import { THEME_SCRIPT } from "@/lib/theme";
 
 // Une seule famille variable : largeur normale pour le texte, extra-condensée pour les titres.
@@ -14,9 +15,22 @@ const archivo = Archivo({
   display: "swap",
 });
 
+const DESCRIPTION = "WikiMasters, en mieux.";
+
 export const metadata: Metadata = {
+  // Base des URL absolues (canonical, Open Graph) : Next y joint les chemins relatifs, basePath compris.
+  metadataBase: new URL(SITE_URL),
   title: { default: "PalaCards", template: "%s · PalaCards" },
-  description: "WikiMasters, en mieux.",
+  description: DESCRIPTION,
+  applicationName: "PalaCards",
+  openGraph: {
+    type: "website",
+    siteName: "PalaCards",
+    locale: "fr_FR",
+    title: "PalaCards",
+    description: DESCRIPTION,
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 export const viewport: Viewport = {

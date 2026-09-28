@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AuthForm } from "@/components/AuthForm";
 
-export const metadata: Metadata = { title: "Connexion" };
+export const metadata: Metadata = {
+  title: "Connexion",
+  description: "Connecte-toi à PalaCards et ouvre tes paquets de cartes Wikipédia.",
+  alternates: { canonical: "/login" },
+};
 
 export default function Page() {
   return (
