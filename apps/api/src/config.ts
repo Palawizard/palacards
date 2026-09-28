@@ -42,6 +42,12 @@ const schema = z.object({
    * « Créer mon compte » l'ouvre directement ; elle reprend ensuite la connexion par son ?next= relatif.
    */
   AUTHENTIK_ENROLLMENT_URL: z.url().optional(),
+  /**
+   * Page de suppression du compte palawi.fr (ex. https://auth.palawi.fr/if/flow/suppression-compte/), facultative.
+   * Après l'effacement du compte PalaCards, le joueur y est envoyé pour effacer aussi son compte Authentik.
+   * Absente (ou sur un autre hôte) : la page « Mon compte » d'Authentik, qui porte le même bouton.
+   */
+  AUTHENTIK_UNENROLLMENT_URL: z.url().optional(),
 });
 
 export type Config = z.infer<typeof schema>;
@@ -79,6 +85,8 @@ export interface SsoConfig {
   accountUrl: string;
   /** Page d'inscription, seulement si elle est sur l'hôte d'Authentik (Authentik n'accepte qu'un ?next= relatif). */
   signupUrl?: string;
+  /** Suppression du compte palawi.fr : sur l'hôte d'Authentik, sinon la page « Mon compte ». */
+  deleteAccountUrl: string;
 }
 
 /** Réglages de la connexion unique, ou null si la connexion par mot de passe est active. */
@@ -86,11 +94,16 @@ export function ssoConfig(config: Config): SsoConfig | null {
   const { AUTHENTIK_ISSUER: issuer, AUTHENTIK_CLIENT_ID: clientId, AUTHENTIK_CLIENT_SECRET: clientSecret } = config;
   if (!issuer || !clientId || !clientSecret) return null;
   const signup = config.AUTHENTIK_ENROLLMENT_URL;
+  const unenroll = config.AUTHENTIK_UNENROLLMENT_URL;
+  const host = new URL(issuer).host;
+  const accountUrl = new URL("/if/user/#/settings", issuer).toString();
   return {
     issuer: issuer.endsWith("/") ? issuer : `${issuer}/`,
     clientId,
     clientSecret,
-    accountUrl: new URL("/if/user/#/settings", issuer).toString(),
-    ...(signup && new URL(signup).host === new URL(issuer).host ? { signupUrl: signup } : {}),
+    accountUrl,
+    ...(signup && new URL(signup).host === host ? { signupUrl: signup } : {}),
+    // Jamais de redirection vers un autre hôte que celui d'Authentik (le joueur vient d'effacer son compte).
+    deleteAccountUrl: unenroll && new URL(unenroll).host === host ? unenroll : accountUrl,
   };
 }

@@ -9,6 +9,7 @@ import { genericOAuth, username } from "better-auth/plugins";
 import { randomInt } from "node:crypto";
 import type { IncomingHttpHeaders } from "node:http";
 import { ssoConfig, type Config } from "./config.js";
+import { GameError } from "./errors.js";
 
 export const SESSION_COOKIE = "palawi_palacards_session";
 const DEV_SECRET = "dev-only-secret-palacards-change-me-in-prod";
@@ -34,9 +35,16 @@ const REVOKING_PATHS = new Set([
   "/revoke-other-sessions",
   "/revoke-session",
   "/sign-out",
+  "/delete-user",
 ]);
 
-export function createAuth(db: Db, config: Config, events: { onSessionsRevoked?: (userId: string) => void } = {}) {
+export interface AuthEvents {
+  onSessionsRevoked?: (userId: string) => void;
+  /** Avant l'effacement d'un compte : dénoue enchères, échanges, duels et guilde (une GameError annule). */
+  beforeDeleteUser?: (userId: string) => Promise<void>;
+}
+
+export function createAuth(db: Db, config: Config, events: AuthEvents = {}) {
   const secure = config.BETTER_AUTH_URL.startsWith("https://");
   const sso = ssoConfig(config);
   return betterAuth({
@@ -54,12 +62,25 @@ export function createAuth(db: Db, config: Config, events: { onSessionsRevoked?:
         // Seule la CLI (`src/cli/admin.ts`) le change.
         isAdmin: { type: "boolean", required: false, defaultValue: false, input: false },
       },
+      // Droit à l'effacement : mot de passe exigé (comptes locaux), session de moins de 10 min sinon (Authentik).
+      // Tout le reste (exemplaires, ledger, messages, avatar…) part en cascade avec la ligne `user`.
+      deleteUser: {
+        enabled: true,
+        beforeDelete: async (u) => {
+          try {
+            await events.beforeDeleteUser?.(u.id);
+          } catch (err) {
+            if (err instanceof GameError) throw new APIError("BAD_REQUEST", { message: err.message, code: err.code });
+            throw err;
+          }
+        },
+      },
     },
     emailAndPassword: { enabled: !sso, minPasswordLength: 8, maxPasswordLength: 128, autoSignIn: true },
     // Jamais de rattachement par email : Authentik ne vérifie pas les adresses à l'inscription.
     // Un compte Authentik ne retrouve un joueur que par son identifiant (table account).
     account: { accountLinking: { enabled: false } },
-    session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
+    session: { expiresIn: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24, freshAge: 60 * 10 },
     advanced: {
       cookiePrefix: "palawi_palacards",
       // Pas de préfixe __Secure- : le nom du cookie reste celui de la convention SSO de Palawi.
@@ -80,6 +101,10 @@ export function createAuth(db: Db, config: Config, events: { onSessionsRevoked?:
     hooks: {
       // Comptes sans email : le client n'envoie que pseudo + mot de passe (+ email facultatif).
       before: createAuthMiddleware(async (ctx) => {
+        // Compte local : pas de suppression sur la seule foi d'un cookie de session.
+        if (ctx.path === "/delete-user" && !sso && !ctx.body?.password) {
+          throw new APIError("BAD_REQUEST", { message: "Mot de passe requis.", code: "PASSWORD_REQUIRED" });
+        }
         if (ctx.path !== "/sign-up/email" || !ctx.body) return;
         const parsed = usernameSchema.safeParse(ctx.body.username);
         if (!parsed.success) {

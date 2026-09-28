@@ -4,7 +4,9 @@ import useSWR from "swr";
 import { api } from "./api";
 
 /** Mode de connexion annoncé par l'API (`GET /api/config`). */
-export type AuthMode = { mode: "password" } | { mode: "sso"; provider: string; accountUrl: string; signupUrl?: string };
+export type AuthMode =
+  | { mode: "password" }
+  | { mode: "sso"; provider: string; accountUrl: string; deleteAccountUrl?: string; signupUrl?: string };
 
 /**
  * Emballe l'URL d'autorisation dans la page d'inscription d'Authentik : après la création du compte,

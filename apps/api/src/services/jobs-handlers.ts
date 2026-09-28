@@ -4,6 +4,7 @@ import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
 import { GUILD_WEEKLY_JOB, weeklyJob } from "./guilds.js";
 import { CARDS_PURGE_JOB, purgeOldCards, rolloverSeason, SEASON_ROLLOVER_JOB } from "./seasons.js";
 import { AUCTION_CLOSE_JOB, closeAuctionIfDue, sweepAuctions } from "./market.js";
+import { PRIVACY_PURGE_JOB, purgeExpired } from "./privacy.js";
 import { closeTrade, sweepTrades, TRADE_EXPIRE_JOB } from "./trades.js";
 
 /** Déclare les files pg-boss et leurs handlers (tous idempotents). */
@@ -34,6 +35,10 @@ export function registerJobs(ctx: Ctx) {
     // Idempotente : relancée à la bascule suivante si elle échoue ; pas de reprise pendant qu'elle tourne encore.
     { expireInSeconds: 3 * 3600, retryLimit: 0 },
   );
+  // Minimisation RGPD : sessions expirées (IP, navigateur), jetons et notifications de plus de 6 mois, chaque nuit.
+  ctx.jobs.schedule(PRIVACY_PURGE_JOB, "30 4 * * *", async () => {
+    ctx.log.info(await purgeExpired(ctx), "purge des données expirées");
+  });
   // Filet de sécurité : rattrape toute échéance manquée (redémarrage, job perdu).
   ctx.jobs.schedule("market-sweep", "* * * * *", async () => {
     await sweepAuctions(ctx);

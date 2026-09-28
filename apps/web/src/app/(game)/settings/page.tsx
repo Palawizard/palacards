@@ -1,12 +1,14 @@
 "use client";
 
 import { avatarImage, AVATARS, type MeDTO } from "@palacards/shared";
-import { ImageUp, Trash2 } from "lucide-react";
+import { Download, ImageUp, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
-import { api, ApiError } from "@/lib/api";
+import { ConfirmDialog } from "@/components/ui";
+import { api, API_BASE, ApiError, BASE_PATH } from "@/lib/api";
 import { prepareAvatar } from "@/lib/avatar-image";
 import { authClient, authErrorMessage } from "@/lib/auth-client";
 import { useAuthMode } from "@/lib/auth-mode";
@@ -49,6 +51,8 @@ export default function SettingsPage() {
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [busy, setBusy] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const prefs = useSWR<{ group: string; enabled: boolean }[]>("/settings/notifications");
   const history =
     useSWR<{ id: number; delta: number; balanceAfter: number; reason: string; createdAt: string }[]>("/wallet/history");
@@ -63,6 +67,33 @@ export default function SettingsPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function deleteAccount() {
+    setBusy(true);
+    const res = await authClient.deleteUser(authMode?.mode === "sso" ? {} : { password: deletePassword });
+    if (res.error) {
+      setBusy(false);
+      const message = authErrorMessage(res.error.code, res.error.message);
+      // Authentik : la suppression exige une connexion récente, on propose de se reconnecter.
+      if (res.error.code === "SESSION_EXPIRED") {
+        toast.error(message, {
+          action: {
+            label: "Me reconnecter",
+            onClick: async () => {
+              await authClient.signOut();
+              window.location.assign(`${BASE_PATH}/login?next=${encodeURIComponent("/settings")}`);
+            },
+          },
+        });
+      } else toast.error(message);
+      return;
+    }
+    // Rechargement complet : plus aucun cache du compte supprimé. Connexion palawi.fr : on enchaîne sur
+    // la suppression du compte Authentik (droit à l'effacement), que le joueur confirme là-bas.
+    window.location.assign(
+      authMode?.mode === "sso" ? (authMode.deleteAccountUrl ?? authMode.accountUrl) : `${BASE_PATH}/login`,
+    );
   }
 
   if (!me) return <div className="h-96 animate-pulse rounded-xl bg-panel" aria-busy />;
@@ -346,6 +377,71 @@ export default function SettingsPage() {
         ) : (
           <p className="text-sm text-faint">Aucun mouvement.</p>
         )}
+      </Section>
+
+      <Section title="Mes données" id="donnees">
+        <p className="mb-3 max-w-prose text-sm text-muted">
+          Tout ce que le jeu garde sur toi (compte, sessions, cartes, historique, échanges, messages…) dans un fichier
+          JSON.{" "}
+          <Link href="/confidentialite" className="article-link">
+            Politique de confidentialité
+          </Link>
+        </p>
+        <a className="btn" href={`${API_BASE}/me/export`} download>
+          <Download aria-hidden className="size-4" />
+          Télécharger mes données
+        </a>
+
+        <form
+          className="mt-6 flex flex-col gap-3 rounded-xl border border-danger/40 p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setConfirmDelete(true);
+          }}
+        >
+          <h3 className="font-display text-xl uppercase leading-none">Supprimer mon compte</h3>
+          <p className="max-w-prose text-sm text-muted">
+            Définitif et immédiat : cartes, points wiki, historique, amis et messages sont effacés. Tes ventes sans
+            offre, échanges et défis en attente sont annulés ; si tu diriges une guilde, elle passe à un autre membre.
+            {authMode?.mode === "sso" &&
+              " Tu arrives ensuite sur auth.palawi.fr pour supprimer aussi ton compte palawi.fr (mot de passe" +
+                " demandé) ; tu peux t'arrêter là si tu veux le garder pour d'autres apps."}
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            {authMode?.mode !== "sso" && (
+              <label className="min-w-56 flex-1">
+                <span className="label">Mot de passe</span>
+                <input
+                  type="password"
+                  className="field"
+                  autoComplete="current-password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                />
+              </label>
+            )}
+            <button
+              type="submit"
+              className="btn btn-danger"
+              disabled={busy || !authMode || (authMode.mode !== "sso" && !deletePassword)}
+            >
+              <Trash2 aria-hidden className="size-4" />
+              Supprimer mon compte
+            </button>
+          </div>
+        </form>
+        <ConfirmDialog
+          open={confirmDelete}
+          title="Supprimer ton compte ?"
+          confirmLabel="Oui, tout supprimer"
+          danger
+          onConfirm={() => void deleteAccount()}
+          onClose={() => setConfirmDelete(false)}
+        >
+          {me.displayName}, ta collection et tout ton historique seront effacés. Impossible de revenir en arrière.
+          {authMode?.mode === "sso" &&
+            " Ensuite : suppression de ton compte palawi.fr, à confirmer sur auth.palawi.fr."}
+        </ConfirmDialog>
       </Section>
     </div>
   );

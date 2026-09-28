@@ -4,6 +4,11 @@ export const BASE_PATH = "/palacards";
 export const API_BASE = `${API_URL}${BASE_PATH}/api`;
 export const SOCKET_PATH = `${BASE_PATH}/socket.io`;
 
+/** Vignette Wikimedia relayée par l'API : le navigateur du joueur ne contacte jamais Wikimedia (RGPD). */
+export function thumbSrc(url: string): string {
+  return `${API_BASE}/thumb?u=${encodeURIComponent(url)}`;
+}
+
 /** Erreur renvoyée par l'API : `message` est en français, affichable tel quel. */
 export class ApiError extends Error {
   constructor(
