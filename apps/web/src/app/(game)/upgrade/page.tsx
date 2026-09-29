@@ -170,11 +170,11 @@ export default function UpgradePage() {
     homeNeedle();
   }
 
-  /** Les cartes suivantes de la liste (jusqu'à remplir l'établi), pour ne pas cliquer dix fois. */
+  /** Les cartes suivantes de la liste (jusqu'à remplir l'établi), pour ne pas cliquer dix fois. Jamais les favoris. */
   function fill() {
     if (phase !== "idle") return;
     setPicked((p) => {
-      const free = items.filter((c) => !c.locked && !p.some((x) => x.instanceId === c.instanceId));
+      const free = items.filter((c) => !c.locked && !c.favorite && !p.some((x) => x.instanceId === c.instanceId));
       return [...p, ...free.slice(0, Math.max(0, useful - p.length))];
     });
   }
