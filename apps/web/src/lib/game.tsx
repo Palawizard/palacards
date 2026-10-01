@@ -89,6 +89,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
       toast(text, { action: { label: "Voir", onClick: () => router.push(href) } });
     });
     s.on("message:new", () => void mutateMe());
+    // Défi accepté : le duel attend le challenger sur son écran (2 minutes pour le rejoindre).
+    s.on("battle:update", ({ battleId, started, opponent }) => {
+      if (!started || window.location.pathname.endsWith(`/battle/${battleId}`)) return;
+      play("deal");
+      toast(`${opponent ?? "Ton adversaire"} a accepté ton duel !`, {
+        duration: 30_000,
+        action: { label: "Rejoindre", onClick: () => router.push(`/battle/${battleId}`) },
+      });
+    });
     s.on("card:media", pushMedia);
     // Exposé aux composants une fois connecté ; après une coupure, on relit l'état manqué.
     s.on("connect", () => {

@@ -1,9 +1,12 @@
 import { and, asc, desc, eq, inArray, or, schema, sql } from "@palacards/db";
 import {
+  AFK_FORFEIT,
   ANSWER_GRACE_MS,
-  ASYNC_BATTLE_TTL_MS,
+  ATTACK_TIME_MS,
+  attackDamage,
+  attackerOfTurn,
+  BATTLE_HP,
   BATTLE_REWARDED_PER_PAIR_PER_DAY,
-  BATTLE_ROUNDS,
   battleOver,
   battleRated,
   battleResult,
@@ -12,35 +15,86 @@ import {
   DECK_SIZE,
   effectiveStats,
   eloUpdate,
+  LOBBY_TIMEOUT_MS,
   makeQuestion,
   QUESTION_TIME_MS,
-  roundPower,
-  roundWinner,
+  resolveHit,
+  REVEAL_TIME_MS,
   seededRandom,
+  SHIELD_TIME_MS,
+  shieldPercent,
+  TOTAL_TURNS,
+  type BattlePhase,
   type Question,
-  type QuizCard,
+  type QuestionType,
+  type QuizArticle,
   type Rarity,
 } from "@palacards/game";
-import type { BattleAnswerDTO, BattleQuestionDTO, BattleRoundResultDTO, CardDTO } from "@palacards/shared";
+import type { BattleCardView, BattleStateDTO, BattleTurnView, CardDTO } from "@palacards/shared";
 import { randomBytes } from "node:crypto";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
-import { instancesByIds } from "./cards.js";
 import { afterCommit, Effects } from "./notifications.js";
 import { bumpObjective } from "./guilds.js";
 import { lockPlayers, movePw, pushWallet, type DbOrTx, type Player } from "./players.js";
 import { findUserByName } from "./profiles.js";
+import { articleUrl } from "./wiki.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
 type Battle = typeof schema.battles.$inferSelect;
+type Turn = typeof schema.battleTurns.$inferSelect;
 type DeckRow = typeof schema.battleDecks.$inferSelect;
 
 const b = schema.battles;
-export const battleRoom = (id: number) => `battle:${id}`;
-/** Pause entre deux manches d'un duel en direct (le temps de lire le résultat). */
-const LIVE_PAUSE_MS = 3_500;
-/** Un duel en direct sans activité depuis ce délai est terminé par le rattrapage (redémarrage du serveur…). */
-const LIVE_STALE_MS = 3 * 60_000;
+const bt = schema.battleTurns;
+
+/** Compte à rebours affiché avant la première attaque (ajouté au chrono du tour 1). */
+const START_DELAY_MS = 3_000;
+/** Préparation d'une question (résumés Wikipédia des leurres) : au-delà, repli sur ce qui est en cache. */
+const QUESTION_PREP_MS = 3_500;
+
+// ---------------------------------------------------------------------------
+// Lecture de l'état en base
+// ---------------------------------------------------------------------------
+
+async function lockBattle(tx: Tx, battleId: number): Promise<Battle> {
+  const [row] = await tx.select().from(b).where(eq(b.id, battleId)).for("update");
+  if (!row) throw notFound("Ce duel n'existe pas.");
+  return row;
+}
+
+async function decks(db: DbOrTx, battleId: number): Promise<DeckRow[]> {
+  return db
+    .select()
+    .from(schema.battleDecks)
+    .where(eq(schema.battleDecks.battleId, battleId))
+    .orderBy(asc(schema.battleDecks.slot));
+}
+
+async function turnsOf(db: DbOrTx, battleId: number): Promise<Turn[]> {
+  return db.select().from(bt).where(eq(bt.battleId, battleId)).orderBy(asc(bt.turn));
+}
+
+const otherOf = (battle: Battle, userId: string) =>
+  battle.challengerId === userId ? battle.opponentId : battle.challengerId;
+
+function requireSide(battle: Battle, userId: string) {
+  if (battle.challengerId !== userId && battle.opponentId !== userId) throw forbidden("Ce duel ne te concerne pas.");
+}
+
+/** Attaquant du tour `turn` (le premier attaquant aux tours impairs). */
+function attackerOf(battle: Battle, turn: number): string {
+  const first = battle.firstAttackerId ?? battle.challengerId;
+  return attackerOfTurn(turn, first, otherOf(battle, first));
+}
+
+const hpOf = (battle: Battle, userId: string) =>
+  (userId === battle.challengerId ? battle.challengerHp : battle.opponentHp) ?? BATTLE_HP;
+
+const deckOf = (all: DeckRow[], userId: string, slot: number) =>
+  all.find((d) => d.userId === userId && d.slot === slot)!;
+
+const pick = <T>(ctx: Ctx, items: T[]): T => items[ctx.random(items.length)]!;
 
 // ---------------------------------------------------------------------------
 // Défis
@@ -76,11 +130,15 @@ async function snapshotDeck(tx: Tx, battleId: number, userId: string, instanceId
   );
 }
 
-export async function challenge(
-  ctx: Ctx,
-  challengerId: string,
-  input: { opponent: string; mode: "live" | "async"; deck: number[] },
-) {
+async function displayName(db: DbOrTx, userId: string): Promise<string> {
+  const [me] = await db
+    .select({ name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
+    .from(schema.user)
+    .where(eq(schema.user.id, userId));
+  return me?.name ?? "?";
+}
+
+export async function challenge(ctx: Ctx, challengerId: string, input: { opponent: string; deck: number[] }) {
   const opponent = await findUserByName(ctx.db, input.opponent);
   if (opponent.id === challengerId) throw badRequest("self", "Tu ne peux pas te défier toi-même.");
   const fx = new Effects();
@@ -104,69 +162,72 @@ export async function challenge(
       .values({
         challengerId,
         opponentId: opponent.id,
-        mode: input.mode,
         seed: randomBytes(16).toString("hex"),
         createdAt: ctx.now(),
       })
       .returning();
     await snapshotDeck(tx, created!.id, challengerId, input.deck);
-    const [me] = await tx
-      .select({ name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
-      .from(schema.user)
-      .where(eq(schema.user.id, challengerId));
     await fx.notify(tx, opponent.id, "battle_challenge", {
       battleId: created!.id,
-      from: me?.name ?? "?",
-      mode: input.mode,
+      from: await displayName(tx, challengerId),
     });
     return created!;
   });
-  await afterCommit(ctx, () => fx.flush(ctx));
+  await afterCommit(ctx, async () => {
+    await fx.flush(ctx);
+    ctx.rt.toUser(opponent.id, "battle:update", { battleId: battle.id });
+  });
   return { id: battle.id };
 }
 
-async function lockBattle(tx: Tx, battleId: number): Promise<Battle> {
-  const [row] = await tx.select().from(b).where(eq(b.id, battleId)).for("update");
-  if (!row) throw notFound("Ce duel n'existe pas.");
-  return row;
-}
-
-/** L'adversaire accepte avec son deck : le duel commence (en direct : dès que les deux sont là). */
+/** L'adversaire accepte avec son deck : le duel attend que les deux joueurs ouvrent son écran. */
 export async function acceptChallenge(ctx: Ctx, userId: string, battleId: number, deck: number[]) {
   const battle = await ctx.db.transaction(async (tx) => {
     const battle = await lockBattle(tx, battleId);
     if (battle.opponentId !== userId) throw forbidden("Ce défi ne t'est pas adressé.");
     if (battle.status !== "pending") throw conflict("battle_closed", "Ce défi n'est plus en attente.");
-    if (battle.mode === "live" && !ctx.rt.isOnline(battle.challengerId)) {
+    if (!ctx.rt.isOnline(battle.challengerId)) {
       throw conflict("opponent_offline", "Ton adversaire n'est pas connecté : réessaie quand il sera en ligne.");
     }
     await snapshotDeck(tx, battleId, userId, deck);
+    const now = ctx.now();
     const [started] = await tx
       .update(b)
-      .set({ status: "active", startedAt: ctx.now() })
+      .set({
+        status: "active",
+        startedAt: now,
+        phase: "lobby",
+        turn: 0,
+        phaseStartedAt: now,
+        phaseEndsAt: new Date(now.getTime() + LOBBY_TIMEOUT_MS),
+        challengerHp: BATTLE_HP,
+        opponentHp: BATTLE_HP,
+        firstAttackerId: ctx.random(2) === 0 ? battle.challengerId : battle.opponentId,
+      })
       .where(eq(b.id, battleId))
       .returning();
     return started!;
   });
   await afterCommit(ctx, async () => {
-    ctx.rt.toUser(battle.challengerId, "battle:update", { battleId });
+    const name = await displayName(ctx.db, userId);
+    ctx.rt.toUser(battle.challengerId, "battle:update", { battleId, started: true, opponent: name });
     ctx.rt.toUser(battle.opponentId, "battle:update", { battleId });
-    // Les résumés des 10 cartes servent aux questions « Qui suis-je ? » : chargés en arrière-plan,
-    // sans bloquer la réponse (une manche sans résumé se rabat sur « plus lu » / « plus long »).
-    void loadSummaries(ctx, battleId)
-      .catch((err: unknown) => ctx.log.warn({ err, battleId }, "résumés du duel"))
-      .finally(() => {
-        if (battle.mode === "live") live.maybeStart(ctx, battleId);
-      });
+    engine.schedule(ctx, battle);
+    // Résumés des 10 cartes (questions) : chargés en arrière-plan, sans bloquer la réponse.
+    void loadDeckSummaries(ctx, battleId).catch((err: unknown) => ctx.log.warn({ err, battleId }, "résumés du duel"));
   });
   return { id: battleId };
 }
 
-async function loadSummaries(ctx: Ctx, battleId: number) {
+async function loadDeckSummaries(ctx: Ctx, battleId: number) {
   const rows = await ctx.db.execute<{ id: number; title: string }>(sql`
     select c.id, c.title from battle_decks d join cards c on c.season = d.season and c.id = d.card_id where d.battle_id = ${battleId}
   `);
-  await ctx.wiki.load(rows.map((r) => ({ cardId: r.id, title: r.title })));
+  await ctx.wiki.load(
+    rows.map((r) => ({ cardId: Number(r.id), title: r.title })),
+    undefined,
+    { fresh: true },
+  );
 }
 
 export async function refuseChallenge(ctx: Ctx, userId: string, battleId: number) {
@@ -183,297 +244,542 @@ export async function refuseChallenge(ctx: Ctx, userId: string, battleId: number
 }
 
 // ---------------------------------------------------------------------------
-// Questions et réponses (communs au direct et à l'asynchrone)
+// Questions : préparées dès le choix de l'attaque (résumés des leurres chargés pendant le bouclier)
 // ---------------------------------------------------------------------------
 
-async function quizCard(db: DbOrTx, d: DeckRow): Promise<QuizCard & { rarity: Rarity; title: string }> {
-  const [row] = await db.execute<{ title: string; views_12m: string; page_len: number; extract: string | null }>(sql`
-    select c.title, c.views_12m, c.page_len, w.extract from cards c left join wiki_summaries w on w.page_id = c.id
-    where c.season = ${d.season} and c.id = ${d.cardId}
-  `);
-  return {
-    cardId: d.cardId,
-    title: row?.title ?? "?",
-    views12m: Number(row?.views_12m ?? 0),
-    pageLen: row?.page_len ?? 0,
-    extract: row?.extract ?? null,
-    rarity: d.rarity,
-  };
+type ArticleRow = {
+  id: number;
+  title: string;
+  views_12m: string | number;
+};
+
+/** Articles aux titres voisins (trigrammes) : les leurres les plus crédibles. */
+async function similarArticles(db: DbOrTx, season: number, cardId: number, title: string): Promise<ArticleRow[]> {
+  const base = title.replace(/\s*\(.*\)\s*$/, "");
+  try {
+    return await db.transaction(async (tx) => {
+      await tx.execute(sql`set local statement_timeout = 1500`);
+      await tx.execute(sql`set local pg_trgm.similarity_threshold = 0.35`);
+      return tx.execute<ArticleRow>(sql`
+        select id, title, views_12m from cards
+        where search_title % lower(f_unaccent(${base})) and season = ${season} and id <> ${cardId}
+        order by similarity(search_title, lower(f_unaccent(${base}))) desc
+        limit 12
+      `);
+    });
+  } catch {
+    return []; // recherche trop lente ou indisponible : leurres au hasard seulement
+  }
 }
 
-/** Leurres « Qui suis-je ? » : titres de la saison et de la rareté de la carte visée, choisis par la graine (index de tirage). */
-async function decoys(db: DbOrTx, seed: string, round: number, season: number, rarity: Rarity): Promise<string[]> {
-  const key = seededRandom(`${seed}:${round}:decoys`)();
-  const rows = await db.execute<{ title: string }>(sql`
-    (select title from cards where season = ${season} and rarity = ${rarity}::rarity and rand_key >= ${key} order by rand_key limit 8)
+/** Articles au hasard de la même rareté (choisis par la graine). */
+async function randomArticles(
+  db: DbOrTx,
+  seed: string,
+  season: number,
+  rarity: Rarity,
+  cardId: number,
+): Promise<ArticleRow[]> {
+  const key = seededRandom(`${seed}:decoys`)();
+  const rows = await db.execute<ArticleRow>(sql`
+    (select id, title, views_12m from cards where season = ${season} and rarity = ${rarity}::rarity and rand_key >= ${key} and id <> ${cardId} order by rand_key limit 8)
     union all
-    (select title from cards where season = ${season} and rarity = ${rarity}::rarity order by rand_key limit 8)
+    (select id, title, views_12m from cards where season = ${season} and rarity = ${rarity}::rarity and id <> ${cardId} order by rand_key limit 8)
   `);
-  return [...new Set(rows.map((r) => r.title))].slice(0, 8);
-}
-
-async function decks(db: DbOrTx, battleId: number) {
-  const rows = await db
-    .select()
-    .from(schema.battleDecks)
-    .where(eq(schema.battleDecks.battleId, battleId))
-    .orderBy(asc(schema.battleDecks.slot));
   return rows;
 }
 
-/** Génère la question d'une manche à partir de la graine (et, pour une manche rejouée, de la question à éviter). */
-async function buildQuestion(tx: Tx, battle: Battle, round: number, seed: string, avoid?: Question): Promise<Question> {
-  const all = await decks(tx, battle.id);
-  const a = all.find((d) => d.userId === battle.challengerId && d.slot === round)!;
-  const o = all.find((d) => d.userId === battle.opponentId && d.slot === round)!;
-  const qa = await quizCard(tx, a);
-  const qo = await quizCard(tx, o);
-  const target = qa.extract ? a : o;
-  return makeQuestion(seed, round, qa, qo, await decoys(tx, seed, round, target.season, target.rarity), avoid);
-}
+const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T) =>
+  Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms).unref?.())]);
 
-/** Question d'une manche : générée une fois (même graine pour les deux joueurs), puis stockée. */
-async function ensureRound(tx: Tx, battle: Battle, round: number): Promise<Question> {
-  const [existing] = await tx
-    .select()
-    .from(schema.battleRounds)
-    .where(and(eq(schema.battleRounds.battleId, battle.id), eq(schema.battleRounds.round, round)));
-  if (existing) return existing.question as Question;
-  const question = await buildQuestion(tx, battle, round, battle.seed);
-  await tx.insert(schema.battleRounds).values({ battleId: battle.id, round, question }).onConflictDoNothing();
-  const [stored] = await tx
-    .select()
-    .from(schema.battleRounds)
-    .where(and(eq(schema.battleRounds.battleId, battle.id), eq(schema.battleRounds.round, round)));
-  return stored!.question as Question;
-}
-
-function sideOf(battle: Battle, userId: string): "challenger" | "opponent" {
-  if (battle.challengerId === userId) return "challenger";
-  if (battle.opponentId === userId) return "opponent";
-  throw forbidden("Ce duel ne te concerne pas.");
-}
-
-async function roundCards(db: DbOrTx, battle: Battle, userId: string, round: number) {
-  const all = await decks(db, battle.id);
-  const mine = all.find((d) => d.userId === userId && d.slot === round)!;
-  const theirs = all.find((d) => d.userId !== userId && d.slot === round)!;
-  const cards = await instancesByIds(db, [mine.instanceId, theirs.instanceId], null);
-  const fallback = async (d: DeckRow): Promise<CardDTO> => {
-    const q = await quizCard(db, d);
+/** Construit la question d'un tour sur l'article de la carte attaquante. */
+async function buildQuestion(ctx: Ctx, battle: Battle, turn: number, attack: DeckRow): Promise<Question> {
+  const seed = `${battle.seed}:${turn}`;
+  const [target] = await ctx.db.execute<ArticleRow>(
+    sql`select id, title, views_12m from cards where season = ${attack.season} and id = ${attack.cardId}`,
+  );
+  const title = target?.title ?? "?";
+  const similar = await similarArticles(ctx.db, attack.season, attack.cardId, title);
+  const random = await randomArticles(ctx.db, seed, attack.season, attack.rarity, attack.cardId);
+  const candidates = [...similar, ...random].filter(
+    (r, i, all) => all.findIndex((x) => Number(x.id) === Number(r.id)) === i,
+  );
+  // Résumés de la cible et des leurres les plus proches (descriptions, images) : le temps du bouclier.
+  const toLoad = [
+    { cardId: attack.cardId, title },
+    ...candidates.slice(0, 8).map((c) => ({ cardId: Number(c.id), title: c.title })),
+  ];
+  await withTimeout(ctx.wiki.load(toLoad, undefined, { fresh: true }), QUESTION_PREP_MS, []);
+  const summaries = await ctx.wiki.summaries(toLoad.map((c) => c.cardId));
+  const article = (id: number, t: string, views: string | number): QuizArticle => {
+    const s = summaries.get(id);
     return {
-      instanceId: d.instanceId,
-      cardId: d.cardId,
-      season: d.season,
-      title: q.title,
-      rarity: d.rarity,
-      atk: d.atk,
-      def: d.def,
-      level: 1,
-      thumbUrl: null,
-      pageUrl: null,
+      cardId: id,
+      title: t,
+      views12m: Number(views),
+      extract: s?.extract ?? null,
+      description: s?.description ?? null,
+      thumbUrl: s?.thumbUrl ?? null,
     };
   };
-  // Stats figées au moment du défi (le deck ne bouge plus même si la carte a changé depuis).
-  // Jamais de vues : elles donneraient la réponse à « plus lu ».
-  const view = async (d: DeckRow) => {
-    const { views12m: _views, ...c } = cards.find((x) => x.instanceId === d.instanceId) ?? (await fallback(d));
-    return { ...c, atk: d.atk, def: d.def };
-  };
-  return { mine: await view(mine), theirs: await view(theirs) };
+  const used = (await turnsOf(ctx.db, battle.id))
+    .map((t) => (t.question as Question | null)?.type)
+    .filter((t): t is QuestionType => !!t);
+  const parisYear = Number(
+    new Intl.DateTimeFormat("fr-FR", { year: "numeric", timeZone: "Europe/Paris" }).format(ctx.now()),
+  );
+  return makeQuestion(
+    seed,
+    article(attack.cardId, title, target?.views_12m ?? 0),
+    candidates.map((c) => article(Number(c.id), c.title, c.views_12m)),
+    { avoid: used, maxYear: parisYear },
+  );
+}
+
+const preparing = new Map<string, Promise<Question>>();
+
+/** Question du tour, préparée une seule fois par processus (le résultat est ensuite figé en base). */
+function questionFor(ctx: Ctx, battle: Battle, turn: number, attack: DeckRow): Promise<Question> {
+  const key = `${battle.id}:${turn}`;
+  let p = preparing.get(key);
+  if (!p) {
+    p = buildQuestion(ctx, battle, turn, attack);
+    preparing.set(key, p);
+    // Nettoyage : la question est stockée en base au passage à la phase « question ».
+    void p.catch(() => {}).finally(() => setTimeout(() => preparing.delete(key), 60_000).unref?.());
+  }
+  return p;
+}
+
+// ---------------------------------------------------------------------------
+// Moteur : chaque transition se fait en transaction sur la ligne du duel, puis l'état est poussé
+// aux deux joueurs et la prochaine échéance est programmée. Les minuteries ne sont qu'un réveil :
+// après un redémarrage, elles sont reprogrammées depuis la base (démarrage, reconnexion, balayage).
+// ---------------------------------------------------------------------------
+
+function phaseSet(phase: BattlePhase, now: Date, durationMs: number) {
+  return { phase, phaseStartedAt: now, phaseEndsAt: new Date(now.getTime() + durationMs) };
+}
+
+/** Actions manquées d'affilée : +1 pour une action automatique, remis à 0 sinon. */
+function idleSet(battle: Battle, userId: string, missed: boolean) {
+  const isC = userId === battle.challengerId;
+  const current = isC ? battle.challengerIdle : battle.opponentIdle;
+  const next = missed ? current + 1 : 0;
+  return isC ? { challengerIdle: next } : { opponentIdle: next };
+}
+
+type Step = { battle: Battle; finished?: FinishResult; cancelled?: boolean; prepare?: DeckRow } | null;
+
+async function commitStep(ctx: Ctx, fx: Effects, step: Step) {
+  if (!step) return;
+  await afterCommit(ctx, async () => {
+    if (step.finished) await afterFinish(ctx, fx, step.battle, step.finished);
+    else if (step.cancelled) {
+      engine.clear(step.battle.id);
+      for (const id of [step.battle.challengerId, step.battle.opponentId])
+        ctx.rt.toUser(id, "battle:update", { battleId: step.battle.id });
+    } else {
+      engine.schedule(ctx, step.battle);
+      if (step.prepare) void questionFor(ctx, step.battle, step.battle.turn, step.prepare).catch(() => {});
+    }
+    await pushState(ctx, step.battle);
+  });
+}
+
+/** Les deux joueurs sont sur l'écran du duel : premier tour. */
+async function startBattle(ctx: Ctx, battleId: number) {
+  const step = await ctx.db.transaction(async (tx): Promise<Step> => {
+    const battle = await lockBattle(tx, battleId);
+    if (battle.status !== "active" || battle.phase !== "lobby") return null;
+    const [row] = await tx
+      .update(b)
+      .set({ turn: 1, ...phaseSet("attack", ctx.now(), START_DELAY_MS + ATTACK_TIME_MS) })
+      .where(eq(b.id, battleId))
+      .returning();
+    return { battle: row! };
+  });
+  await commitStep(ctx, new Effects(), step);
+}
+
+/** Personne n'est venu à temps (ou les deux ont lâché) : duel annulé, sans récompense. */
+async function cancelBattle(tx: Tx, battle: Battle, now: Date): Promise<Step> {
+  const [row] = await tx
+    .update(b)
+    .set({ status: "cancelled", phase: null, phaseEndsAt: null, finishedAt: now })
+    .where(eq(b.id, battle.id))
+    .returning();
+  return { battle: row!, cancelled: true };
 }
 
 /**
- * Sert la question d'une manche au joueur et démarre son chrono (heure du serveur).
- * Redemander la question ne relance pas le chrono.
+ * L'attaquant choisit sa carte (`slot` null : choix automatique, chrono écoulé).
+ * `expect` : tour attendu (minuterie), pour ne jamais rejouer une échéance périmée.
  */
-export async function serveQuestion(
+export async function chooseAttack(
   ctx: Ctx,
-  userId: string,
+  userId: string | null,
   battleId: number,
-  round: number,
-): Promise<BattleQuestionDTO> {
-  const res = await ctx.db.transaction(async (tx) => {
+  slot: number | null,
+  expect?: number,
+) {
+  const auto = userId === null;
+  const fx = new Effects();
+  const step = await ctx.db.transaction(async (tx): Promise<Step> => {
     const battle = await lockBattle(tx, battleId);
-    sideOf(battle, userId);
-    if (battle.status !== "active") throw conflict("battle_not_active", "Ce duel n'est pas en cours.");
-    if (!Number.isInteger(round) || round < 1 || round > BATTLE_ROUNDS)
-      throw badRequest("invalid_round", "Manche invalide.");
-    // Asynchrone : les manches se jouent dans l'ordre ; direct : seule la manche en cours est servie.
-    const answered = await tx
-      .select({ round: schema.battleAnswers.round, answeredAt: schema.battleAnswers.answeredAt })
-      .from(schema.battleAnswers)
-      .where(and(eq(schema.battleAnswers.battleId, battleId), eq(schema.battleAnswers.userId, userId)));
-    const done = answered.filter((x) => x.answeredAt).map((x) => x.round);
-    const expected = done.length ? Math.max(...done) + 1 : 1;
-    if (battle.mode === "async" && round !== expected) throw conflict("wrong_round", "Joue les manches dans l'ordre.");
-    if (battle.mode === "live" && live.currentRound(battleId) !== round)
-      throw conflict("wrong_round", "Cette manche n'est pas en cours.");
-    const question = await ensureRound(tx, battle, round);
-    await tx
-      .insert(schema.battleAnswers)
-      .values({ battleId, round, userId, servedAt: live.roundStart(battleId, round) ?? ctx.now() })
-      .onConflictDoNothing();
-    const [ans] = await tx
-      .select()
-      .from(schema.battleAnswers)
-      .where(
-        and(
-          eq(schema.battleAnswers.battleId, battleId),
-          eq(schema.battleAnswers.round, round),
-          eq(schema.battleAnswers.userId, userId),
-        ),
-      );
-    return { battle, question, servedAt: ans!.servedAt, answered: !!ans!.answeredAt };
+    if (userId) requireSide(battle, userId);
+    if (battle.status !== "active" || battle.phase !== "attack" || (expect !== undefined && battle.turn !== expect)) {
+      if (auto) return null;
+      throw conflict("wrong_phase", "Ce n'est pas le moment d'attaquer.");
+    }
+    const attacker = attackerOf(battle, battle.turn);
+    if (userId && attacker !== userId) throw conflict("not_your_turn", "C'est à ton adversaire d'attaquer.");
+    const used = (await turnsOf(tx, battleId)).filter((t) => t.attackerId === attacker).map((t) => t.attackSlot);
+    const free = Array.from({ length: DECK_SIZE }, (_, i) => i + 1).filter((s) => !used.includes(s));
+    const chosen = slot ?? pick(ctx, free);
+    if (!free.includes(chosen)) throw badRequest("invalid_slot", "Cette carte a déjà attaqué.");
+    await tx.insert(bt).values({
+      battleId,
+      turn: battle.turn,
+      attackerId: attacker,
+      defenderId: otherOf(battle, attacker),
+      attackSlot: chosen,
+      attackAuto: auto,
+    });
+    const [row] = await tx
+      .update(b)
+      .set({ ...phaseSet("shield", ctx.now(), SHIELD_TIME_MS), ...idleSet(battle, attacker, auto) })
+      .where(eq(b.id, battleId))
+      .returning();
+    const all = await decks(tx, battleId);
+    return { battle: row!, prepare: deckOf(all, attacker, chosen) };
   });
-  const cards = await roundCards(ctx.db, res.battle, userId, round);
-  return {
-    battleId,
-    round,
-    type: res.question.type,
-    prompt: res.question.prompt,
-    choices: res.question.choices,
-    deadline: new Date(res.servedAt.getTime() + QUESTION_TIME_MS).toISOString(),
-    timeLimitMs: QUESTION_TIME_MS,
-    remainingMs: Math.max(0, res.servedAt.getTime() + QUESTION_TIME_MS - ctx.now().getTime()),
-    answered: res.answered,
-    yourCard: cards.mine,
-    theirCard: res.answered ? cards.theirs : null,
-  };
+  await commitStep(ctx, fx, step);
+  return step;
 }
 
-/** Enregistre la réponse d'un joueur ; le temps est mesuré par le serveur depuis l'envoi de la question. */
+/** Le défenseur choisit son bouclier (`slot` null : automatique) ; la question part aussitôt. */
+export async function chooseShield(
+  ctx: Ctx,
+  userId: string | null,
+  battleId: number,
+  slot: number | null,
+  expect?: number,
+) {
+  const auto = userId === null;
+  // Vérification rapide hors verrou, puis la question (éventuellement encore en préparation).
+  const [peek] = await ctx.db.select().from(b).where(eq(b.id, battleId));
+  if (!peek) throw notFound("Ce duel n'existe pas.");
+  if (userId) requireSide(peek, userId);
+  if (peek.status !== "active" || peek.phase !== "shield" || (expect !== undefined && peek.turn !== expect)) {
+    if (auto) return null;
+    throw conflict("wrong_phase", "Ce n'est pas le moment de choisir un bouclier.");
+  }
+  const defender = otherOf(peek, attackerOf(peek, peek.turn));
+  if (userId && userId !== defender) throw conflict("not_your_turn", "C'est ton adversaire qui se défend.");
+  const [turnRow] = await ctx.db
+    .select()
+    .from(bt)
+    .where(and(eq(bt.battleId, battleId), eq(bt.turn, peek.turn)));
+  if (!turnRow) throw conflict("wrong_phase", "Aucune attaque en cours.");
+  const all = await decks(ctx.db, battleId);
+  const usedShields = (await turnsOf(ctx.db, battleId))
+    .filter((t) => t.defenderId === defender && t.shieldSlot !== null)
+    .map((t) => t.shieldSlot!);
+  const free = Array.from({ length: DECK_SIZE }, (_, i) => i + 1).filter((s) => !usedShields.includes(s));
+  if (slot !== null && !free.includes(slot)) throw badRequest("invalid_slot", "Cette carte a déjà servi de bouclier.");
+  const question = await withTimeout(
+    questionFor(ctx, peek, peek.turn, deckOf(all, turnRow.attackerId, turnRow.attackSlot)),
+    QUESTION_PREP_MS + 2_000,
+    null,
+  ).then((q) => q ?? buildQuestion(ctx, peek, peek.turn, deckOf(all, turnRow.attackerId, turnRow.attackSlot)));
+
+  const fx = new Effects();
+  const step = await ctx.db.transaction(async (tx): Promise<Step> => {
+    const battle = await lockBattle(tx, battleId);
+    if (battle.status !== "active" || battle.phase !== "shield" || battle.turn !== peek.turn) {
+      if (auto) return null;
+      throw conflict("wrong_phase", "Ce n'est plus le moment de choisir un bouclier.");
+    }
+    const now = ctx.now();
+    await tx
+      .update(bt)
+      .set({ shieldSlot: slot ?? pick(ctx, free), shieldAuto: auto, question, servedAt: now })
+      .where(and(eq(bt.battleId, battleId), eq(bt.turn, battle.turn)));
+    const [row] = await tx
+      .update(b)
+      .set({ ...phaseSet("question", now, QUESTION_TIME_MS), ...idleSet(battle, defender, auto) })
+      .where(eq(b.id, battleId))
+      .returning();
+    return { battle: row! };
+  });
+  await commitStep(ctx, fx, step);
+  return step;
+}
+
+/**
+ * Réponse du défenseur (`userId` null : chrono écoulé, pas de réponse). Le temps est mesuré par le
+ * serveur depuis l'envoi de la question ; une réponse hors délai compte comme absente.
+ */
 export async function answerQuestion(
   ctx: Ctx,
-  userId: string,
+  userId: string | null,
   battleId: number,
-  round: number,
-  choice: number,
-): Promise<BattleAnswerDTO> {
-  const res = await ctx.db.transaction(async (tx) => {
+  choice: number | null,
+  expect?: number,
+) {
+  const auto = userId === null;
+  const fx = new Effects();
+  const step = await ctx.db.transaction(async (tx): Promise<Step> => {
     const battle = await lockBattle(tx, battleId);
-    const side = sideOf(battle, userId);
-    if (battle.status !== "active") throw conflict("battle_not_active", "Ce duel n'est pas en cours.");
-    const [ans] = await tx
+    if (userId) requireSide(battle, userId);
+    if (battle.status !== "active" || battle.phase !== "question" || (expect !== undefined && battle.turn !== expect)) {
+      if (auto) return null;
+      throw conflict("wrong_phase", "Aucune question en cours.");
+    }
+    const [turn] = await tx
       .select()
-      .from(schema.battleAnswers)
-      .where(
-        and(
-          eq(schema.battleAnswers.battleId, battleId),
-          eq(schema.battleAnswers.round, round),
-          eq(schema.battleAnswers.userId, userId),
-        ),
-      )
+      .from(bt)
+      .where(and(eq(bt.battleId, battleId), eq(bt.turn, battle.turn)))
       .for("update");
-    if (!ans) throw conflict("not_served", "Cette question ne t'a pas encore été posée.");
-    if (ans.answeredAt) throw conflict("already_answered", "Tu as déjà répondu.");
-    const question = await ensureRound(tx, battle, round);
+    if (!turn?.question || !turn.servedAt) throw conflict("wrong_phase", "Aucune question en cours.");
+    if (userId && userId !== turn.defenderId) throw conflict("not_your_turn", "C'est ton adversaire qui répond.");
+    if (turn.answeredAt) throw conflict("already_answered", "Réponse déjà donnée.");
     const now = ctx.now();
-    const elapsed = now.getTime() - ans.servedAt.getTime();
-    const inTime = elapsed <= QUESTION_TIME_MS + ANSWER_GRACE_MS;
-    const valid = inTime && Number.isInteger(choice) && choice >= 0 && choice < question.choices.length;
+    const elapsed = now.getTime() - turn.servedAt.getTime();
+    if (auto && elapsed < QUESTION_TIME_MS) return null; // réveil en avance : on attend l'échéance
+    const question = turn.question as Question;
+    const valid =
+      !auto &&
+      elapsed <= QUESTION_TIME_MS + ANSWER_GRACE_MS &&
+      choice !== null &&
+      Number.isInteger(choice) &&
+      choice >= 0 &&
+      choice < question.choices.length;
     const correct = valid && choice === question.answer;
-    const timeLeft = valid ? Math.max(0, QUESTION_TIME_MS - elapsed) : 0;
     const all = await decks(tx, battleId);
-    const mine = all.find((d) => d.userId === userId && d.slot === round)!;
-    const theirs = all.find((d) => d.userId !== userId && d.slot === round)!;
-    const power = roundPower(mine.atk, theirs.def, correct, timeLeft);
+    const attack = deckOf(all, turn.attackerId, turn.attackSlot);
+    const shield = turn.shieldSlot ? deckOf(all, turn.defenderId, turn.shieldSlot) : null;
+    const hit = resolveHit({
+      atk: attack.atk,
+      rarity: attack.rarity,
+      shieldDef: shield?.def ?? null,
+      correct,
+      answerMs: valid ? Math.max(0, elapsed) : null,
+    });
     await tx
-      .update(schema.battleAnswers)
-      .set({ answeredAt: now, choice: valid ? choice : null, correct, timeLeftMs: timeLeft, power })
-      .where(
-        and(
-          eq(schema.battleAnswers.battleId, battleId),
-          eq(schema.battleAnswers.round, round),
-          eq(schema.battleAnswers.userId, userId),
-        ),
-      );
-    return { battle, side, question, correct, power, timeLeft, valid };
+      .update(bt)
+      .set({
+        answeredAt: now,
+        choice: valid ? choice : null,
+        correct,
+        answerMs: valid ? Math.max(0, elapsed) : null,
+        rawDamage: hit.raw,
+        shieldPct: hit.shieldPct,
+        damage: hit.damage,
+        reflected: hit.reflected,
+      })
+      .where(and(eq(bt.battleId, battleId), eq(bt.turn, battle.turn)));
+    const hp = (id: string, loss: number) => Math.max(0, hpOf(battle, id) - loss);
+    const lossC = battle.challengerId === turn.defenderId ? hit.damage : hit.reflected;
+    const lossO = battle.opponentId === turn.defenderId ? hit.damage : hit.reflected;
+    const [row] = await tx
+      .update(b)
+      .set({
+        challengerHp: hp(battle.challengerId, lossC),
+        opponentHp: hp(battle.opponentId, lossO),
+        ...phaseSet("reveal", now, REVEAL_TIME_MS),
+        ...idleSet(battle, turn.defenderId, !valid),
+      })
+      .where(eq(b.id, battleId))
+      .returning();
+    return { battle: row! };
   });
-  const { theirs } = await roundCards(ctx.db, res.battle, userId, round);
-  const result = {
-    battleId,
-    round,
-    correctIndex: res.question.answer,
-    yourChoice: res.valid ? choice : null,
-    correct: res.correct,
-    yourPower: res.power,
-    timeLeftMs: res.timeLeft,
-    theirCard: theirs,
+  await commitStep(ctx, fx, step);
+  return step;
+}
+
+/** Fin de l'affichage du résultat : abandon pour inactivité, fin du duel, ou tour suivant. */
+async function endReveal(ctx: Ctx, battleId: number, expect?: number) {
+  const fx = new Effects();
+  const step = await ctx.db.transaction(async (tx): Promise<Step> => {
+    const battle = await lockBattle(tx, battleId);
+    if (battle.status !== "active" || battle.phase !== "reveal" || (expect !== undefined && battle.turn !== expect))
+      return null;
+    const now = ctx.now();
+    const afkC = battle.challengerIdle >= AFK_FORFEIT;
+    const afkO = battle.opponentIdle >= AFK_FORFEIT;
+    if (afkC && afkO) return cancelBattle(tx, battle, now);
+    if (afkC || afkO) return finish(ctx, tx, fx, battle, afkC ? battle.challengerId : battle.opponentId);
+    if (battleOver(hpOf(battle, battle.challengerId), hpOf(battle, battle.opponentId), battle.turn))
+      return finish(ctx, tx, fx, battle, null);
+    const [row] = await tx
+      .update(b)
+      .set({ turn: battle.turn + 1, ...phaseSet("attack", now, ATTACK_TIME_MS) })
+      .where(eq(b.id, battleId))
+      .returning();
+    return { battle: row! };
+  });
+  await commitStep(ctx, fx, step);
+}
+
+/** Abandon volontaire (en salle d'attente : le duel est simplement annulé). */
+export async function forfeit(ctx: Ctx, userId: string, battleId: number) {
+  const fx = new Effects();
+  const step = await ctx.db.transaction(async (tx): Promise<Step> => {
+    const battle = await lockBattle(tx, battleId);
+    requireSide(battle, userId);
+    if (battle.status !== "active") throw conflict("battle_not_active", "Ce duel n'est pas en cours.");
+    if (battle.phase === "lobby") return cancelBattle(tx, battle, ctx.now());
+    return finish(ctx, tx, fx, battle, userId);
+  });
+  await commitStep(ctx, fx, step);
+}
+
+/** Échéance d'une phase atteinte : action automatique pour le joueur qui n'a pas joué. */
+async function onDue(ctx: Ctx, battleId: number) {
+  const [battle] = await ctx.db.select().from(b).where(eq(b.id, battleId));
+  if (!battle || battle.status !== "active" || !battle.phaseEndsAt) return;
+  const grace = battle.phase === "question" ? ANSWER_GRACE_MS : 0;
+  if (ctx.now().getTime() < battle.phaseEndsAt.getTime() + grace - 50) return engine.schedule(ctx, battle);
+  switch (battle.phase) {
+    case "lobby": {
+      const step = await ctx.db.transaction(async (tx): Promise<Step> => {
+        const row = await lockBattle(tx, battleId);
+        return row.status === "active" && row.phase === "lobby" ? cancelBattle(tx, row, ctx.now()) : null;
+      });
+      return commitStep(ctx, new Effects(), step);
+    }
+    case "attack":
+      return void (await chooseAttack(ctx, null, battleId, null, battle.turn));
+    case "shield":
+      return void (await chooseShield(ctx, null, battleId, null, battle.turn));
+    case "question":
+      return void (await answerQuestion(ctx, null, battleId, null, battle.turn));
+    case "reveal":
+      return endReveal(ctx, battleId, battle.turn);
+  }
+}
+
+/** Minuteries et présence sur l'écran du duel (simple réveil : la vérité est en base). */
+const engine = (() => {
+  const timers = new Map<number, ReturnType<typeof setTimeout>>();
+  const joined = new Map<number, Set<string>>();
+  /** Une transition à la fois par duel dans ce processus. */
+  const queues = new Map<number, Promise<void>>();
+
+  function serial(battleId: number, fn: () => Promise<void>) {
+    const prev = queues.get(battleId) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    queues.set(battleId, next);
+    void next.finally(() => {
+      if (queues.get(battleId) === next) queues.delete(battleId);
+    });
+    return next;
+  }
+
+  function clear(battleId: number) {
+    const t = timers.get(battleId);
+    if (t) clearTimeout(t);
+    timers.delete(battleId);
+  }
+
+  function schedule(ctx: Ctx, battle: Battle) {
+    clear(battle.id);
+    if (battle.status !== "active" || !battle.phaseEndsAt) {
+      joined.delete(battle.id);
+      return;
+    }
+    const grace = battle.phase === "question" ? ANSWER_GRACE_MS : 0;
+    const delay = Math.max(0, battle.phaseEndsAt.getTime() + grace - ctx.now().getTime());
+    const timer = setTimeout(() => {
+      timers.delete(battle.id);
+      void serial(battle.id, () => onDue(ctx, battle.id)).catch((err: unknown) =>
+        ctx.log.error({ err, battleId: battle.id }, "échéance de duel"),
+      );
+    }, delay);
+    timer.unref?.();
+    timers.set(battle.id, timer);
+  }
+
+  return {
+    schedule,
+    clear,
+    serial,
+    has: (battleId: number) => timers.has(battleId),
+    /** Un joueur ouvre l'écran du duel (ou se reconnecte) : état complet, démarrage si les deux sont là. */
+    async join(ctx: Ctx, userId: string, battleId: number) {
+      const set = joined.get(battleId) ?? new Set<string>();
+      set.add(userId);
+      joined.set(battleId, set);
+      const [battle] = await ctx.db.select().from(b).where(eq(b.id, battleId));
+      if (!battle) return;
+      ctx.rt.toUser(userId, "battle:state", await battleState(ctx, userId, battleId));
+      if (battle.status !== "active") return;
+      if (!timers.has(battleId)) schedule(ctx, battle);
+      const here = (id: string) => set.has(id) && ctx.rt.isOnline(id);
+      if (battle.phase === "lobby" && here(battle.challengerId) && here(battle.opponentId)) {
+        await serial(battleId, () => startBattle(ctx, battleId));
+      }
+    },
+    stopAll() {
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+      joined.clear();
+    },
   };
-  await afterCommit(ctx, async () => {
-    if (res.battle.mode === "live") await live.onAnswer(ctx, battleId, round);
-    else await maybeFinishAsync(ctx, battleId);
+})();
+
+export const battleEngine = engine;
+
+/** Les actions des joueurs passent par la même file que les minuteries (une transition à la fois). */
+export function serialAction<T>(battleId: number, fn: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    void engine.serial(battleId, () => fn().then(resolve, reject));
   });
-  return result;
+}
+
+/** Reprend les minuteries des duels en cours (démarrage du serveur). */
+export async function resumeBattles(ctx: Ctx) {
+  const rows = await ctx.db.select().from(b).where(eq(b.status, "active"));
+  for (const battle of rows) engine.schedule(ctx, battle);
 }
 
 // ---------------------------------------------------------------------------
-// Fin de duel : manches, score, Elo, récompenses
+// Fin de duel : résultat, Elo, récompenses
 // ---------------------------------------------------------------------------
 
-/** Clôt les réponses manquantes d'une manche (absence = mauvaise réponse, sans bonus de temps). */
-async function closeMissing(tx: Tx, battle: Battle, round: number, now: Date) {
-  const all = await decks(tx, battle.id);
-  for (const userId of [battle.challengerId, battle.opponentId]) {
-    const mine = all.find((d) => d.userId === userId && d.slot === round)!;
-    const theirs = all.find((d) => d.userId !== userId && d.slot === round)!;
-    const power = roundPower(mine.atk, theirs.def, false, 0);
-    await tx
-      .insert(schema.battleAnswers)
-      .values({ battleId: battle.id, round, userId, servedAt: now })
-      .onConflictDoNothing();
-    await tx
-      .update(schema.battleAnswers)
-      .set({ answeredAt: now, choice: null, correct: false, timeLeftMs: 0, power })
-      .where(
-        and(
-          eq(schema.battleAnswers.battleId, battle.id),
-          eq(schema.battleAnswers.round, round),
-          eq(schema.battleAnswers.userId, userId),
-          sql`${schema.battleAnswers.answeredAt} is null`,
-        ),
+interface FinishResult {
+  players: Player[];
+  winnerId: string | null;
+}
+
+/** Le joueur a fait au moins une action lui-même (attaque, bouclier ou réponse). */
+const playedBy = (turns: Turn[], userId: string) =>
+  turns.some(
+    (t) =>
+      (t.attackerId === userId && !t.attackAuto) ||
+      (t.defenderId === userId && ((t.shieldSlot !== null && !t.shieldAuto) || t.choice !== null)),
+  );
+
+async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, forfeitBy: string | null): Promise<Step> {
+  const turns = await turnsOf(tx, battle.id);
+  const dealt = (id: string) =>
+    turns.reduce((s, t) => s + (t.attackerId === id ? (t.damage ?? 0) : (t.reflected ?? 0)), 0);
+  const result: 1 | 2 | 0 = forfeitBy
+    ? forfeitBy === battle.challengerId
+      ? 2
+      : 1
+    : battleResult(
+        hpOf(battle, battle.challengerId),
+        hpOf(battle, battle.opponentId),
+        dealt(battle.challengerId),
+        dealt(battle.opponentId),
       );
-  }
-}
-
-interface RoundOutcome {
-  round: number;
-  winner: 1 | 2 | 0;
-  p1: number;
-  p2: number;
-}
-
-/** Calcule les manches jouées (dans l'ordre) : le duel s'arrête dès 3 manches gagnées. */
-async function scoreRounds(tx: DbOrTx, battle: Battle, upTo: number) {
-  const answers = await tx.select().from(schema.battleAnswers).where(eq(schema.battleAnswers.battleId, battle.id));
-  const all = await decks(tx, battle.id);
-  const outcomes: RoundOutcome[] = [];
-  let s1 = 0;
-  let s2 = 0;
-  for (let r = 1; r <= upTo; r++) {
-    const a1 = answers.find((x) => x.round === r && x.userId === battle.challengerId);
-    const a2 = answers.find((x) => x.round === r && x.userId === battle.opponentId);
-    if (!a1?.answeredAt || !a2?.answeredAt) break;
-    const d1 = all.find((d) => d.userId === battle.challengerId && d.slot === r)!;
-    const d2 = all.find((d) => d.userId === battle.opponentId && d.slot === r)!;
-    const winner = roundWinner({ power: a1.power ?? 0, def: d1.def }, { power: a2.power ?? 0, def: d2.def });
-    if (winner === 1) s1++;
-    if (winner === 2) s2++;
-    outcomes.push({ round: r, winner, p1: a1.power ?? 0, p2: a2.power ?? 0 });
-    if (battleOver(s1, s2, r)) break;
-  }
-  return { outcomes, s1, s2, over: outcomes.length > 0 && battleOver(s1, s2, outcomes.length) };
-}
-
-async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: RoundOutcome[], s1: number, s2: number) {
-  const total1 = outcomes.reduce((s, o) => s + o.p1, 0);
-  const total2 = outcomes.reduce((s, o) => s + o.p2, 0);
-  const result = battleResult(s1, s2, total1, total2);
   const players = await lockPlayers(tx, [battle.challengerId, battle.opponentId]);
   const c = players.get(battle.challengerId)!;
   const o = players.get(battle.opponentId)!;
-  // Anti-farm : plafond de duels récompensés par paire et par jour (Paris), rien pour qui n'a répondu à aucune manche.
+  // Anti-farm : plafond de duels récompensés par paire et par jour (Paris), rien pour qui n'a rien joué.
   const [today] = await tx.execute<{ n: number }>(sql`
     select count(*)::int as n from battles
     where status = 'finished' and id <> ${battle.id}
@@ -482,17 +788,8 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
   `);
   const pairFinishedToday = today?.n ?? 0;
   const rewarded = pairFinishedToday < BATTLE_REWARDED_PER_PAIR_PER_DAY;
-  const answered = await tx.execute<{ user_id: string }>(sql`
-    select distinct user_id from battle_answers where battle_id = ${battle.id} and choice is not null
-  `);
-  const played = new Set(answered.map((r) => r.user_id));
-  // Même plafond pour l'Elo, et aucun Elo contre un perdant qui n'a pas joué (comptes secondaires).
-  const rated = battleRated({
-    pairFinishedToday,
-    result,
-    answered1: played.has(c.userId),
-    answered2: played.has(o.userId),
-  });
+  const played = (id: string) => playedBy(turns, id);
+  const rated = battleRated({ pairFinishedToday, result, played1: played(c.userId), played2: played(o.userId) });
   const elo = rated ? eloUpdate(c.elo, o.elo, result === 1 ? 1 : result === 2 ? 0 : 0.5) : { r1: c.elo, r2: o.elo };
   for (const [p, rating] of [
     [c, elo.r1],
@@ -505,27 +802,23 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
         .where(eq(schema.players.userId, p.userId));
     }
     const outcome = result === 0 ? "draw" : (result === 1) === (p === c) ? "win" : "loss";
-    if (rewarded && played.has(p.userId)) await movePw(tx, p, battleReward(outcome), "battle", battle.id);
+    if (rewarded && played(p.userId)) await movePw(tx, p, battleReward(outcome), "battle", battle.id);
   }
   const winnerId = result === 1 ? battle.challengerId : result === 2 ? battle.opponentId : null;
-  for (const r of outcomes) {
-    await tx
-      .update(schema.battleRounds)
-      .set({ winnerId: r.winner === 1 ? battle.challengerId : r.winner === 2 ? battle.opponentId : null })
-      .where(and(eq(schema.battleRounds.battleId, battle.id), eq(schema.battleRounds.round, r.round)));
-  }
-  await tx
+  const [row] = await tx
     .update(b)
     .set({
       status: "finished",
+      phase: null,
+      phaseEndsAt: null,
       winnerId,
-      challengerScore: s1,
-      opponentScore: s2,
+      forfeitBy,
       challengerEloDelta: elo.r1 - c.elo,
       opponentEloDelta: elo.r2 - o.elo,
       finishedAt: ctx.now(),
     })
-    .where(eq(b.id, battle.id));
+    .where(eq(b.id, battle.id))
+    .returning();
   const names = await tx
     .select({ id: schema.user.id, name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
     .from(schema.user)
@@ -543,10 +836,10 @@ async function finish(ctx: Ctx, tx: Tx, fx: Effects, battle: Battle, outcomes: R
     draw: result === 0,
     opponent: nameOf(battle.challengerId),
   });
-  return { players: [c, o], winnerId, result };
+  return { battle: row!, finished: { players: [c, o], winnerId } };
 }
 
-/** Le joueur a touché des PW pour ce duel (dans le quota anti-farm et a répondu au moins une fois). */
+/** Le joueur a touché des PW pour ce duel (dans le quota anti-farm et a joué lui-même). */
 export async function battleRewarded(db: DbOrTx, userId: string, battleId: number): Promise<boolean> {
   const [row] = await db.execute(
     sql`select 1 from ledger where user_id = ${userId} and reason = 'battle' and ref_id = ${String(battleId)} limit 1`,
@@ -555,14 +848,15 @@ export async function battleRewarded(db: DbOrTx, userId: string, battleId: numbe
 }
 
 /**
- * Une question de duel attend la réponse de ce joueur (10 s + tolérance) : le catalogue et les fiches
- * sont refusés pendant ce temps, sinon vues, longueur et rareté donneraient la réponse de « Plus lu » / « Plus long ».
+ * Une question de duel attend la réponse de ce joueur : le catalogue et les fiches sont refusés
+ * pendant ce temps (recherche de l'extrait masqué d'un « Qui suis-je ? »…).
  */
 export async function answeringQuestion(ctx: Ctx, userId: string): Promise<boolean> {
-  const since = new Date(ctx.now().getTime() - QUESTION_TIME_MS - ANSWER_GRACE_MS);
-  const [row] = await ctx.db.execute(
-    sql`select 1 from battle_answers where user_id = ${userId} and answered_at is null and served_at > ${since.toISOString()} limit 1`,
-  );
+  const [row] = await ctx.db.execute(sql`
+    select 1 from battles x join battle_turns t on t.battle_id = x.id and t.turn = x.turn
+    where x.status = 'active' and x.phase = 'question' and t.defender_id = ${userId} and t.answered_at is null
+    limit 1
+  `);
   return !!row;
 }
 
@@ -571,237 +865,31 @@ type FinishHook = (ctx: Ctx, battle: Battle, winnerId: string | null) => Promise
 const finishHooks: FinishHook[] = [];
 export const onBattleFinished = (hook: FinishHook) => finishHooks.push(hook);
 
-async function afterFinish(ctx: Ctx, fx: Effects, battle: Battle, players: Player[], winnerId: string | null) {
-  await afterCommit(ctx, async () => {
-    for (const p of players) pushWallet(ctx, p);
-    // Anti-farm : seule une victoire récompensée fait avancer l'objectif de guilde.
-    if (winnerId && (await battleRewarded(ctx.db, winnerId, battle.id)))
-      await bumpObjective(ctx, winnerId, { win_battles: 1 });
-    ctx.rt.toUser(battle.challengerId, "battle:update", { battleId: battle.id });
-    ctx.rt.toUser(battle.opponentId, "battle:update", { battleId: battle.id });
-    await fx.flush(ctx);
-    for (const hook of finishHooks) await hook(ctx, battle, winnerId);
-  });
+async function afterFinish(ctx: Ctx, fx: Effects, battle: Battle, done: FinishResult) {
+  engine.clear(battle.id);
+  for (const p of done.players) pushWallet(ctx, p);
+  // Anti-farm : seule une victoire récompensée fait avancer l'objectif de guilde.
+  if (done.winnerId && (await battleRewarded(ctx.db, done.winnerId, battle.id)))
+    await bumpObjective(ctx, done.winnerId, { win_battles: 1 });
+  ctx.rt.toUser(battle.challengerId, "battle:update", { battleId: battle.id });
+  ctx.rt.toUser(battle.opponentId, "battle:update", { battleId: battle.id });
+  await fx.flush(ctx);
+  for (const hook of finishHooks) await hook(ctx, battle, done.winnerId);
 }
 
-/** Asynchrone : le résultat tombe quand les deux joueurs ont fini (ou que le duel est joué d'avance). */
-async function maybeFinishAsync(ctx: Ctx, battleId: number) {
+/** Termine de force un duel en cours (suppression de compte) : abandon de ce joueur. */
+export async function forceFinish(ctx: Ctx, battleId: number, forfeitBy?: string) {
   const fx = new Effects();
-  const res = await ctx.db.transaction(async (tx) => {
+  const step = await ctx.db.transaction(async (tx): Promise<Step> => {
     const battle = await lockBattle(tx, battleId);
     if (battle.status !== "active") return null;
-    const scored = await scoreRounds(tx, battle, BATTLE_ROUNDS);
-    if (!scored.over) return null;
-    const done = await finish(ctx, tx, fx, battle, scored.outcomes, scored.s1, scored.s2);
-    return { battle, ...done };
+    if (battle.phase === "lobby") return cancelBattle(tx, battle, ctx.now());
+    return finish(ctx, tx, fx, battle, forfeitBy ?? null);
   });
-  if (res) await afterFinish(ctx, fx, res.battle, res.players, res.winnerId);
+  await commitStep(ctx, fx, step);
 }
 
-/** Termine de force un duel (délai dépassé, direct interrompu) : les manches non jouées sont perdues par l'absent. */
-export async function forceFinish(ctx: Ctx, battleId: number) {
-  const fx = new Effects();
-  const res = await ctx.db.transaction(async (tx) => {
-    const battle = await lockBattle(tx, battleId);
-    if (battle.status !== "active") return null;
-    const now = ctx.now();
-    for (let r = 1; r <= BATTLE_ROUNDS; r++) {
-      await ensureRound(tx, battle, r);
-      await closeMissing(tx, battle, r, now);
-    }
-    const scored = await scoreRounds(tx, battle, BATTLE_ROUNDS);
-    const done = await finish(ctx, tx, fx, battle, scored.outcomes, scored.s1, scored.s2);
-    return { battle, ...done };
-  });
-  if (res) await afterFinish(ctx, fx, res.battle, res.players, res.winnerId);
-}
-
-// ---------------------------------------------------------------------------
-// Duel en direct : manches cadencées par le serveur (Socket.IO)
-// ---------------------------------------------------------------------------
-
-/**
- * Reprise d'un duel en direct interrompu (redémarrage du serveur) : la manche en cours est rejouée
- * de zéro, pour les deux joueurs. Sa question a pu être vue (et cherchée pendant la coupure) : elle est
- * régénérée avec une nouvelle graine, et un autre type de question quand c'est possible.
- */
-export async function restartLiveRound(ctx: Ctx, battleId: number, round: number) {
-  await ctx.db.transaction(async (tx) => {
-    const battle = await lockBattle(tx, battleId);
-    if (battle.status !== "active" || round < 1 || round > BATTLE_ROUNDS) return;
-    // Réponses de la manche, données ou non : elles portaient sur l'ancienne question.
-    await tx
-      .delete(schema.battleAnswers)
-      .where(and(eq(schema.battleAnswers.battleId, battleId), eq(schema.battleAnswers.round, round)));
-    const [seen] = await tx
-      .select()
-      .from(schema.battleRounds)
-      .where(and(eq(schema.battleRounds.battleId, battleId), eq(schema.battleRounds.round, round)));
-    if (!seen) return;
-    const question = await buildQuestion(
-      tx,
-      battle,
-      round,
-      `${battle.seed}:${randomBytes(8).toString("hex")}`,
-      seen.question as Question,
-    );
-    await tx
-      .update(schema.battleRounds)
-      .set({ question })
-      .where(and(eq(schema.battleRounds.battleId, battleId), eq(schema.battleRounds.round, round)));
-  });
-}
-
-interface LiveState {
-  round: number;
-  startedAt: Date;
-  timer: ReturnType<typeof setTimeout> | null;
-}
-
-// ponytail: état en mémoire d'un seul processus API ; plusieurs instances demanderaient un verrou partagé (pg-boss / advisory lock).
-const live = (() => {
-  const states = new Map<number, LiveState>();
-  /** Joueurs présents sur l'écran du duel (`battle:join`) : le direct ne démarre qu'avec les deux. */
-  const ready = new Map<number, Set<string>>();
-
-  function stop(battleId: number) {
-    const s = states.get(battleId);
-    if (s?.timer) clearTimeout(s.timer);
-    states.delete(battleId);
-    ready.delete(battleId);
-  }
-
-  /** Exécute une étape du moteur : une erreur termine le duel proprement au lieu de le laisser bloqué. */
-  function run(ctx: Ctx, battleId: number, step: () => Promise<void>) {
-    step().catch(async (err: unknown) => {
-      ctx.log.error({ err, battleId }, "duel en direct");
-      stop(battleId);
-      await forceFinish(ctx, battleId).catch((e: unknown) => ctx.log.error({ err: e, battleId }, "fin forcée du duel"));
-    });
-  }
-
-  async function startRound(ctx: Ctx, battleId: number, round: number) {
-    const [battle] = await ctx.db.select().from(b).where(eq(b.id, battleId));
-    if (!battle || battle.status !== "active") return stop(battleId);
-    // La question est générée avant le départ du chrono : les deux joueurs ont le même temps.
-    await ctx.db.transaction((tx) => ensureRound(tx, battle, round));
-    const state: LiveState = { round, startedAt: ctx.now(), timer: null };
-    states.set(battleId, state);
-    state.timer = setTimeout(
-      () => run(ctx, battleId, () => resolveRound(ctx, battleId, round)),
-      QUESTION_TIME_MS + ANSWER_GRACE_MS,
-    );
-    await Promise.all(
-      [battle.challengerId, battle.opponentId].map(async (userId) => {
-        try {
-          ctx.rt.toUser(userId, "battle:question", await serveQuestion(ctx, userId, battleId, round));
-        } catch (err) {
-          ctx.log.warn({ err, battleId }, "question en direct");
-        }
-      }),
-    );
-  }
-
-  /** Résout la manche (tout le monde a répondu, ou le temps est écoulé) et enchaîne. */
-  async function resolveRound(ctx: Ctx, battleId: number, round: number) {
-    const state = states.get(battleId);
-    if (!state || state.round !== round) return;
-    if (state.timer) clearTimeout(state.timer);
-    state.timer = null;
-    state.round = 0; // plus de réponse acceptée pour cette manche
-    const fx = new Effects();
-    const res = await ctx.db.transaction(async (tx) => {
-      const battle = await lockBattle(tx, battleId);
-      if (battle.status !== "active") return null;
-      await closeMissing(tx, battle, round, ctx.now());
-      const scored = await scoreRounds(tx, battle, round);
-      const answers = await tx
-        .select()
-        .from(schema.battleAnswers)
-        .where(and(eq(schema.battleAnswers.battleId, battleId), eq(schema.battleAnswers.round, round)));
-      const question = await ensureRound(tx, battle, round);
-      const done = scored.over ? await finish(ctx, tx, fx, battle, scored.outcomes, scored.s1, scored.s2) : null;
-      return { battle, scored, answers, question, done };
-    });
-    if (!res) return stop(battleId);
-    const last = res.scored.outcomes.find((o) => o.round === round);
-    for (const userId of [res.battle.challengerId, res.battle.opponentId]) {
-      const isC = userId === res.battle.challengerId;
-      const mine = res.answers.find((a) => a.userId === userId);
-      const theirs = res.answers.find((a) => a.userId !== userId);
-      const payload: BattleRoundResultDTO = {
-        battleId,
-        round,
-        correctIndex: res.question.answer,
-        yourChoice: mine?.choice ?? null,
-        yourPower: Math.round(mine?.power ?? 0),
-        theirPower: Math.round(theirs?.power ?? 0),
-        winnerId: last?.winner === 1 ? res.battle.challengerId : last?.winner === 2 ? res.battle.opponentId : null,
-        score: { you: isC ? res.scored.s1 : res.scored.s2, them: isC ? res.scored.s2 : res.scored.s1 },
-        finished: res.scored.over,
-      };
-      ctx.rt.toUser(userId, "battle:round", payload);
-    }
-    if (res.done) {
-      stop(battleId);
-      await afterFinish(ctx, fx, res.battle, res.done.players, res.done.winnerId);
-    } else {
-      setTimeout(() => run(ctx, battleId, () => startRound(ctx, battleId, round + 1)), LIVE_PAUSE_MS);
-    }
-  }
-
-  /**
-   * Démarre (ou reprend après un redémarrage du serveur) quand les deux joueurs sont sur l'écran du duel :
-   * on repart de la première manche incomplète, avec un chrono neuf.
-   */
-  async function maybeStart(ctx: Ctx, battleId: number) {
-    if (states.has(battleId)) return;
-    const [battle] = await ctx.db.select().from(b).where(eq(b.id, battleId));
-    if (!battle || battle.status !== "active" || battle.mode !== "live") return;
-    const here = ready.get(battleId);
-    const present = (id: string) => here?.has(id) && ctx.rt.isOnline(id);
-    if (!present(battle.challengerId) || !present(battle.opponentId) || states.has(battleId)) return;
-    const scored = await scoreRounds(ctx.db, battle, BATTLE_ROUNDS);
-    const next = scored.outcomes.length + 1;
-    states.set(battleId, { round: 0, startedAt: ctx.now(), timer: null });
-    await restartLiveRound(ctx, battleId, next);
-    setTimeout(() => run(ctx, battleId, () => startRound(ctx, battleId, next)), 1_500);
-  }
-
-  return {
-    currentRound: (battleId: number) => states.get(battleId)?.round ?? 0,
-    roundStart: (battleId: number, round: number) => {
-      const s = states.get(battleId);
-      return s && s.round === round ? s.startedAt : null;
-    },
-    maybeStart: (ctx: Ctx, battleId: number) => run(ctx, battleId, () => maybeStart(ctx, battleId)),
-    /** Un joueur ouvre l'écran du duel (ou se reconnecte) : renvoie la question en cours, le chrono continue. */
-    join(ctx: Ctx, userId: string, battleId: number) {
-      const set = ready.get(battleId) ?? new Set<string>();
-      set.add(userId);
-      ready.set(battleId, set);
-      const state = states.get(battleId);
-      if (state && state.round > 0) {
-        serveQuestion(ctx, userId, battleId, state.round)
-          .then((q) => ctx.rt.toUser(userId, "battle:question", q))
-          .catch(() => {}); // manche en cours de résolution
-      } else if (!state) this.maybeStart(ctx, battleId);
-    },
-    async onAnswer(ctx: Ctx, battleId: number, round: number) {
-      const state = states.get(battleId);
-      if (!state || state.round !== round) return;
-      const [row] = await ctx.db.execute<{ n: number }>(sql`
-        select count(*)::int as n from battle_answers where battle_id = ${battleId} and round = ${round} and answered_at is not null
-      `);
-      if ((row?.n ?? 0) >= 2) run(ctx, battleId, () => resolveRound(ctx, battleId, round));
-    },
-    isRunning: (battleId: number) => states.has(battleId),
-  };
-})();
-
-export const liveBattles = live;
-
-/** Rattrapage : défis expirés, duels asynchrones trop vieux, duels en direct interrompus. */
+/** Rattrapage : défis expirés et échéances de duels manquées (redémarrage, minuterie perdue). */
 export async function sweepBattles(ctx: Ctx) {
   const now = ctx.now().getTime();
   const rows = await ctx.db
@@ -810,32 +898,13 @@ export async function sweepBattles(ctx: Ctx) {
     .where(inArray(b.status, ["pending", "active"]));
   for (const battle of rows) {
     try {
-      const age = now - (battle.startedAt ?? battle.createdAt).getTime();
       if (battle.status === "pending" && now - battle.createdAt.getTime() > CHALLENGE_TTL_MS) {
         await ctx.db
           .update(b)
           .set({ status: "cancelled", finishedAt: ctx.now() })
           .where(and(eq(b.id, battle.id), eq(b.status, "pending")));
-      } else if (battle.status === "active" && battle.mode === "async" && age > ASYNC_BATTLE_TTL_MS) {
-        await forceFinish(ctx, battle.id);
-      } else if (
-        battle.status === "active" &&
-        battle.mode === "live" &&
-        !live.isRunning(battle.id) &&
-        age > LIVE_STALE_MS
-      ) {
-        // Jamais commencé (un joueur n'est pas venu) : annulé sans récompense ; interrompu en cours : terminé.
-        const [played] = await ctx.db.execute<{ n: number }>(
-          sql`select count(*)::int as n from battle_answers where battle_id = ${battle.id} and answered_at is not null`,
-        );
-        if ((played?.n ?? 0) === 0) {
-          await ctx.db
-            .update(b)
-            .set({ status: "cancelled", finishedAt: ctx.now() })
-            .where(and(eq(b.id, battle.id), eq(b.status, "active")));
-          ctx.rt.toUser(battle.challengerId, "battle:update", { battleId: battle.id });
-          ctx.rt.toUser(battle.opponentId, "battle:update", { battleId: battle.id });
-        } else await forceFinish(ctx, battle.id);
+      } else if (battle.status === "active" && !engine.has(battle.id)) {
+        engine.schedule(ctx, battle);
       }
     } catch (err) {
       ctx.log.error({ err, battleId: battle.id }, "rattrapage de duel");
@@ -844,8 +913,190 @@ export async function sweepBattles(ctx: Ctx) {
 }
 
 // ---------------------------------------------------------------------------
-// Lecture
+// État d'un duel vu par un joueur
 // ---------------------------------------------------------------------------
+
+type DeckCardRow = {
+  user_id: string;
+  slot: number;
+  instance_id: string | number;
+  card_id: string | number;
+  season: number;
+  rarity: Rarity;
+  atk: number;
+  def: number;
+  title: string;
+  thumb_url: string | null;
+  page_url: string | null;
+  level: number;
+};
+
+async function deckCards(db: DbOrTx, battleId: number): Promise<DeckCardRow[]> {
+  return db.execute<DeckCardRow>(sql`
+    select d.user_id, d.slot, d.instance_id, d.card_id, d.season, d.rarity, d.atk, d.def, c.title,
+           w.thumb_url, w.page_url, coalesce(i.level, 1) as level
+    from battle_decks d
+    join cards c on c.season = d.season and c.id = d.card_id
+    left join wiki_summaries w on w.page_id = d.card_id
+    left join card_instances i on i.id = d.instance_id
+    where d.battle_id = ${battleId}
+    order by d.slot
+  `);
+}
+
+function toCard(r: DeckCardRow): CardDTO {
+  return {
+    instanceId: Number(r.instance_id),
+    cardId: Number(r.card_id),
+    season: r.season,
+    title: r.title,
+    rarity: r.rarity,
+    atk: r.atk,
+    def: r.def,
+    level: r.level,
+    thumbUrl: r.thumb_url,
+    pageUrl: r.page_url ?? articleUrl(r.title),
+  };
+}
+
+const remaining = (battle: Battle, now: Date) =>
+  battle.phaseEndsAt ? Math.max(0, battle.phaseEndsAt.getTime() - now.getTime()) : null;
+
+export async function battleState(ctx: Ctx, userId: string, battleId: number): Promise<BattleStateDTO> {
+  const [battle] = await ctx.db.select().from(b).where(eq(b.id, battleId));
+  if (!battle) throw notFound("Ce duel n'existe pas.");
+  requireSide(battle, userId);
+  const otherId = otherOf(battle, userId);
+  const finished = battle.status === "finished";
+  const legacy = finished && battle.challengerHp === null;
+  const [cards, turns, users] = await Promise.all([
+    deckCards(ctx.db, battleId),
+    turnsOf(ctx.db, battleId),
+    ctx.db
+      .select({
+        id: schema.user.id,
+        username: schema.user.username,
+        name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
+      })
+      .from(schema.user)
+      .where(inArray(schema.user.id, [userId, otherId])),
+  ]);
+  const userOf = (id: string) => users.find((u) => u.id === id);
+
+  /** Une carte adverse est révélée quand elle a attaqué (question posée, titre visible) ou à la fin. */
+  const revealed = (ownerId: string, slot: number) =>
+    ownerId === userId ||
+    finished ||
+    turns.some(
+      (t) =>
+        t.attackerId === ownerId &&
+        t.attackSlot === slot &&
+        t.servedAt &&
+        t.question &&
+        (!(t.question as Question).titleHidden || t.answeredAt),
+    );
+  const view = (ownerId: string, slot: number): BattleCardView => {
+    const r = cards.find((c) => c.user_id === ownerId && c.slot === slot)!;
+    return {
+      slot,
+      rarity: r.rarity,
+      atk: r.atk,
+      def: r.def,
+      damage: attackDamage(r.atk, r.rarity),
+      shieldPct: shieldPercent(r.def),
+      attacked: turns.some((t) => t.attackerId === ownerId && t.attackSlot === slot),
+      shielded: turns.some((t) => t.defenderId === ownerId && t.shieldSlot === slot),
+      card: revealed(ownerId, slot) ? toCard(r) : null,
+    };
+  };
+  const turnView = (t: Turn): BattleTurnView => {
+    const q = t.question as Question | null;
+    return {
+      turn: t.turn,
+      attackerId: t.attackerId,
+      defenderId: t.defenderId,
+      attack: view(t.attackerId, t.attackSlot),
+      shield: t.shieldSlot ? view(t.defenderId, t.shieldSlot) : null,
+      attackAuto: t.attackAuto,
+      shieldAuto: t.shieldAuto,
+      question:
+        q && t.servedAt ? { type: q.type, prompt: q.prompt, choices: q.choices, titleHidden: q.titleHidden } : null,
+      outcome:
+        q && t.answeredAt
+          ? {
+              choice: t.choice,
+              correctIndex: q.answer,
+              correct: !!t.correct,
+              answerMs: t.answerMs,
+              rawDamage: t.rawDamage ?? 0,
+              shieldPct: t.shieldPct ?? 0,
+              damage: t.damage ?? 0,
+              reflected: t.reflected ?? 0,
+              parry: t.correct ? (t.reflected ? "perfect" : "parry") : "none",
+            }
+          : null,
+    };
+  };
+  const hand = (ownerId: string) => cards.filter((c) => c.user_id === ownerId).map((c) => view(ownerId, c.slot));
+  const active = battle.status === "active";
+  const current = active ? turns.find((t) => t.turn === battle.turn) : undefined;
+  const isC = battle.challengerId === userId;
+  const ledger = finished
+    ? await ctx.db.execute<{ delta: string }>(
+        sql`select delta from ledger where user_id = ${userId} and reason = 'battle' and ref_id = ${String(battleId)} limit 1`,
+      )
+    : [];
+  const player = (id: string) => ({
+    id,
+    name: userOf(id)?.name ?? "?",
+    username: userOf(id)?.username ?? "",
+    hp: id === battle.challengerId ? battle.challengerHp : battle.opponentHp,
+    online: ctx.rt.isOnline(id),
+    idle: id === battle.challengerId ? battle.challengerIdle : battle.opponentIdle,
+  });
+  return {
+    id: battle.id,
+    status: battle.status,
+    phase: active ? battle.phase : null,
+    turn: battle.turn,
+    totalTurns: TOTAL_TURNS,
+    maxHp: BATTLE_HP,
+    phaseRemainingMs: active ? remaining(battle, ctx.now()) : null,
+    phaseDurationMs:
+      active && battle.phaseEndsAt && battle.phaseStartedAt
+        ? battle.phaseEndsAt.getTime() - battle.phaseStartedAt.getTime()
+        : null,
+    isChallenger: isC,
+    legacy,
+    you: player(userId),
+    them: player(otherId),
+    attackerId: active && battle.turn > 0 ? attackerOf(battle, battle.turn) : null,
+    myHand: hand(userId),
+    theirHand: hand(otherId),
+    current: current ? turnView(current) : null,
+    turns: turns.filter((t) => t.answeredAt && (!active || t.turn !== battle.turn)).map(turnView),
+    result: finished
+      ? {
+          outcome: battle.winnerId === null ? "draw" : battle.winnerId === userId ? "win" : "loss",
+          eloDelta: isC ? battle.challengerEloDelta : battle.opponentEloDelta,
+          forfeitBy: battle.forfeitBy ? (battle.forfeitBy === userId ? "you" : "them") : null,
+          reward: ledger[0] ? Number(ledger[0].delta) : null,
+        }
+      : null,
+    createdAt: battle.createdAt.toISOString(),
+  };
+}
+
+/** Pousse l'état du duel aux deux joueurs (chacun sa vue). */
+async function pushState(ctx: Ctx, battle: Battle) {
+  for (const id of [battle.challengerId, battle.opponentId]) {
+    try {
+      ctx.rt.toUser(id, "battle:state", await battleState(ctx, id, battle.id));
+    } catch (err) {
+      ctx.log.warn({ err, battleId: battle.id }, "état du duel");
+    }
+  }
+}
 
 export async function isParticipant(ctx: Ctx, userId: string, battleId: number) {
   const [row] = await ctx.db
@@ -874,120 +1125,32 @@ export async function listBattles(ctx: Ctx, userId: string) {
         .where(inArray(schema.user.id, ids))
     : [];
   const userBy = new Map(users.map((u) => [u.id, u]));
-  const progress = rows.length
-    ? await ctx.db
-        .select({ battleId: schema.battleAnswers.battleId, n: sql<number>`count(*)::int` })
-        .from(schema.battleAnswers)
-        .where(
-          and(
-            inArray(
-              schema.battleAnswers.battleId,
-              rows.map((r) => r.id),
-            ),
-            eq(schema.battleAnswers.userId, userId),
-            sql`${schema.battleAnswers.answeredAt} is not null`,
-          ),
-        )
-        .groupBy(schema.battleAnswers.battleId)
-    : [];
-  const doneBy = new Map(progress.map((p) => [p.battleId, p.n]));
   return rows.map((r) => {
     const isChallenger = r.challengerId === userId;
     const otherId = isChallenger ? r.opponentId : r.challengerId;
     const other = userBy.get(otherId);
+    const mine = isChallenger ? r.challengerHp : r.opponentHp;
+    const theirs = isChallenger ? r.opponentHp : r.challengerHp;
     return {
       id: r.id,
-      mode: r.mode,
       status: r.status,
+      phase: r.phase,
       isChallenger,
-      opponent: { id: otherId, name: other?.name ?? "?", username: other?.username ?? "" },
-      score: {
-        you: isChallenger ? r.challengerScore : r.opponentScore,
-        them: isChallenger ? r.opponentScore : r.challengerScore,
+      opponent: {
+        id: otherId,
+        name: other?.name ?? "?",
+        username: other?.username ?? "",
+        online: ctx.rt.isOnline(otherId),
       },
+      hp: mine === null || theirs === null ? null : { you: mine, them: theirs },
       result: r.status !== "finished" ? null : r.winnerId === null ? "draw" : r.winnerId === userId ? "win" : "loss",
+      forfeit: r.forfeitBy ? (r.forfeitBy === userId ? "you" : "them") : null,
       eloDelta: isChallenger ? r.challengerEloDelta : r.opponentEloDelta,
-      roundsPlayed: doneBy.get(r.id) ?? 0,
       createdAt: r.createdAt.toISOString(),
       finishedAt: r.finishedAt?.toISOString() ?? null,
     };
   });
 }
 
-/** Détail d'un duel : manches terminées (réponses révélées) et decks (celui de l'adversaire à la fin). */
-export async function battleDetail(ctx: Ctx, userId: string, battleId: number) {
-  const [battle] = await ctx.db.select().from(b).where(eq(b.id, battleId));
-  if (!battle) throw notFound("Ce duel n'existe pas.");
-  const side = sideOf(battle, userId);
-  const all = await decks(ctx.db, battleId);
-  const finished = battle.status === "finished";
-  const myDeck = all.filter((d) => d.userId === userId);
-  const theirDeck = finished ? all.filter((d) => d.userId !== userId) : [];
-  const cards = await instancesByIds(
-    ctx.db,
-    [...myDeck, ...theirDeck].map((d) => d.instanceId),
-    userId,
-  );
-  const cardOf = (d: DeckRow) => ({
-    ...(cards.find((c) => c.instanceId === d.instanceId) ?? { title: "?", thumbUrl: null }),
-    slot: d.slot,
-    atk: d.atk,
-    def: d.def,
-    rarity: d.rarity,
-    cardId: d.cardId,
-    season: d.season,
-    instanceId: d.instanceId,
-  });
-  const answers = await ctx.db.select().from(schema.battleAnswers).where(eq(schema.battleAnswers.battleId, battleId));
-  const rounds = await ctx.db
-    .select()
-    .from(schema.battleRounds)
-    .where(eq(schema.battleRounds.battleId, battleId))
-    .orderBy(asc(schema.battleRounds.round));
-  const otherId = side === "challenger" ? battle.opponentId : battle.challengerId;
-  const names = await ctx.db
-    .select({
-      id: schema.user.id,
-      username: schema.user.username,
-      name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
-    })
-    .from(schema.user)
-    .where(eq(schema.user.id, otherId));
-  const myAnswered = answers.filter((a) => a.userId === userId && a.answeredAt).map((a) => a.round);
-  return {
-    id: battle.id,
-    mode: battle.mode,
-    status: battle.status,
-    isChallenger: side === "challenger",
-    opponent: { id: otherId, name: names[0]?.name ?? "?", username: names[0]?.username ?? "" },
-    winnerId: battle.winnerId,
-    score:
-      side === "challenger"
-        ? { you: battle.challengerScore, them: battle.opponentScore }
-        : { you: battle.opponentScore, them: battle.challengerScore },
-    eloDelta: side === "challenger" ? battle.challengerEloDelta : battle.opponentEloDelta,
-    nextRound: battle.status === "active" ? (myAnswered.length ? Math.max(...myAnswered) + 1 : 1) : null,
-    liveRound: battle.mode === "live" ? live.currentRound(battleId) : null,
-    myDeck: myDeck.map(cardOf),
-    theirDeck: theirDeck.map(cardOf),
-    // Une manche n'est détaillée qu'une fois jouée par le joueur (et, pour l'adversaire, une fois le duel fini).
-    rounds: rounds
-      .filter((r) => myAnswered.includes(r.round))
-      .map((r) => {
-        const q = r.question as Question;
-        const mine = answers.find((a) => a.round === r.round && a.userId === userId);
-        const theirs = finished ? answers.find((a) => a.round === r.round && a.userId !== userId) : undefined;
-        return {
-          round: r.round,
-          type: q.type,
-          prompt: q.prompt,
-          choices: q.choices,
-          correctIndex: q.answer,
-          yourChoice: mine?.choice ?? null,
-          yourPower: Math.round(mine?.power ?? 0),
-          theirPower: theirs ? Math.round(theirs.power ?? 0) : null,
-          winnerId: finished ? r.winnerId : null,
-        };
-      }),
-  };
-}
+/** Pour les tests : rejoue l'échéance de la phase en cours comme si la minuterie avait sonné. */
+export const runDue = (ctx: Ctx, battleId: number) => engine.serial(battleId, () => onDue(ctx, battleId));

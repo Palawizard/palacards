@@ -23,8 +23,10 @@ export interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
-  /** Badge de non-lus alimenté par /me. */
-  badge?: "messages" | "wheel" | "themes";
+  /** Badge alimenté par /me : non-lus, roue prête, paquets à ouvrir. */
+  badge?: "messages" | "wheel" | "packs";
+  /** Clé de nouveauté (`/me.newFeatures`) : pastille « Nouveau » jusqu'à la première visite. */
+  feature?: string;
   admin?: boolean;
 }
 
@@ -38,12 +40,12 @@ export const NAV: NavGroup[] = [
   {
     title: "Jouer",
     items: [
-      { href: "/pulls", label: "Paquets", icon: Package, badge: "themes" },
+      { href: "/pulls", label: "Paquets", icon: Package, badge: "packs" },
       { href: "/wheel", label: "Roue du jour", icon: CircleDot, badge: "wheel" },
       { href: "/collection", label: "Collection", icon: Layers },
       { href: "/upgrade", label: "Upgrader", icon: ArrowBigUpDash },
       { href: "/cards", label: "Toutes les cartes", icon: LibraryBig },
-      { href: "/battle", label: "Bataille", icon: Swords },
+      { href: "/battle", label: "Bataille", icon: Swords, feature: "battle-v2" },
     ],
   },
   {

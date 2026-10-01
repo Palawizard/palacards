@@ -1,6 +1,6 @@
 "use client";
 
-import { BATTLE_ROUNDS, DECK_SIZE, ECONOMY, ROUNDS_TO_WIN } from "@palacards/game";
+import { ATTACKS_PER_PLAYER, BATTLE_HP, DECK_SIZE, ECONOMY } from "@palacards/game";
 import type { CardDTO } from "@palacards/shared";
 import { Swords } from "lucide-react";
 import Link from "next/link";
@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { AvatarFace } from "@/components/Avatar";
 import { DeckPicker } from "@/components/DeckPicker";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -16,31 +17,72 @@ import { useMe, useSocketEvent } from "@/lib/game";
 
 interface BattleSummary {
   id: number;
-  mode: "live" | "async";
   status: "pending" | "declined" | "cancelled" | "active" | "finished";
+  phase: string | null;
   isChallenger: boolean;
-  opponent: { id: string; name: string; username: string };
-  score: { you: number; them: number };
+  opponent: { id: string; name: string; username: string; online: boolean };
+  hp: { you: number; them: number } | null;
   result: "win" | "loss" | "draw" | null;
+  forfeit: "you" | "them" | null;
   eloDelta: number | null;
-  roundsPlayed: number;
   createdAt: string;
 }
 
+interface Friend {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string | null;
+  online: boolean;
+}
+
 const RESULT: Record<string, string> = { win: "Victoire", loss: "Défaite", draw: "Nul" };
+
+/** Règles en quatre temps : le déroulé d'un tour, dans l'ordre. */
+function Rules() {
+  const steps: [string, string][] = [
+    ["Attaque", "Tu choisis une carte. Ton adversaire voit sa rareté et ses dégâts, pas son titre."],
+    ["Bouclier", "Il choisit une de ses cartes pour se protéger : sa DEF réduit les dégâts, jusqu’à −50 %."],
+    ["Question", "Il répond à un QCM sur l’article de ta carte, en 12 secondes."],
+    ["Résultat", "Juste : paré. Juste en moins de 4 s : 20 % renvoyés. Faux : il prend les dégâts."],
+  ];
+  return (
+    <section className="infobox" aria-labelledby="rules-title">
+      <h2 id="rules-title" className="infobox-head">
+        Un tour de duel
+      </h2>
+      <ol className="grid gap-x-6 gap-y-3 p-4 sm:grid-cols-2">
+        {steps.map(([title, text], i) => (
+          <li key={title} className="flex gap-3">
+            <span className="tnum font-display text-2xl leading-none text-highlight">{i + 1}</span>
+            <p className="text-sm leading-relaxed">
+              <strong className="font-semibold">{title}.</strong> <span className="text-muted">{text}</span>
+            </p>
+          </li>
+        ))}
+      </ol>
+      <p className="border-t-2 border-dashed border-line px-4 py-3 text-sm text-muted">
+        {BATTLE_HP} PV chacun, {ATTACKS_PER_PLAYER} attaques chacun ; chaque carte attaque une fois et protège une fois.
+        Une carte rare frappe fort, mais tout le monde la connaît.
+      </p>
+    </section>
+  );
+}
 
 function ChallengeForm({ onDone }: { onDone: () => void }) {
   const params = useSearchParams();
   const router = useRouter();
   const [opponent, setOpponent] = useState(params.get("opponent") ?? "");
-  const [mode, setMode] = useState<"async" | "live">("async");
   const [deck, setDeck] = useState<CardDTO[]>([]);
   const [busy, setBusy] = useState(false);
+  const { data: friends } = useSWR<{ friends: Friend[] }>("/friends");
+  const online = friends?.friends.filter((f) => f.online) ?? [];
+
   async function submit() {
     setBusy(true);
     try {
       const res = await api<{ id: number }>("/battles", {
-        body: { opponent: opponent.trim(), mode, deck: deck.map((c) => c.instanceId) },
+        body: { opponent: opponent.trim(), deck: deck.map((c) => c.instanceId) },
       });
       toast.success("Défi envoyé !");
       onDone();
@@ -53,13 +95,13 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
   }
   return (
     <section className="infobox">
-      <h2 className="infobox-head">Lancer un défi</h2>
+      <h2 className="infobox-head">Défier un ami</h2>
       <div className="flex flex-col gap-4 p-4">
-        <div className="flex flex-wrap items-end gap-4">
-          <label className="min-w-48 flex-1">
+        <div>
+          <label className="max-w-sm">
             <span className="label">Adversaire</span>
             <input
-              className="field"
+              className="field max-w-sm"
               value={opponent}
               onChange={(e) => setOpponent(e.target.value)}
               placeholder="Pseudo d’un ami"
@@ -67,30 +109,32 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
               spellCheck={false}
             />
           </label>
-          <fieldset className="flex gap-1.5" aria-label="Mode">
-            {(
-              [
-                ["async", "Asynchrone"],
-                ["live", "En direct"],
-              ] as const
-            ).map(([v, label]) => (
-              <button
-                key={v}
-                type="button"
-                className="chip h-10 px-4"
-                aria-pressed={mode === v}
-                onClick={() => setMode(v)}
-              >
-                {label}
-              </button>
-            ))}
-          </fieldset>
+          {online.length > 0 ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-faint">En ligne :</span>
+              {online.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  className="chip pl-1"
+                  aria-pressed={opponent.trim().toLowerCase() === f.username}
+                  onClick={() => setOpponent(f.username)}
+                >
+                  <span className="relative grid size-5 place-items-center overflow-hidden rounded-full bg-panel-2 text-[0.7rem]">
+                    <AvatarFace name={f.displayName} avatar={f.avatar} />
+                  </span>
+                  {f.displayName}
+                </button>
+              ))}
+            </div>
+          ) : (
+            friends && (
+              <p className="mt-2 text-xs text-faint">
+                Aucun ami en ligne pour l’instant : le duel se joue en direct, il pourra accepter dès qu’il se connecte.
+              </p>
+            )
+          )}
         </div>
-        <p className="text-xs text-faint">
-          {mode === "async"
-            ? "Asynchrone : tu joues tes 5 manches maintenant, ton ami plus tard ; mêmes questions pour les deux."
-            : "En direct : vous jouez ensemble, 10 secondes par question. Ton ami doit être connecté."}
-        </p>
         <DeckPicker deck={deck} onChange={setDeck} />
         <div className="flex justify-end">
           <button
@@ -166,10 +210,9 @@ function Battles() {
       <div>
         <h1 className="page-title">Bataille</h1>
         <p className="hatnote mt-2">
-          Duel en {BATTLE_ROUNDS} manches : à chaque manche, une carte de chaque deck et la même question pour les deux.
-          Bien répondre, et vite, multiplie l’attaque. Premier à {ROUNDS_TO_WIN} manches ; victoire {ECONOMY.battle.win}{" "}
-          PW, défaite {ECONOMY.battle.loss} PW. Ton Elo :{" "}
-          {me ? <span className="tnum font-semibold not-italic text-text">{me.elo ?? "…"}</span> : "…"}.
+          Duels en direct contre un ami : attaque avec tes cartes, défends-toi en répondant sur les siennes. Victoire{" "}
+          {ECONOMY.battle.win} PW, défaite {ECONOMY.battle.loss} PW. Ton Elo :{" "}
+          {me ? <span className="tnum font-semibold text-text">{me.elo ?? "…"}</span> : "…"}.
         </p>
       </div>
 
@@ -180,12 +223,13 @@ function Battles() {
           <h2 className="section-title mt-0">Défis reçus</h2>
           <ul className="flex flex-col gap-2">
             {incoming.map((x) => (
-              <li key={x.id} className="rounded-lg border border-accent/40 bg-panel">
+              <li key={x.id} className="rounded-xl border border-accent/50 bg-panel shadow-[var(--shadow-lift)]">
                 <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
                   <span>
                     <strong>{x.opponent.name}</strong> te défie{" "}
                     <span className="text-muted">
-                      ({x.mode === "live" ? "en direct" : "asynchrone"}, {relative(x.createdAt)})
+                      ({relative(x.createdAt)}
+                      {x.opponent.online ? ", en ligne" : ", hors ligne"})
                     </span>
                   </span>
                   {accepting !== x.id && (
@@ -217,18 +261,20 @@ function Battles() {
               <li key={x.id}>
                 <Link
                   href={`/battle/${x.id}`}
-                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 hover:bg-panel-2"
+                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 transition-colors duration-150 hover:bg-panel-2"
                 >
                   <span>
-                    Contre <strong>{x.opponent.name}</strong>{" "}
-                    <span className="text-muted">· {x.mode === "live" ? "en direct" : "asynchrone"}</span>
+                    Contre <strong>{x.opponent.name}</strong>
                   </span>
-                  <span className="text-sm text-muted">
+                  <span className="flex items-center gap-3 text-sm text-muted">
                     {x.status === "pending"
                       ? "en attente de réponse"
-                      : x.mode === "async"
-                        ? `${x.roundsPlayed}/${BATTLE_ROUNDS} manches jouées`
-                        : "en cours"}
+                      : x.phase === "lobby"
+                        ? "accepté : rejoins le duel"
+                        : x.hp
+                          ? `${x.hp.you} PV contre ${x.hp.them}`
+                          : "en cours"}
+                    {x.status === "active" && <span className="btn btn-sm btn-primary">Rejoindre</span>}
                   </span>
                 </Link>
               </li>
@@ -238,6 +284,8 @@ function Battles() {
       )}
 
       <ChallengeForm onDone={() => mutate()} />
+
+      <Rules />
 
       <section>
         <h2 className="section-title">Historique</h2>
@@ -251,7 +299,7 @@ function Battles() {
               <li key={x.id}>
                 <Link
                   href={`/battle/${x.id}`}
-                  className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 hover:bg-panel-2 sm:grid-cols-[1fr_auto_auto]"
+                  className="grid grid-cols-[1fr_auto] items-center gap-2 px-3 py-2.5 transition-colors duration-150 hover:bg-panel-2 sm:grid-cols-[1fr_auto_auto]"
                 >
                   <span>
                     {x.status === "finished" ? (
@@ -262,9 +310,12 @@ function Battles() {
                       <span className="text-muted">{x.status === "declined" ? "Refusé" : "Annulé"}</span>
                     )}{" "}
                     contre {x.opponent.name}
+                    {x.forfeit && (
+                      <span className="text-muted"> ({x.forfeit === "you" ? "abandon" : "il a abandonné"})</span>
+                    )}
                   </span>
                   <span className="tnum text-sm">
-                    {x.status === "finished" && `${x.score.you} – ${x.score.them}`}
+                    {x.status === "finished" && x.hp && `${x.hp.you} – ${x.hp.them} PV`}
                     {x.eloDelta !== null && x.status === "finished" && (
                       <span className={`ml-2 ${x.eloDelta >= 0 ? "text-good" : "text-danger"}`}>
                         {x.eloDelta >= 0 ? "+" : ""}
