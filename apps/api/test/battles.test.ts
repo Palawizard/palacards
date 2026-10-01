@@ -213,6 +213,35 @@ describe("duel Attaque / Bouclier", () => {
     expect(row).toMatchObject({ challengerEloDelta: 0, opponentEloDelta: 0 });
   });
 
+  it("« Quelle image ? » : la carte attaquante reste face cachée jusqu'à la réponse", async () => {
+    const { a, b, id } = await startDuel();
+    const s0 = await stateOf(a, id);
+    const attacker = s0.attackerId === a.userId ? a : b;
+    const defender = attacker === a ? b : a;
+    await attacker.post(`/battles/${id}/attack`, { slot: 1 });
+    await defender.post(`/battles/${id}/shield`, { slot: 1 });
+    // Question d'image posée à la place de celle générée (pas de Wikipédia dans les tests).
+    const image: Question = {
+      type: "image",
+      prompt: "Quelle image illustre « X » ?",
+      choices: [
+        "https://upload.wikimedia.org/1.jpg",
+        "https://upload.wikimedia.org/2.jpg",
+        "https://upload.wikimedia.org/3.jpg",
+        "https://upload.wikimedia.org/4.jpg",
+      ],
+      answer: 2,
+      titleHidden: false,
+    };
+    await ctx.db.update(schema.battleTurns).set({ question: image }).where(eq(schema.battleTurns.battleId, id));
+    let s = await stateOf(defender, id);
+    expect(s.current?.question?.type).toBe("image");
+    expect(s.current?.attack.card).toBeNull();
+    expect(s.theirHand.find((c) => c.slot === 1)?.card).toBeNull();
+    s = (await defender.post(`/battles/${id}/answer`, { choice: 2 })).body;
+    expect(s.current?.attack.card?.title).toBeTruthy();
+  });
+
   it("coupe le catalogue pendant que le défenseur répond", async () => {
     const { a, b, id } = await startDuel();
     const s = await stateOf(a, id);

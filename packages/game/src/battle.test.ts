@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   attackDamage,
   attackerOfTurn,
+  cardHiddenUntilAnswer,
+  definitionDecoys,
+  descriptionHead,
   BATTLE_REWARDED_PER_PAIR_PER_DAY,
   battleOver,
   battleRated,
@@ -14,6 +17,7 @@ import {
   seededRandom,
   shieldPercent,
   titlesClash,
+  unusableQuizImage,
   TOTAL_TURNS,
   yearQuestion,
   type QuizArticle,
@@ -230,5 +234,69 @@ describe("questions", () => {
     const masked = maskExtract("La tour Eiffel est une tour de fer puddlé à Paris. ".repeat(10), "Tour Eiffel");
     expect(masked).not.toMatch(/eiffel/i);
     expect(masked.length).toBeLessThanOrEqual(261);
+  });
+
+  it("« C'est quoi ? » : la bonne réponse n'est pas trahie par sa longueur", () => {
+    const target = "chaîne de télévision d'information en continu française";
+    const pool = [
+      "magazine français",
+      "journal gratuit",
+      "groupe de musique japonais",
+      "chaîne de télévision musicale britannique",
+      "chaîne de radio généraliste publique française",
+      "chaîne de télévision jeunesse diffusée en Belgique et en Suisse",
+      "station de radio locale",
+      "quotidien régional français fondé à Toulouse en 1944",
+      "chaîne de télévision d'information en continu française",
+      "chaîne de télévision privée généraliste française du groupe TF1, lancée en 1987",
+      "chaîne de télévision publique française consacrée aux régions et à l'actualité locale",
+      "chaîne d'information en continu française",
+    ];
+    const ranks = [0, 0, 0, 0];
+    for (let i = 0; i < 400; i++) {
+      const decoys = definitionDecoys(target, pool, seededRandom(`def-${i}`))!;
+      expect(decoys).toHaveLength(3);
+      expect(decoys).not.toContain(target);
+      // Leurres dans une fourchette de longueur : ni « Journal gratuit » face à une phrase entière.
+      expect(decoys.every((d) => d.length >= target.length * 0.5 && d.length <= target.length * 2)).toBe(true);
+      ranks[decoys.filter((d) => d.length > target.length).length]!++;
+    }
+    // La bonne réponse est tantôt la plus longue, tantôt la plus courte, tantôt entre les deux.
+    expect(ranks.every((n) => n > 40)).toBe(true);
+    // Même genre d'abord : au moins une autre « chaîne… » parmi les leurres.
+    expect(definitionDecoys(target, pool, seededRandom("x"))!.some((d) => d.startsWith("chaîne"))).toBe(true);
+    // Pas assez de leurres de longueur comparable : pas de question « C'est quoi ? ».
+    expect(definitionDecoys(target, ["revue", "film", "jeu"], seededRandom("y"))).toBeNull();
+  });
+
+  it("genre d'un article : premier mot de la description, sans accent", () => {
+    expect(descriptionHead("Chaîne de télévision française")).toBe("chaine");
+    expect(descriptionHead("  homme d'État iranien")).toBe("homme");
+    expect(descriptionHead(null)).toBeNull();
+  });
+
+  it("« Quelle image ? » : jamais de logo SVG ni d'image de remplacement", () => {
+    expect(
+      unusableQuizImage("https://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/CNews.svg/320px-CNews.svg.png"),
+    ).toBe(true);
+    expect(unusableQuizImage("https://upload.wikimedia.org/wikipedia/commons/a/a8/Defaut.svg")).toBe(true);
+    expect(unusableQuizImage("https://upload.wikimedia.org/x/Silhouette_homme.png")).toBe(true);
+    expect(unusableQuizImage("https://upload.wikimedia.org/x/Reza_Shah_1920.jpg")).toBe(false);
+    expect(unusableQuizImage(null)).toBe(true);
+    const logo = article({
+      cardId: 1,
+      title: "CNews",
+      thumbUrl: "https://upload.wikimedia.org/CNews.svg/320px-CNews.svg.png",
+    });
+    const photos = [2, 3, 4].map((n) =>
+      article({ cardId: n, title: `Chaîne ${n}`, thumbUrl: `https://upload.wikimedia.org/${n}.jpg` }),
+    );
+    for (let i = 0; i < 20; i++) expect(makeQuestion(`l-${i}`, logo, photos).type).not.toBe("image");
+  });
+
+  it("« Quelle image ? » et « Qui suis-je ? » : la carte attaquante reste cachée jusqu'à la réponse", () => {
+    expect(cardHiddenUntilAnswer({ type: "image", titleHidden: false })).toBe(true);
+    expect(cardHiddenUntilAnswer({ type: "who_am_i", titleHidden: true })).toBe(true);
+    expect(cardHiddenUntilAnswer({ type: "definition", titleHidden: false })).toBe(false);
   });
 });

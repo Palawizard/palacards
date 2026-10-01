@@ -328,9 +328,91 @@ export function yearQuestion(
   };
 }
 
+/** Mots significatifs d'un texte (minuscules, sans accents, 3 lettres et plus). */
+const words = (s: string) =>
+  normalize(s)
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3);
+
+/**
+ * « Genre » d'un article d'après le premier mot de sa description Wikidata (« chaîne de télévision… »
+ * → `chaine`, « homme politique… » → `homme`) : sert à choisir des leurres du même genre.
+ */
+export function descriptionHead(description: string | null | undefined): string | null {
+  const first = description?.trim().split(/\s+/)[0];
+  return first ? normalize(first).replace(/[^a-z0-9]/g, "") || null : null;
+}
+
+/**
+ * Vignette inutilisable dans une question « Quelle image ? » : SVG (logos et blasons écrivent souvent le
+ * nom en toutes lettres) et images de remplacement (« Défaut », silhouettes, points d'interrogation).
+ */
+export function unusableQuizImage(url: string | null | undefined): boolean {
+  if (!url) return true;
+  let file = url;
+  try {
+    file = decodeURIComponent(url);
+  } catch {
+    // URL mal encodée : on garde le texte brut
+  }
+  return /\.svg|d[ée]faut|silhouette|placeholder|no[ _-]?image|image[ _-]manquante|question[ _-]?(mark|book)/i.test(
+    file,
+  );
+}
+
+/** Mots communs aux deux descriptions sur l'ensemble de leurs mots (Jaccard) : doublon de sens au-delà de 0,6. */
+function wordOverlap(a: string, b: string): number {
+  const x = new Set(words(a));
+  const y = new Set(words(b));
+  if (!x.size || !y.size) return 0;
+  let common = 0;
+  for (const w of x) if (y.has(w)) common++;
+  return common / (x.size + y.size - common);
+}
+
+/**
+ * Trois leurres de description pour « C'est quoi ? », sans indice de longueur : on tire au sort combien
+ * de leurres seront plus longs que la bonne réponse (0 à 3), puis on les prend du même genre d'abord.
+ * Les leurres restent dans une fourchette de longueur (½ à 2×) et ne répètent pas la bonne réponse.
+ */
+export function definitionDecoys(target: string, pool: string[], rand: () => number): string[] | null {
+  const len = target.length;
+  const head = descriptionHead(target);
+  const ok = pool.filter((d, i) => {
+    const n = d.length;
+    return (
+      n >= len * 0.5 &&
+      n <= len * 2 &&
+      normalize(d) !== normalize(target) &&
+      wordOverlap(d, target) < 0.6 &&
+      pool.findIndex((x) => normalize(x) === normalize(d)) === i
+    );
+  });
+  // Même genre d'abord (ordre tiré au sort dans chaque groupe).
+  const ranked = [
+    ...shuffle(
+      ok.filter((d) => descriptionHead(d) === head),
+      rand,
+    ),
+    ...shuffle(
+      ok.filter((d) => descriptionHead(d) !== head),
+      rand,
+    ),
+  ];
+  const longer = ranked.filter((d) => d.length > len);
+  const shorter = ranked.filter((d) => d.length <= len);
+  const order = shuffle([0, 1, 2, 3], rand);
+  for (const nLonger of order) {
+    if (longer.length >= nLonger && shorter.length >= 3 - nLonger) {
+      return [...longer.slice(0, nLonger), ...shorter.slice(0, 3 - nLonger)];
+    }
+  }
+  return null;
+}
+
 /**
  * Question sur la carte attaquante. Déterministe : ne dépend que de la graine, de la cible et des leurres.
- * `decoys` : articles proches (titres voisins d'abord), déjà filtrés des doublons de la cible.
+ * `decoys` : articles candidats, les plus proches d'abord (même genre, puis titres voisins, puis hasard).
  * `avoid` : types déjà posés dans ce duel, évités quand un autre type est possible.
  */
 export function makeQuestion(
@@ -344,40 +426,44 @@ export function makeQuestion(
     (d, i) => d.cardId !== target.cardId && decoys.findIndex((x) => x.cardId === d.cardId) === i,
   );
   const maxYear = options.maxYear ?? new Date().getFullYear();
+  const head = descriptionHead(target.description);
+  /** Même genre que la cible (description qui commence par le même mot) : en tête de liste. */
+  const sameKindFirst = (items: QuizArticle[]) => [
+    ...items.filter((d) => head && descriptionHead(d.description) === head),
+    ...items.filter((d) => !head || descriptionHead(d.description) !== head),
+  ];
 
   const descTarget = target.description?.trim() || null;
-  const withDesc = pool.filter(
-    (d, i, all) =>
-      d.description?.trim() &&
-      normalize(d.description) !== normalize(descTarget ?? "") &&
-      all.findIndex((x) => x.description && normalize(x.description) === normalize(d.description!)) === i,
+  const defDecoys = descTarget
+    ? definitionDecoys(
+        descTarget,
+        pool.map((d) => d.description?.trim() ?? "").filter(Boolean),
+        seededRandom(`${seed}:definition`),
+      )
+    : null;
+  const targetThumb = unusableQuizImage(target.thumbUrl) ? null : target.thumbUrl;
+  const withThumb = sameKindFirst(
+    pool.filter(
+      (d, i, all) =>
+        !unusableQuizImage(d.thumbUrl) &&
+        d.thumbUrl !== target.thumbUrl &&
+        all.findIndex((x) => x.thumbUrl === d.thumbUrl) === i,
+    ),
   );
-  const withThumb = pool.filter(
-    (d, i, all) =>
-      d.thumbUrl && d.thumbUrl !== target.thumbUrl && all.findIndex((x) => x.thumbUrl === d.thumbUrl) === i,
-  );
-  const titled = pool.filter((d) => !titlesClash(d.title, target.title));
+  const titled = sameKindFirst(pool.filter((d) => !titlesClash(d.title, target.title)));
   const year = target.extract ? yearQuestion(target.extract, seededRandom(`${seed}:year`), maxYear) : null;
 
   const possible: QuestionType[] = [];
-  if (descTarget && withDesc.length >= 3) possible.push("definition");
+  if (descTarget && defDecoys) possible.push("definition");
   if (year) possible.push("year");
-  if (target.thumbUrl && withThumb.length >= 3) possible.push("image");
+  if (targetThumb && withThumb.length >= 3) possible.push("image");
   if (target.extract && target.extract.length > 60 && titled.length >= 3) possible.push("who_am_i");
   const fresh = possible.filter((t) => !options.avoid?.includes(t));
   const types = fresh.length ? fresh : possible;
   const type: QuestionType = types.length ? pick(types, rand) : "popular";
 
   if (type === "definition") {
-    const choices = shuffle(
-      [
-        descTarget!,
-        ...shuffle(withDesc, rand)
-          .slice(0, 3)
-          .map((d) => d.description!.trim()),
-      ],
-      rand,
-    );
+    const choices = shuffle([descTarget!, ...defDecoys!], rand);
     return {
       type,
       prompt: `Qu'est-ce que « ${target.title} » ?`,
@@ -388,25 +474,19 @@ export function makeQuestion(
   }
   if (type === "year") return { ...year!, titleHidden: false };
   if (type === "image") {
-    const choices = shuffle(
-      [
-        target.thumbUrl!,
-        ...shuffle(withThumb, rand)
-          .slice(0, 3)
-          .map((d) => d.thumbUrl!),
-      ],
-      rand,
-    );
+    // Les leurres du même genre d'abord : on en tire 3 parmi les 6 premiers.
+    const others = shuffle(withThumb.slice(0, 6), rand).slice(0, 3);
+    const choices = shuffle([targetThumb!, ...others.map((d) => d.thumbUrl!)], rand);
     return {
       type,
       prompt: `Quelle image illustre « ${target.title} » ?`,
       choices,
-      answer: choices.indexOf(target.thumbUrl!),
+      answer: choices.indexOf(targetThumb!),
       titleHidden: false,
     };
   }
   if (type === "who_am_i") {
-    // Les leurres les plus proches (titres voisins) d'abord : on en tire 3 parmi les 6 premiers.
+    // Les leurres les plus proches (même genre, titres voisins) d'abord : 3 parmi les 6 premiers.
     const others = shuffle(titled.slice(0, 6), rand).slice(0, 3);
     const choices = shuffle([target.title, ...others.map((d) => d.title)], rand);
     return {
@@ -436,3 +516,9 @@ export function makeQuestion(
     titleHidden: false,
   };
 }
+
+/**
+ * La carte attaquante reste face cachée jusqu'à la réponse : son titre est la réponse (« Qui suis-je ? »)
+ * ou son image l'est (« Quelle image ? »).
+ */
+export const cardHiddenUntilAnswer = (q: Pick<Question, "type" | "titleHidden">) => q.titleHidden || q.type === "image";
