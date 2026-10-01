@@ -11,8 +11,10 @@ import {
   battleRated,
   battleResult,
   battleReward,
+  cardHiddenUntilAnswer,
   CHALLENGE_TTL_MS,
   DECK_SIZE,
+  descriptionHead,
   effectiveStats,
   eloUpdate,
   LOBBY_TIMEOUT_MS,
@@ -293,24 +295,52 @@ const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T) =>
   Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms).unref?.())]);
 
 /** Construit la question d'un tour sur l'article de la carte attaquante. */
+/**
+ * Articles du même genre que la cible, pris dans les résumés déjà en cache : leur description commence par
+ * le même mot (« chaîne… », « homme… », « commune… »). Ils donnent des leurres crédibles pour les
+ * définitions, les images et « Qui suis-je ? » (une personne contre des personnes, pas contre un oiseau).
+ */
+async function sameKindArticles(
+  db: DbOrTx,
+  seed: string,
+  season: number,
+  cardId: number,
+  head: string,
+): Promise<ArticleRow[]> {
+  return db.execute<ArticleRow>(sql`
+    select c.id, c.title, c.views_12m
+    from wiki_summaries w
+    join cards c on c.season = ${season} and c.id = w.page_id
+    where w.status = 'ok' and w.version >= 2 and w.page_id <> ${cardId} and w.description is not null
+      and regexp_replace(lower(f_unaccent(split_part(trim(w.description), ' ', 1))), '[^a-z0-9]', '', 'g') = ${head}
+    order by md5(w.page_id::text || ${seed})
+    limit 30
+  `);
+}
+
+/** Construit la question d'un tour sur l'article de la carte attaquante. */
 async function buildQuestion(ctx: Ctx, battle: Battle, turn: number, attack: DeckRow): Promise<Question> {
   const seed = `${battle.seed}:${turn}`;
   const [target] = await ctx.db.execute<ArticleRow>(
     sql`select id, title, views_12m from cards where season = ${attack.season} and id = ${attack.cardId}`,
   );
   const title = target?.title ?? "?";
-  const similar = await similarArticles(ctx.db, attack.season, attack.cardId, title);
-  const random = await randomArticles(ctx.db, seed, attack.season, attack.rarity, attack.cardId);
-  const candidates = [...similar, ...random].filter(
+  // Résumé de la cible d'abord : sa description donne le genre des leurres.
+  await withTimeout(ctx.wiki.load([{ cardId: attack.cardId, title }], undefined, { fresh: true }), 2_000, []);
+  const head = descriptionHead((await ctx.wiki.summaries([attack.cardId])).get(attack.cardId)?.description);
+  const [sameKind, similar, random] = await Promise.all([
+    head ? sameKindArticles(ctx.db, seed, attack.season, attack.cardId, head) : Promise.resolve([]),
+    similarArticles(ctx.db, attack.season, attack.cardId, title),
+    randomArticles(ctx.db, seed, attack.season, attack.rarity, attack.cardId),
+  ]);
+  const others = [...similar, ...random];
+  const candidates = [...sameKind, ...others].filter(
     (r, i, all) => all.findIndex((x) => Number(x.id) === Number(r.id)) === i,
   );
-  // Résumés de la cible et des leurres les plus proches (descriptions, images) : le temps du bouclier.
-  const toLoad = [
-    { cardId: attack.cardId, title },
-    ...candidates.slice(0, 8).map((c) => ({ cardId: Number(c.id), title: c.title })),
-  ];
-  await withTimeout(ctx.wiki.load(toLoad, undefined, { fresh: true }), QUESTION_PREP_MS, []);
-  const summaries = await ctx.wiki.summaries(toLoad.map((c) => c.cardId));
+  // Résumés des leurres pas encore en cache (titres voisins, hasard) : le temps du bouclier.
+  const toLoad = others.slice(0, 8).map((c) => ({ cardId: Number(c.id), title: c.title }));
+  await withTimeout(ctx.wiki.load(toLoad, undefined, { fresh: true }), QUESTION_PREP_MS - 1_500, []);
+  const summaries = await ctx.wiki.summaries([attack.cardId, ...candidates.map((c) => Number(c.id))]);
   const article = (id: number, t: string, views: string | number): QuizArticle => {
     const s = summaries.get(id);
     return {
@@ -993,7 +1023,7 @@ export async function battleState(ctx: Ctx, userId: string, battleId: number): P
         t.attackSlot === slot &&
         t.servedAt &&
         t.question &&
-        (!(t.question as Question).titleHidden || t.answeredAt),
+        (!cardHiddenUntilAnswer(t.question as Question) || t.answeredAt),
     );
   const view = (ownerId: string, slot: number): BattleCardView => {
     const r = cards.find((c) => c.user_id === ownerId && c.slot === slot)!;
