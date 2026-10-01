@@ -50,6 +50,22 @@ export async function unreadMessages(ctx: Ctx, userId: string): Promise<number> 
   return row?.n ?? 0;
 }
 
+/**
+ * Nouveautés annoncées par une pastille « Nouveau » dans le menu, jusqu'à la première visite de la page
+ * (ou la date de fin). La clé est retenue par joueur (`players.seen_features`), sur tous ses appareils.
+ */
+export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
+  { key: "battle-v2", until: "2026-11-15T00:00:00+01:00" },
+];
+
+/** Boosters à thème achetés ou reçus, pas encore ouverts. */
+async function unopenedThemePacks(ctx: Ctx, userId: string): Promise<number> {
+  const [row] = await ctx.db.execute<{ n: number }>(
+    sql`select coalesce(sum(count), 0)::int as n from player_theme_packs where user_id = ${userId}`,
+  );
+  return row?.n ?? 0;
+}
+
 export async function me(
   ctx: Ctx,
   user: { id: string; username: string; displayName: string; isAdmin: boolean },
@@ -72,6 +88,10 @@ export async function me(
     elo: p.elo,
     wheelReady: p.lastWheelDay !== parisDay(ctx.now()),
     themesOnSale: await themesOnSale(ctx),
+    themePacks: await unopenedThemePacks(ctx, user.id),
+    newFeatures: FEATURE_ANNOUNCEMENTS.filter(
+      (f) => ctx.now() < new Date(f.until) && !p.seenFeatures.includes(f.key),
+    ).map((f) => f.key),
   };
 }
 
@@ -79,6 +99,18 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   const auth = { preHandler: requireUser(ctx) };
 
   api.get("/me", auth, async (req) => me(ctx, req.user));
+  /** Nouveauté vue (page visitée) : la pastille « Nouveau » du menu disparaît, sur tous les appareils. */
+  api.post("/me/seen-feature", auth, async (req) => {
+    const { key } = parse(
+      z.object({ key: z.enum(FEATURE_ANNOUNCEMENTS.map((f) => f.key) as [string, ...string[]]) }),
+      req.body,
+    );
+    await ctx.db
+      .update(schema.players)
+      .set({ seenFeatures: sql`array_append(${schema.players.seenFeatures}, ${key})` })
+      .where(and(eq(schema.players.userId, req.user.id), sql`not (${key} = any(${schema.players.seenFeatures}))`));
+    return { ok: true };
+  });
   api.patch("/me/settings", auth, async (req) => {
     const body = parse(
       z

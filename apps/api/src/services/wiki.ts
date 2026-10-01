@@ -5,6 +5,16 @@ import type { FastifyBaseLogger } from "fastify";
 import type { Config } from "../config.js";
 
 const MAX_PARALLEL = 5;
+/** Version du cache `wiki_summaries` : 2 = avec la description courte. */
+const SUMMARY_VERSION = 2;
+
+/** Résumé d'article en cache, description comprise. */
+export interface ArticleSummary {
+  extract: string | null;
+  description: string | null;
+  thumbUrl: string | null;
+  pageUrl: string | null;
+}
 const REST = "https://fr.wikipedia.org/api/rest_v1/page/summary/";
 const ACTION_API = "https://fr.wikipedia.org/w/api.php";
 /** Plafonds d'une catégorie de booster à thème : articles gardés et appels à l'API. */
@@ -27,6 +37,7 @@ export function cleanCategory(input: string): string {
 
 interface Summary {
   extract?: string;
+  description?: string;
   thumbnail?: { source?: string };
   content_urls?: { desktop?: { page?: string } };
   type?: string;
@@ -72,6 +83,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
   async function fetchOne(cardId: number, title: string): Promise<CardMedia> {
     let status: "ok" | "missing" | "error" = "error";
     let media: CardMedia = { cardId, thumbUrl: null, extract: null, pageUrl: articleUrl(title) };
+    let description: string | null = null;
     try {
       const res = await limited(() =>
         fetch(REST + encodeURIComponent(title.replace(/ /g, "_")), {
@@ -88,6 +100,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
           extract: body.extract?.trim() || null,
           pageUrl: cleanUrl(body.content_urls?.desktop?.page) ?? articleUrl(title),
         };
+        description = body.description?.trim() || null;
         status = "ok";
       }
     } catch (err) {
@@ -97,13 +110,23 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     if (status !== "error") {
       await db
         .insert(schema.wikiSummaries)
-        .values({ pageId: cardId, extract: media.extract, thumbUrl: media.thumbUrl, pageUrl: media.pageUrl, status })
+        .values({
+          pageId: cardId,
+          extract: media.extract,
+          thumbUrl: media.thumbUrl,
+          pageUrl: media.pageUrl,
+          description,
+          version: SUMMARY_VERSION,
+          status,
+        })
         .onConflictDoUpdate({
           target: schema.wikiSummaries.pageId,
           set: {
             extract: media.extract,
             thumbUrl: media.thumbUrl,
             pageUrl: media.pageUrl,
+            description,
+            version: SUMMARY_VERSION,
             status,
             fetchedAt: sql`now()`,
           },
@@ -125,13 +148,38 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     return out;
   }
 
-  /** Charge les médias manquants (dédoublonné), et appelle `onLoaded` pour chacun. */
+  /** Résumés complets en cache (description comprise) : questions des duels. */
+  async function summaries(cardIds: number[]): Promise<Map<number, ArticleSummary>> {
+    const out = new Map<number, ArticleSummary>();
+    if (cardIds.length === 0) return out;
+    const rows = await db
+      .select()
+      .from(schema.wikiSummaries)
+      .where(inArray(schema.wikiSummaries.pageId, [...new Set(cardIds)]));
+    for (const r of rows)
+      out.set(r.pageId, { extract: r.extract, description: r.description, thumbUrl: r.thumbUrl, pageUrl: r.pageUrl });
+    return out;
+  }
+
+  /**
+   * Charge les médias manquants (dédoublonné), et appelle `onLoaded` pour chacun.
+   * `fresh` : recharge aussi les résumés mis en cache avant l'ajout de la description (duels).
+   */
   async function load(
     cards: { cardId: number; title: string }[],
     onLoaded?: (m: CardMedia) => void,
+    options: { fresh?: boolean } = {},
   ): Promise<CardMedia[]> {
     if (config.WIKIMEDIA_DISABLED || cards.length === 0) return [];
-    const have = await cached(cards.map((c) => c.cardId));
+    const ids = [...new Set(cards.map((c) => c.cardId))];
+    const have = new Set<number>();
+    if (ids.length) {
+      const rows = await db
+        .select({ pageId: schema.wikiSummaries.pageId, version: schema.wikiSummaries.version })
+        .from(schema.wikiSummaries)
+        .where(inArray(schema.wikiSummaries.pageId, ids));
+      for (const r of rows) if (!options.fresh || r.version >= SUMMARY_VERSION) have.add(r.pageId);
+    }
     const missing = cards.filter((c, i) => !have.has(c.cardId) && cards.findIndex((d) => d.cardId === c.cardId) === i);
     return Promise.all(
       missing.map(async (c) => {
@@ -208,7 +256,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     return [...pages].slice(0, CATEGORY_MAX_PAGES);
   }
 
-  return { cached, load, titleOf, categoryMembers };
+  return { cached, summaries, load, titleOf, categoryMembers };
 }
 
 export type Wiki = ReturnType<typeof createWiki>;
