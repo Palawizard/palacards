@@ -3,7 +3,7 @@
 import { ECONOMY, RARITY_LABELS } from "@palacards/game";
 import type { BattleCardView, BattleStateDTO, BattleTurnView } from "@palacards/shared";
 import { Check, ExternalLink, Flag, Shield, Swords, X, Zap } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import Link from "next/link";
 import { use, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -414,17 +414,16 @@ function Arena({
 
   return (
     <section className="infobox relative min-h-56 overflow-hidden p-4 sm:p-6" aria-live="polite">
-      <AnimatePresence mode="wait" initial={false}>
-        <motion.div
-          key={intro ? "intro" : key}
-          initial={{ opacity: 0, filter: "blur(4px)" }}
-          animate={{ opacity: 1, filter: "blur(0px)" }}
-          exit={{ opacity: 0, filter: "blur(4px)" }}
-          transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
-        >
-          {body}
-        </motion.div>
-      </AnimatePresence>
+      {/* Chaque phase entre en fondu, l'ancienne disparaît aussitôt : pas d'animation de sortie à attendre
+          (des changements de phase rapprochés pouvaient bloquer l'ancienne phase à l'écran). */}
+      <motion.div
+        key={intro ? "intro" : key}
+        initial={{ opacity: 0, filter: "blur(4px)" }}
+        animate={{ opacity: 1, filter: "blur(0px)" }}
+        transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+      >
+        {body}
+      </motion.div>
     </section>
   );
 }
