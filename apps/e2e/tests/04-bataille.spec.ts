@@ -25,8 +25,10 @@ async function playTurn(a: Page, b: Page) {
   await expect(choices.first()).toBeEnabled({ timeout: 15_000 });
   await choices.first().click();
   // Résultat du tour, en clair, chez les deux joueurs.
-  await expect(defender.getByText(/Attaque parée|Parade parfaite|Touché/)).toBeVisible();
-  await expect(attacker.getByText(/Attaque parée|Parade parfaite|Touché/)).toBeVisible();
+  // (dans l'arène : le journal reprend aussi les tours précédents).
+  const outcome = /Attaque parée|Parade parfaite|Touché/;
+  await expect(defender.locator("section[aria-live]").getByText(outcome)).toBeVisible();
+  await expect(attacker.locator("section[aria-live]").getByText(outcome)).toBeVisible();
 }
 
 test("duel en direct : attaque, bouclier, question, abandon", async ({ browser }) => {
