@@ -10,7 +10,9 @@ export const metadata: Metadata = {
 };
 
 const CONTACT = "palawi.pro@gmail.com";
-const UPDATED = "28 septembre 2026";
+const UPDATED = "1er octobre 2026";
+// Politique commune de palawi.fr : URL absolue, hors du basePath /palacards.
+const COMMON_POLICY = "https://palawi.fr/confidentialite/";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -69,6 +71,13 @@ export default function PrivacyPage() {
         PalaCards est un jeu entre amis, sans publicité, sans mesure d&apos;audience et sans revente de données. Cette
         page explique quelles données le jeu garde, pourquoi, combien de temps, et comment exercer tes droits (RGPD).
       </p>
+      <p className="max-w-prose">
+        Elle complète la{" "}
+        <a className="article-link" href={COMMON_POLICY}>
+          politique de confidentialité commune de palawi.fr
+        </a>
+        , qui couvre ton compte palawi.fr et les autres services du site.
+      </p>
 
       <Section title="Qui est responsable">
         <p className="max-w-prose">
@@ -92,10 +101,10 @@ export default function PrivacyPage() {
           ))}
         </ul>
         <p className="max-w-prose">
-          Les sauvegardes de la base sont gardées 14 jours : une donnée supprimée en disparaît au plus tard 14 jours
-          après. Si tu te connectes avec ton compte palawi.fr, le jeu reçoit seulement ton identifiant et ton pseudo ;
-          ce compte-là se gère sur auth.palawi.fr, sous la même responsabilité, et se supprime depuis la page « Mon
-          compte » d&apos;auth.palawi.fr.
+          Les sauvegardes de la base sont gardées 14 jours, et celles du serveur entier 3 mois au plus : une donnée
+          supprimée en disparaît au plus tard 3 mois après. Si tu te connectes avec ton compte palawi.fr, le jeu reçoit
+          seulement ton identifiant et ton pseudo ; ce compte-là se gère sur auth.palawi.fr, sous la même
+          responsabilité, et se supprime depuis la page « Mon compte » d&apos;auth.palawi.fr.
         </p>
       </Section>
 
@@ -185,16 +194,20 @@ export default function PrivacyPage() {
       </Section>
 
       <Section title="Mentions légales">
-        <dl className="grid max-w-prose grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-          <dt className="font-semibold">Éditeur</dt>
+        <dl className="grid max-w-prose grid-cols-[minmax(auto,11rem)_1fr] gap-x-4 gap-y-2">
+          <dt className="font-semibold">Éditeur et directeur de la publication</dt>
           <dd>
-            Palawi, particulier, site non commercial —{" "}
+            Palawi, particulier, site personnel et non commercial. Contact :{" "}
             <a className="article-link" href={`mailto:${CONTACT}`}>
               {CONTACT}
             </a>
+            .
           </dd>
           <dt className="font-semibold">Hébergement</dt>
-          <dd>Serveur personnel de l&apos;éditeur, situé en France ; acheminement réseau par Cloudflare, Inc.</dd>
+          <dd>
+            Serveur personnel de l&apos;éditeur, situé en France. Acheminement réseau : Cloudflare, Inc., 101 Townsend
+            Street, San Francisco, CA 94107, États-Unis.
+          </dd>
           <dt className="font-semibold">Contenus</dt>
           <dd>
             Textes et images des cartes issus de Wikipédia en français, sous licence{" "}
