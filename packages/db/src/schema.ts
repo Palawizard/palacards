@@ -13,7 +13,6 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
-  real,
   smallint,
   text,
   timestamp,
@@ -101,6 +100,10 @@ export const wikiSummaries = pgTable("wiki_summaries", {
   extract: text("extract"),
   thumbUrl: text("thumb_url"),
   pageUrl: text("page_url"),
+  /** Description courte (Wikidata) : questions « C'est quoi ? » des duels. */
+  description: text("description"),
+  /** Version du cache : 1 = avant la description (rechargée à la demande par les duels). */
+  version: smallint("version").notNull().default(2),
   status: text("status", { enum: ["ok", "missing", "error"] }).notNull(),
   fetchedAt: tstz("fetched_at").notNull().defaultNow(),
 });
@@ -211,6 +214,11 @@ export const players = pgTable(
     lastLoginDay: date("last_login_day"),
     /** Dernier jour (Paris) où la roue quotidienne a été tournée. */
     lastWheelDay: date("last_wheel_day"),
+    /** Nouveautés déjà vues (pastille « Nouveau » du menu), par clé : `battle-v2`… */
+    seenFeatures: text("seen_features")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     lastSeenAt: tstz("last_seen_at"),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
@@ -638,14 +646,25 @@ export const battles = pgTable(
     id: id(),
     challengerId: userRef("challenger_id").notNull(),
     opponentId: userRef("opponent_id").notNull(),
-    mode: text("mode", { enum: ["live", "async"] }).notNull(),
     status: text("status", { enum: ["pending", "declined", "cancelled", "active", "finished"] })
       .notNull()
       .default("pending"),
     seed: text("seed").notNull(),
     winnerId: userRef("winner_id"),
-    challengerScore: smallint("challenger_score").notNull().default(0),
-    opponentScore: smallint("opponent_score").notNull().default(0),
+    /** Phase du duel en cours (null hors duel actif) ; l'état complet vit en base, jamais en mémoire. */
+    phase: text("phase", { enum: ["lobby", "attack", "shield", "question", "reveal"] }),
+    /** Tour en cours (1 à 8 ; 0 avant le premier). */
+    turn: smallint("turn").notNull().default(0),
+    phaseStartedAt: tstz("phase_started_at"),
+    phaseEndsAt: tstz("phase_ends_at"),
+    firstAttackerId: userRef("first_attacker_id"),
+    /** PV (null : duel de l'ancien format, avant les PV). */
+    challengerHp: smallint("challenger_hp"),
+    opponentHp: smallint("opponent_hp"),
+    /** Actions manquées d'affilée (chrono écoulé) : abandon au-delà de AFK_FORFEIT. */
+    challengerIdle: smallint("challenger_idle").notNull().default(0),
+    opponentIdle: smallint("opponent_idle").notNull().default(0),
+    forfeitBy: userRef("forfeit_by"),
     challengerEloDelta: integer("challenger_elo_delta"),
     opponentEloDelta: integer("opponent_elo_delta"),
     createdAt: tstz("created_at").notNull().defaultNow(),
@@ -681,41 +700,36 @@ export const battleDecks = pgTable(
   ],
 );
 
-/** Question d'une manche. La bonne réponse ne quitte jamais le serveur avant la réponse du joueur. */
-export const battleRounds = pgTable(
-  "battle_rounds",
+/** Un tour de duel : carte attaquante, bouclier, question et résultat. */
+export const battleTurns = pgTable(
+  "battle_turns",
   {
     battleId: bigint("battle_id", { mode: "number" })
       .notNull()
       .references(() => battles.id, { onDelete: "cascade" }),
-    round: smallint("round").notNull(),
-    question: jsonb("question").notNull(),
-    winnerId: userRef("winner_id"),
-  },
-  (t) => [primaryKey({ columns: [t.battleId, t.round] })],
-);
-
-export const battleAnswers = pgTable(
-  "battle_answers",
-  {
-    battleId: bigint("battle_id", { mode: "number" })
-      .notNull()
-      .references(() => battles.id, { onDelete: "cascade" }),
-    round: smallint("round").notNull(),
-    userId: userRef("user_id").notNull(),
-    servedAt: tstz("served_at").notNull(),
+    turn: smallint("turn").notNull(),
+    attackerId: userRef("attacker_id").notNull(),
+    defenderId: userRef("defender_id").notNull(),
+    attackSlot: smallint("attack_slot").notNull(),
+    attackAuto: boolean("attack_auto").notNull().default(false),
+    shieldSlot: smallint("shield_slot"),
+    shieldAuto: boolean("shield_auto").notNull().default(false),
+    /** Question (bonne réponse comprise) : ne quitte jamais le serveur avant la réponse. */
+    question: jsonb("question"),
+    servedAt: tstz("served_at"),
     answeredAt: tstz("answered_at"),
     choice: smallint("choice"),
     correct: boolean("correct"),
-    timeLeftMs: integer("time_left_ms"),
-    power: real("power"),
+    answerMs: integer("answer_ms"),
+    rawDamage: smallint("raw_damage"),
+    shieldPct: smallint("shield_pct"),
+    damage: smallint("damage"),
+    reflected: smallint("reflected"),
   },
   (t) => [
-    primaryKey({ columns: [t.battleId, t.round, t.userId] }),
-    // Questions en attente de réponse d'un joueur (catalogue coupé pendant une question).
-    index("battle_answers_pending_idx")
-      .on(t.userId, t.servedAt)
-      .where(sql`${t.answeredAt} IS NULL`),
+    primaryKey({ columns: [t.battleId, t.turn] }),
+    check("battle_turns_turn", sql`${t.turn} BETWEEN 1 AND 8`),
+    index("battle_turns_defender_idx").on(t.defenderId),
   ],
 );
 
