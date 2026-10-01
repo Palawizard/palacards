@@ -970,3 +970,119 @@ button:disabled .pc-pack-foil {
     opacity: 0;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Duel « Attaque / Bouclier »                                        */
+/* ------------------------------------------------------------------ */
+
+/* Jauge de PV : la barre descend aussitôt, la traînée claire suit après un temps de lecture. */
+.duel-hp {
+  position: relative;
+  width: 100%;
+  height: 0.85rem;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--color-line) 70%, transparent);
+  box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
+}
+.duel-hp-fill,
+.duel-hp-trail {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform: scaleX(var(--hp));
+  transform-origin: left;
+}
+.duel-hp[data-side="them"] :is(.duel-hp-fill, .duel-hp-trail) {
+  transform-origin: right;
+}
+.duel-hp-fill {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.28), transparent 55%), var(--tone);
+  transition:
+    transform 420ms var(--ease-out),
+    background-color 300ms ease;
+}
+.duel-hp-trail {
+  background: color-mix(in oklab, var(--color-danger) 55%, #fff);
+  transition: transform 700ms var(--ease-in-out) 650ms;
+}
+.duel-hit {
+  animation: duel-hit 1300ms var(--ease-out) forwards;
+}
+@keyframes duel-hit {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.9);
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+}
+
+/* Carte de la main à choisir : se relève au survol et quand elle est choisie. */
+.duel-pick {
+  transition: transform 180ms var(--ease-out);
+}
+.duel-pick:active {
+  transform: scale(0.97);
+}
+.duel-pick[aria-pressed="true"] {
+  transform: translateY(-10px);
+}
+.duel-pick[aria-pressed="true"] .pc-card {
+  outline: 3px solid var(--color-accent);
+  outline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .duel-pick:hover:not([aria-pressed="true"]) {
+    transform: translateY(-4px);
+  }
+}
+
+/* Chrono de phase : se vide en continu, rouge sur la fin. */
+.duel-clock {
+  height: 4px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in oklab, var(--color-line) 70%, transparent);
+}
+.duel-clock > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-highlight);
+  transform-origin: left;
+  transition:
+    transform 200ms linear,
+    background-color 200ms ease;
+}
+.duel-clock[data-late="true"] > span {
+  background: var(--color-danger);
+}
+
+/* Mouvement réduit : les dégâts apparaissent en fondu, les jauges sautent à leur valeur. */
+@media (prefers-reduced-motion: reduce) {
+  .duel-hit {
+    animation-name: pc-fade-in;
+  }
+  .duel-hp-fill,
+  .duel-hp-trail,
+  .duel-pick {
+    transition-duration: 0ms;
+  }
+}
+
+/* Pastille « Nouveau » du menu : étiquette blanche sur la couverture, jusqu'à la première visite. */
+.pc-new {
+  background: #fff;
+  color: var(--color-cover);
+  box-shadow: 0 1px 2px rgb(4 6 20 / 0.3);
+}

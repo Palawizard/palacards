@@ -1,7 +1,7 @@
 // Sélecteur de deck (importé uniquement par des composants client).
-import { DECK_SIZE } from "@palacards/game";
+import { attackDamage, DECK_SIZE, shieldPercent } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
-import { ArrowDown, ArrowUp, Search, X } from "lucide-react";
+import { Search, Shield, Swords, X } from "lucide-react";
 import { useState } from "react";
 import useSWR from "swr";
 import { fmt } from "@/lib/format";
@@ -9,7 +9,7 @@ import { useDebounced } from "@/lib/use-debounced";
 import { RaritySigil } from "./Card";
 import { Thumb } from "./market";
 
-/** Compose un deck ordonné de 5 cartes (la manche 1 oppose les cartes n° 1, etc.). */
+/** Compose un deck de 5 cartes : l'ordre n'importe pas, chaque carte attaque une fois et protège une fois. */
 export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: CardDTO[]) => void }) {
   const [q, setQ] = useState("");
   const query = useDebounced(q);
@@ -17,13 +17,6 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
     `/collection?sort=atk&limit=60${query.trim().length >= 2 ? `&q=${encodeURIComponent(query.trim())}` : ""}`,
   );
   const chosen = new Set(deck.map((c) => c.instanceId));
-  const move = (i: number, dir: -1 | 1) => {
-    const next = [...deck];
-    const j = i + dir;
-    if (j < 0 || j >= next.length) return;
-    [next[i], next[j]] = [next[j]!, next[i]!];
-    onChange(next);
-  };
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -49,27 +42,16 @@ export function DeckPicker({ deck, onChange }: { deck: CardDTO[]; onChange: (d: 
                     <span className="min-w-0 flex-1">
                       <span className="line-clamp-1 font-display">{c.title}</span>
                       <span className="tnum flex items-center gap-1.5 text-xs text-faint">
-                        <RaritySigil rarity={c.rarity} /> ATK {fmt(c.atk)} · DEF {fmt(c.def)}
+                        <RaritySigil rarity={c.rarity} />
+                        <span className="inline-flex items-center gap-0.5" title="Dégâts en attaque">
+                          <Swords aria-hidden className="size-3" /> {attackDamage(c.atk, c.rarity)}
+                        </span>
+                        <span className="inline-flex items-center gap-0.5" title="Réduction en bouclier">
+                          <Shield aria-hidden className="size-3" /> {shieldPercent(c.def)}
+                          {"\u00a0"}%
+                        </span>
                       </span>
                     </span>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-ghost px-1.5"
-                      onClick={() => move(i, -1)}
-                      disabled={i === 0}
-                      aria-label="Monter"
-                    >
-                      <ArrowUp className="size-4" />
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-ghost px-1.5"
-                      onClick={() => move(i, 1)}
-                      disabled={i === deck.length - 1}
-                      aria-label="Descendre"
-                    >
-                      <ArrowDown className="size-4" />
-                    </button>
                     <button
                       type="button"
                       className="btn btn-sm btn-ghost px-1.5"

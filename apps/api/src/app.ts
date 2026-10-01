@@ -20,6 +20,7 @@ import { prepareAccountDeletion } from "./services/privacy.js";
 import { progressionIdle, registerProgressionHooks } from "./services/progression.js";
 import { wirePresence } from "./services/social.js";
 import { registerJobs } from "./services/jobs-handlers.js";
+import { battleEngine, resumeBattles } from "./services/battles.js";
 import { testRoutes } from "./routes/test.js";
 import { createWiki } from "./services/wiki.js";
 
@@ -178,8 +179,11 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
 
   app.addHook("onReady", async () => {
     await jobs.start();
+    // Duels en cours au redémarrage : les échéances sont reprogrammées depuis la base.
+    if (ctx) await resumeBattles(ctx);
   });
   app.addHook("onClose", async () => {
+    battleEngine.stopAll();
     await jobs.stop();
     await progressionIdle();
     rt.io.close();

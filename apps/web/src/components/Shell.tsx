@@ -1,5 +1,6 @@
 "use client";
 
+import type { MeDTO } from "@palacards/shared";
 import { Bell, Menu, Moon, Package, Search, Sun, Volume2, VolumeX, X } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import Link from "next/link";
@@ -26,6 +27,11 @@ export function Wordmark({ className = "" }: { className?: string }) {
   );
 }
 
+/** Paquets prêts à ouvrir : stock gratuit, paquets bonus et boosters à thème achetés ou reçus. */
+function packsToOpen(me: MeDTO): number {
+  return me.packs.available + me.packs.bonus + me.themePacks;
+}
+
 function Portal({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { me } = useMe();
@@ -45,10 +51,11 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                 const badge =
                   item.badge === "messages"
                     ? (me?.unreadMessages ?? 0)
-                    : item.badge === "themes"
-                      ? (me?.themesOnSale ?? 0)
+                    : item.badge === "packs" && me
+                      ? packsToOpen(me)
                       : 0;
                 const dot = item.badge === "wheel" && !!me?.wheelReady && !active;
+                const isNew = !!item.feature && !!me?.newFeatures.includes(item.feature);
                 return (
                   <li key={item.href}>
                     <Link
@@ -67,10 +74,15 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                         strokeWidth={2}
                       />
                       <span className="flex-1">{item.label}</span>
+                      {isNew && (
+                        <span className="pc-new rounded-full px-1.5 py-px text-[0.68rem] font-bold uppercase tracking-[0.04em]">
+                          Nouveau
+                        </span>
+                      )}
                       {badge > 0 && (
                         <span
                           className="tnum rounded-full bg-accent px-1.5 text-[0.72rem] font-bold text-accent-ink"
-                          title={item.badge === "themes" ? "Booster à thème en vente" : undefined}
+                          title={item.badge === "packs" ? `${badge} paquet${badge > 1 ? "s" : ""} à ouvrir` : undefined}
                         >
                           {badge}
                         </span>
@@ -306,11 +318,14 @@ export function Shell({ children }: { children: ReactNode }) {
         <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-line bg-bg/95 px-3 backdrop-blur-sm sm:gap-3 sm:px-5">
           <button
             type="button"
-            className="btn btn-ghost btn-sm -ml-1 lg:hidden"
+            className="btn btn-ghost btn-sm relative -ml-1 lg:hidden"
             onClick={() => setDrawer(true)}
-            aria-label="Ouvrir le menu"
+            aria-label={me?.newFeatures.length ? "Ouvrir le menu (nouveauté)" : "Ouvrir le menu"}
           >
             <Menu className="size-5" />
+            {!!me?.newFeatures.length && (
+              <span className="absolute right-1 top-1 size-2 rounded-full bg-accent ring-2 ring-bg" aria-hidden />
+            )}
           </button>
           {/* Sous 400 px (Android courant : 360 px), le logo texte ne tient pas avec les compteurs : il reste dans le tiroir. */}
           <Wordmark className="max-[399px]:hidden lg:hidden" />

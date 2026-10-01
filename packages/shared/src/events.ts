@@ -70,49 +70,99 @@ export interface ServerToClientEvents {
     } | null;
     createdAt: string;
   }) => void;
-  "battle:update": (b: { battleId: number }) => void;
-  "battle:question": (q: BattleQuestionDTO) => void;
-  "battle:round": (r: BattleRoundResultDTO) => void;
+  /** Liste des duels à relire (défi reçu, duel commencé, terminé…) ; `started` : le duel t'attend. */
+  "battle:update": (b: { battleId: number; started?: boolean; opponent?: string }) => void;
+  /** État complet d'un duel, poussé à chaque changement de phase (le client ne fait que l'afficher). */
+  "battle:state": (s: BattleStateDTO) => void;
 }
 
-export interface BattleQuestionDTO {
-  battleId: number;
-  round: number;
-  type: string;
+export type BattlePhaseDTO = "lobby" | "attack" | "shield" | "question" | "reveal";
+
+/** Carte d'un deck en duel. `card` est null pour une carte adverse pas encore révélée (titre caché). */
+export interface BattleCardView {
+  slot: number;
+  rarity: Rarity;
+  atk: number;
+  def: number;
+  /** Dégâts si elle touche, avant bouclier. */
+  damage: number;
+  /** Réduction en % si elle sert de bouclier. */
+  shieldPct: number;
+  attacked: boolean;
+  shielded: boolean;
+  card: CardDTO | null;
+}
+
+export interface BattleQuestionView {
+  type: "definition" | "year" | "image" | "who_am_i" | "popular";
   prompt: string;
+  /** Textes, ou URL d'images pour `image`. */
   choices: string[];
-  deadline: string;
-  timeLimitMs: number;
-  /** Temps restant au moment de l'envoi : le client en déduit son échéance sans dépendre de son horloge. */
-  remainingMs: number;
-  answered: boolean;
-  yourCard: CardDTO;
-  /** Carte adverse, révélée seulement après la réponse (ses stats trahiraient « plus lu » / « plus long »). */
-  theirCard: CardDTO | null;
+  titleHidden: boolean;
 }
 
-/** Réponse à `POST /battles/:id/rounds/:round/answer`. */
-export interface BattleAnswerDTO {
-  battleId: number;
-  round: number;
-  correctIndex: number;
-  yourChoice: number | null;
-  correct: boolean;
-  yourPower: number;
-  timeLeftMs: number;
-  theirCard: CardDTO;
+export interface BattleTurnView {
+  turn: number;
+  attackerId: string;
+  defenderId: string;
+  attack: BattleCardView;
+  shield: BattleCardView | null;
+  attackAuto: boolean;
+  shieldAuto: boolean;
+  question: BattleQuestionView | null;
+  /** Rempli une fois la question résolue (réponse ou chrono écoulé). */
+  outcome: {
+    choice: number | null;
+    correctIndex: number;
+    correct: boolean;
+    answerMs: number | null;
+    rawDamage: number;
+    shieldPct: number;
+    damage: number;
+    reflected: number;
+    parry: "none" | "parry" | "perfect";
+  } | null;
 }
 
-export interface BattleRoundResultDTO {
-  battleId: number;
-  round: number;
-  correctIndex: number;
-  yourChoice: number | null;
-  yourPower: number;
-  theirPower: number;
-  winnerId: string | null;
-  score: { you: number; them: number };
-  finished: boolean;
+export interface BattlePlayerView {
+  id: string;
+  name: string;
+  username: string;
+  hp: number | null;
+  online: boolean;
+  /** Actions manquées d'affilée (abandon à 3). */
+  idle: number;
+}
+
+export interface BattleStateDTO {
+  id: number;
+  status: "pending" | "declined" | "cancelled" | "active" | "finished";
+  phase: BattlePhaseDTO | null;
+  turn: number;
+  totalTurns: number;
+  maxHp: number;
+  /** Temps restant dans la phase au moment de l'envoi (le client en déduit son échéance). */
+  phaseRemainingMs: number | null;
+  phaseDurationMs: number | null;
+  isChallenger: boolean;
+  /** Duel de l'ancien format (avant les PV) : seul le résultat est connu. */
+  legacy: boolean;
+  you: BattlePlayerView;
+  them: BattlePlayerView;
+  /** Qui attaque au tour en cours. */
+  attackerId: string | null;
+  myHand: BattleCardView[];
+  theirHand: BattleCardView[];
+  current: BattleTurnView | null;
+  /** Tours terminés, du premier au dernier. */
+  turns: BattleTurnView[];
+  result: {
+    outcome: "win" | "loss" | "draw";
+    eloDelta: number | null;
+    forfeitBy: "you" | "them" | null;
+    reward: number | null;
+  } | null;
+  createdAt: string;
 }
 
 /** Événements envoyés par le client : validés côté serveur avec Zod. */
