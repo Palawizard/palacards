@@ -51,8 +51,12 @@ export interface MeDTO {
   elo: number;
   /** Tour de roue quotidienne disponible aujourd'hui. */
   wheelReady: boolean;
-  /** Boosters à thème en vente en ce moment (pastille du menu). */
+  /** Boosters à thème en vente en ce moment. */
   themesOnSale: number;
+  /** Boosters à thème achetés ou reçus, pas encore ouverts (pastille « Paquets » du menu). */
+  themePacks: number;
+  /** Nouveautés pas encore vues (pastille « Nouveau » du menu), ex. `battle-v2`. */
+  newFeatures: string[];
 }
 
 /** Booster à thème temporaire (page Paquets). */

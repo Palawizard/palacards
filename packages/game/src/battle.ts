@@ -1,22 +1,60 @@
 import { ECONOMY } from "./economy.js";
+import type { Rarity } from "./rarity.js";
 
-export const BATTLE_ROUNDS = 5;
-export const ROUNDS_TO_WIN = 3;
+// ---------------------------------------------------------------------------
+// Règles du duel « Attaque / Bouclier » (en direct uniquement)
+//
+// Chaque joueur a un deck de 5 cartes et 100 PV. Les joueurs attaquent à tour de rôle (4 fois chacun).
+// Tour : l'attaquant choisit une carte (face cachée : rareté et dégâts seulement), le défenseur choisit
+// un bouclier, puis répond à une question sur l'article de la carte attaquante.
+//   - juste : attaque parée (0 dégât) ; juste et rapide : parade parfaite, une partie des dégâts revient ;
+//   - faux ou temps écoulé : dégâts de la carte, réduits par le bouclier.
+// Chaque carte attaque au plus une fois et défend au plus une fois.
+// ---------------------------------------------------------------------------
+
 export const DECK_SIZE = 5;
-/** Temps de réponse par question, mesuré par le serveur. */
-export const QUESTION_TIME_MS = 10_000;
-/** Marge réseau tolérée au-delà des 10 s avant de compter la réponse comme absente. */
+export const BATTLE_HP = 100;
+export const ATTACKS_PER_PLAYER = 4;
+export const TOTAL_TURNS = ATTACKS_PER_PLAYER * 2;
+
+/** Durées des phases d'un tour, mesurées par le serveur. */
+export const ATTACK_TIME_MS = 15_000;
+export const SHIELD_TIME_MS = 10_000;
+export const QUESTION_TIME_MS = 12_000;
+/** Affichage du résultat d'un tour avant le suivant. */
+export const REVEAL_TIME_MS = 4_500;
+/** Marge réseau tolérée au-delà du chrono de la question avant de compter la réponse comme absente. */
 export const ANSWER_GRACE_MS = 1_500;
+/** Après l'acceptation, les deux joueurs ont ce délai pour ouvrir l'écran du duel. */
+export const LOBBY_TIMEOUT_MS = 2 * 60_000;
+/** Un joueur qui laisse filer ce nombre d'actions d'affilée (chrono écoulé) abandonne. */
+export const AFK_FORFEIT = 3;
+
+/** Réponse juste en moins de ce temps : parade parfaite. */
+export const PERFECT_PARRY_MS = 4_000;
+/** Part des dégâts (avant bouclier) renvoyée à l'attaquant par une parade parfaite. */
+export const PERFECT_PARRY_REFLECT = 0.2;
+/** Réduction maximale d'un bouclier, en %. */
+export const SHIELD_MAX_PCT = 50;
+
+/**
+ * Multiplicateur de dégâts par rareté, à ajuster avec les taux d'erreur mesurés en jeu : on vise des
+ * dégâts moyens par attaque (dégâts × taux d'erreur) proches d'une rareté à l'autre. Les cartes rares
+ * sont les plus lues, donc les mieux connues : elles frappent fort mais sont souvent parées.
+ */
+export const RARITY_DAMAGE_MULT: Record<Rarity, number> = { C: 1, PC: 1, R: 1, SR: 1, UR: 1, L: 1 };
+
 export const ELO_K = 32;
 export const ELO_START = 1_000;
-/** Un défi non accepté expire au bout de 48 h ; un duel asynchrone doit être fini en 72 h. */
+/** Un défi non accepté expire au bout de 48 h. */
 export const CHALLENGE_TTL_MS = 48 * 60 * 60_000;
-export const ASYNC_BATTLE_TTL_MS = 72 * 60 * 60_000;
 /** Anti-farm : au-delà de ce nombre de duels terminés dans la journée entre deux joueurs, plus de PW ni d'Elo. */
 export const BATTLE_REWARDED_PER_PAIR_PER_DAY = 3;
 
+export type BattlePhase = "lobby" | "attack" | "shield" | "question" | "reveal";
+
 // ---------------------------------------------------------------------------
-// Aléatoire à graine (duels asynchrones : mêmes questions pour les deux joueurs)
+// Aléatoire à graine (questions reproductibles)
 // ---------------------------------------------------------------------------
 
 /** Générateur déterministe (mulberry32) à partir d'une graine texte (hachage FNV-1a). */
@@ -36,7 +74,7 @@ export function seededRandom(seed: string): () => number {
   };
 }
 
-function shuffle<T>(items: T[], rand: () => number): T[] {
+export function shuffle<T>(items: T[], rand: () => number): T[] {
   const out = [...items];
   for (let i = out.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
@@ -45,142 +83,83 @@ function shuffle<T>(items: T[], rand: () => number): T[] {
   return out;
 }
 
+const pick = <T>(items: T[], rand: () => number): T => items[Math.floor(rand() * items.length)]!;
+
 // ---------------------------------------------------------------------------
-// Questions
+// Dégâts
 // ---------------------------------------------------------------------------
 
-export type QuestionType = "who_am_i" | "most_viewed" | "longest";
-
-export interface QuizCard {
-  cardId: number;
-  title: string;
-  views12m: number;
-  pageLen: number;
-  extract: string | null;
+/** Dégâts d'une carte qui touche, avant bouclier : ATK ÷ 100 (1 à 100). */
+export function attackDamage(atk: number, rarity: Rarity): number {
+  return Math.max(1, Math.round((atk / 100) * RARITY_DAMAGE_MULT[rarity]));
 }
 
-export interface Question {
-  type: QuestionType;
-  prompt: string;
-  choices: string[];
-  /** Index de la bonne réponse : ne quitte jamais le serveur avant la réponse du joueur. */
-  answer: number;
+/** Réduction d'un bouclier, en % : DEF ÷ 200, plafonnée à 50 %. */
+export function shieldPercent(def: number): number {
+  return Math.max(0, Math.min(SHIELD_MAX_PCT, Math.round(def / 200)));
 }
 
-const normalize = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+export type Parry = "none" | "parry" | "perfect";
 
-/** Masque le titre (et ses mots significatifs) dans le résumé, puis le tronque proprement. */
-export function maskExtract(extract: string, title: string, maxLength = 260): string {
-  const base = title.replace(/\s*\(.*\)\s*$/, "");
-  const words = [base, ...base.split(/[\s'’-]+/).filter((w) => w.length >= 4)];
-  let text = extract;
-  for (const w of words.sort((x, y) => y.length - x.length)) {
-    const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    text = text.replace(new RegExp(escaped, "gi"), "▢▢▢");
-    // Variante sans accents (« Elan » pour « Élan »).
-    const plain = normalize(w);
-    if (plain !== w.toLowerCase()) {
-      const idx = normalize(text).indexOf(plain);
-      if (idx >= 0) text = text.slice(0, idx) + "▢▢▢" + text.slice(idx + w.length);
-    }
-  }
-  if (text.length <= maxLength) return text;
-  const cut = text.slice(0, maxLength);
-  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), maxLength - 30))}…`;
+export interface HitResult {
+  /** Dégâts de la carte avant bouclier. */
+  raw: number;
+  /** Réduction du bouclier en % (appliquée seulement si l'attaque touche). */
+  shieldPct: number;
+  /** Dégâts subis par le défenseur. */
+  damage: number;
+  /** Dégâts renvoyés à l'attaquant (parade parfaite). */
+  reflected: number;
+  parry: Parry;
 }
 
 /**
- * Question d'une manche, identique pour les deux joueurs : dépend seulement de la graine,
- * des deux cartes et des titres leurres fournis par le serveur.
+ * Résout une attaque. `answerMs` : temps de réponse mesuré par le serveur (null : pas de réponse).
+ * Juste → 0 dégât ; juste en moins de 4 s → 20 % des dégâts bruts renvoyés ; faux → dégâts − bouclier.
  */
-export function makeQuestion(
-  seed: string,
-  round: number,
-  a: QuizCard,
-  b: QuizCard,
-  decoys: string[],
-  /** Question déjà vue (manche rejouée) : on prend un autre type quand c'est possible. */
-  avoid?: Question,
-): Question {
-  const rand = seededRandom(`${seed}:${round}`);
-  const withExtract = [a, b].filter((c) => c.extract && c.extract.length > 60);
-  const sameArticle = a.title === b.title;
-  let types: QuestionType[] = [];
-  if (withExtract.length && decoys.length >= 3) types.push("who_am_i");
-  if (!sameArticle && a.views12m !== b.views12m) types.push("most_viewed");
-  if (!sameArticle && a.pageLen !== b.pageLen) types.push("longest");
-  if (avoid && types.some((t) => t !== avoid.type)) types = types.filter((t) => t !== avoid.type);
-  const type = types.length ? types[Math.floor(rand() * types.length)]! : "who_am_i";
-
-  if (type === "who_am_i" && (withExtract.length || decoys.length >= 3)) {
-    // Manche rejouée : l'autre article devient la cible quand il a lui aussi un résumé.
-    const seenTitle = avoid?.type === "who_am_i" ? avoid.choices[avoid.answer] : undefined;
-    const targets = withExtract.some((c) => c.title !== seenTitle)
-      ? withExtract.filter((c) => c.title !== seenTitle)
-      : withExtract;
-    const target = targets.length ? targets[Math.floor(rand() * targets.length)]! : a;
-    // L'autre carte de la manche figure parmi les leurres : la réponse n'est jamais « la seule carte connue ».
-    const other = target === a ? b : a;
-    const pool = [...(other.title !== target.title ? [other.title] : []), ...shuffle(decoys, rand)].filter(
-      (d, i, all) => d !== target.title && all.indexOf(d) === i,
-    );
-    const choices = shuffle([target.title, ...pool.slice(0, 3)], rand);
-    const prompt = target.extract
-      ? maskExtract(target.extract, target.title)
-      : `Quel article compte ${target.pageLen.toLocaleString("fr-FR")} octets et a été lu ${target.views12m.toLocaleString("fr-FR")} fois cette année ?`;
-    return { type: "who_am_i", prompt, choices, answer: choices.indexOf(target.title) };
-  }
-  if (type === "longest") {
-    const choices = shuffle([a.title, b.title], rand);
-    const longest = a.pageLen > b.pageLen ? a.title : b.title;
+export function resolveHit(input: {
+  atk: number;
+  rarity: Rarity;
+  shieldDef: number | null;
+  correct: boolean;
+  answerMs: number | null;
+}): HitResult {
+  const raw = attackDamage(input.atk, input.rarity);
+  const shieldPct = input.shieldDef === null ? 0 : shieldPercent(input.shieldDef);
+  if (input.correct) {
+    const perfect = input.answerMs !== null && input.answerMs <= PERFECT_PARRY_MS;
     return {
-      type,
-      prompt: "Lequel de ces deux articles est le plus long ?",
-      choices,
-      answer: choices.indexOf(longest),
+      raw,
+      shieldPct,
+      damage: 0,
+      reflected: perfect ? Math.max(1, Math.round(raw * PERFECT_PARRY_REFLECT)) : 0,
+      parry: perfect ? "perfect" : "parry",
     };
   }
-  // most_viewed (et repli si aucune autre question n'est possible)
-  const choices = shuffle([a.title, b.title], rand);
-  const top = a.views12m >= b.views12m ? a.title : b.title;
-  return {
-    type: "most_viewed",
-    prompt: "Lequel de ces deux articles a été le plus lu cette année ?",
-    choices,
-    answer: choices.indexOf(top),
-  };
+  const damage = Math.max(1, Math.round(raw * (1 - shieldPct / 100)));
+  return { raw, shieldPct, damage, reflected: 0, parry: "none" };
 }
 
 // ---------------------------------------------------------------------------
-// Combat
+// Déroulé
 // ---------------------------------------------------------------------------
 
-/**
- * puissance = ATK × (1 + 0,5·juste + 0,25·(t_restant / 10 s)) − 0,3 × DEF_adverse
- * Le bonus de vitesse ne compte que pour une bonne réponse.
- */
-export function roundPower(atk: number, opponentDef: number, correct: boolean, timeLeftMs: number): number {
-  const t = Math.max(0, Math.min(QUESTION_TIME_MS, timeLeftMs));
-  const speed = correct ? 0.25 * (t / QUESTION_TIME_MS) : 0;
-  return Math.round(atk * (1 + (correct ? 0.5 : 0) + speed) - 0.3 * opponentDef);
+/** Qui attaque au tour `turn` (1-indexé) : le premier attaquant aux tours impairs. */
+export function attackerOfTurn<T>(turn: number, first: T, second: T): T {
+  return turn % 2 === 1 ? first : second;
 }
 
-/** Vainqueur d'une manche : plus grosse puissance, puis plus grosse DEF ; sinon manche nulle. */
-export function roundWinner(p1: { power: number; def: number }, p2: { power: number; def: number }): 1 | 2 | 0 {
-  if (p1.power !== p2.power) return p1.power > p2.power ? 1 : 2;
-  if (p1.def !== p2.def) return p1.def > p2.def ? 1 : 2;
-  return 0;
+/** Le duel s'arrête quand un joueur tombe à 0 PV ou après le dernier tour. */
+export function battleOver(hp1: number, hp2: number, turnsPlayed: number): boolean {
+  return hp1 <= 0 || hp2 <= 0 || turnsPlayed >= TOTAL_TURNS;
 }
 
-/** Le duel s'arrête dès 3 manches gagnées, ou après 5 manches. */
-export function battleOver(score1: number, score2: number, roundsPlayed: number): boolean {
-  return score1 >= ROUNDS_TO_WIN || score2 >= ROUNDS_TO_WIN || roundsPlayed >= BATTLE_ROUNDS;
-}
-
-/** Résultat final : au score, puis à la puissance cumulée ; égalité parfaite = nul. */
-export function battleResult(score1: number, score2: number, power1: number, power2: number): 1 | 2 | 0 {
-  if (score1 !== score2) return score1 > score2 ? 1 : 2;
-  if (power1 !== power2) return power1 > power2 ? 1 : 2;
+/** Résultat : le plus de PV restants, puis le plus de dégâts infligés ; sinon nul. */
+export function battleResult(hp1: number, hp2: number, dealt1: number, dealt2: number): 1 | 2 | 0 {
+  const a = Math.max(0, hp1);
+  const b = Math.max(0, hp2);
+  if (a !== b) return a > b ? 1 : 2;
+  if (dealt1 !== dealt2) return dealt1 > dealt2 ? 1 : 2;
   return 0;
 }
 
@@ -194,20 +173,20 @@ export function eloUpdate(r1: number, r2: number, outcome: 1 | 0.5 | 0): { r1: n
 /**
  * Le duel compte-t-il pour l'Elo ? (anti-farm avec des comptes secondaires)
  * - seulement les `BATTLE_REWARDED_PER_PAIR_PER_DAY` premiers duels de la paire dans la journée, comme les PW ;
- * - jamais si le perdant n'a répondu à aucune manche (abandon, absence) : rien ne se gagne sur un compte inactif.
- *   Pour un nul, il suffit qu'un des deux n'ait pas répondu.
- * `result` : 1 le joueur 1 gagne, 2 le joueur 2, 0 nul ; `answered1/2` : le joueur a donné au moins une réponse.
+ * - jamais si le perdant n'a rien joué lui-même (abandon, absence) : rien ne se gagne sur un compte inactif.
+ *   Pour un nul, il suffit qu'un des deux n'ait pas joué.
+ * `result` : 1 le joueur 1 gagne, 2 le joueur 2, 0 nul ; `played1/2` : le joueur a fait au moins une action.
  */
 export function battleRated(input: {
   pairFinishedToday: number;
   result: 1 | 2 | 0;
-  answered1: boolean;
-  answered2: boolean;
+  played1: boolean;
+  played2: boolean;
 }): boolean {
   if (input.pairFinishedToday >= BATTLE_REWARDED_PER_PAIR_PER_DAY) return false;
-  if (input.result === 1) return input.answered2;
-  if (input.result === 2) return input.answered1;
-  return input.answered1 && input.answered2;
+  if (input.result === 1) return input.played2;
+  if (input.result === 2) return input.played1;
+  return input.played1 && input.played2;
 }
 
 /** Récompense en PW d'un duel terminé. */
@@ -215,4 +194,245 @@ export function battleReward(outcome: "win" | "loss" | "draw"): number {
   if (outcome === "win") return ECONOMY.battle.win;
   if (outcome === "loss") return ECONOMY.battle.loss;
   return Math.round((ECONOMY.battle.win + ECONOMY.battle.loss) / 2);
+}
+
+// ---------------------------------------------------------------------------
+// Questions : toujours sur l'article de la carte attaquante, 4 choix
+// ---------------------------------------------------------------------------
+
+/**
+ * - `definition` : « Qu'est-ce que X ? », 4 descriptions courtes (Wikidata) ;
+ * - `year` : extrait avec une année masquée, 4 années proches ;
+ * - `image` : « Quelle image illustre X ? », 4 vignettes ;
+ * - `who_am_i` : extrait au titre masqué, 4 titres (la carte reste cachée jusqu'à la réponse) ;
+ * - `popular` : repli sans résumé, « lequel est le plus lu ? », 4 titres.
+ */
+export type QuestionType = "definition" | "year" | "image" | "who_am_i" | "popular";
+
+export const QUESTION_LABELS: Record<QuestionType, string> = {
+  definition: "C'est quoi ?",
+  year: "Quelle année ?",
+  image: "Quelle image ?",
+  who_am_i: "Qui suis-je ?",
+  popular: "Le plus lu",
+};
+
+/** Article utilisable pour une question (la cible ou un leurre). */
+export interface QuizArticle {
+  cardId: number;
+  title: string;
+  views12m: number;
+  extract: string | null;
+  description: string | null;
+  thumbUrl: string | null;
+}
+
+export interface Question {
+  type: QuestionType;
+  /** Texte de la question (extrait masqué, phrase à trou…). */
+  prompt: string;
+  /** Choix : textes, ou URL d'images pour `image`. */
+  choices: string[];
+  /** Index de la bonne réponse : ne quitte jamais le serveur avant la réponse du défenseur. */
+  answer: number;
+  /** Le titre de la carte attaquante reste caché jusqu'à la réponse (« Qui suis-je ? »). */
+  titleHidden: boolean;
+}
+
+const normalize = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+
+/** Titre sans précision entre parenthèses (« Valmy (Marne) » → « Valmy »). */
+export const baseTitle = (title: string) => title.replace(/\s*\(.*\)\s*$/, "").trim();
+
+/** Deux titres trop proches pour servir de leurre l'un à l'autre (l'un contient l'autre). */
+export function titlesClash(a: string, b: string): boolean {
+  const x = normalize(baseTitle(a));
+  const y = normalize(baseTitle(b));
+  return x === y || x.includes(y) || y.includes(x);
+}
+
+/** Masque le titre (et ses mots significatifs) dans le résumé, puis le tronque proprement. */
+export function maskExtract(extract: string, title: string, maxLength = 260): string {
+  const base = baseTitle(title);
+  const words = [base, ...base.split(/[\s'’-]+/).filter((w) => w.length >= 4)];
+  let text = extract;
+  for (const w of words.sort((x, y) => y.length - x.length)) {
+    const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    text = text.replace(new RegExp(escaped, "gi"), "▢▢▢");
+    // Variante sans accents (« Elan » pour « Élan »).
+    const plain = normalize(w);
+    if (plain !== w.toLowerCase()) {
+      const idx = normalize(text).indexOf(plain);
+      if (idx >= 0) text = text.slice(0, idx) + "▢▢▢" + text.slice(idx + w.length);
+    }
+  }
+  return truncate(text, maxLength);
+}
+
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  const cut = text.slice(0, maxLength);
+  return `${cut.slice(0, Math.max(cut.lastIndexOf(" "), maxLength - 30))}…`;
+}
+
+const capitalize = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+
+const YEAR = /(?<![\d,.])(1[0-9]{3}|20[0-9]{2})(?![\d,])/g;
+
+/**
+ * Phrase à trou : une année de l'extrait est masquée, 4 années proches proposées (petit, moyen et grand écart).
+ * Renvoie null s'il n'y a pas d'année exploitable.
+ */
+export function yearQuestion(
+  extract: string,
+  rand: () => number,
+  maxYear: number,
+): Omit<Question, "titleHidden"> | null {
+  const sentences = extract.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ý«])/);
+  const candidates: { sentence: string; year: number }[] = [];
+  for (const sentence of sentences) {
+    for (const m of sentence.matchAll(YEAR)) {
+      const year = Number(m[1]);
+      if (year <= maxYear && sentence.length >= 30) candidates.push({ sentence, year });
+    }
+  }
+  if (candidates.length === 0) return null;
+  const { sentence, year } = pick(candidates, rand);
+  const masked = sentence.replace(new RegExp(`(?<![\\d,.])${year}(?![\\d,])`, "g"), "▢▢▢▢");
+  const seen = new Set([year, ...[...sentence.matchAll(YEAR)].map((m) => Number(m[1]))]);
+  const bands = [
+    [1, 2, 3],
+    [4, 6, 8, 10, 12],
+    [15, 20, 25, 30, 40, 50],
+  ];
+  const decoys: number[] = [];
+  for (const band of bands) {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const sign = rand() < 0.5 ? -1 : 1;
+      let y = year + sign * pick(band, rand);
+      if (y > maxYear) y = year - (y - year);
+      if (!seen.has(y) && y > 0) {
+        seen.add(y);
+        decoys.push(y);
+        break;
+      }
+    }
+  }
+  if (decoys.length < 3) return null;
+  const choices = [year, ...decoys].sort((x, y) => x - y);
+  return {
+    type: "year",
+    prompt: truncate(masked, 280),
+    choices: choices.map(String),
+    answer: choices.indexOf(year),
+  };
+}
+
+/**
+ * Question sur la carte attaquante. Déterministe : ne dépend que de la graine, de la cible et des leurres.
+ * `decoys` : articles proches (titres voisins d'abord), déjà filtrés des doublons de la cible.
+ * `avoid` : types déjà posés dans ce duel, évités quand un autre type est possible.
+ */
+export function makeQuestion(
+  seed: string,
+  target: QuizArticle,
+  decoys: QuizArticle[],
+  options: { avoid?: QuestionType[]; maxYear?: number } = {},
+): Question {
+  const rand = seededRandom(seed);
+  const pool = decoys.filter(
+    (d, i) => d.cardId !== target.cardId && decoys.findIndex((x) => x.cardId === d.cardId) === i,
+  );
+  const maxYear = options.maxYear ?? new Date().getFullYear();
+
+  const descTarget = target.description?.trim() || null;
+  const withDesc = pool.filter(
+    (d, i, all) =>
+      d.description?.trim() &&
+      normalize(d.description) !== normalize(descTarget ?? "") &&
+      all.findIndex((x) => x.description && normalize(x.description) === normalize(d.description!)) === i,
+  );
+  const withThumb = pool.filter(
+    (d, i, all) =>
+      d.thumbUrl && d.thumbUrl !== target.thumbUrl && all.findIndex((x) => x.thumbUrl === d.thumbUrl) === i,
+  );
+  const titled = pool.filter((d) => !titlesClash(d.title, target.title));
+  const year = target.extract ? yearQuestion(target.extract, seededRandom(`${seed}:year`), maxYear) : null;
+
+  const possible: QuestionType[] = [];
+  if (descTarget && withDesc.length >= 3) possible.push("definition");
+  if (year) possible.push("year");
+  if (target.thumbUrl && withThumb.length >= 3) possible.push("image");
+  if (target.extract && target.extract.length > 60 && titled.length >= 3) possible.push("who_am_i");
+  const fresh = possible.filter((t) => !options.avoid?.includes(t));
+  const types = fresh.length ? fresh : possible;
+  const type: QuestionType = types.length ? pick(types, rand) : "popular";
+
+  if (type === "definition") {
+    const choices = shuffle(
+      [
+        descTarget!,
+        ...shuffle(withDesc, rand)
+          .slice(0, 3)
+          .map((d) => d.description!.trim()),
+      ],
+      rand,
+    );
+    return {
+      type,
+      prompt: `Qu'est-ce que « ${target.title} » ?`,
+      choices: choices.map(capitalize),
+      answer: choices.indexOf(descTarget!),
+      titleHidden: false,
+    };
+  }
+  if (type === "year") return { ...year!, titleHidden: false };
+  if (type === "image") {
+    const choices = shuffle(
+      [
+        target.thumbUrl!,
+        ...shuffle(withThumb, rand)
+          .slice(0, 3)
+          .map((d) => d.thumbUrl!),
+      ],
+      rand,
+    );
+    return {
+      type,
+      prompt: `Quelle image illustre « ${target.title} » ?`,
+      choices,
+      answer: choices.indexOf(target.thumbUrl!),
+      titleHidden: false,
+    };
+  }
+  if (type === "who_am_i") {
+    // Les leurres les plus proches (titres voisins) d'abord : on en tire 3 parmi les 6 premiers.
+    const others = shuffle(titled.slice(0, 6), rand).slice(0, 3);
+    const choices = shuffle([target.title, ...others.map((d) => d.title)], rand);
+    return {
+      type,
+      prompt: maskExtract(target.extract!, target.title),
+      choices,
+      answer: choices.indexOf(target.title),
+      titleHidden: true,
+    };
+  }
+  // Repli (article sans résumé ni description) : lequel est le plus lu ? Leurres aux vues distinctes.
+  const distinct = titled.filter(
+    (d, i, all) => d.views12m !== target.views12m && all.findIndex((x) => x.views12m === d.views12m) === i,
+  );
+  const others = shuffle(distinct, rand).slice(0, 3);
+  const all = [target, ...others];
+  const top = all.reduce((best, d) => (d.views12m > best.views12m ? d : best), target);
+  const choices = shuffle(
+    all.map((d) => d.title),
+    rand,
+  );
+  return {
+    type: "popular",
+    prompt: "Lequel de ces articles a été le plus lu cette année ?",
+    choices,
+    answer: choices.indexOf(top.title),
+    titleHidden: false,
+  };
 }

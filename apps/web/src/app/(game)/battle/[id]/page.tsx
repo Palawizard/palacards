@@ -1,444 +1,730 @@
 "use client";
 
-import { BATTLE_ROUNDS } from "@palacards/game";
-import type { BattleAnswerDTO, BattleQuestionDTO, BattleRoundResultDTO, CardDTO } from "@palacards/shared";
-import { Check, X } from "lucide-react";
-import { motion } from "motion/react";
+import { ECONOMY, RARITY_LABELS } from "@palacards/game";
+import type { BattleCardView, BattleStateDTO, BattleTurnView } from "@palacards/shared";
+import { Check, ExternalLink, Flag, Shield, Swords, X, Zap } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
-import { use, useEffect, useRef, useState } from "react";
+import { use, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { CardBackMini, CardStats, HandCard, HpBar, pct, questionLabel, TurnLine } from "@/components/Battle";
 import { Card } from "@/components/Card";
 import { ErrorBox } from "@/components/ui";
-import { api, ApiError } from "@/lib/api";
-import { fmt } from "@/lib/format";
+import { api, ApiError, thumbSrc } from "@/lib/api";
 import { useConnection, useSocket, useSocketEvent } from "@/lib/game";
 import { play } from "@/lib/sfx";
 import { useNow } from "@/lib/use-now";
 
-interface RoundRecap {
-  round: number;
-  type: string;
-  prompt: string;
-  choices: string[];
-  correctIndex: number;
-  yourChoice: number | null;
-  yourPower: number;
-  theirPower: number | null;
-  winnerId: string | null;
-}
-interface BattleDetail {
-  id: number;
-  mode: "live" | "async";
-  status: string;
-  isChallenger: boolean;
-  opponent: { id: string; name: string; username: string };
-  winnerId: string | null;
-  score: { you: number; them: number };
-  eloDelta: number | null;
-  nextRound: number | null;
-  liveRound: number | null;
-  myDeck: (CardDTO & { slot: number })[];
-  theirDeck: (CardDTO & { slot: number })[];
-  rounds: RoundRecap[];
-}
-/** Résultat de la manche : réponse HTTP, ou résumé reçu par socket en direct (sans la carte adverse). */
-type AnswerResult = Omit<BattleAnswerDTO, "battleId" | "theirCard"> & { theirCard?: CardDTO };
+const PHASE_ORDER = { lobby: 0, attack: 1, shield: 2, question: 3, reveal: 4 } as const;
 
-const TYPE_LABEL: Record<string, string> = {
-  who_am_i: "Qui suis-je ?",
-  most_viewed: "Le plus lu",
-  longest: "Le plus long",
-};
+/** Rang d'un état : un état plus ancien (réponse HTTP doublée par la socket) ne remplace jamais un plus récent. */
+function rank(s: BattleStateDTO): number {
+  if (s.status !== "active") return s.status === "pending" ? -1 : 10_000;
+  return s.turn * 10 + (s.phase ? PHASE_ORDER[s.phase] : 0);
+}
 
-/** Barre de temps : se vide en continu jusqu'à l'échéance (calculée à la réception, sans dépendre de l'horloge du serveur). */
-function Countdown({ endsAt, total }: { endsAt: number; total: number }) {
+interface Snapshot {
+  state: BattleStateDTO;
+  /** Échéance locale de la phase (horloge du navigateur), déduite du temps restant envoyé par le serveur. */
+  endsAt: number | null;
+}
+
+/** État du duel : lecture initiale, puis poussé par le serveur à chaque changement de phase. */
+function useBattle(battleId: number) {
+  const toSnap = (s: BattleStateDTO): Snapshot => ({
+    state: s,
+    endsAt: s.phaseRemainingMs === null ? null : Date.now() + s.phaseRemainingMs,
+  });
+  const accept = (s: BattleStateDTO) => setSnap((prev) => (prev && rank(prev.state) > rank(s) ? prev : toSnap(s)));
+  const { data, error, mutate } = useSWR<BattleStateDTO>(`/battles/${battleId}`, { onSuccess: accept });
+  const socket = useSocket();
+  const connection = useConnection();
+  // Données déjà en cache (retour sur l'écran) : affichées tout de suite, la relecture suit.
+  const [snap, setSnap] = useState<Snapshot | null>(() => (data ? toSnap(data) : null));
+
+  useEffect(() => {
+    if (socket) socket.emit("battle:join", battleId);
+  }, [socket, battleId, connection]);
+  useSocketEvent("battle:state", (s) => {
+    if (s.id === battleId) accept(s);
+  });
+  useSocketEvent("battle:update", ({ battleId: b }) => {
+    if (b === battleId) void mutate();
+  });
+  return { snap, error, mutate, accept };
+}
+
+/** Chrono de phase : barre qui se vide et secondes restantes. */
+function PhaseClock({ endsAt, total }: { endsAt: number; total: number }) {
   const now = useNow(200);
   const left = Math.max(0, endsAt - now);
+  const ratio = total > 0 ? Math.min(1, left / total) : 0;
   return (
-    <div className="flex items-center gap-3" aria-live="off">
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-panel-2">
-        <div
-          className={`h-full origin-left rounded-full transition-transform duration-200 ease-linear ${left < 3000 ? "bg-danger" : "bg-accent"}`}
-          style={{ transform: `scaleX(${left / total})` }}
-        />
+    <div className="flex items-center gap-2" aria-hidden>
+      <div className="duel-clock flex-1" data-late={left < 4000}>
+        <span style={{ transform: `scaleX(${ratio})` }} />
       </div>
-      <span className="tnum w-8 text-right text-sm font-semibold">{Math.ceil(left / 1000)}</span>
+      <span className={`tnum w-6 text-right text-sm font-bold ${left < 4000 ? "text-danger" : ""}`}>
+        {Math.ceil(left / 1000)}
+      </span>
     </div>
   );
 }
 
-function QuestionPanel({
-  q,
-  endsAt,
-  result,
+function phaseLabel(s: BattleStateDTO, youAttack: boolean): string {
+  switch (s.phase) {
+    case "lobby":
+      return "Salle d'attente";
+    case "attack":
+      return youAttack ? "Ton attaque" : "Son attaque";
+    case "shield":
+      return youAttack ? "Il choisit son bouclier" : "Ton bouclier";
+    case "question":
+      return youAttack ? "Il répond" : "À toi de répondre";
+    case "reveal":
+      return "Résultat";
+    default:
+      return "";
+  }
+}
+
+function Scoreboard({ s, endsAt }: { s: BattleStateDTO; endsAt: number | null }) {
+  const youAttack = s.attackerId === s.you.id;
+  return (
+    <section className="infobox px-4 py-4 sm:px-5" aria-label="Tableau du duel">
+      <div className="grid grid-cols-2 items-end gap-x-5 gap-y-3 sm:grid-cols-[1fr_auto_1fr] sm:gap-6">
+        <HpBar player={s.you} max={s.maxHp} side="you" label="Toi" />
+        <div className="order-first col-span-2 flex flex-col items-center gap-1 sm:order-none sm:col-span-1 sm:w-36 sm:pb-0.5">
+          {s.status === "active" && s.turn > 0 ? (
+            <>
+              <span className="tnum font-display text-sm uppercase tracking-[0.04em] text-muted">
+                Tour {s.turn}/{s.totalTurns}
+              </span>
+              <span className="flex items-center gap-1 text-center text-xs font-semibold leading-tight sm:text-sm">
+                {s.phase === "attack" || s.phase === "shield" ? (
+                  youAttack ? (
+                    <Swords aria-hidden className="size-3.5 shrink-0 text-highlight" />
+                  ) : (
+                    <Shield aria-hidden className="size-3.5 shrink-0 text-highlight" />
+                  )
+                ) : null}
+                {phaseLabel(s, youAttack)}
+              </span>
+            </>
+          ) : (
+            <span className="font-display text-2xl uppercase text-faint">VS</span>
+          )}
+        </div>
+        <HpBar player={s.them} max={s.maxHp} side="them" label={s.them.name} />
+      </div>
+      {s.status === "active" && endsAt && s.phaseDurationMs ? (
+        <div className="mx-auto mt-3 max-w-md">
+          <PhaseClock endsAt={endsAt} total={s.phaseDurationMs} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** Carte attaquante au centre de la table : face visible pour l'attaquant, dos coloré pour le défenseur. */
+function AttackCard({ card }: { card: BattleCardView }) {
+  return (
+    <div className="flex w-32 shrink-0 flex-col gap-1.5 sm:w-40">
+      {card.card ? <Card card={card.card} href={null} /> : <CardBackMini card={card} />}
+      <p className="tnum text-center text-sm">
+        <span className="font-semibold text-danger">{card.damage} dégâts</span>
+        <span className="text-faint"> si ça touche</span>
+      </p>
+    </div>
+  );
+}
+
+function QuestionBlock({
+  turn,
+  canAnswer,
+  pending,
   onAnswer,
 }: {
-  q: BattleQuestionDTO;
-  endsAt: number;
-  result: AnswerResult | null;
-  onAnswer: (choice: number) => void;
+  turn: BattleTurnView;
+  canAnswer: boolean;
+  pending: number | null;
+  onAnswer: (i: number) => void;
 }) {
-  const locked = !!result || q.answered;
-  const theirCard = result?.theirCard ?? q.theirCard;
+  const q = turn.question!;
+  const o = turn.outcome;
+  const image = q.type === "image";
   return (
-    <section aria-label={`Manche ${q.round}`} className="flex flex-col gap-4">
-      {/* Mobile : la question d'abord (le chrono tourne), les cartes ensuite. */}
-      <div className="order-2 mx-auto grid w-full max-w-[22rem] grid-cols-2 gap-3 sm:order-1 sm:max-w-[30rem]">
-        <div className="flex flex-col gap-1">
-          <span className="text-center text-xs text-faint">Ta carte</span>
-          <Card card={q.yourCard} href={null} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <span className="text-center text-xs text-faint">Sa carte</span>
-          {theirCard ? (
-            <Card card={theirCard} href={null} />
-          ) : (
-            // Carte adverse face cachée : ses stats trahiraient la réponse.
-            <div className="pc-card grid place-items-center" aria-label="Carte adverse, révélée après ta réponse">
-              <span aria-hidden className="font-display text-[length:max(1.5rem,22cqi)] text-faint">
-                ?
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-      <div className="infobox order-1 sm:order-2">
-        <h2 className="infobox-head flex items-baseline justify-between">
-          <span>{TYPE_LABEL[q.type] ?? "Question"}</span>
-          <span className="tnum text-sm text-faint">
-            Manche {q.round}/{BATTLE_ROUNDS}
-          </span>
-        </h2>
-        <div className="flex flex-col gap-4 p-4">
-          <p className={q.type === "who_am_i" ? "text-lg leading-relaxed" : "text-lg font-semibold"}>{q.prompt}</p>
-          {!locked && <Countdown endsAt={endsAt} total={q.timeLimitMs} />}
-          <div className="grid gap-2 sm:grid-cols-2">
-            {q.choices.map((choice, i) => {
-              const isCorrect = result && i === result.correctIndex;
-              const isMine = result && i === result.yourChoice;
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  disabled={locked}
-                  onClick={() => onAnswer(i)}
-                  className={`btn min-h-12 justify-start whitespace-normal text-left text-base font-medium ${
-                    isCorrect ? "border-good bg-good/15 text-text" : isMine ? "border-danger bg-danger/10" : ""
-                  }`}
-                >
-                  {isCorrect ? (
-                    <Check aria-hidden className="size-4 shrink-0 text-good" />
-                  ) : isMine ? (
-                    <X aria-hidden className="size-4 shrink-0 text-danger" />
-                  ) : null}
-                  {choice}
-                </button>
-              );
-            })}
-          </div>
-          {!result && q.answered && (
-            <p className="text-sm text-muted" role="status">
-              Réponse enregistrée, en attente de la fin de la manche…
-            </p>
-          )}
-          {result && (
-            <p className="tnum text-sm" role="status">
-              {result.yourChoice === null ? "Temps écoulé." : result.correct ? "Bonne réponse !" : "Raté."} Puissance de
-              ta carte : <strong>{fmt(result.yourPower)}</strong>
-              {result.correct && result.timeLeftMs > 0 && (
-                <span className="text-faint">
-                  {" "}
-                  (bonus de vitesse : {Math.round(result.timeLeftMs / 100) / 10} s restantes)
-                </span>
+    <div className="flex min-w-0 flex-1 flex-col gap-3">
+      <p className="font-display text-sm uppercase tracking-[0.05em] text-highlight">{questionLabel(q.type)}</p>
+      <p
+        className={
+          q.type === "who_am_i" || q.type === "year"
+            ? "max-w-[62ch] text-[1.05rem] leading-relaxed"
+            : "text-lg font-semibold leading-snug"
+        }
+      >
+        {q.prompt}
+      </p>
+      <div className={`grid gap-2 ${image ? "grid-cols-2 sm:grid-cols-4" : "sm:grid-cols-2"}`}>
+        {q.choices.map((choice, i) => {
+          const correct = o && i === o.correctIndex;
+          const chosen = (o ? o.choice : pending) === i;
+          const wrong = o && chosen && !correct;
+          return (
+            <button
+              key={i}
+              type="button"
+              disabled={!canAnswer || pending !== null || !!o}
+              onClick={() => onAnswer(i)}
+              aria-pressed={chosen}
+              className={`btn relative min-h-12 whitespace-normal text-left text-[0.95rem] font-medium disabled:opacity-100 ${
+                image ? "aspect-square h-auto flex-col overflow-hidden p-1.5" : "justify-start py-2"
+              } ${
+                correct
+                  ? "!border-good !bg-good/15"
+                  : wrong
+                    ? "!border-danger !bg-danger/10"
+                    : chosen
+                      ? "!border-highlight"
+                      : o || !canAnswer
+                        ? "opacity-70"
+                        : ""
+              }`}
+            >
+              {image ? (
+                // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API
+                <img
+                  src={thumbSrc(choice)}
+                  alt={`Image ${i + 1}`}
+                  className="size-full rounded-[7px] object-cover"
+                  decoding="async"
+                />
+              ) : (
+                <span className="flex-1">{choice}</span>
               )}
+              {correct && (
+                <Check
+                  aria-label="Bonne réponse"
+                  className={`size-5 shrink-0 text-good ${image ? "absolute right-2 top-2 rounded-full bg-panel p-0.5" : ""}`}
+                />
+              )}
+              {wrong && (
+                <X
+                  aria-label="Mauvaise réponse"
+                  className={`size-5 shrink-0 text-danger ${image ? "absolute right-2 top-2 rounded-full bg-panel p-0.5" : ""}`}
+                />
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Résultat d'un tour : paré, parade parfaite ou touché, avec le calcul des dégâts en clair. */
+function Outcome({ s, turn }: { s: BattleStateDTO; turn: BattleTurnView }) {
+  const o = turn.outcome!;
+  const youDefend = turn.defenderId === s.you.id;
+  const attackTitle = turn.attack.card?.title ?? RARITY_LABELS[turn.attack.rarity];
+  const pageUrl = turn.attack.card?.pageUrl;
+  let headline: string;
+  let tone: string;
+  if (o.parry === "perfect") {
+    headline = youDefend ? `Parade parfaite ! ${o.reflected} renvoyés` : `Parade parfaite : tu perds ${o.reflected} PV`;
+    tone = youDefend ? "text-good" : "text-danger";
+  } else if (o.parry === "parry") {
+    headline = "Attaque parée";
+    tone = youDefend ? "text-good" : "text-muted";
+  } else {
+    headline = youDefend ? `Touché : −${o.damage} PV` : `Touché ! −${o.damage} PV pour ${s.them.name}`;
+    tone = youDefend ? "text-danger" : "text-good";
+  }
+  return (
+    <motion.div
+      initial={{ opacity: 0, transform: "translateY(6px)" }}
+      animate={{ opacity: 1, transform: "translateY(0px)" }}
+      transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+      className="mt-4 border-t-2 border-dashed border-line pt-4"
+      role="status"
+    >
+      <p className={`flex items-center gap-2 font-display text-2xl uppercase leading-tight ${tone}`}>
+        {o.parry === "perfect" && <Zap aria-hidden className="size-5" />}
+        {headline}
+      </p>
+      <p className="tnum mt-1 text-sm text-muted">
+        {o.parry === "none" ? (
+          <>
+            {o.choice === null ? "Pas de réponse à temps. " : ""}
+            {attackTitle} : {o.rawDamage} dégâts
+            {o.shieldPct > 0 && turn.shield ? (
+              <>
+                {" "}
+                · bouclier {turn.shield.card?.title ?? RARITY_LABELS[turn.shield.rarity]} −{pct(o.shieldPct)}
+              </>
+            ) : null}{" "}
+            → <strong className="text-text">{o.damage}</strong>
+          </>
+        ) : o.parry === "perfect" ? (
+          <>
+            Bonne réponse en {((o.answerMs ?? 0) / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 1 })}
+            {"\u00a0"}s : 20{"\u00a0"}% des {o.rawDamage} dégâts reviennent à l’attaquant.
+          </>
+        ) : (
+          <>Bonne réponse : aucun dégât.</>
+        )}
+        {pageUrl && (
+          <>
+            {" "}
+            <a href={pageUrl} target="_blank" rel="noreferrer" className="article-link inline-flex items-center gap-1">
+              Lire l’article <ExternalLink aria-hidden className="size-3" />
+            </a>
+          </>
+        )}
+      </p>
+    </motion.div>
+  );
+}
+
+function Arena({
+  s,
+  endsAt,
+  selected,
+  busy,
+  pendingChoice,
+  onAnswer,
+}: {
+  s: BattleStateDTO;
+  endsAt: number | null;
+  selected: BattleCardView | null;
+  busy: boolean;
+  pendingChoice: number | null;
+  onAnswer: (i: number) => void;
+}) {
+  const now = useNow(500);
+  const youAttack = s.attackerId === s.you.id;
+  const t = s.current;
+  const key = `${s.turn}:${s.phase}`;
+  const firstName = youAttack ? "Tu attaques" : `${s.them.name} attaque`;
+  const intro =
+    s.phase === "attack" && s.turn === 1 && endsAt !== null && s.phaseDurationMs !== null
+      ? endsAt - now > s.phaseDurationMs - 3_000
+      : false;
+
+  let body: React.ReactNode;
+  if (s.phase === "lobby") {
+    body = (
+      <div className="py-6 text-center">
+        <p className="font-display text-3xl uppercase">En attente de {s.them.name}</p>
+        <p className="mt-2 text-muted">
+          Le duel démarre dès que vous êtes tous les deux sur cet écran.
+          {!s.them.online && ` ${s.them.name} n’est pas connecté pour l’instant.`}
+        </p>
+      </div>
+    );
+  } else if (s.phase === "attack") {
+    body = intro ? (
+      <div className="py-6 text-center">
+        <p className="font-display text-4xl uppercase text-highlight">Le duel commence</p>
+        <p className="mt-2 text-lg">{firstName} en premier.</p>
+      </div>
+    ) : youAttack ? (
+      <div className="py-2">
+        <p className="font-display text-3xl uppercase">À toi d’attaquer</p>
+        <p className="mt-1 max-w-[60ch] text-muted">
+          Choisis une carte dans ta main. {s.them.name} verra sa rareté et ses dégâts, pas son titre, puis répondra à
+          une question sur son article.
+        </p>
+        {selected && (
+          <p className="tnum mt-3 text-sm">
+            <span className="font-semibold">{selected.card?.title}</span> : {selected.damage} dégâts si {s.them.name} se
+            trompe.
+          </p>
+        )}
+      </div>
+    ) : (
+      <div className="py-2">
+        <p className="font-display text-3xl uppercase">{s.them.name} choisit son attaque…</p>
+        <p className="mt-1 max-w-[60ch] text-muted">
+          Ensuite, choisis ton bouclier : chaque carte ne protège qu’une fois. Une carte très lue est souvent facile à
+          reconnaître.
+        </p>
+      </div>
+    );
+  } else if (t && (s.phase === "shield" || s.phase === "question" || s.phase === "reveal")) {
+    const youDefend = t.defenderId === s.you.id;
+    const shieldPct = s.phase === "shield" ? (selected?.shieldPct ?? null) : (t.shield?.shieldPct ?? null);
+    body = (
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
+        <div className="flex items-start gap-3 sm:flex-col">
+          <AttackCard card={t.attack} />
+          {t.shield && (
+            <p className="tnum flex items-center gap-1.5 text-sm text-muted sm:w-40 sm:justify-center">
+              <Shield aria-hidden className="size-4 shrink-0" />
+              {youDefend ? "Ton bouclier" : "Son bouclier"} : −{pct(t.shield.shieldPct)}
             </p>
           )}
         </div>
+        {s.phase === "shield" ? (
+          <div className="min-w-0 flex-1">
+            {youDefend ? (
+              <>
+                <p className="font-display text-3xl uppercase">Choisis ton bouclier</p>
+                <p className="mt-1 max-w-[60ch] text-muted">
+                  {s.them.name} attaque avec une carte {RARITY_LABELS[t.attack.rarity].toLowerCase()}. Tu vas devoir
+                  répondre à une question sur son article : bonne réponse, aucun dégât ; mauvaise, le bouclier réduit le
+                  coup.
+                </p>
+                {shieldPct !== null && (
+                  <p className="tnum mt-3 text-sm">
+                    Si tu te trompes :{" "}
+                    <strong>−{Math.max(1, Math.round(t.attack.damage * (1 - shieldPct / 100)))} PV</strong> au lieu de{" "}
+                    {t.attack.damage}.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p className="font-display text-3xl uppercase">{s.them.name} choisit son bouclier…</p>
+                <p className="mt-1 text-muted">La question part juste après.</p>
+              </>
+            )}
+            {busy && <p className="mt-3 text-sm text-muted">Préparation de la question…</p>}
+          </div>
+        ) : (
+          <div className="min-w-0 flex-1">
+            {t.question ? (
+              <QuestionBlock
+                turn={t}
+                canAnswer={youDefend && s.phase === "question"}
+                pending={pendingChoice}
+                onAnswer={onAnswer}
+              />
+            ) : null}
+            {s.phase === "question" && !youDefend && (
+              <p className="mt-3 text-sm text-muted">{s.them.name} réfléchit…</p>
+            )}
+            {s.phase === "reveal" && t.outcome && <Outcome s={s} turn={t} />}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <section className="infobox relative min-h-56 overflow-hidden p-4 sm:p-6" aria-live="polite">
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={intro ? "intro" : key}
+          initial={{ opacity: 0, filter: "blur(4px)" }}
+          animate={{ opacity: 1, filter: "blur(0px)" }}
+          exit={{ opacity: 0, filter: "blur(4px)" }}
+          transition={{ duration: 0.18, ease: [0.23, 1, 0.32, 1] }}
+        >
+          {body}
+        </motion.div>
+      </AnimatePresence>
+    </section>
+  );
+}
+
+function Hand({
+  cards,
+  mode,
+  selected,
+  onSelect,
+  title,
+}: {
+  cards: BattleCardView[];
+  mode: "attack" | "shield" | null;
+  selected: number | null;
+  onSelect?: (slot: number) => void;
+  title: string;
+}) {
+  return (
+    <section aria-label={title}>
+      <h2 className="mb-2 font-display text-lg uppercase text-muted">{title}</h2>
+      {/* Téléphone : main défilante (les vignettes restent lisibles) ; écran large : les 5 côte à côte. */}
+      <div className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1 pt-3 sm:mx-0 sm:grid sm:grid-cols-5 sm:overflow-visible sm:px-0">
+        {cards.map((c) => (
+          <div key={c.slot} className="w-[7.5rem] shrink-0 snap-start sm:w-auto">
+            <HandCard
+              card={c}
+              mode={mode}
+              selected={selected === c.slot}
+              onSelect={onSelect ? () => onSelect(c.slot) : undefined}
+            />
+          </div>
+        ))}
       </div>
     </section>
   );
 }
 
-function Recap({ battle }: { battle: BattleDetail }) {
-  const won = battle.winnerId !== null && battle.winnerId !== battle.opponent.id;
-  const draw = battle.status === "finished" && battle.winnerId === null;
+function TheirHand({ s }: { s: BattleStateDTO }) {
   return (
-    <div className="flex flex-col gap-5">
-      {battle.status === "finished" && (
-        <motion.div
-          initial={{ opacity: 0, transform: "translateY(8px)" }}
-          animate={{ opacity: 1, transform: "translateY(0)" }}
-          transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
-          className="rounded-xl border border-line-strong bg-panel p-5 text-center"
-        >
-          <p className={`font-display text-5xl uppercase ${won ? "text-good" : draw ? "" : "text-danger"}`}>
-            {won ? "Victoire" : draw ? "Match nul" : "Défaite"}
-          </p>
-          <p className="tnum mt-1 text-lg">
-            {battle.score.you} – {battle.score.them}
-            {battle.eloDelta !== null && (
-              <span className={`ml-3 text-base ${battle.eloDelta >= 0 ? "text-good" : "text-danger"}`}>
-                Elo {battle.eloDelta >= 0 ? "+" : ""}
-                {battle.eloDelta}
-              </span>
-            )}
-          </p>
-        </motion.div>
-      )}
-      {battle.rounds.length > 0 && (
-        <section>
-          <h2 className="section-title mt-0">Manches</h2>
-          <ol className="flex flex-col gap-2">
-            {battle.rounds.map((r) => (
-              <li key={r.round} className="rounded-xl border border-line bg-panel px-3 py-2.5 text-sm">
-                <p className="flex flex-wrap justify-between gap-2">
-                  <span className="font-semibold">
-                    Manche {r.round} · {TYPE_LABEL[r.type]}
-                  </span>
-                  <span className="tnum text-muted">
-                    {fmt(r.yourPower)}
-                    {r.theirPower !== null && ` contre ${fmt(r.theirPower)}`}
-                    {r.winnerId && (
-                      <strong className={`ml-2 ${r.winnerId === battle.opponent.id ? "text-danger" : "text-good"}`}>
-                        {r.winnerId === battle.opponent.id ? "perdue" : "gagnée"}
-                      </strong>
-                    )}
-                  </span>
-                </p>
-                <p className="mt-1 text-muted">
-                  Réponse : <span className="text-text">{r.choices[r.correctIndex]}</span>
-                  {r.yourChoice !== r.correctIndex && (
-                    <span> · toi : {r.yourChoice === null ? "pas de réponse" : r.choices[r.yourChoice]}</span>
-                  )}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-      {battle.theirDeck.length > 0 && (
-        <section>
-          <h2 className="section-title mt-0">Deck de {battle.opponent.name}</h2>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-            {battle.theirDeck.map((c) => (
-              <Card key={c.slot} card={c} />
-            ))}
+    <section aria-label={`Deck de ${s.them.name}`}>
+      <h2 className="mb-2 font-display text-lg uppercase text-muted">Deck de {s.them.name}</h2>
+      <div className="grid max-w-xl grid-cols-5 gap-2 sm:gap-3">
+        {s.theirHand.map((c) => (
+          <div key={c.slot} className="flex flex-col gap-1">
+            <div className={c.attacked && c.shielded ? "opacity-45" : ""}>
+              {c.card ? <Card card={c.card} href={null} /> : <CardBackMini card={c} />}
+            </div>
+            <CardStats card={c} compact />
           </div>
-        </section>
-      )}
-    </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function Result({ s }: { s: BattleStateDTO }) {
+  const r = s.result!;
+  const title = r.outcome === "win" ? "Victoire" : r.outcome === "loss" ? "Défaite" : "Match nul";
+  const why =
+    r.forfeitBy === "them"
+      ? `${s.them.name} a abandonné.`
+      : r.forfeitBy === "you"
+        ? "Tu as abandonné."
+        : s.legacy
+          ? "Duel de l’ancien format."
+          : `${Math.max(0, s.you.hp ?? 0)} PV contre ${Math.max(0, s.them.hp ?? 0)}.`;
+  return (
+    <motion.section
+      initial={{ opacity: 0, transform: "translateY(8px)" }}
+      animate={{ opacity: 1, transform: "translateY(0px)" }}
+      transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
+      className="infobox p-6 text-center"
+      role="status"
+    >
+      <p
+        className={`font-display text-6xl uppercase leading-none ${r.outcome === "win" ? "text-good" : r.outcome === "loss" ? "text-danger" : ""}`}
+      >
+        {title}
+      </p>
+      <p className="mt-2 text-lg">{why}</p>
+      <p className="tnum mt-1 flex flex-wrap justify-center gap-x-4 text-sm text-muted">
+        {r.eloDelta !== null && (
+          <span className={r.eloDelta > 0 ? "text-good" : r.eloDelta < 0 ? "text-danger" : ""}>
+            Elo {r.eloDelta >= 0 ? "+" : ""}
+            {r.eloDelta}
+          </span>
+        )}
+        <span>{r.reward !== null ? `+${r.reward} PW` : "Pas de PW pour ce duel"}</span>
+      </p>
+      <Link href="/battle" className="btn btn-primary mt-5">
+        <Swords aria-hidden className="size-4" /> Nouveau duel
+      </Link>
+    </motion.section>
   );
 }
 
 export default function BattleScreen({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const battleId = Number(id);
-  const { data: battle, error, mutate } = useSWR<BattleDetail>(`/battles/${battleId}`);
-  const socket = useSocket();
-  const connection = useConnection();
-  const [question, setQuestion] = useState<BattleQuestionDTO | null>(null);
-  const [endsAt, setEndsAt] = useState(0);
-  const [result, setResult] = useState<AnswerResult | null>(null);
-  const [liveScore, setLiveScore] = useState<{ you: number; them: number } | null>(null);
+  const { snap, error, mutate, accept } = useBattle(battleId);
+  const [selected, setSelected] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const answering = useRef(false);
-  /** Manche affichée : une réponse arrivée après le passage à la manche suivante est ignorée. */
-  const shownRound = useRef(0);
-  const timedOut = useRef(0);
+  const [pendingChoice, setPendingChoice] = useState<number | null>(null);
+  const [confirmForfeit, setConfirmForfeit] = useState(false);
+  const s = snap?.state;
+  const stepKey = s ? `${s.turn}:${s.phase}:${s.status}` : "";
 
-  useEffect(() => {
-    if (socket) socket.emit("battle:join", battleId);
-  }, [socket, battleId, connection]);
-
-  function showQuestion(q: BattleQuestionDTO) {
-    shownRound.current = q.round;
-    setQuestion(q);
-    setEndsAt(Date.now() + q.remainingMs);
-    setResult(null);
-    answering.current = q.answered;
+  // Nouvelle phase : on repart d'une sélection vide.
+  const [shownStep, setShownStep] = useState(stepKey);
+  if (shownStep !== stepKey) {
+    setShownStep(stepKey);
+    setSelected(null);
+    setPendingChoice(null);
+    setBusy(false);
   }
 
-  useSocketEvent("battle:question", (q) => {
-    if (q.battleId === battleId) showQuestion(q);
-  });
-  useSocketEvent("battle:round", (r: BattleRoundResultDTO) => {
-    if (r.battleId !== battleId) return;
-    setLiveScore(r.score);
-    if (r.round === shownRound.current) {
-      setResult(
-        (prev) =>
-          prev ?? {
-            round: r.round,
-            correctIndex: r.correctIndex,
-            yourChoice: r.yourChoice,
-            correct: r.yourChoice === r.correctIndex,
-            yourPower: r.yourPower,
-            timeLeftMs: 0,
-          },
-      );
+  // Bruitages : carte posée, question, issue du tour (bonne nouvelle ou non pour moi), fin du duel.
+  const sounded = useRef("");
+  useEffect(() => {
+    if (!s || sounded.current === stepKey) return;
+    const first = sounded.current === "";
+    sounded.current = stepKey;
+    if (first) return; // ouvrir un duel en cours ou fini reste silencieux
+    if (s.status === "finished" && s.result) {
+      play(s.result.outcome === "win" ? "victory" : s.result.outcome === "loss" ? "defeat" : "correct", 400);
+    } else if (s.phase === "shield") play("deal");
+    else if (s.phase === "question") play("flip");
+    else if (s.phase === "reveal" && s.current?.outcome) {
+      const o = s.current.outcome;
+      const youDefend = s.current.defenderId === s.you.id;
+      const good = youDefend ? o.parry !== "none" : o.parry === "none";
+      play(good ? "correct" : "wrong");
     }
-    toast(
-      r.winnerId === null
-        ? "Manche nulle."
-        : r.winnerId === battle?.opponent.id
-          ? `Manche perdue (${fmt(r.yourPower)} contre ${fmt(r.theirPower)}).`
-          : `Manche gagnée (${fmt(r.yourPower)} contre ${fmt(r.theirPower)}) !`,
-    );
-    if (r.finished) void mutate();
-  });
-  useSocketEvent("battle:update", ({ battleId: b }) => {
-    if (b === battleId) void mutate();
-  });
+  }, [s, stepKey]);
 
-  async function playRound(round: number) {
+  const youAttack = s?.attackerId === s?.you.id;
+  const mode: "attack" | "shield" | null =
+    s?.status === "active" && s.phase === "attack" && youAttack
+      ? "attack"
+      : s?.status === "active" && s.phase === "shield" && !youAttack
+        ? "shield"
+        : null;
+  const selectedCard = useMemo(() => s?.myHand.find((c) => c.slot === selected) ?? null, [s, selected]);
+
+  async function act(path: string, body: unknown) {
     setBusy(true);
     try {
-      showQuestion(await api<BattleQuestionDTO>(`/battles/${battleId}/rounds/${round}/question`, { method: "POST" }));
+      accept(await api<BattleStateDTO>(`/battles/${battleId}/${path}`, { body }));
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Question indisponible.");
-    } finally {
+      toast.error(err instanceof ApiError ? err.message : "Action impossible.");
+      void mutate();
       setBusy(false);
+      setPendingChoice(null);
     }
   }
-
-  async function answer(choice: number, auto = false) {
-    if (!question || answering.current) return;
-    const round = question.round;
-    answering.current = true;
-    try {
-      const res = await api<BattleAnswerDTO>(`/battles/${battleId}/rounds/${round}/answer`, { body: { choice } });
-      if (shownRound.current === round) setResult(res);
-      if (battle?.mode === "async") void mutate();
-    } catch (err) {
-      // Envoi automatique refusé (manche déjà close) : on resynchronise au lieu de réessayer en boucle.
-      if (auto || (err instanceof ApiError && err.status === 409)) void mutate();
-      else answering.current = false;
-      if (!auto) toast.error(err instanceof ApiError ? err.message : "Réponse non enregistrée.");
-    }
-  }
-
-  // Bruitages : bonne ou mauvaise réponse à chaque manche, puis victoire ou défaite si le duel se
-  // termine sous nos yeux (rouvrir un duel fini reste silencieux).
-  const soundedRound = useRef(0);
-  useEffect(() => {
-    if (!result || soundedRound.current === result.round) return;
-    soundedRound.current = result.round;
-    play(result.correct ? "correct" : "wrong");
-  }, [result]);
-  const sawActive = useRef(false);
-  const finishSounded = useRef(false);
-  useEffect(() => {
-    if (!battle) return;
-    if (battle.status !== "finished") {
-      sawActive.current = true;
-      return;
-    }
-    if (!sawActive.current || finishSounded.current) return;
-    finishSounded.current = true;
-    const won = battle.winnerId !== null && battle.winnerId !== battle.opponent.id;
-    play(battle.winnerId === null ? "correct" : won ? "victory" : "defeat", 500);
-  }, [battle]);
-
-  // Temps écoulé sans réponse : on envoie « pas de réponse » une seule fois pour passer à la suite.
-  const now = useNow(500);
-  useEffect(() => {
-    if (!question || result || !endsAt || now <= endsAt + 300 || battle?.mode !== "async") return;
-    if (answering.current || timedOut.current === question.round) return;
-    timedOut.current = question.round;
-    void answer(-1, true);
-  });
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
-  if (!battle) return <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />;
+  if (!s) return <div className="h-96 animate-pulse rounded-xl bg-panel" aria-busy />;
 
-  const score = liveScore ?? battle.score;
-  const asyncDone = battle.mode === "async" && battle.status === "active" && (battle.nextRound ?? 1) > BATTLE_ROUNDS;
-
-  return (
-    <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="page-title">Duel contre {battle.opponent.name}</h1>
-          <p className="mt-2 text-sm text-muted">{battle.mode === "live" ? "En direct" : "Asynchrone"}</p>
-        </div>
-        {battle.status !== "pending" && (
-          <p className="tnum font-display text-4xl" aria-label={`Score : ${score.you} à ${score.them}`}>
-            {score.you} <span className="text-faint">–</span> {score.them}
-          </p>
-        )}
-      </header>
-
-      {battle.status === "pending" && (
+  if (s.status === "pending" || s.status === "declined" || s.status === "cancelled") {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="page-title">Duel contre {s.them.name}</h1>
         <p className="text-muted">
-          {battle.isChallenger
-            ? `En attente de la réponse de ${battle.opponent.name}.`
-            : "Ce défi t’attend sur la page Bataille."}{" "}
+          {s.status === "pending"
+            ? s.isChallenger
+              ? `En attente de la réponse de ${s.them.name}.`
+              : "Ce défi t’attend sur la page Bataille."
+            : s.status === "declined"
+              ? "Défi refusé."
+              : "Ce duel n’a pas eu lieu (annulé ou personne n’est venu à temps)."}{" "}
           <Link href="/battle" className="article-link">
             Retour aux duels
           </Link>
         </p>
-      )}
+      </div>
+    );
+  }
 
-      {battle.status === "active" && battle.mode === "live" && !question && (
-        <p className="text-muted">
-          Le duel démarre dès que vous êtes connectés tous les deux. Première question dans un instant…
-        </p>
-      )}
+  const finished = s.status === "finished";
+  const actionLabel =
+    mode === "attack"
+      ? selectedCard
+        ? `Attaquer · ${selectedCard.damage} dégâts`
+        : "Choisis une carte"
+      : mode === "shield"
+        ? selectedCard
+          ? `Se protéger · −${pct(selectedCard.shieldPct)}`
+          : "Choisis un bouclier"
+        : "";
 
-      {battle.status === "active" && battle.mode === "async" && !question && !asyncDone && (
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-muted">
-            Manche {battle.nextRound} sur {BATTLE_ROUNDS}. Tu as 10 secondes dès l’affichage de la question.
-          </p>
-          <button
-            type="button"
-            className="btn btn-primary"
-            disabled={busy}
-            onClick={() => playRound(battle.nextRound ?? 1)}
-          >
-            Jouer la manche {battle.nextRound}
-          </button>
-        </div>
-      )}
-
-      <p className="sr-only" aria-live="polite">
-        {question && battle.status === "active"
-          ? `Manche ${question.round} : ${TYPE_LABEL[question.type] ?? "question"}. ${question.prompt}`
-          : ""}
-      </p>
-      {question && battle.status === "active" && (
-        <QuestionPanel q={question} endsAt={endsAt} result={result} onAnswer={answer} />
-      )}
-
-      {question && result && battle.mode === "async" && battle.status === "active" && (
-        <div>
-          {question.round < BATTLE_ROUNDS ? (
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => playRound(question.round + 1)}
-              disabled={busy}
-            >
-              Manche suivante
-            </button>
+  return (
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="page-title">Duel</h1>
+        {!finished &&
+          (confirmForfeit ? (
+            <span className="flex items-center gap-2 text-sm">
+              {s.phase === "lobby" ? "Annuler le duel ?" : "Abandonner ? Le duel sera perdu."}
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                onClick={() => {
+                  setConfirmForfeit(false);
+                  void act("forfeit", {});
+                }}
+              >
+                Oui
+              </button>
+              <button type="button" className="btn btn-sm" onClick={() => setConfirmForfeit(false)}>
+                Non
+              </button>
+            </span>
           ) : (
-            <p className="text-muted">
-              Tu as joué tes {BATTLE_ROUNDS} manches. Le résultat tombera quand {battle.opponent.name} aura joué les
-              siennes.
+            <button type="button" className="btn btn-sm btn-ghost text-muted" onClick={() => setConfirmForfeit(true)}>
+              <Flag aria-hidden className="size-4" /> {s.phase === "lobby" ? "Annuler" : "Abandonner"}
+            </button>
+          ))}
+      </header>
+
+      {!s.legacy && <Scoreboard s={s} endsAt={snap.endsAt} />}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_17rem]">
+        <div className="flex min-w-0 flex-col gap-6">
+          {finished ? (
+            <Result s={s} />
+          ) : (
+            <Arena
+              s={s}
+              endsAt={snap.endsAt}
+              selected={selectedCard}
+              busy={busy}
+              pendingChoice={pendingChoice}
+              onAnswer={(i) => {
+                setPendingChoice(i);
+                void act("answer", { choice: i });
+              }}
+            />
+          )}
+
+          {s.myHand.length > 0 && (
+            <div className="flex flex-col gap-3">
+              <Hand
+                cards={s.myHand}
+                mode={mode}
+                selected={selected}
+                onSelect={mode ? setSelected : undefined}
+                title={finished ? "Ton deck" : "Ta main"}
+              />
+              {mode && (
+                <div className="flex flex-wrap items-center justify-end gap-3">
+                  <span className="text-xs text-faint">
+                    {mode === "attack"
+                      ? "Sans choix à la fin du chrono, une carte est jouée au hasard."
+                      : "Sans choix à la fin du chrono, un bouclier est pris au hasard."}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-primary min-w-56"
+                    disabled={!selectedCard || busy}
+                    onClick={() => selectedCard && void act(mode, { slot: selectedCard.slot })}
+                  >
+                    {mode === "attack" ? (
+                      <Swords aria-hidden className="size-4" />
+                    ) : (
+                      <Shield aria-hidden className="size-4" />
+                    )}
+                    {busy ? "Envoi…" : actionLabel}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {s.theirHand.length > 0 && <TheirHand s={s} />}
+        </div>
+
+        <aside className="lg:sticky lg:top-20 lg:self-start" aria-label="Journal du duel">
+          <div className="infobox">
+            <h2 className="infobox-head">Journal</h2>
+            {s.turns.length === 0 ? (
+              <p className="px-4 py-3 text-sm text-muted">
+                {s.legacy ? "Pas de détail pour les duels de l’ancien format." : "Les tours joués s’affichent ici."}
+              </p>
+            ) : (
+              <ol className="divide-y divide-dashed divide-line px-3">
+                {[...s.turns].reverse().map((t) => (
+                  <TurnLine key={t.turn} t={t} youId={s.you.id} theirName={s.them.name} />
+                ))}
+              </ol>
+            )}
+          </div>
+          {!finished && (
+            <p className="mt-3 px-1 text-xs leading-relaxed text-faint">
+              Victoire {ECONOMY.battle.win} PW, défaite {ECONOMY.battle.loss} PW. Trois actions manquées d’affilée
+              valent abandon.
             </p>
           )}
-        </div>
-      )}
-      {asyncDone && !question && (
-        <p className="text-muted">
-          Tu as joué tes {BATTLE_ROUNDS} manches. Le résultat tombera quand {battle.opponent.name} aura joué les
-          siennes.
-        </p>
-      )}
-
-      {(battle.status === "finished" || (!question && battle.rounds.length > 0)) && <Recap battle={battle} />}
-      {["declined", "cancelled"].includes(battle.status) && <p className="text-muted">Ce défi n’a pas eu lieu.</p>}
+        </aside>
+      </div>
     </div>
   );
 }

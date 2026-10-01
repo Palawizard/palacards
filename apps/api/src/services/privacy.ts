@@ -93,7 +93,10 @@ export async function exportData(ctx: Ctx, userId: string) {
       .from(s.battles)
       .where(or(eq(s.battles.challengerId, userId), eq(s.battles.opponentId, userId))),
     battleDecks: await db.select().from(s.battleDecks).where(eq(s.battleDecks.userId, userId)),
-    battleAnswers: await db.select().from(s.battleAnswers).where(eq(s.battleAnswers.userId, userId)),
+    battleTurns: await db
+      .select()
+      .from(s.battleTurns)
+      .where(or(eq(s.battleTurns.attackerId, userId), eq(s.battleTurns.defenderId, userId))),
     achievements: await db.select().from(s.achievementsProgress).where(eq(s.achievementsProgress.userId, userId)),
     seasonArchives: await db.select().from(s.seasonArchives).where(eq(s.seasonArchives.userId, userId)),
   };
@@ -141,7 +144,7 @@ export async function prepareAccountDeletion(ctx: Ctx, userId: string) {
     );
   for (const x of battles) {
     if (x.status === "pending") await refuseChallenge(ctx, userId, x.id);
-    else await forceFinish(ctx, x.id);
+    else await forceFinish(ctx, x.id, userId);
   }
 
   if (await membership(ctx.db, userId)) await leaveGuild(ctx, userId);

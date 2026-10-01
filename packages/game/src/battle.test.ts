@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  attackDamage,
+  attackerOfTurn,
   BATTLE_REWARDED_PER_PAIR_PER_DAY,
   battleOver,
   battleRated,
@@ -8,19 +10,23 @@ import {
   eloUpdate,
   makeQuestion,
   maskExtract,
-  roundPower,
-  roundWinner,
+  resolveHit,
   seededRandom,
-  type QuizCard,
+  shieldPercent,
+  titlesClash,
+  TOTAL_TURNS,
+  yearQuestion,
+  type QuizArticle,
 } from "./battle.js";
 import { ECONOMY } from "./economy.js";
 
-const card = (over: Partial<QuizCard>): QuizCard => ({
+const article = (over: Partial<QuizArticle>): QuizArticle => ({
   cardId: 1,
   title: "Paris",
   views12m: 100,
-  pageLen: 1000,
   extract: null,
+  description: null,
+  thumbUrl: null,
   ...over,
 });
 
@@ -36,133 +42,62 @@ describe("aléatoire à graine", () => {
   });
 });
 
-describe("questions", () => {
-  const eiffel = card({
-    cardId: 1,
-    title: "Tour Eiffel",
-    views12m: 900,
-    pageLen: 5000,
-    extract:
-      "La tour Eiffel est une tour de fer puddlé de 330 mètres de hauteur située à Paris, à l'extrémité nord-ouest du parc du Champ-de-Mars.",
-  });
-  const mont = card({ cardId: 2, title: "Mont Blanc", views12m: 400, pageLen: 8000, extract: null });
-  const decoys = ["Arc de triomphe", "Louvre", "Notre-Dame de Paris", "Sacré-Cœur"];
-
-  it("donne la même question aux deux joueurs (même graine)", () => {
-    expect(makeQuestion("s", 1, eiffel, mont, decoys)).toEqual(makeQuestion("s", 1, eiffel, mont, decoys));
+describe("dégâts", () => {
+  it("ATK ÷ 100, au moins 1", () => {
+    expect(attackDamage(9_000, "L")).toBe(90);
+    expect(attackDamage(2_549, "C")).toBe(25);
+    expect(attackDamage(20, "C")).toBe(1);
   });
 
-  it("produit des questions valides avec la bonne réponse parmi les choix", () => {
-    for (let r = 1; r <= 30; r++) {
-      const q = makeQuestion(`seed-${r}`, r, eiffel, mont, decoys);
-      expect(q.answer).toBeGreaterThanOrEqual(0);
-      expect(q.answer).toBeLessThan(q.choices.length);
-      if (q.type === "most_viewed") expect(q.choices[q.answer]).toBe("Tour Eiffel");
-      if (q.type === "longest") expect(q.choices[q.answer]).toBe("Mont Blanc");
-      if (q.type === "who_am_i") {
-        expect(q.choices).toHaveLength(4);
-        expect(q.choices[q.answer]).toBe("Tour Eiffel");
-        expect(q.prompt.toLowerCase()).not.toContain("eiffel");
-      }
-    }
+  it("bouclier : DEF ÷ 200 %, plafonné à 50 %", () => {
+    expect(shieldPercent(6_000)).toBe(30);
+    expect(shieldPercent(9_999)).toBe(50);
+    expect(shieldPercent(12_000)).toBe(50);
+    expect(shieldPercent(0)).toBe(0);
   });
 
-  it("met l'autre carte de la manche parmi les leurres de « Qui suis-je ? »", () => {
-    for (let r = 1; r <= 30; r++) {
-      const q = makeQuestion(`k-${r}`, r, eiffel, mont, decoys);
-      if (q.type === "who_am_i") expect(q.choices).toContain("Mont Blanc");
-    }
+  it("mauvaise réponse : dégâts réduits par le bouclier", () => {
+    expect(resolveHit({ atk: 9_000, rarity: "L", shieldDef: 6_000, correct: false, answerMs: 3_000 })).toEqual({
+      raw: 90,
+      shieldPct: 30,
+      damage: 63,
+      reflected: 0,
+      parry: "none",
+    });
+    expect(resolveHit({ atk: 5_000, rarity: "R", shieldDef: null, correct: false, answerMs: null }).damage).toBe(50);
   });
 
-  it("ne pose jamais une question à deux choix identiques (même article des deux côtés)", () => {
-    const twin = card({ title: "Paris", views12m: 5, pageLen: 9, extract: null });
-    const q = makeQuestion("t", 1, twin, { ...twin, cardId: 2 }, ["Lyon", "Nice", "Lille", "Brest"]);
-    expect(new Set(q.choices).size).toBe(q.choices.length);
-    expect(q.choices[q.answer]).toBe("Paris");
-  });
-
-  it("se replie sur « plus lu » sans résumé ni leurres", () => {
-    const q = makeQuestion(
-      "x",
-      1,
-      card({ title: "A", views12m: 5, pageLen: 1 }),
-      card({ title: "B", views12m: 9, pageLen: 1 }),
-      [],
-    );
-    expect(q.type).toBe("most_viewed");
-    expect(q.choices[q.answer]).toBe("B");
-  });
-
-  it("manche rejouée : change de type de question quand c'est possible", () => {
-    const a = card({ title: "A", views12m: 5, pageLen: 10 });
-    const b = card({ title: "B", views12m: 9, pageLen: 1 });
-    for (const seed of ["s1", "s2", "s3", "s4", "s5", "s6"]) {
-      const first = makeQuestion(seed, 2, a, b, []);
-      const again = makeQuestion(`${seed}:bis`, 2, a, b, [], first);
-      expect(again.type).not.toBe(first.type);
-      expect(again.choices[again.answer]).toBe(again.type === "longest" ? "A" : "B");
-    }
-    // Un seul type possible : on le garde (rien d'autre à poser).
-    const only = makeQuestion(
-      "x",
-      1,
-      card({ title: "A", views12m: 5, pageLen: 1 }),
-      card({ title: "B", views12m: 9, pageLen: 1 }),
-      [],
-    );
-    expect(
-      makeQuestion(
-        "y",
-        1,
-        card({ title: "A", views12m: 5, pageLen: 1 }),
-        card({ title: "B", views12m: 9, pageLen: 1 }),
-        [],
-        only,
-      ).type,
-    ).toBe("most_viewed");
-  });
-
-  it("manche rejouée en « Qui suis-je ? » : l'autre article devient la cible", () => {
-    const extract = (t: string) =>
-      `${t} est un lieu très connu, décrit ici par une phrase assez longue pour servir de résumé.`;
-    const a = card({ title: "Alpha", views12m: 1, pageLen: 1, extract: extract("Alpha") });
-    const b = card({ title: "Bravo", views12m: 1, pageLen: 1, extract: extract("Bravo") });
-    const first = makeQuestion("seed", 1, a, b, decoys);
-    expect(first.type).toBe("who_am_i");
-    const again = makeQuestion("seed:bis", 1, a, b, decoys, first);
-    expect(again.type).toBe("who_am_i");
-    expect(again.choices[again.answer]).not.toBe(first.choices[first.answer]);
-    // Sans question à éviter, la génération ne change pas (même graine → même question).
-    expect(makeQuestion("seed", 1, a, b, decoys)).toEqual(first);
-  });
-
-  it("masque le titre dans le résumé et le tronque", () => {
-    const masked = maskExtract("Albert Einstein est un physicien. Einstein a publié la relativité.", "Albert Einstein");
-    expect(masked).not.toMatch(/einstein/i);
-    expect(maskExtract("mot ".repeat(200), "X").length).toBeLessThanOrEqual(261);
+  it("bonne réponse : parée ; rapide : parade parfaite qui renvoie 20 %", () => {
+    expect(resolveHit({ atk: 9_000, rarity: "L", shieldDef: 6_000, correct: true, answerMs: 7_000 })).toMatchObject({
+      damage: 0,
+      reflected: 0,
+      parry: "parry",
+    });
+    expect(resolveHit({ atk: 9_000, rarity: "L", shieldDef: 6_000, correct: true, answerMs: 3_999 })).toMatchObject({
+      damage: 0,
+      reflected: 18,
+      parry: "perfect",
+    });
   });
 });
 
-describe("combat", () => {
-  it("applique la formule de puissance (bonus de vitesse seulement si juste)", () => {
-    expect(roundPower(1000, 1000, true, 10_000)).toBe(1000 * 1.75 - 300);
-    expect(roundPower(1000, 1000, true, 0)).toBe(1000 * 1.5 - 300);
-    expect(roundPower(1000, 1000, false, 10_000)).toBe(700);
-    expect(roundPower(1000, 0, true, 5_000)).toBe(1625);
+describe("déroulé", () => {
+  it("alterne l'attaquant", () => {
+    expect([1, 2, 3, 4].map((t) => attackerOfTurn(t, "a", "b"))).toEqual(["a", "b", "a", "b"]);
   });
 
-  it("départage à la DEF puis déclare la manche nulle", () => {
-    expect(roundWinner({ power: 10, def: 1 }, { power: 9, def: 99 })).toBe(1);
-    expect(roundWinner({ power: 10, def: 1 }, { power: 10, def: 2 })).toBe(2);
-    expect(roundWinner({ power: 10, def: 2 }, { power: 10, def: 2 })).toBe(0);
+  it("s'arrête à 0 PV ou après le dernier tour", () => {
+    expect(battleOver(100, 100, TOTAL_TURNS - 1)).toBe(false);
+    expect(battleOver(100, 100, TOTAL_TURNS)).toBe(true);
+    expect(battleOver(0, 40, 3)).toBe(true);
+    expect(battleOver(40, -5, 3)).toBe(true);
   });
 
-  it("s'arrête à 3 manches gagnées ou après 5", () => {
-    expect(battleOver(3, 0, 3)).toBe(true);
-    expect(battleOver(2, 2, 4)).toBe(false);
-    expect(battleOver(2, 2, 5)).toBe(true);
-    expect(battleResult(2, 2, 5000, 4000)).toBe(1);
-    expect(battleResult(2, 2, 10, 10)).toBe(0);
+  it("départage aux PV, puis aux dégâts infligés, sinon nul", () => {
+    expect(battleResult(60, 20, 0, 0)).toBe(1);
+    expect(battleResult(-10, 0, 50, 0)).toBe(1); // deux à terre : les dégâts infligés départagent
+    expect(battleResult(50, 50, 30, 45)).toBe(2);
+    expect(battleResult(50, 50, 30, 30)).toBe(0);
   });
 
   it("met à jour l'Elo avec K = 32", () => {
@@ -173,23 +108,127 @@ describe("combat", () => {
   });
 
   it("Elo : plafond quotidien par paire et rien si le perdant n'a pas joué", () => {
-    const base = { pairFinishedToday: 0, result: 1 as const, answered1: true, answered2: true };
-    expect(battleRated(base)).toBe(true);
-    expect(battleRated({ ...base, pairFinishedToday: BATTLE_REWARDED_PER_PAIR_PER_DAY - 1 })).toBe(true);
-    expect(battleRated({ ...base, pairFinishedToday: BATTLE_REWARDED_PER_PAIR_PER_DAY })).toBe(false);
-    // Perdant absent (abandon, compte secondaire inactif) : pas d'Elo.
-    expect(battleRated({ ...base, answered2: false })).toBe(false);
-    expect(battleRated({ ...base, result: 2, answered1: false })).toBe(false);
-    // Gagnant absent mais perdant actif : le perdant a vraiment joué et perdu.
-    expect(battleRated({ ...base, answered1: false })).toBe(true);
-    // Nul : il faut que les deux aient joué.
-    expect(battleRated({ ...base, result: 0, answered2: false })).toBe(false);
-    expect(battleRated({ ...base, result: 0 })).toBe(true);
+    const base = { pairFinishedToday: 0, played1: true, played2: true };
+    expect(battleRated({ ...base, result: 1 })).toBe(true);
+    expect(battleRated({ ...base, result: 1, pairFinishedToday: BATTLE_REWARDED_PER_PAIR_PER_DAY })).toBe(false);
+    expect(battleRated({ ...base, result: 1, played2: false })).toBe(false);
+    expect(battleRated({ ...base, result: 2, played2: false })).toBe(true);
+    expect(battleRated({ ...base, result: 0, played1: false })).toBe(false);
   });
 
   it("récompense victoire, défaite et nul", () => {
     expect(battleReward("win")).toBe(ECONOMY.battle.win);
     expect(battleReward("loss")).toBe(ECONOMY.battle.loss);
-    expect(battleReward("draw")).toBe(20);
+    expect(battleReward("draw")).toBe(Math.round((ECONOMY.battle.win + ECONOMY.battle.loss) / 2));
+  });
+});
+
+describe("questions", () => {
+  const valmy = article({
+    cardId: 10,
+    title: "Bataille de Valmy",
+    views12m: 90_000,
+    extract:
+      "La bataille de Valmy est une bataille de la Révolution française qui eut lieu le 20 septembre 1792 près de Valmy, dans la Marne. Elle oppose l'armée française aux Prussiens.",
+    description: "bataille de la Révolution française",
+    thumbUrl: "https://upload.wikimedia.org/valmy.jpg",
+  });
+  const decoys = [
+    article({
+      cardId: 11,
+      title: "Bataille de Jemappes",
+      views12m: 20_000,
+      extract: "La bataille de Jemappes a lieu en 1792 en Belgique, entre la France et l'Autriche, dans le Hainaut.",
+      description: "bataille de 1792 en Belgique",
+      thumbUrl: "https://upload.wikimedia.org/jemappes.jpg",
+    }),
+    article({
+      cardId: 12,
+      title: "Bataille de Fleurus (1794)",
+      views12m: 15_000,
+      description: "victoire française sur les Autrichiens",
+      thumbUrl: "https://upload.wikimedia.org/fleurus.jpg",
+    }),
+    article({
+      cardId: 13,
+      title: "Bataille de Wattignies",
+      views12m: 8_000,
+      description: "bataille de la guerre de la Première Coalition",
+      thumbUrl: "https://upload.wikimedia.org/wattignies.jpg",
+    }),
+    article({ cardId: 14, title: "Valmy", views12m: 30_000, description: "commune française de la Marne" }),
+  ];
+
+  it("est déterministe (même graine, même question)", () => {
+    expect(makeQuestion("s:1", valmy, decoys)).toEqual(makeQuestion("s:1", valmy, decoys));
+  });
+
+  it("produit toujours 4 choix distincts avec la bonne réponse", () => {
+    const seen = new Set<string>();
+    for (let i = 0; i < 80; i++) {
+      const q = makeQuestion(`seed-${i}`, valmy, decoys, { maxYear: 2026 });
+      seen.add(q.type);
+      expect(q.choices).toHaveLength(4);
+      expect(new Set(q.choices).size).toBe(4);
+      expect(q.answer).toBeGreaterThanOrEqual(0);
+      if (q.type === "definition") expect(q.choices[q.answer]).toBe("Bataille de la Révolution française");
+      if (q.type === "year") {
+        expect(q.choices[q.answer]).toBe("1792");
+        expect(q.prompt).toContain("▢▢▢▢");
+        expect(q.prompt).not.toContain("1792");
+      }
+      if (q.type === "image") expect(q.choices[q.answer]).toBe(valmy.thumbUrl);
+      if (q.type === "who_am_i") {
+        expect(q.titleHidden).toBe(true);
+        expect(q.choices[q.answer]).toBe("Bataille de Valmy");
+        // « Valmy » contient le titre de base : jamais proposé comme leurre (ambigu avec l'extrait masqué).
+        expect(q.choices).not.toContain("Valmy");
+        expect(q.prompt).not.toMatch(/valmy/i);
+      } else expect(q.titleHidden).toBe(false);
+    }
+    expect(seen).toEqual(new Set(["definition", "year", "image", "who_am_i"]));
+  });
+
+  it("évite les types déjà posés quand c'est possible", () => {
+    for (let i = 0; i < 20; i++) {
+      const q = makeQuestion(`a-${i}`, valmy, decoys, { avoid: ["definition", "image", "who_am_i"], maxYear: 2026 });
+      expect(q.type).toBe("year");
+    }
+  });
+
+  it("se replie sur « le plus lu » sans résumé ni description", () => {
+    const bare = article({ cardId: 20, title: "Zorglub", views12m: 500 });
+    const others = [1, 2, 3].map((n) => article({ cardId: 30 + n, title: `Article ${n}`, views12m: n * 1_000 }));
+    const q = makeQuestion("x", bare, others);
+    expect(q.type).toBe("popular");
+    expect(q.choices).toHaveLength(4);
+    expect(q.choices[q.answer]).toBe("Article 3");
+  });
+
+  it("phrase à trou : années proches, triées, jamais au-delà de l'année en cours", () => {
+    for (let i = 0; i < 30; i++) {
+      const q = yearQuestion(
+        "Le club a été fondé en 2019 à Lyon par un groupe de supporters.",
+        seededRandom(`y${i}`),
+        2026,
+      )!;
+      const years = q.choices.map(Number);
+      expect(years).toEqual([...years].sort((a, b) => a - b));
+      expect(years.every((y) => y <= 2026)).toBe(true);
+      expect(q.choices[q.answer]).toBe("2019");
+    }
+    expect(yearQuestion("Aucune date ici, juste une phrase assez longue.", seededRandom("z"), 2026)).toBeNull();
+  });
+
+  it("repère les titres trop proches", () => {
+    expect(titlesClash("Valmy", "Bataille de Valmy")).toBe(true);
+    expect(titlesClash("Élan", "elan (animal)")).toBe(true);
+    expect(titlesClash("Bataille de Jemappes", "Bataille de Valmy")).toBe(false);
+  });
+
+  it("masque le titre dans le résumé et le tronque", () => {
+    const masked = maskExtract("La tour Eiffel est une tour de fer puddlé à Paris. ".repeat(10), "Tour Eiffel");
+    expect(masked).not.toMatch(/eiffel/i);
+    expect(masked.length).toBeLessThanOrEqual(261);
   });
 });
