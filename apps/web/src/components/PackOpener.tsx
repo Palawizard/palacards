@@ -1,6 +1,6 @@
 "use client";
 
-import { ECONOMY, RARITY_LABELS, rarityRank } from "@palacards/game";
+import { RARITY_LABELS, rarityRank, recycleValue } from "@palacards/game";
 import type { CardDTO, PackState, ThemeDTO } from "@palacards/shared";
 import { ChevronRight, Recycle, Scissors } from "lucide-react";
 import {
@@ -22,8 +22,8 @@ import { useMe } from "@/lib/game";
 import { useCardMedia } from "@/lib/media";
 import { play } from "@/lib/sfx";
 import { PHONE_QUERY, useMediaQuery } from "@/lib/use-media-query";
-import { Card } from "./Card";
-import { FX_DURATION, isFxTier, RevealFx, type FxTier } from "./RevealFx";
+import { Card, SparkStar } from "./Card";
+import { FX_DURATION, isFxTier, RevealFx, SHINY_FX_DURATION, ShinyFx, type FxTier } from "./RevealFx";
 
 type Speed = "normal" | "fast" | "instant";
 type Phase = "sealed" | "tearing" | "dealt";
@@ -41,7 +41,7 @@ const EASE_OUT = [0.23, 1, 0.32, 1] as const;
 /** Pauses entre deux retournements : plus longues avant une carte rare, pour laisser monter la tension. */
 const flipDelay = (card: CardDTO, speed: Speed) => {
   const base = speed === "fast" ? 170 : 380;
-  return rarityRank(card.rarity) >= rarityRank("SR") ? base * 2.2 : base;
+  return card.shiny ? base * 3 : rarityRank(card.rarity) >= rarityRank("SR") ? base * 2.2 : base;
 };
 
 const SIGILS = ["C", "PC", "R", "SR", "UR", "L"] as const;
@@ -233,19 +233,23 @@ export function FlipCard({
 }) {
   const reduce = useReducedMotion();
   const tier = isFxTier(card.rarity) ? card.rarity : null;
+  const shiny = !!card.shiny;
+  /** Une brillante a sa propre révélation, quelle que soit sa rareté. */
+  const hasFx = shiny || !!tier;
+  const fxDuration = shiny ? SHINY_FX_DURATION : tier ? FX_DURATION[tier] : 0;
   const key = card.instanceId ?? card.cardId;
   // Pic de lumière à mi-retournement, quand la face apparaît.
   const peak = speed === "instant" ? 0 : speed === "fast" ? 150 : 260;
   /** Délai (ms) avant le pic de l'effet en cours, ou null quand rien ne joue. */
   const [fx, setFx] = useState<number | null>(() =>
     // Posée face visible en mode instantané : l'effet joue tout de suite (une seule fois par carte).
-    revealed && speed === "instant" && tier && !playedFx.has(key) ? 0 : null,
+    revealed && speed === "instant" && hasFx && !playedFx.has(key) ? 0 : null,
   );
   // Retournée sous nos yeux : l'effet démarre au même rendu que le retournement.
   const [prevRevealed, setPrevRevealed] = useState(revealed);
   if (prevRevealed !== revealed) {
     setPrevRevealed(revealed);
-    if (revealed && tier && !playedFx.has(key)) setFx(peak);
+    if (revealed && hasFx && !playedFx.has(key)) setFx(peak);
   }
 
   const wasRevealed = useRef(revealed);
@@ -256,14 +260,19 @@ export function FlipCard({
   }, [revealed, speed]);
 
   useEffect(() => {
-    if (fx === null || !tier) return;
+    if (fx === null || !hasFx) return;
     playedFx.add(key);
-    if (speed !== "instant") play(JINGLE[tier], Math.max(0, fx - JINGLE_LEAD[tier]));
-    const t = setTimeout(() => setFx(null), fx + FX_DURATION[tier]);
+    if (speed !== "instant") {
+      // Brillante : le glissando tombe sur la face ; une grosse rareté brillante garde aussi son jingle.
+      if (shiny) play("shiny", Math.max(0, fx - 120));
+      if (tier && (!shiny || tier !== "SR"))
+        play(JINGLE[tier], Math.max(0, fx - JINGLE_LEAD[tier]) + (shiny ? 420 : 0));
+    }
+    const t = setTimeout(() => setFx(null), fx + fxDuration);
     return () => clearTimeout(t);
-  }, [fx, tier, key, speed]);
+  }, [fx, tier, shiny, hasFx, fxDuration, key, speed]);
 
-  const anticip = upNext && !revealed && tier && speed !== "instant" ? tier : undefined;
+  const anticip = upNext && !revealed && hasFx && speed !== "instant" ? (tier ?? "SR") : undefined;
 
   return (
     <motion.div
@@ -273,10 +282,15 @@ export function FlipCard({
       animate={{ opacity: 1, transform: "translateY(0px) scale(1)" }}
       transition={{ duration: 0.4, ease: EASE_OUT, delay: speed === "instant" ? 0 : index * 0.06 }}
     >
-      {fx !== null && tier && <RevealFx tier={tier} delay={fx} layer="back" />}
+      {fx !== null &&
+        (shiny ? (
+          <ShinyFx rarity={card.rarity} delay={fx} layer="back" />
+        ) : (
+          tier && <RevealFx tier={tier} delay={fx} layer="back" />
+        ))}
       <div
-        className={`relative [perspective:1100px] ${fx !== null && tier && tier !== "SR" && !reduce ? "pc-fx-pop" : ""}`}
-        data-tier={tier ?? undefined}
+        className={`relative [perspective:1100px] ${fx !== null && (shiny || (tier && tier !== "SR")) && !reduce ? "pc-fx-pop" : ""}`}
+        data-tier={shiny ? "L" : (tier ?? undefined)}
         style={fx !== null ? ({ "--fx-delay": `${fx}ms` } as React.CSSProperties) : undefined}
       >
         <motion.div
@@ -301,12 +315,17 @@ export function FlipCard({
             className="absolute inset-0 aspect-[5/7] [backface-visibility:hidden] [transform:rotateY(180deg)]"
             aria-label={`Retourner la carte ${index + 1}`}
           >
-            {anticip && <span aria-hidden className="pc-anticip-glow" />}
+            {anticip && <span aria-hidden className="pc-anticip-glow" data-shiny={shiny || undefined} />}
             <CardBack />
           </button>
         </motion.div>
       </div>
-      {fx !== null && tier && <RevealFx tier={tier} delay={fx} layer="front" />}
+      {fx !== null &&
+        (shiny ? (
+          <ShinyFx rarity={card.rarity} delay={fx} layer="front" />
+        ) : (
+          tier && <RevealFx tier={tier} delay={fx} layer="front" />
+        ))}
     </motion.div>
   );
 }
@@ -323,7 +342,7 @@ function RecycleAction({
   onRecycle: (card: CardDTO) => void;
   className?: string;
 }) {
-  const gain = ECONOMY.recycleValue[card.rarity];
+  const gain = recycleValue(card.rarity, card.shiny);
   if (recycled)
     return <span className={`tnum text-center text-xs text-muted ${className}`}>Recyclée · +{gain} PW</span>;
   return (
@@ -691,6 +710,12 @@ function DeckRecap({
                   <span className="block truncate font-semibold leading-snug">{card.title}</span>
                   <span className="tnum flex items-center gap-2 text-xs text-muted">
                     <span className="pc-sigil">{card.rarity}</span>
+                    {card.shiny && (
+                      <span className="inline-flex items-center gap-1 font-bold text-[#c4b5fd]">
+                        <SparkStar className="size-3" />
+                        Brillante
+                      </span>
+                    )}
                     <span>
                       ATK {fmt(card.atk)} · DEF {fmt(card.def)}
                     </span>
@@ -747,8 +772,8 @@ export const PackOpener = memo(function PackOpener({
     (i: number) => {
       setRevealed((r) => (r[i] ? r : r.map((v, j) => (j === i ? true : v))));
       const card = cards[i];
-      if (card && rarityRank(card.rarity) >= rarityRank("UR"))
-        setAnnounce(`${RARITY_LABELS[card.rarity]} : ${card.title} !`);
+      if (card && (card.shiny || rarityRank(card.rarity) >= rarityRank("UR")))
+        setAnnounce(`${RARITY_LABELS[card.rarity]}${card.shiny ? " brillante" : ""} : ${card.title} !`);
     },
     [cards],
   );
@@ -765,8 +790,8 @@ export const PackOpener = memo(function PackOpener({
       timers.current.push(
         setTimeout(() => {
           setRevealed((r) => r.map((v, j) => (j === i ? true : v)));
-          if (rarityRank(card.rarity) >= rarityRank("UR"))
-            setAnnounce(`${RARITY_LABELS[card.rarity]} : ${card.title} !`);
+          if (card.shiny || rarityRank(card.rarity) >= rarityRank("UR"))
+            setAnnounce(`${RARITY_LABELS[card.rarity]}${card.shiny ? " brillante" : ""} : ${card.title} !`);
         }, t),
       );
     });
@@ -806,8 +831,9 @@ export const PackOpener = memo(function PackOpener({
       } else {
         const best = res.cards.reduce((a, b) => (rarityRank(b.rarity) > rarityRank(a.rarity) ? b : a));
         setAnnounce(`Meilleure carte : ${best.title} (${RARITY_LABELS[best.rarity]})`);
-        // Instantané : un seul jingle, celui de la meilleure carte.
-        if (isFxTier(best.rarity)) play(JINGLE[best.rarity], 60);
+        // Instantané : un seul jingle, celui de la meilleure carte (ou d'une brillante).
+        if (res.cards.some((c) => c.shiny)) play("shiny", 60);
+        else if (isFxTier(best.rarity)) play(JINGLE[best.rarity], 60);
       }
       if (res.pityTriggered) toast("Pity déclenchée : UR ou mieux garantie !");
       if (res.autoRecycled) {

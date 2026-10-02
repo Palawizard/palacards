@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { BroadcastOverlay } from "@/components/BroadcastOverlay";
 import { Shell } from "@/components/Shell";
 import { GameProvider, SwrProvider } from "@/lib/game";
 
@@ -13,6 +14,7 @@ export default function GameLayout({ children, modal }: { children: ReactNode; m
       <GameProvider>
         <Shell>{children}</Shell>
         {modal}
+        <BroadcastOverlay />
       </GameProvider>
     </SwrProvider>
   );
