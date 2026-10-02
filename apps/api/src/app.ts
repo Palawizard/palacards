@@ -16,7 +16,9 @@ import { socialRoutes } from "./routes/social.js";
 import { battleRoutes } from "./routes/battles.js";
 import { progressionRoutes } from "./routes/progression.js";
 import { privacyRoutes } from "./routes/privacy.js";
+import { contentRoutes } from "./routes/content.js";
 import { prepareAccountDeletion } from "./services/privacy.js";
+import { BROADCAST_CHANNEL, pushBroadcast } from "./services/broadcasts.js";
 import { progressionIdle, registerProgressionHooks } from "./services/progression.js";
 import { wirePresence } from "./services/social.js";
 import { registerJobs } from "./services/jobs-handlers.js";
@@ -172,6 +174,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
       battleRoutes(api, ctx);
       progressionRoutes(api, ctx);
       privacyRoutes(api, ctx);
+      contentRoutes(api, ctx);
       if (config.GAME_TEST_MODE) testRoutes(api, ctx);
     },
     { prefix: apiPrefix },
@@ -181,6 +184,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
     await jobs.start();
     // Duels en cours au redémarrage : les échéances sont reprogrammées depuis la base.
     if (ctx) await resumeBattles(ctx);
+    // Messages serveur envoyés par la CLI (autre processus) : poussés aux joueurs connectés.
+    if (ctx && database && options.jobs) {
+      const live = ctx;
+      await database.client.listen(BROADCAST_CHANNEL, (id) => {
+        void pushBroadcast(live, Number(id)).catch((err) => app.log.error({ err }, "message serveur"));
+      });
+    }
   });
   app.addHook("onClose", async () => {
     battleEngine.stopAll();

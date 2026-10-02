@@ -30,7 +30,7 @@ export async function claimDaily(ctx: Ctx, userId: string) {
   });
   if (!res) return { claimed: false as const };
   pushWallet(ctx, res.player);
-  void emit(ctx, userId, { type: "login_streak", days: res.streak });
+  void emit(ctx, userId, { type: "daily_login" }, { type: "login_streak", days: res.streak });
   return { claimed: true as const, reward: res.reward, streak: res.streak };
 }
 

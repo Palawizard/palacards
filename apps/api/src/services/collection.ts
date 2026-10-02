@@ -1,10 +1,19 @@
 import { and, desc, eq, inArray, schema, sql, type SQL } from "@palacards/db";
-import { ECONOMY, effectiveStats, isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITIES, type Rarity } from "@palacards/game";
+import {
+  effectiveStats,
+  isBetterCopy,
+  LEVEL_BONUS,
+  MAX_LEVEL,
+  RARITIES,
+  recycleValue,
+  type Rarity,
+} from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { seasonTotals, selectInstances, toCardDTO } from "./cards.js";
 import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet, type DbOrTx } from "./players.js";
+import { emit } from "./progression.js";
 
 const ci = schema.cardInstances;
 const c = schema.cards;
@@ -219,7 +228,7 @@ export async function recycle(ctx: Ctx, ownerId: string, instanceIds: number[]) 
   const res = await ctx.db.transaction(async (tx) => {
     const p = await lockPlayer(tx, ownerId);
     const rows = await tx
-      .select({ id: ci.id, rarity: ci.rarity, lockedBy: ci.lockedBy, pinnedSlot: ci.pinnedSlot })
+      .select({ id: ci.id, rarity: ci.rarity, shiny: ci.shiny, lockedBy: ci.lockedBy, pinnedSlot: ci.pinnedSlot })
       .from(ci)
       .where(and(inArray(ci.id, ids), eq(ci.ownerId, ownerId)))
       .orderBy(ci.id)
@@ -229,13 +238,14 @@ export async function recycle(ctx: Ctx, ownerId: string, instanceIds: number[]) 
       throw conflict("card_locked", "Une carte est engagée dans une vente ou un échange.");
     if ((await requestedInPendingTrades(tx, ids)).size)
       throw conflict("card_requested", "Une carte est demandée dans un échange en attente : refuse-le d'abord.");
-    const gain = rows.reduce((sum, r) => sum + ECONOMY.recycleValue[r.rarity], 0);
+    const gain = rows.reduce((sum, r) => sum + recycleValue(r.rarity, r.shiny), 0);
     await tx.delete(ci).where(inArray(ci.id, ids));
     await logMovement(tx, ownerId, "card", -ids.length, await ownedCount(tx, ownerId), "recycle", ids.join(","));
     await movePw(tx, p, gain, "recycle", ids.join(","));
-    return { gain, player: p };
+    return { gain, player: p, rarities: rows.map((r) => r.rarity) };
   });
   pushWallet(ctx, res.player);
+  void emit(ctx, ownerId, { type: "recycled", rarities: res.rarities }, "collection");
   return { gain: res.gain, balance: res.player.balance };
 }
 
@@ -253,6 +263,7 @@ export async function duplicateIds(
       level: ci.level,
       atk: ci.atk,
       def: ci.def,
+      shiny: ci.shiny,
       lockedBy: ci.lockedBy,
       favorite: ci.favorite,
       pinned: ci.pinnedSlot,
@@ -270,10 +281,16 @@ export async function duplicateIds(
   );
   const dups = rows
     .filter(
-      (r) => best.get(r.cardId)?.id !== r.id && !r.lockedBy && !r.favorite && r.pinned === null && !requested.has(r.id),
+      (r) =>
+        best.get(r.cardId)?.id !== r.id &&
+        !r.lockedBy &&
+        !r.favorite &&
+        !r.shiny &&
+        r.pinned === null &&
+        !requested.has(r.id),
     )
     .filter((r) => !rarities || rarities.includes(r.rarity));
-  return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + ECONOMY.recycleValue[r.rarity], 0) };
+  return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + recycleValue(r.rarity), 0) };
 }
 
 /** Plafond de « Tout sélectionner » : bien au-delà d'une collection réelle, borne la réponse. */
@@ -281,7 +298,7 @@ export const SELECT_ALL_MAX = 5000;
 
 /**
  * « Tout sélectionner » : exemplaires recyclables qui correspondent aux filtres en cours.
- * Comme pour les doublons, on écarte d'office les favoris, les épinglés et les cartes engagées
+ * Comme pour les doublons, on écarte d'office les favoris, les brillantes, les épinglés et les cartes engagées
  * (vente, échange, demandées dans un échange en attente) ; `protected` les compte pour l'afficher.
  */
 export async function selectableIds(
@@ -293,6 +310,7 @@ export async function selectableIds(
     .select({
       id: ci.id,
       rarity: ci.rarity,
+      shiny: ci.shiny,
       lockedBy: ci.lockedBy,
       favorite: ci.favorite,
       pinned: ci.pinnedSlot,
@@ -309,7 +327,7 @@ export async function selectableIds(
     page.map((r) => r.id),
   );
   const items = page
-    .filter((r) => !r.lockedBy && !r.favorite && r.pinned === null && !requested.has(r.id))
+    .filter((r) => !r.lockedBy && !r.favorite && !r.shiny && r.pinned === null && !requested.has(r.id))
     .map((r) => ({ id: r.id, rarity: r.rarity }));
   return { items, protected: page.length - items.length, truncated };
 }

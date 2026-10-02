@@ -97,6 +97,7 @@ export async function createAuction(
         cardId: inst.cardId,
         season: inst.season,
         rarity: inst.rarity,
+        shiny: inst.shiny,
         startPrice: input.startPrice,
         buyout: input.buyout,
         endsAt: new Date(now.getTime() + input.durationMs),
@@ -183,7 +184,7 @@ function emitSale(ctx: Ctx, auction: Pick<Auction, "id" | "status" | "sellerId" 
       .where(eq(schema.bids.auctionId, auction.id));
     await emit(ctx, sellerId, { type: "sale", price, bidders: row?.n ?? 0 });
   })().catch((err: unknown) => ctx.log.error({ err, auctionId: auction.id }, "succès de vente non évalué"));
-  void emit(ctx, auction.currentBidderId, "collection");
+  void emit(ctx, auction.currentBidderId, { type: "purchase" }, "collection");
 }
 
 async function settle(

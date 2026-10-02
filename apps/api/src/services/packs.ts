@@ -1,10 +1,19 @@
 import { and, eq, inArray, schema, sql } from "@palacards/db";
-import { autoRecyclePicks, consumeFreePack, ECONOMY, PITY_THRESHOLD, rollPack, type Rarity } from "@palacards/game";
+import {
+  autoRecyclePicks,
+  consumeFreePack,
+  PITY_THRESHOLD,
+  recycleValue,
+  rollPack,
+  rollShiny,
+  type Rarity,
+} from "@palacards/game";
 import type { CardDTO, PackState } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { conflict } from "../errors.js";
 import { instancesByIds, loadMediaInBackground } from "./cards.js";
 import { schedulePacksFull } from "./economy.js";
+import { announcePulls, logPulls } from "./feed.js";
 import { bumpObjective } from "./guilds.js";
 import { afterCommit } from "./notifications.js";
 import { emit } from "./progression.js";
@@ -108,13 +117,23 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
 
     const roll = rollPack(p.pityCounter, ctx.random, theme ? "themed" : "standard");
     update.pityCounter = roll.pityCounter;
-    const drawn = [];
+    const drawn: {
+      rarity: Rarity;
+      shiny: boolean;
+      id: number;
+      title: string;
+      atk: number;
+      def: number;
+      themed: boolean;
+    }[] = [];
     const counts = theme ? await themeRarityCounts(tx, theme.id, season) : null;
     for (const rarity of roll.rarities) {
+      // Brillante : tirée carte par carte, indépendamment de la rareté.
+      const shiny = rollShiny(ctx.random);
       drawn.push(
         theme && counts
-          ? { rarity, ...(await drawThemeCard(tx, season, theme.id, rarity, counts, ctx.random)) }
-          : { rarity, ...(await drawCard(tx, season, rarity, ctx.random)), themed: false },
+          ? { rarity, shiny, ...(await drawThemeCard(tx, season, theme.id, rarity, counts, ctx.random)) }
+          : { rarity, shiny, ...(await drawCard(tx, season, rarity, ctx.random)), themed: false },
       );
     }
 
@@ -149,6 +168,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
           rarity: d.rarity,
           atk: d.atk,
           def: d.def,
+          shiny: d.shiny,
           source: "pack" as const,
           obtainedAt: now,
         })),
@@ -162,11 +182,17 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     await logMovement(tx, userId, "card", ids.length, await ownedCount(tx, userId), "pack_open", ids.join(","));
 
     for (const hook of afterPackHooks) await hook(tx, userId, roll.rarities);
+    const notable = await logPulls(
+      tx,
+      userId,
+      theme ? "theme" : "pack",
+      drawn.map((d) => ({ cardId: d.id, season, rarity: d.rarity, shiny: d.shiny, title: d.title })),
+    );
 
     // Réponse lue dans la transaction : une fois le paquet consommé, plus rien ne peut faire échouer la requête.
     const cards = await instancesByIds(tx, ids, userId);
     const picks = autoRecyclePicks(
-      drawn.map((d) => ({ cardId: d.id, rarity: d.rarity })),
+      drawn.map((d) => ({ cardId: d.id, rarity: d.rarity, shiny: d.shiny })),
       p.autoRecycleMax,
       p.autoRecycleKeepNew,
       ownedBefore,
@@ -174,7 +200,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     let autoRecycled: OpenedPack["autoRecycled"];
     if (picks.length) {
       const gone = picks.map((i) => ids[i]!);
-      const gain = picks.reduce((s, i) => s + ECONOMY.recycleValue[roll.rarities[i]!], 0);
+      const gain = picks.reduce((s, i) => s + recycleValue(drawn[i]!.rarity, drawn[i]!.shiny), 0);
       await tx.delete(schema.cardInstances).where(inArray(schema.cardInstances.id, gone));
       await logMovement(tx, userId, "card", -gone.length, await ownedCount(tx, userId), "recycle", gone.join(","));
       await movePw(tx, p, gain, "recycle", gone.join(","));
@@ -186,6 +212,8 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       autoRecycled,
       packs: packState(state, now),
       drawn,
+      notable,
+      recycledRarities: picks.map((i) => drawn[i]!.rarity),
       usedBonus,
       pityTriggered: p.pityCounter >= PITY_THRESHOLD,
       state,
@@ -211,8 +239,19 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       open_packs: 1,
       pull_sr: result.drawn.filter((d) => d.rarity === "SR" || d.rarity === "UR" || d.rarity === "L").length,
     });
-    // Succès en arrière-plan : l'ouverture du paquet ne les attend pas.
-    void emit(ctx, userId, { type: "pack_opened", rarities: result.drawn.map((d) => d.rarity) }, "collection");
+    // Progression en arrière-plan (succès, quêtes, passe) : l'ouverture du paquet ne l'attend pas.
+    const events: Parameters<typeof emit>[2][] = [
+      {
+        type: "pack_opened",
+        rarities: result.drawn.map((d) => d.rarity),
+        shinies: result.drawn.map((d) => d.shiny),
+        titles: result.drawn.map((d) => d.title),
+        themed: !!result.theme,
+      },
+    ];
+    if (result.recycledRarities.length) events.push({ type: "recycled", rarities: result.recycledRarities });
+    void emit(ctx, userId, ...events, "collection");
+    await announcePulls(ctx, userId, result.notable);
   });
   await afterCommit(ctx, async () =>
     loadMediaInBackground(

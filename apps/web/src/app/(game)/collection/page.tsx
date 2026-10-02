@@ -158,7 +158,7 @@ export default function CollectionPage() {
       if (res.items.length === 0) toast("Aucune carte recyclable dans ce filtre.");
       if (res.protected > 0) {
         toast(
-          `${fmt(res.protected)} carte${res.protected > 1 ? "s" : ""} laissée${res.protected > 1 ? "s" : ""} de côté : favorite, épinglée ou engagée dans une vente ou un échange.`,
+          `${fmt(res.protected)} carte${res.protected > 1 ? "s" : ""} laissée${res.protected > 1 ? "s" : ""} de côté : favorite, brillante, épinglée ou engagée dans une vente ou un échange.`,
         );
       }
       if (res.truncated) toast("Sélection limitée aux 5 000 premières cartes.");
