@@ -63,7 +63,11 @@ export type LedgerReason =
   | "upgrade"
   | "wheel"
   | "promo_code"
-  | "theme_pack";
+  | "theme_pack"
+  | "quest"
+  | "season_pass"
+  | "daily_article"
+  | "boss";
 
 /**
  * Change le solde de PW d'un joueur verrouillé et écrit la ligne de ledger correspondante.
