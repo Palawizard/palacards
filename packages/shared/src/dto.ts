@@ -242,7 +242,10 @@ export interface DailyArticleDTO {
 
 export interface BossQuestionDTO {
   idx: number;
+  /** Carte qui attaque ; sans titre, image ni identifiant quand elle est face cachée. */
   card: CardDTO;
+  /** Question dont la carte donnerait la réponse (image, « Qui suis-je ? ») : carte face cachée. */
+  cardHidden: boolean;
   type: string;
   prompt: string;
   choices: string[];
