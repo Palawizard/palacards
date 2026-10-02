@@ -22,7 +22,7 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/leaderboard", auth, async (req) => {
     const q = parse(
       z.object({
-        board: z.enum(["collection", "elo", "wealth", "guilds", "pass"]).default("collection"),
+        board: z.enum(["collection", "packs", "luck", "elo", "wealth", "guilds", "pass"]).default("collection"),
         period: z.enum(["season", "all"]).default("season"),
       }),
       req.query,
