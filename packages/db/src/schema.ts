@@ -790,6 +790,24 @@ export const playerStats = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.key] })],
 );
 
+/**
+ * Paquets ouverts par joueur et par saison (classement « Boosters ouverts »), et « Chance » : points de collection
+ * tirés (doublons compris) face à leur espérance, en dix-millièmes de point. `luckPacks` : paquets mesurés (le
+ * journal des tirages ne remonte pas aux tout premiers paquets, comptés seulement dans `packs`).
+ */
+export const packStats = pgTable(
+  "pack_stats",
+  {
+    userId: userRef("user_id").notNull(),
+    season: smallint("season").notNull(),
+    packs: integer("packs").notNull().default(0),
+    luckPacks: integer("luck_packs").notNull().default(0),
+    pulledPoints: bigint("pulled_points", { mode: "number" }).notNull().default(0),
+    expectedPoints: bigint("expected_points", { mode: "number" }).notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.season] })],
+);
+
 /** Quêtes d'un joueur : trois par jour (créneaux 1 à 3) et une par semaine (créneau 1). */
 export const playerQuests = pgTable(
   "player_quests",

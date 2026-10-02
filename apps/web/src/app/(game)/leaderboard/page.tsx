@@ -2,23 +2,28 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { LUCK_MIN_PACKS } from "@palacards/game";
 import useSWR from "swr";
 import { ErrorBox } from "@/components/ui";
 import { fmt } from "@/lib/format";
 
-type Board = "collection" | "elo" | "wealth" | "guilds" | "pass";
+type Board = "collection" | "packs" | "luck" | "elo" | "wealth" | "guilds" | "pass";
 interface Row {
   id: string;
   name: string;
   username: string | null;
   value: number;
   extra?: string;
+  /** Classement « Chance » : boosters mesurés. */
+  packs?: number;
   rank: number;
   me: boolean;
 }
 
 const BOARDS: { value: Board; label: string; unit: string }[] = [
   { value: "collection", label: "Collection", unit: "pts" },
+  { value: "packs", label: "Boosters ouverts", unit: "Boosters" },
+  { value: "luck", label: "Chance", unit: "Chance" },
   { value: "elo", label: "Elo de bataille", unit: "Elo" },
   { value: "wealth", label: "Richesse", unit: "PW" },
   { value: "guilds", label: "Guildes", unit: "pts" },
@@ -45,6 +50,13 @@ export default function LeaderboardPage() {
           Le score de collection additionne les points de rareté des articles différents possédés (1 pour une commune, 1
           000 pour une légendaire). Les classements de saison repartent à zéro chaque mois.
         </p>
+        {board === "luck" && (
+          <p className="hatnote mt-2">
+            La chance compare les points de rareté tirés dans tes boosters (doublons compris) à ceux qu’on obtient en
+            moyenne avec les mêmes boosters : 100&nbsp;% = chance moyenne, 150&nbsp;% = moitié mieux que la moyenne. Il
+            faut au moins {LUCK_MIN_PACKS} boosters ouverts pour y figurer.
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Classements" className="flex flex-wrap gap-1.5">
@@ -75,7 +87,11 @@ export default function LeaderboardPage() {
       ) : !data ? (
         <div className="h-96 animate-pulse rounded-xl bg-panel" />
       ) : data.rows.length === 0 ? (
-        <p className="text-muted">Personne au classement pour l’instant.</p>
+        <p className="text-muted">
+          {board === "luck"
+            ? `Personne n’a encore ouvert ${LUCK_MIN_PACKS} boosters${period === "season" ? " cette saison" : ""}.`
+            : "Personne au classement pour l’instant."}
+        </p>
       ) : (
         <table
           aria-busy={isLoading}
@@ -113,8 +129,16 @@ export default function LeaderboardPage() {
                     </span>
                   )}
                   {r.me && <span className="ml-2 text-xs text-good">toi</span>}
+                  {r.packs !== undefined && (
+                    <span className="ml-2 text-xs text-faint">
+                      {fmt(r.packs)} booster{r.packs > 1 ? "s" : ""}
+                    </span>
+                  )}
                 </td>
-                <td className="px-3 py-2 text-right font-semibold">{fmt(r.value)}</td>
+                <td className="px-3 py-2 text-right font-semibold">
+                  {fmt(r.value)}
+                  {board === "luck" && "\u00a0%"}
+                </td>
               </tr>
             ))}
           </tbody>

@@ -1,4 +1,4 @@
-import type { Rarity } from "./rarity.js";
+import { COLLECTION_POINTS, RARITIES, type Rarity } from "./rarity.js";
 
 export const CARDS_PER_PACK = 10;
 /** Plafond du stock de paquets gratuits. Un nouveau joueur commence plein (ensurePlayer, côté API). */
@@ -104,6 +104,30 @@ export function rollPack(pityCounter: number, randomInt: RandomInt, kind: PackKi
   const gotUrOrBetter = rarities.some((r) => r === "UR" || r === "L");
   return { rarities, pityCounter: gotUrOrBetter ? 0 : pityCounter + 1 };
 }
+
+/** Minimum de paquets mesurés pour figurer au classement « Chance » (petits échantillons trop aléatoires). */
+export const LUCK_MIN_PACKS = 20;
+
+/** Espérance de points de collection d'un tirage sur une table, en dix-millièmes de point (entier). */
+const expectedSlotPoints = (table: DropTable) => RARITIES.reduce((s, r) => s + table[r] * COLLECTION_POINTS[r], 0);
+
+/**
+ * Espérance de points de collection d'un paquet (doublons compris), en dix-millièmes de point : base de la
+ * « Chance » (points tirés ÷ points attendus). Tient compte du type de paquet et de la pity.
+ */
+export function expectedPackPoints(kind: PackKind, pityTriggered = false): number {
+  const [table, guaranteed] =
+    kind === "themed"
+      ? [DROP_TABLE_THEMED, DROP_TABLE_THEMED_GUARANTEED]
+      : [DROP_TABLE_STANDARD, DROP_TABLE_GUARANTEED];
+  return (
+    (CARDS_PER_PACK - 1) * expectedSlotPoints(table) + expectedSlotPoints(pityTriggered ? DROP_TABLE_PITY : guaranteed)
+  );
+}
+
+/** Points de collection tirés (doublons compris), dans la même unité que `expectedPackPoints`. */
+export const pulledPackPoints = (rarities: Rarity[]) =>
+  rarities.reduce((s, r) => s + COLLECTION_POINTS[r] * DROP_TABLE_TOTAL, 0);
 
 /** Stock de paquets disponible, calculé à la lecture (pas de cron). */
 export function availablePacks(stored: number, updatedAt: Date, now: Date): number {

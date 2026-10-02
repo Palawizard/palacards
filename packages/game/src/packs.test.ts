@@ -13,7 +13,9 @@ import {
   PITY_THRESHOLD,
   availablePacks,
   consumeFreePack,
+  expectedPackPoints,
   msUntilNextPack,
+  pulledPackPoints,
   rollPack,
 } from "./packs.js";
 import { RARITIES, rarityFromViewRank, type Rarity } from "./rarity.js";
@@ -131,5 +133,28 @@ describe("consumeFreePack", () => {
 
   it("renvoie null sans paquet", () => {
     expect(consumeFreePack(0, t0, after(60_000))).toBeNull();
+  });
+});
+
+describe("chance : espérance de points d'un paquet", () => {
+  it("vaut ~39,7 points pour un paquet standard, ~88,5 pour un booster à thème, plus avec la pity", () => {
+    expect(expectedPackPoints("standard")).toBe(396_550);
+    expect(expectedPackPoints("themed")).toBe(885_000);
+    expect(expectedPackPoints("standard", true)).toBe(9 * 33_250 + 1_252_000);
+    expect(pulledPackPoints(["C", "PC", "L"])).toBe(1_003 * DROP_TABLE_TOTAL);
+  });
+
+  it("colle à la moyenne des tirages simulés (chance moyenne ≈ 100 %)", () => {
+    let pity = 0;
+    let pulled = 0;
+    let expected = 0;
+    for (let i = 0; i < 200_000; i++) {
+      expected += expectedPackPoints("standard", pity >= PITY_THRESHOLD);
+      const res = rollPack(pity, randomInt);
+      pity = res.pityCounter;
+      pulled += pulledPackPoints(res.rarities);
+    }
+    expect(pulled / expected).toBeGreaterThan(0.95);
+    expect(pulled / expected).toBeLessThan(1.05);
   });
 });
