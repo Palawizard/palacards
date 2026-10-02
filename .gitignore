@@ -8,7 +8,9 @@ CLAUDE.local.md
 PRODUCT.md
 DESIGN.md
 GEMINI.md
-.claude/
+.claude/*
+# Exception : skills partagés par toutes les sessions (Impeccable…), versionnés.
+!.claude/skills/
 .agents/
 .codex/
 .cursor/

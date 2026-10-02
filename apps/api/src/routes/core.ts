@@ -21,8 +21,11 @@ import {
 } from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
 import { themesOnSale } from "../services/themes.js";
-import { emit } from "../services/progression.js";
+import { articleReady } from "../services/article.js";
+import { bossSummary } from "../services/boss.js";
+import { emit, ensureBackfill, passState } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
+import { ensureQuests } from "../services/quests.js";
 import { getProfile } from "../services/profiles.js";
 
 const rarityList = z
@@ -56,6 +59,11 @@ export async function unreadMessages(ctx: Ctx, userId: string): Promise<number> 
  */
 export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "battle-v2", until: "2026-11-15T00:00:00+01:00" },
+  { key: "quests", until: "2026-12-01T00:00:00+01:00" },
+  { key: "article", until: "2026-12-01T00:00:00+01:00" },
+  { key: "boss", until: "2026-12-01T00:00:00+01:00" },
+  { key: "feed", until: "2026-12-01T00:00:00+01:00" },
+  { key: "achievements-v2", until: "2026-12-01T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */
@@ -71,6 +79,11 @@ export async function me(
   user: { id: string; username: string; displayName: string; isAdmin: boolean },
 ): Promise<MeDTO> {
   const p = await getPlayer(ctx.db, user.id);
+  // Succès à paliers : rattrapage des anciens joueurs à leur première visite (en arrière-plan).
+  ensureBackfill(ctx, p);
+  const season = await activeSeason(ctx.db);
+  const quests = await ensureQuests(ctx.db, user.id, ctx.now());
+  const pass = passState(p, season);
   const [notif] = await ctx.db
     .select({ n: sql<number>`count(*)::int` })
     .from(schema.notifications)
@@ -84,7 +97,7 @@ export async function me(
     packs: packState(p, ctx.now()),
     unreadNotifications: notif?.n ?? 0,
     unreadMessages: await unreadMessages(ctx, user.id),
-    season: await activeSeason(ctx.db),
+    season,
     elo: p.elo,
     wheelReady: p.lastWheelDay !== parisDay(ctx.now()),
     themesOnSale: await themesOnSale(ctx),
@@ -92,6 +105,10 @@ export async function me(
     newFeatures: FEATURE_ANNOUNCEMENTS.filter(
       (f) => ctx.now() < new Date(f.until) && !p.seenFeatures.includes(f.key),
     ).map((f) => f.key),
+    pass: { level: pass.level, into: pass.into, need: pass.need, xp: pass.xp },
+    quests: { done: quests.filter((q) => q.completedAt).length, total: quests.length },
+    articleReady: await articleReady(ctx, user.id),
+    boss: await bossSummary(ctx, user.id),
   };
 }
 

@@ -214,6 +214,15 @@ export const players = pgTable(
     lastLoginDay: date("last_login_day"),
     /** Dernier jour (Paris) où la roue quotidienne a été tournée. */
     lastWheelDay: date("last_wheel_day"),
+    /** XP du passe de saison, valable pour la saison `pass_season` (une autre saison : on repart de 0). */
+    seasonXp: integer("season_xp").notNull().default(0),
+    passSeason: smallint("pass_season"),
+    /** Plus haut niveau du passe déjà récompensé pour `pass_season`. */
+    passRewarded: smallint("pass_rewarded").notNull().default(0),
+    /** Version du rattrapage des statistiques de succès (recalcul depuis l'historique, une fois par version). */
+    statsVersion: smallint("stats_version").notNull().default(0),
+    /** Dernier jour (Paris) où une quête du jour a été changée. */
+    lastQuestRerollDay: date("last_quest_reroll_day"),
     /** Nouveautés déjà vues (pastille « Nouveau » du menu), par clé : `battle-v2`… */
     seenFeatures: text("seen_features")
       .array()
@@ -225,6 +234,7 @@ export const players = pgTable(
   (t) => [
     check("players_balance_ok", sql`${t.balance} >= ${t.lockedBalance} AND ${t.lockedBalance} >= 0`),
     check("players_packs_ok", sql`${t.packsStored} >= 0 AND ${t.bonusPacks} >= 0 AND ${t.pityCounter} >= 0`),
+    check("players_xp_ok", sql`${t.seasonXp} >= 0`),
   ],
 );
 
@@ -258,12 +268,14 @@ export const cardInstances = pgTable(
     atk: smallint("atk").notNull(),
     def: smallint("def").notNull(),
     level: smallint("level").notNull().default(1),
+    /** Version brillante (cosmétique, ~0,1 % des tirages). */
+    shiny: boolean("shiny").notNull().default(false),
     favorite: boolean("favorite").notNull().default(false),
     /** Engagée dans une enchère ou un échange : ni recyclage, ni fusion, ni double vente. */
     lockedBy: text("locked_by", { enum: ["auction", "trade"] }),
     pinnedSlot: smallint("pinned_slot"),
     /** `upgrade` (upgrader) et `wheel` (roue quotidienne) comptent, comme `pack`, pour les succès de collection. */
-    source: text("source", { enum: ["pack", "market", "trade", "admin", "upgrade", "wheel"] }).notNull(),
+    source: text("source", { enum: ["pack", "market", "trade", "admin", "upgrade", "wheel", "boss"] }).notNull(),
     obtainedAt: tstz("obtained_at").notNull().defaultNow(),
   },
   (t) => [
@@ -332,6 +344,7 @@ export const auctions = pgTable(
     cardId: bigint("card_id", { mode: "number" }).notNull(),
     season: smallint("season").notNull(),
     rarity: rarityEnum("rarity").notNull(),
+    shiny: boolean("shiny").notNull().default(false),
     startPrice: integer("start_price").notNull(),
     buyout: integer("buyout"),
     currentBid: integer("current_bid"),
@@ -760,6 +773,214 @@ export const seasonArchives = pgTable(
     guildId: bigint("guild_id", { mode: "number" }),
   },
   (t) => [primaryKey({ columns: [t.season, t.userId] })],
+);
+
+// ---------------------------------------------------------------------------
+// Contenu quotidien : statistiques, quêtes, article du jour, boss, fil d'activité, messages serveur
+// ---------------------------------------------------------------------------
+
+/** Statistiques de succès par joueur (compteurs et records), recalculables depuis l'historique. */
+export const playerStats = pgTable(
+  "player_stats",
+  {
+    userId: userRef("user_id").notNull(),
+    key: text("key").notNull(),
+    value: bigint("value", { mode: "number" }).notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.key] })],
+);
+
+/** Quêtes d'un joueur : trois par jour (créneaux 1 à 3) et une par semaine (créneau 1). */
+export const playerQuests = pgTable(
+  "player_quests",
+  {
+    userId: userRef("user_id").notNull(),
+    period: text("period", { enum: ["day", "week"] }).notNull(),
+    /** Jour (quêtes du jour) ou lundi de la semaine (heure de Paris). */
+    periodStart: date("period_start").notNull(),
+    slot: smallint("slot").notNull(),
+    tier: text("tier", { enum: ["easy", "medium", "hard", "weekly"] }).notNull(),
+    kind: text("kind").notNull(),
+    target: integer("target").notNull(),
+    progress: integer("progress").notNull().default(0),
+    rewardPw: integer("reward_pw").notNull(),
+    rewardXp: integer("reward_xp").notNull(),
+    rerolled: boolean("rerolled").notNull().default(false),
+    completedAt: tstz("completed_at"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.period, t.periodStart, t.slot] }),
+    check("player_quests_target_ok", sql`${t.target} > 0 AND ${t.progress} >= 0`),
+  ],
+);
+
+/** Article du jour (le même pour tous) et ses indices, figés à la première demande du jour. */
+export const dailyArticles = pgTable("daily_articles", {
+  day: date("day").primaryKey(),
+  cardId: bigint("card_id", { mode: "number" }).notNull(),
+  season: smallint("season").notNull(),
+  title: text("title").notNull(),
+  rarity: rarityEnum("rarity").notNull(),
+  clues: jsonb("clues").$type<{ kind: string; label: string; text?: string; image?: string }[]>().notNull(),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+});
+
+/** Partie d'un joueur à l'article du jour. */
+export const dailyGuesses = pgTable(
+  "daily_guesses",
+  {
+    userId: userRef("user_id").notNull(),
+    day: date("day").notNull(),
+    guesses: jsonb("guesses").$type<string[]>().notNull().default([]),
+    found: boolean("found").notNull().default(false),
+    reward: integer("reward").notNull().default(0),
+    finishedAt: tstz("finished_at"),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+/** Boss du jour : une Légendaire de la saison, PV partagés par tous les joueurs. */
+export const bossDays = pgTable(
+  "boss_days",
+  {
+    day: date("day").primaryKey(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    season: smallint("season").notNull(),
+    maxHp: integer("max_hp").notNull(),
+    hp: integer("hp").notNull(),
+    killedAt: tstz("killed_at"),
+    killedBy: text("killed_by").references(() => user.id, { onDelete: "set null" }),
+    /** Récompenses de consolation versées (boss survivant à minuit). */
+    finalizedAt: tstz("finalized_at"),
+  },
+  (t) => [check("boss_days_hp_ok", sql`${t.hp} >= 0 AND ${t.hp} <= ${t.maxHp}`)],
+);
+
+/** Assaut d'un joueur contre le boss (2 par jour) : 5 cartes, 5 questions. */
+export const bossAssaults = pgTable(
+  "boss_assaults",
+  {
+    id: id(),
+    day: date("day").notNull(),
+    userId: userRef("user_id").notNull(),
+    number: smallint("number").notNull(),
+    damage: integer("damage").notNull().default(0),
+    startedAt: tstz("started_at").notNull().defaultNow(),
+    finishedAt: tstz("finished_at"),
+  },
+  (t) => [
+    uniqueIndex("boss_assaults_day_user_uq").on(t.day, t.userId, t.number),
+    index("boss_assaults_day_idx").on(t.day),
+  ],
+);
+
+/** Question d'un assaut : carte jouée, question (bonne réponse comprise, jamais envoyée avant la réponse). */
+export const bossHits = pgTable(
+  "boss_hits",
+  {
+    assaultId: bigint("assault_id", { mode: "number" })
+      .notNull()
+      .references(() => bossAssaults.id, { onDelete: "cascade" }),
+    idx: smallint("idx").notNull(),
+    instanceId: bigint("instance_id", { mode: "number" }).notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    season: smallint("season").notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    atk: integer("atk").notNull(),
+    question: jsonb("question"),
+    servedAt: tstz("served_at"),
+    answeredAt: tstz("answered_at"),
+    choice: smallint("choice"),
+    correct: boolean("correct"),
+    answerMs: integer("answer_ms"),
+    damage: integer("damage"),
+  },
+  (t) => [primaryKey({ columns: [t.assaultId, t.idx] })],
+);
+
+/** Journal des tirages (paquets, roue, upgrader, boss) : fil d'activité. Purgé au bout de 30 jours. */
+export const pulls = pgTable(
+  "pulls",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    season: smallint("season").notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    shiny: boolean("shiny").notNull().default(false),
+    source: text("source", { enum: ["pack", "theme", "wheel", "upgrade", "boss"] }).notNull(),
+    /** Genres « bizarres » repérés au tirage par les mots-clés du titre (les catégories sont lues à part). */
+    genres: text("genres")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("pulls_created_idx").on(t.createdAt),
+    index("pulls_card_idx").on(t.cardId),
+    index("pulls_user_idx").on(t.userId, t.createdAt),
+  ],
+);
+
+export const pullReactions = pgTable(
+  "pull_reactions",
+  {
+    pullId: bigint("pull_id", { mode: "number" })
+      .notNull()
+      .references(() => pulls.id, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    emoji: text("emoji").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.pullId, t.userId, t.emoji] })],
+);
+
+/** Articles des catégories « bizarres » (genres du fil d'activité), rechargés en tâche de fond. */
+export const weirdCards = pgTable(
+  "weird_cards",
+  {
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    genre: text("genre").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.cardId, t.genre] })],
+);
+
+/** Message serveur de l'admin : affiché par-dessus la page, en direct ou à la prochaine visite. */
+export const broadcasts = pgTable(
+  "broadcasts",
+  {
+    id: id(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    tone: text("tone", { enum: ["info", "update", "event", "warning"] })
+      .notNull()
+      .default("info"),
+    linkUrl: text("link_url"),
+    linkLabel: text("link_label"),
+    status: text("status", { enum: ["draft", "sent", "archived"] })
+      .notNull()
+      .default("draft"),
+    /** Admin auteur (sans clé étrangère : le message survit au compte). */
+    createdBy: text("created_by"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    sentAt: tstz("sent_at"),
+    /** Après cette date, le message n'est plus montré aux retardataires. */
+    expiresAt: tstz("expires_at"),
+  },
+  (t) => [index("broadcasts_status_idx").on(t.status, t.sentAt)],
+);
+
+export const broadcastReads = pgTable(
+  "broadcast_reads",
+  {
+    broadcastId: bigint("broadcast_id", { mode: "number" })
+      .notNull()
+      .references(() => broadcasts.id, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    readAt: tstz("read_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.broadcastId, t.userId] }), index("broadcast_reads_user_idx").on(t.userId)],
 );
 
 // ---------------------------------------------------------------------------

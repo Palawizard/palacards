@@ -2,7 +2,7 @@
 
 import { RARITY_LABELS, type Rarity } from "@palacards/game";
 import type { CardDTO } from "@palacards/shared";
-import { Lock, Star } from "lucide-react";
+import { Lock, Sparkles, Star } from "lucide-react";
 import Link from "next/link";
 import { thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -20,6 +20,33 @@ export function RaritySigil({ rarity, withLabel = false }: { rarity: Rarity; wit
       </span>
       {withLabel && <span className="text-sm text-muted">{RARITY_LABELS[rarity]}</span>}
     </span>
+  );
+}
+
+/** Éclat à quatre branches des brillantes. */
+export function SparkStar({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden className={className}>
+      <path
+        d="M12 0c.6 6.2 5.8 11.4 12 12-6.2.6-11.4 5.8-12 12-.6-6.2-5.8-11.4-12-12C6.2 11.4 11.4 6.2 12 0Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** Film holographique d'une brillante (au-dessus de l'image et de la bande, sous le pied). */
+export function HoloLayer() {
+  return (
+    <>
+      <span className="pc-holo" aria-hidden />
+      <span className="pc-holo-stars" aria-hidden>
+        <SparkStar />
+        <SparkStar />
+        <SparkStar />
+        <SparkStar />
+      </span>
+    </>
   );
 }
 
@@ -68,7 +95,8 @@ export function Card({ card, href, className = "", selected = false, priority = 
     <article
       className={`pc-card group ${selected ? "outline-3 outline-offset-2 outline-accent" : ""} ${className}`}
       data-rarity={card.rarity}
-      aria-label={`${card.title}, ${RARITY_LABELS[card.rarity]}, attaque ${card.atk}, défense ${card.def}`}
+      data-shiny={card.shiny || undefined}
+      aria-label={`${card.title}, ${RARITY_LABELS[card.rarity]}${card.shiny ? " brillante" : ""}, attaque ${card.atk}, défense ${card.def}`}
     >
       {/* Les unités cqi se rapportent à la carte (conteneur) : tout le contenu suit sa largeur. */}
       <div className="pc-frame flex h-full flex-col p-[4cqi] text-[length:max(10px,6cqi)]">
@@ -119,7 +147,13 @@ export function Card({ card, href, className = "", selected = false, priority = 
               </span>
             )}
           </div>
-          {card.owned && (
+          {card.shiny && (
+            <span className="pc-shiny-tag" title="Carte brillante : 1 chance sur 1 000 par carte tirée">
+              <Sparkles aria-hidden className="size-[1.05em]" strokeWidth={2.5} />
+              Brillante
+            </span>
+          )}
+          {card.owned && !card.shiny && (
             <span className="absolute right-[3cqi] top-[3cqi] rounded-full bg-accent px-[2.2cqi] py-[0.4cqi] text-[0.78em] font-bold text-accent-ink shadow-sm">
               Possédée
             </span>
@@ -176,6 +210,7 @@ export function Card({ card, href, className = "", selected = false, priority = 
           )}
         </footer>
       </div>
+      {card.shiny && <HoloLayer />}
     </article>
   );
 }

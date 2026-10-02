@@ -1,5 +1,5 @@
 import type { Rarity } from "@palacards/game";
-import type { CardDTO } from "./dto.js";
+import type { BossLiveDTO, BroadcastDTO, CardDTO, FeedItemDTO } from "./dto.js";
 
 /** État du stock de paquets, calculé à la lecture. */
 export interface PackState {
@@ -74,6 +74,14 @@ export interface ServerToClientEvents {
   "battle:update": (b: { battleId: number; started?: boolean; opponent?: string }) => void;
   /** État complet d'un duel, poussé à chaque changement de phase (le client ne fait que l'afficher). */
   "battle:state": (s: BattleStateDTO) => void;
+  /** Quêtes, passe ou succès ont avancé : relire. */
+  "progress:update": (p: Record<string, never>) => void;
+  /** PV du boss du jour (à tous les joueurs connectés). */
+  "boss:update": (b: BossLiveDTO) => void;
+  /** Nouveau tirage marquant dans le fil d'activité (à tous les joueurs connectés). */
+  "feed:new": (item: FeedItemDTO) => void;
+  /** Message serveur de l'admin, à afficher par-dessus la page. */
+  "broadcast:new": (m: BroadcastDTO) => void;
 }
 
 export type BattlePhaseDTO = "lobby" | "attack" | "shield" | "question" | "reveal";
