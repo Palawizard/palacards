@@ -14,7 +14,9 @@
     "admin:grant": "tsx --env-file-if-exists=../../.env src/cli/admin.ts grant",
     "admin:revoke": "tsx --env-file-if-exists=../../.env src/cli/admin.ts revoke",
     "admin:list": "tsx --env-file-if-exists=../../.env src/cli/admin.ts list",
-    "theme:create": "tsx --env-file-if-exists=../../.env src/cli/theme.ts create"
+    "theme:create": "tsx --env-file-if-exists=../../.env src/cli/theme.ts create",
+    "broadcast:send": "tsx --env-file-if-exists=../../.env src/cli/broadcast.ts send",
+    "broadcast:list": "tsx --env-file-if-exists=../../.env src/cli/broadcast.ts list"
   },
   "dependencies": {
     "@fastify/cors": "11.3.0",

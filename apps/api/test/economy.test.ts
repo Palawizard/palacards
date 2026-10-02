@@ -2,6 +2,7 @@ import { eq, schema, sql } from "@palacards/db";
 import { ECONOMY, saleTax } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { closeAuctionIfDue } from "../src/services/market.js";
+import { progressionIdle } from "../src/services/progression.js";
 import { achievementPw, makeApp, signUp, type Client } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
@@ -120,7 +121,10 @@ describe("marché", () => {
       y.post(`/market/${listed.body.id}/buy`),
     ]);
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
-    const balances = [(await wallet(x)).balance, (await wallet(y)).balance].sort((m, n) => m - n);
+    // Les succès (« Premier achat ») paient à part, en arrière-plan : on les retire du solde.
+    await progressionIdle();
+    const net = async (c: typeof x) => (await wallet(c)).balance - (await achievementPw(ctx, c.userId));
+    const balances = [await net(x), await net(y)].sort((m, n) => m - n);
     expect(balances).toEqual([ECONOMY.startingBalance - 50, ECONOMY.startingBalance]);
     const [sales] = await ctx.db.execute<{ n: number }>(
       sql`select count(*)::int as n from sales where auction_id = ${listed.body.id}`,

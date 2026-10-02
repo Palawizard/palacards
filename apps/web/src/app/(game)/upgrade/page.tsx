@@ -174,7 +174,9 @@ export default function UpgradePage() {
   function fill() {
     if (phase !== "idle") return;
     setPicked((p) => {
-      const free = items.filter((c) => !c.locked && !c.favorite && !p.some((x) => x.instanceId === c.instanceId));
+      const free = items.filter(
+        (c) => !c.locked && !c.favorite && !c.shiny && !p.some((x) => x.instanceId === c.instanceId),
+      );
       return [...p, ...free.slice(0, Math.max(0, useful - p.length))];
     });
   }

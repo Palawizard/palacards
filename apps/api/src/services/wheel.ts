@@ -1,9 +1,10 @@
 import { eq, schema } from "@palacards/db";
-import { parisDay, rollWheel, WHEEL_SEGMENTS } from "@palacards/game";
+import { parisDay, rollShiny, rollWheel, WHEEL_SEGMENTS } from "@palacards/game";
 import type { WheelDTO, WheelSpinDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { conflict } from "../errors.js";
 import { instancesByIds, loadMediaInBackground } from "./cards.js";
+import { announcePulls, logPulls } from "./feed.js";
 import { afterCommit } from "./notifications.js";
 import { drawCard } from "./packs.js";
 import {
@@ -57,6 +58,7 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
     const ref = `wheel:${today}`;
     let instanceId: number | null = null;
     let drawn: Awaited<ReturnType<typeof drawCard>> | null = null;
+    let notable: number[] = [];
     if (reward.kind === "pw") {
       await movePw(tx, p, reward.amount, "wheel", ref);
     } else if (reward.kind === "packs") {
@@ -67,6 +69,7 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
     } else {
       const season = await activeSeason(tx);
       drawn = await drawCard(tx, season, reward.rarity, ctx.random);
+      const shiny = rollShiny(ctx.random);
       const [row] = await tx
         .insert(schema.cardInstances)
         .values({
@@ -76,14 +79,18 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
           rarity: reward.rarity,
           atk: drawn.atk,
           def: drawn.def,
+          shiny,
           source: "wheel",
           obtainedAt: now,
         })
         .returning({ id: schema.cardInstances.id });
       instanceId = row!.id;
       await logMovement(tx, userId, "card", 1, await ownedCount(tx, userId), "wheel", ref);
+      notable = await logPulls(tx, userId, "wheel", [
+        { cardId: drawn.id, season, rarity: reward.rarity, shiny, title: drawn.title },
+      ]);
     }
-    return { segment, reward, instanceId, drawn, player: p };
+    return { segment, reward, instanceId, drawn, notable, player: p };
   });
 
   const card = res.instanceId ? ((await instancesByIds(ctx.db, [res.instanceId], userId))[0] ?? null) : null;
@@ -91,9 +98,10 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
   await afterCommit(ctx, async () => {
     pushWallet(ctx, res.player);
     ctx.rt.toUser(userId, "packs:update", packs);
+    void emit(ctx, userId, { type: "wheel_spun" }, ...(res.drawn ? (["collection"] as const) : []));
     if (res.drawn) {
       loadMediaInBackground(ctx, userId, [{ cardId: res.drawn.id, title: res.drawn.title }]);
-      void emit(ctx, userId, "collection");
+      await announcePulls(ctx, userId, res.notable);
     }
   });
   return {

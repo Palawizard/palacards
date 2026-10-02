@@ -32,6 +32,12 @@ function packsToOpen(me: MeDTO): number {
   return me.packs.available + me.packs.bonus + me.themePacks;
 }
 
+const DOT_LABEL = {
+  wheel: "Tour gratuit disponible",
+  article: "Article du jour à deviner",
+  boss: "Assauts disponibles contre le boss",
+} as const;
+
 function Portal({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { me } = useMe();
@@ -53,9 +59,17 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                     ? (me?.unreadMessages ?? 0)
                     : item.badge === "packs" && me
                       ? packsToOpen(me)
-                      : 0;
-                const dot = item.badge === "wheel" && !!me?.wheelReady && !active;
+                      : item.badge === "quests" && me
+                        ? me.quests.total - me.quests.done
+                        : 0;
                 const isNew = !!item.feature && !!me?.newFeatures.includes(item.feature);
+                // La pastille « Nouveau » suffit : le point d'activité attend la première visite.
+                const dot =
+                  !active &&
+                  !isNew &&
+                  ((item.badge === "wheel" && !!me?.wheelReady) ||
+                    (item.badge === "article" && !!me?.articleReady) ||
+                    (item.badge === "boss" && !!me?.boss.alive && me.boss.assaultsLeft > 0));
                 return (
                   <li key={item.href}>
                     <Link
@@ -73,16 +87,22 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                         className={`size-[1.05rem] ${active ? "text-highlight" : ""}`}
                         strokeWidth={2}
                       />
-                      <span className="flex-1">{item.label}</span>
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {isNew && (
                         <span className="pc-new rounded-full px-1.5 py-px text-[0.68rem] font-bold uppercase tracking-[0.04em]">
                           Nouveau
                         </span>
                       )}
-                      {badge > 0 && (
+                      {badge > 0 && !isNew && (
                         <span
                           className="tnum rounded-full bg-accent px-1.5 text-[0.72rem] font-bold text-accent-ink"
-                          title={item.badge === "packs" ? `${badge} paquet${badge > 1 ? "s" : ""} à ouvrir` : undefined}
+                          title={
+                            item.badge === "packs"
+                              ? `${badge} paquet${badge > 1 ? "s" : ""} à ouvrir`
+                              : item.badge === "quests"
+                                ? `${badge} quête${badge > 1 ? "s" : ""} à terminer`
+                                : undefined
+                          }
                         >
                           {badge}
                         </span>
@@ -90,9 +110,9 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                       {dot && (
                         <span
                           className="mr-1 size-2 rounded-full bg-accent shadow-[0_0_0_3px_rgb(255_210_63/0.25)]"
-                          title="Tour gratuit disponible"
+                          title={DOT_LABEL[item.badge as keyof typeof DOT_LABEL]}
                         >
-                          <span className="sr-only">Tour gratuit disponible</span>
+                          <span className="sr-only">{DOT_LABEL[item.badge as keyof typeof DOT_LABEL]}</span>
                         </span>
                       )}
                     </Link>
