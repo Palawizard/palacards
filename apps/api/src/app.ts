@@ -193,7 +193,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
     }
   });
   app.addHook("onClose", async () => {
-    battleEngine.stopAll();
+    await battleEngine.stopAll();
     await jobs.stop();
     await progressionIdle();
     rt.io.close();

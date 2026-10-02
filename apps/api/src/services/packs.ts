@@ -2,7 +2,9 @@ import { and, eq, inArray, schema, sql } from "@palacards/db";
 import {
   autoRecyclePicks,
   consumeFreePack,
+  expectedPackPoints,
   PITY_THRESHOLD,
+  pulledPackPoints,
   recycleValue,
   rollPack,
   rollShiny,
@@ -180,6 +182,22 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     if (usedBonus) await logMovement(tx, userId, "bonus_pack", -1, update.bonusPacks!, "pack_open", ids.join(","));
     else if (free) await logMovement(tx, userId, "pack", -1, free.stored, "pack_open", ids.join(","));
     await logMovement(tx, userId, "card", ids.length, await ownedCount(tx, userId), "pack_open", ids.join(","));
+
+    // Classements « Boosters ouverts » et « Chance » : points tirés face à l'espérance de ce paquet (type et pity).
+    const pulled = pulledPackPoints(roll.rarities);
+    const expected = expectedPackPoints(theme ? "themed" : "standard", p.pityCounter >= PITY_THRESHOLD);
+    await tx
+      .insert(schema.packStats)
+      .values({ userId, season, packs: 1, luckPacks: 1, pulledPoints: pulled, expectedPoints: expected })
+      .onConflictDoUpdate({
+        target: [schema.packStats.userId, schema.packStats.season],
+        set: {
+          packs: sql`${schema.packStats.packs} + 1`,
+          luckPacks: sql`${schema.packStats.luckPacks} + 1`,
+          pulledPoints: sql`${schema.packStats.pulledPoints} + ${pulled}`,
+          expectedPoints: sql`${schema.packStats.expectedPoints} + ${expected}`,
+        },
+      });
 
     for (const hook of afterPackHooks) await hook(tx, userId, roll.rarities);
     const notable = await logPulls(
