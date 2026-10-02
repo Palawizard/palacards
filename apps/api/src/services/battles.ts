@@ -644,7 +644,17 @@ const engine = (() => {
         await serial(battleId, () => startBattle(ctx, battleId));
       }
     },
-    stopAll() {
+    /**
+     * Arrêt du serveur : minuteries annulées, puis transitions en cours (et questions en préparation) attendues,
+     * pour qu'aucune ne lise la base après sa fermeture. Leurs reprogrammations éventuelles sont annulées aussi.
+     */
+    async stopAll() {
+      for (let i = 0; i < 5; i++) {
+        for (const t of timers.values()) clearTimeout(t);
+        timers.clear();
+        if (!queues.size) break;
+        await Promise.allSettled([...queues.values(), ...preparing.values()]);
+      }
       for (const t of timers.values()) clearTimeout(t);
       timers.clear();
       joined.clear();
