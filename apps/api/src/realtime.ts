@@ -85,6 +85,10 @@ export function createRealtime(server: HttpServer, config: Config, auth: Auth | 
     toRoom<E extends Emit[0]>(room: string, event: E, ...args: Parameters<ServerToClientEvents[E]>) {
       io.to(room).emit(event, ...args);
     },
+    /** Envoie un événement à tous les joueurs connectés (boss du jour, fil d'activité, messages serveur). */
+    toAll<E extends Emit[0]>(event: E, ...args: Parameters<ServerToClientEvents[E]>) {
+      io.emit(event, ...args);
+    },
     isOnline: (userId: string) => online.has(userId),
     onlineUsers: () => [...online.keys()],
     /** Enregistre des gestionnaires d'événements client (marché, duels…). */

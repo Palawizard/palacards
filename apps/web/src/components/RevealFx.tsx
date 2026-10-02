@@ -1,7 +1,8 @@
 "use client";
 
-import type { Rarity } from "@palacards/game";
+import { RARITY_LABELS, type Rarity } from "@palacards/game";
 import { useMemo, type CSSProperties } from "react";
+import { SparkStar } from "./Card";
 import "./reveal-fx.css";
 
 export type FxTier = "SR" | "UR" | "L";
@@ -95,6 +96,55 @@ export function RevealFx({ tier, delay, layer }: { tier: FxTier; delay: number; 
         <span key={`c${i}`} className="pc-fx-confetti" style={s} />
       ))}
       {STAMP[tier] && <span className="pc-fx-stamp">{STAMP[tier]}</span>}
+    </div>
+  );
+}
+
+/** Durée de la révélation d'une brillante (ms). */
+export const SHINY_FX_DURATION = 3400;
+
+/**
+ * Révélation d'une brillante, quelle que soit sa rareté : la page s'assombrit, un éventail de rayons
+ * prismatiques tourne derrière la carte, une bande arc-en-ciel la balaie, des éclats à quatre branches
+ * jaillissent et un tampon holographique « Brillante » se pose. Même calage que `RevealFx`.
+ */
+export function ShinyFx({ rarity, delay, layer }: { rarity: Rarity; delay: number; layer: "back" | "front" }) {
+  const stars = useMemo(
+    () =>
+      Array.from({ length: 14 }, (_, i) => {
+        const hue = (i * 360) / 14;
+        return {
+          "--a": `${(360 / 14) * i + rand(-8, 8)}deg`,
+          "--dist": `${rand(48, 92)}cqi`,
+          "--sz": `${rand(9, i % 3 === 0 ? 20 : 14)}px`,
+          "--dur": `${Math.round(rand(900, 1500))}ms`,
+          "--c": `hsl(${hue} 95% 78%)`,
+          animationDelay: `${delay + 60 + rand(0, 220)}ms`,
+        } as Var;
+      }),
+    [delay],
+  );
+  const root = { "--fx-delay": `${delay}ms` } as Var;
+  if (layer === "back")
+    return (
+      <div aria-hidden className="pc-fx pc-shiny-fx" style={root}>
+        <span className="pc-fx-dim pc-shiny-dim" style={{ animationDelay: `${Math.max(0, delay - 200)}ms` }} />
+        <span className="pc-shiny-rays" />
+        <span className="pc-shiny-halo" />
+      </div>
+    );
+  return (
+    <div aria-hidden className="pc-fx pc-shiny-fx" style={root}>
+      <span className="pc-shiny-sweep" />
+      {stars.map((s, i) => (
+        <span key={i} className="pc-shiny-star" style={s}>
+          <SparkStar />
+        </span>
+      ))}
+      <span className="pc-shiny-stamp">
+        Brillante
+        {(rarity === "UR" || rarity === "L") && <small>{RARITY_LABELS[rarity]}</small>}
+      </span>
     </div>
   );
 }

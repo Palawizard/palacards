@@ -54,6 +54,37 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
       return { text: "Ton stock de paquets est plein : ouvre-les pour relancer le minuteur.", href: "/pulls" };
     case "achievement":
       return { text: `Succès débloqué : ${s(p.name)}.`, href: "/achievements" };
+    case "achievement_backfill": {
+      const r = (p.reward ?? {}) as { pw?: unknown; packs?: unknown };
+      const gain = [
+        n(r.pw) ? `${fmt(n(r.pw))} PW` : "",
+        n(r.packs) ? `${n(r.packs)} paquet${n(r.packs) > 1 ? "s" : ""}` : "",
+      ]
+        .filter(Boolean)
+        .join(" et ");
+      return {
+        text: `Nouveaux succès à paliers : ${n(p.count)} déjà atteints, ${gain || "récompenses"} pour toi !`,
+        href: "/achievements",
+      };
+    }
+    case "quest_completed": {
+      const r = (p.reward ?? {}) as { pw?: unknown; xp?: unknown };
+      return {
+        text: `Quête ${p.period === "week" ? "de la semaine" : "du jour"} terminée : +${fmt(n(r.pw))} PW, +${fmt(n(r.xp))} XP.`,
+        href: "/quests",
+      };
+    }
+    case "pass_level":
+      return { text: `Passe de saison : niveau ${n(p.level)} atteint !`, href: "/quests" };
+    case "boss_killed": {
+      const r = (p.reward ?? {}) as { pw?: unknown; packs?: unknown };
+      return {
+        text: `${p.lastHit ? "Coup de grâce ! " : ""}Le boss du jour est tombé : +${fmt(n(r.pw))} PW et ${n(r.packs)} paquets${p.mvp ? " (meilleur assaillant)" : ""}.`,
+        href: "/boss",
+      };
+    }
+    case "boss_consolation":
+      return { text: "Le boss d'hier a tenu bon. Lot de consolation : +30 PW.", href: "/boss" };
     case "gift": {
       const parts = [
         n(p.pw) ? `${fmt(n(p.pw))} PW` : "",

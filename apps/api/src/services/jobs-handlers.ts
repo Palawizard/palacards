@@ -1,5 +1,7 @@
 import type { Ctx } from "../context.js";
 import { sweepBattles } from "./battles.js";
+import { BOSS_FINALIZE_JOB, finalizeBosses } from "./boss.js";
+import { purgeOldPulls, startWeirdRefresh, WEIRD_REFRESH_JOB } from "./feed.js";
 import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
 import { GUILD_WEEKLY_JOB, weeklyJob } from "./guilds.js";
 import { CARDS_PURGE_JOB, purgeOldCards, rolloverSeason, SEASON_ROLLOVER_JOB } from "./seasons.js";
@@ -38,6 +40,17 @@ export function registerJobs(ctx: Ctx) {
   // Minimisation RGPD : sessions expirées (IP, navigateur), jetons et notifications de plus de 6 mois, chaque nuit.
   ctx.jobs.schedule(PRIVACY_PURGE_JOB, "30 4 * * *", async () => {
     ctx.log.info(await purgeExpired(ctx), "purge des données expirées");
+  });
+  // Boss du jour : lot de consolation des boss restés debout, juste après minuit (heure de Paris).
+  ctx.jobs.schedule(BOSS_FINALIZE_JOB, "5 0 * * *", async () => {
+    await finalizeBosses(ctx);
+  });
+  // Fil d'activité : catégories « bizarres » rechargées chaque lundi, vieux tirages purgés chaque nuit.
+  ctx.jobs.schedule(WEIRD_REFRESH_JOB, "15 5 * * 1", async () => {
+    startWeirdRefresh(ctx);
+  });
+  ctx.jobs.schedule("pulls-purge", "45 4 * * *", async () => {
+    ctx.log.info({ deleted: await purgeOldPulls(ctx) }, "purge du fil d'activité");
   });
   // Filet de sécurité : rattrape toute échéance manquée (redémarrage, job perdu).
   ctx.jobs.schedule("market-sweep", "* * * * *", async () => {
