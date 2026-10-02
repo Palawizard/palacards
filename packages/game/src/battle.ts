@@ -414,17 +414,22 @@ export function definitionDecoys(target: string, pool: string[], rand: () => num
  * Question sur la carte attaquante. Déterministe : ne dépend que de la graine, de la cible et des leurres.
  * `decoys` : articles candidats, les plus proches d'abord (même genre, puis titres voisins, puis hasard).
  * `avoid` : types déjà posés dans ce duel, évités quand un autre type est possible.
+ * `known` : articles que le joueur sait être en jeu (ses autres cartes au boss). S'il est fourni, les questions
+ * où l'on reconnaît un titre ou une image (image, « Qui suis-je ? », le plus lu) ne prennent leurs leurres
+ * que là : la cible ne se distingue plus comme « la carte que je connais » parmi des inconnues.
  */
 export function makeQuestion(
   seed: string,
   target: QuizArticle,
   decoys: QuizArticle[],
-  options: { avoid?: QuestionType[]; maxYear?: number } = {},
+  options: { avoid?: QuestionType[]; maxYear?: number; known?: QuizArticle[] } = {},
 ): Question {
   const rand = seededRandom(seed);
-  const pool = decoys.filter(
-    (d, i) => d.cardId !== target.cardId && decoys.findIndex((x) => x.cardId === d.cardId) === i,
-  );
+  const unique = (list: QuizArticle[]) =>
+    list.filter((d, i) => d.cardId !== target.cardId && list.findIndex((x) => x.cardId === d.cardId) === i);
+  const pool = unique(decoys);
+  /** Leurres des questions de reconnaissance. */
+  const recog = options.known ? unique(options.known) : pool;
   const maxYear = options.maxYear ?? new Date().getFullYear();
   const head = descriptionHead(target.description);
   /** Même genre que la cible (description qui commence par le même mot) : en tête de liste. */
@@ -443,14 +448,14 @@ export function makeQuestion(
     : null;
   const targetThumb = unusableQuizImage(target.thumbUrl) ? null : target.thumbUrl;
   const withThumb = sameKindFirst(
-    pool.filter(
+    recog.filter(
       (d, i, all) =>
         !unusableQuizImage(d.thumbUrl) &&
         d.thumbUrl !== target.thumbUrl &&
         all.findIndex((x) => x.thumbUrl === d.thumbUrl) === i,
     ),
   );
-  const titled = sameKindFirst(pool.filter((d) => !titlesClash(d.title, target.title)));
+  const titled = sameKindFirst(recog.filter((d) => !titlesClash(d.title, target.title)));
   const year = target.extract ? yearQuestion(target.extract, seededRandom(`${seed}:year`), maxYear) : null;
 
   const possible: QuestionType[] = [];
@@ -498,9 +503,10 @@ export function makeQuestion(
     };
   }
   // Repli (article sans résumé ni description) : lequel est le plus lu ? Leurres aux vues distinctes.
-  const distinct = titled.filter(
-    (d, i, all) => d.views12m !== target.views12m && all.findIndex((x) => x.views12m === d.views12m) === i,
-  );
+  const distinctViews = (list: QuizArticle[]) =>
+    list.filter((d, i, all) => d.views12m !== target.views12m && all.findIndex((x) => x.views12m === d.views12m) === i);
+  let distinct = distinctViews(titled);
+  if (distinct.length < 3) distinct = distinctViews(pool.filter((d) => !titlesClash(d.title, target.title)));
   const others = shuffle(distinct, rand).slice(0, 3);
   const all = [target, ...others];
   const top = all.reduce((best, d) => (d.views12m > best.views12m ? d : best), target);
