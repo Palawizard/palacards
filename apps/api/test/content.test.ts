@@ -205,6 +205,25 @@ describe("boss du jour", () => {
     expect((await p.get("/me")).body.boss.assaultsLeft).toBe(0);
   });
 
+  it("cache la carte pendant une question qu'elle trahirait (image, « Qui suis-je ? »)", async () => {
+    const p = await signUp(app);
+    const started = (await p.post("/boss/assault", { instanceIds: await fiveCards(p) })).body;
+    const { id } = started.current;
+    const idx = started.current.question.idx as number;
+    const visible = started.current.question.cardHidden ? null : started.current.question.card.title;
+    await ctx.db.execute(
+      sql`update boss_hits set question = jsonb_set(question, '{type}', '"image"') where assault_id = ${id} and idx = ${idx}`,
+    );
+    const q = (await p.get("/boss")).body.current.question;
+    expect(q.cardHidden).toBe(true);
+    expect(q.card).toMatchObject({ title: "", thumbUrl: null, pageUrl: null, cardId: 0, instanceId: null });
+    expect(q.card.rarity).toBeTruthy();
+    await p.post(`/boss/assault/${id}/answer`, { idx, choice: 0 });
+    const hit = (await p.get("/boss")).body.current.hits[0];
+    expect(hit.card.title).not.toBe("");
+    if (visible) expect(hit.card.title).toBe(visible);
+  });
+
   it("paie tous les participants quand le boss tombe", async () => {
     const a = await signUp(app);
     const b = await signUp(app);
