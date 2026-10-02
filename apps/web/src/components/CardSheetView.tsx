@@ -66,6 +66,14 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
         <div className="tnum text-sm">
           <span className="font-semibold">
             ATK {fmt(card.atk)} · DEF {fmt(card.def)}
+            {card.shiny && (
+              <span
+                className="pc-shiny-tag !static ml-1.5 inline-block align-middle !text-[0.65rem]"
+                title="Carte brillante"
+              >
+                Brillante
+              </span>
+            )}
           </span>
           <span className="block text-xs text-faint">
             Édition S{card.season} · niveau {card.level} · obtenue {card.obtainedAt ? relative(card.obtainedAt) : ""}
