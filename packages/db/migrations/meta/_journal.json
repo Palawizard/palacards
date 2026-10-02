@@ -113,6 +113,13 @@
       "when": 1790940489329,
       "tag": "0015_daily_content",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790965414624,
+      "tag": "0016_pack_stats",
+      "breakpoints": true
     }
   ]
 }

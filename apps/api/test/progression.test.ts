@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, ELO_START } from "@palacards/game";
+import { ECONOMY, ELO_START, LUCK_MIN_PACKS } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { lockOrder, PLAYER_LOCK_ORDER } from "../src/services/players.js";
 import { collectionEvent, progressionIdle } from "../src/services/progression.js";
@@ -94,7 +94,7 @@ describe("classements et saisons", () => {
   it("classe par collection, Elo et richesse", async () => {
     const p = await signUp(app);
     await p.post("/packs/open");
-    for (const board of ["collection", "elo", "wealth", "guilds"]) {
+    for (const board of ["collection", "packs", "luck", "elo", "wealth", "guilds", "pass"]) {
       for (const period of ["season", "all"]) {
         const res = await p.get(`/leaderboard?board=${board}&period=${period}`);
         expect(res.status).toBe(200);
@@ -127,6 +127,26 @@ describe("classements et saisons", () => {
       sql`select user_id from players where user_id in (${inList}) order by ${PLAYER_LOCK_ORDER}`,
     );
     expect(locked.map((r) => r.user_id)).toEqual(lockOrder(real));
+  });
+
+  it("compte les boosters ouverts et classe la chance à partir du minimum de boosters", async () => {
+    const p = await signUp(app);
+    const mine = async (board: string) =>
+      (await p.get(`/leaderboard?board=${board}&period=season`)).body.rows.find((r: { me: boolean }) => r.me);
+    for (let i = 0; i < LUCK_MIN_PACKS - 1; i++) expect((await p.post("/packs/open")).status).toBe(200);
+    expect((await mine("packs")).value).toBe(LUCK_MIN_PACKS - 1);
+    // Sous le minimum : absent du classement « Chance ».
+    expect(await mine("luck")).toBeUndefined();
+    await p.post("/packs/open");
+    const [stats] = await ctx.db.execute<{ pulled: number; expected: number }>(
+      sql`select pulled_points::float8 as pulled, expected_points::float8 as expected from pack_stats where user_id = ${p.userId}`,
+    );
+    const luck = await mine("luck");
+    expect(luck.packs).toBe(LUCK_MIN_PACKS);
+    expect(luck.value).toBe(Math.round((stats!.pulled * 100) / stats!.expected));
+    expect(
+      (await p.get("/leaderboard?board=packs&period=all")).body.rows.find((r: { me: boolean }) => r.me).value,
+    ).toBe(LUCK_MIN_PACKS);
   });
 
   it("bascule de saison : archives, Elo remis à zéro, nouvelle édition", async () => {

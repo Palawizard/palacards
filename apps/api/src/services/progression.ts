@@ -2,6 +2,7 @@ import { and, desc, eq, schema, sql } from "@palacards/db";
 import {
   ACHIEVEMENTS,
   achievementProgress,
+  LUCK_MIN_PACKS,
   applyStatUpdates,
   newlyUnlocked,
   passProgress,
@@ -524,7 +525,7 @@ export function passState(player: Pick<Player, "seasonXp" | "passSeason">, seaso
 // Classements
 // ---------------------------------------------------------------------------
 
-export type Board = "collection" | "elo" | "wealth" | "guilds" | "pass";
+export type Board = "collection" | "packs" | "luck" | "elo" | "wealth" | "guilds" | "pass";
 
 interface Row {
   id: string;
@@ -532,10 +533,13 @@ interface Row {
   username: string | null;
   value: number;
   extra?: string;
+  /** Classement « Chance » : paquets mesurés. */
+  packs?: number;
 }
 
 /**
- * Classements : collection (points des articles uniques), Elo, richesse (solde), guildes et niveau du passe.
+ * Classements : collection (points des articles uniques), boosters ouverts, chance (points tirés ÷ points attendus,
+ * en %, à partir de LUCK_MIN_PACKS paquets mesurés), Elo, richesse (solde), guildes et niveau du passe.
  * « Saison » : édition en cours et Elo remis à 1 000 ; « tout temps » : toutes éditions, meilleur Elo, archives.
  */
 export async function leaderboard(ctx: Ctx, userId: string, board: Board, period: "season" | "all") {
@@ -548,6 +552,33 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       order by s.score desc limit 100
     `);
     rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, value: r.score }));
+  } else if (board === "packs" || board === "luck") {
+    const seasonFilter = period === "season" ? sql`where ps.season = ${season}` : sql``;
+    const res = await ctx.db.execute<{ user_id: string; value: string; packs: number; username: string; name: string }>(
+      board === "packs"
+        ? sql`
+          select ps.user_id, sum(ps.packs) as value, 0 as packs, u.username, coalesce(u.display_username, u.name) as name
+          from pack_stats ps join "user" u on u.id = ps.user_id ${seasonFilter}
+          group by ps.user_id, u.username, u.display_username, u.name
+          having sum(ps.packs) > 0
+          order by value desc, u.username limit 100
+        `
+        : sql`
+          select ps.user_id, round(sum(ps.pulled_points) * 100.0 / sum(ps.expected_points)) as value,
+            sum(ps.luck_packs)::int as packs, u.username, coalesce(u.display_username, u.name) as name
+          from pack_stats ps join "user" u on u.id = ps.user_id ${seasonFilter}
+          group by ps.user_id, u.username, u.display_username, u.name
+          having sum(ps.luck_packs) >= ${LUCK_MIN_PACKS} and sum(ps.expected_points) > 0
+          order by sum(ps.pulled_points)::float8 / sum(ps.expected_points) desc, packs desc, u.username limit 100
+        `,
+    );
+    rows = res.map((r) => ({
+      id: r.user_id,
+      name: r.name,
+      username: r.username,
+      value: Number(r.value),
+      ...(board === "luck" ? { packs: r.packs } : {}),
+    }));
   } else if (board === "elo" || board === "wealth" || board === "pass") {
     const value =
       board === "pass"
