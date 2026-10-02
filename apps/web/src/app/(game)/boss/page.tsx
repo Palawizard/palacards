@@ -17,8 +17,15 @@ import { play } from "@/lib/sfx";
 import { useNow } from "@/lib/use-now";
 import "@/components/content.css";
 
-/** Couleurs des assaillants dans la jauge (jamais celles des raretés). */
-const SEGMENTS = ["#5eead4", "#93c5fd", "#f0abfc", "#fdba74", "#a7f3d0", "#c4b5fd", "#fca5a5", "#fde68a", "#99f6e4"];
+/**
+ * Assaillants dans la jauge : des pastilles de papier d'album, en trois teintes de couverture alternées
+ * (jamais les couleurs de rareté) ; le jaune pochette est réservé au joueur.
+ */
+const SEGMENTS = [
+  "color-mix(in oklab, var(--color-sticker) 96%, var(--color-cover))",
+  "color-mix(in oklab, var(--color-sticker) 80%, var(--color-cover))",
+  "color-mix(in oklab, var(--color-sticker) 66%, var(--color-cover))",
+];
 
 /**
  * La jauge géante : PV restants en rouge à gauche ; à droite, les dégâts de chaque joueur empilés à sa
@@ -55,6 +62,7 @@ function Gauge({ boss, hit }: { boss: BossDTO; hit: { key: number; damage: numbe
         <div className="pc-boss-dealt" aria-hidden>
           {[...boss.ranking].reverse().map((r) => {
             const i = boss.ranking.indexOf(r);
+            const width = (r.damage / dealtTotal) * lost * 100;
             return (
               <span
                 key={r.userId}
@@ -62,11 +70,13 @@ function Gauge({ boss, hit }: { boss: BossDTO; hit: { key: number; damage: numbe
                 title={`${r.name} : ${fmt(r.damage)} dégâts`}
                 style={
                   {
-                    width: `${(r.damage / dealtTotal) * lost * 100}%`,
+                    width: `${width}%`,
                     "--seg": r.me ? "var(--color-accent)" : SEGMENTS[i % SEGMENTS.length],
                   } as React.CSSProperties
                 }
-              />
+              >
+                {width >= 7 && (r.me ? "Toi" : r.name.slice(0, 1))}
+              </span>
             );
           })}
         </div>
@@ -115,13 +125,14 @@ function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[])
     );
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Sur téléphone, l'en-tête s'efface : la barre d'action passe sous la liste et y reste collée. */}
+      <div className="contents sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
         <p className="text-sm text-muted">
           Choisis {need} cartes : chacune frappe une fois si tu réponds juste à la question sur son article (
           <span className="tnum">40 + ATK ÷ 100</span> dégâts, ×1,5 en moins de 4 s).
         </p>
         {/* Sur téléphone, les boutons restent sous le pouce pendant qu'on fait défiler les cartes. */}
-        <div className="sticky bottom-0 z-10 -mx-4 flex w-[calc(100%+2rem)] gap-2 border-t border-line bg-panel/95 px-4 py-2.5 backdrop-blur-sm sm:static sm:mx-0 sm:w-auto sm:border-0 sm:bg-transparent sm:p-0">
+        <div className="sticky bottom-0 z-10 order-last -mx-4 flex w-[calc(100%+2rem)] gap-2 sm:order-none border-t border-line bg-panel/95 px-4 py-2.5 backdrop-blur-sm sm:static sm:mx-0 sm:w-auto sm:border-0 sm:bg-transparent sm:p-0">
           <button
             type="button"
             className="btn btn-sm flex-1 sm:flex-none"
@@ -144,27 +155,68 @@ function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[])
       {!data ? (
         <div className="h-60 animate-pulse rounded-xl bg-panel" />
       ) : (
-        <ul className="grid grid-cols-[repeat(auto-fill,minmax(6.6rem,1fr))] gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] sm:gap-3">
-          {cards.map((c) => {
-            const on = picked.includes(c.instanceId!);
-            return (
-              <li key={c.instanceId}>
-                <button
-                  type="button"
-                  className="pc-boss-pick flex w-full flex-col gap-1 rounded-[14px] text-left"
-                  aria-pressed={on}
-                  onClick={() => toggle(c.instanceId!)}
-                  aria-label={`${c.title} : ${bossHitBase(c.atk)} dégâts`}
-                >
-                  <Card card={c} href={null} />
-                  <span className="tnum text-center text-xs text-muted">
-                    {bossHitBase(c.atk)} dégâts · {bossDamage(c.atk, "crit")} en critique
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <>
+          {/* Téléphone : des lignes compactes (sigle, titre, ATK, dégâts) plutôt qu'un mur de vignettes. */}
+          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line sm:hidden">
+            {cards.map((c) => {
+              const on = picked.includes(c.instanceId!);
+              return (
+                <li key={c.instanceId}>
+                  <button
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggle(c.instanceId!)}
+                    className={`flex min-h-12 w-full items-center gap-3 px-3 py-2 text-left transition-colors duration-150 ${on ? "bg-accent/15" : ""}`}
+                  >
+                    <span data-rarity={c.rarity} className="pc-sigil shrink-0">
+                      {c.rarity}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5 font-semibold">
+                        <span className="truncate">{c.title}</span>
+                        {c.shiny && (
+                          <span className="pc-shiny-tag !static shrink-0 !text-[0.65rem]" title="Carte brillante">
+                            Brillante
+                          </span>
+                        )}
+                      </span>
+                      <span className="tnum text-xs text-muted">
+                        ATK {fmt(c.atk)} · {bossHitBase(c.atk)} dégâts, {bossDamage(c.atk, "crit")} en critique
+                      </span>
+                    </span>
+                    <span
+                      className={`grid size-6 shrink-0 place-items-center rounded-full border-2 ${on ? "border-accent bg-accent text-accent-ink" : "border-line-strong"}`}
+                      aria-hidden
+                    >
+                      {on && <Check className="size-3.5" strokeWidth={3} />}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <ul className="hidden grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3 sm:grid">
+            {cards.map((c) => {
+              const on = picked.includes(c.instanceId!);
+              return (
+                <li key={c.instanceId}>
+                  <button
+                    type="button"
+                    className="pc-boss-pick flex w-full flex-col gap-1 rounded-[14px] text-left"
+                    aria-pressed={on}
+                    onClick={() => toggle(c.instanceId!)}
+                    aria-label={`${c.title} : ${bossHitBase(c.atk)} dégâts`}
+                  >
+                    <Card card={c} href={null} />
+                    <span className="tnum text-center text-xs text-muted">
+                      {bossHitBase(c.atk)} dégâts · {bossDamage(c.atk, "crit")} en critique
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </>
       )}
     </div>
   );

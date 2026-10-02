@@ -87,13 +87,13 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                         className={`size-[1.05rem] ${active ? "text-highlight" : ""}`}
                         strokeWidth={2}
                       />
-                      <span className="flex-1">{item.label}</span>
+                      <span className="min-w-0 flex-1 truncate">{item.label}</span>
                       {isNew && (
                         <span className="pc-new rounded-full px-1.5 py-px text-[0.68rem] font-bold uppercase tracking-[0.04em]">
                           Nouveau
                         </span>
                       )}
-                      {badge > 0 && (
+                      {badge > 0 && !isNew && (
                         <span
                           className="tnum rounded-full bg-accent px-1.5 text-[0.72rem] font-bold text-accent-ink"
                           title={

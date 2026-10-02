@@ -261,8 +261,8 @@ export default function ArticlePage() {
                 </p>
               </>
             ) : (
-              <div className="slot grid aspect-[5/7] w-[min(15rem,70vw)] place-items-center p-6 text-center">
-                <p className="font-display text-2xl uppercase leading-tight text-faint">
+              <div className="slot grid w-full place-items-center px-4 py-3 text-center lg:aspect-[5/7] lg:w-[min(15rem,70vw)] lg:p-6">
+                <p className="font-display text-lg uppercase leading-tight text-faint lg:text-2xl">
                   La carte se retourne quand tu as trouvé
                 </p>
               </div>

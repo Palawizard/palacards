@@ -80,18 +80,18 @@ export function BroadcastOverlay() {
     >
       {current && (
         <div className="pc-broadcast-card" key={current.id}>
-          <div className="pc-broadcast-band cover-texture">
-            <p className="flex items-center gap-2 text-sm font-semibold text-white/85">
-              <Icon className="size-4" aria-hidden />
-              {tone.label}
-              {queue.length > 1 && <span className="tnum ml-auto text-white/70">1 / {queue.length}</span>}
-            </p>
+          <div className="pc-broadcast-band cover-texture flex items-start gap-3">
+            <Icon className="mt-1 size-6 shrink-0" aria-hidden />
             <h2
               id="broadcast-title"
-              className="mt-1.5 font-display text-[1.9rem] uppercase leading-[0.95] [text-wrap:balance]"
+              aria-label={`${tone.label} : ${current.title}`}
+              className="flex-1 font-display text-[1.9rem] uppercase leading-[0.95] [text-wrap:balance]"
             >
               {current.title}
             </h2>
+            {queue.length > 1 && (
+              <span className="tnum mt-1.5 shrink-0 text-sm font-semibold text-white/75">1 / {queue.length}</span>
+            )}
           </div>
           <div className="px-5 pb-5 pt-4">
             <p className="pc-broadcast-body max-h-[50dvh] overflow-y-auto leading-relaxed text-text">{current.body}</p>
