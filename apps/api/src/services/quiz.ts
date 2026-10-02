@@ -90,6 +90,8 @@ export interface QuizTarget {
   rarity: Rarity;
   /** Types de questions déjà posés, évités quand un autre est possible. */
   avoid?: QuestionType[];
+  /** Articles que le joueur sait en jeu (ses autres cartes au boss) : seuls leurres des questions de reconnaissance. */
+  known?: number[];
 }
 
 /**
@@ -105,19 +107,32 @@ export async function quizQuestion(ctx: Ctx, attack: QuizTarget): Promise<Questi
   // Résumé de la cible d'abord : sa description donne le genre des leurres.
   await withTimeout(ctx.wiki.load([{ cardId: attack.cardId, title }], undefined, { fresh: true }), 2_000, []);
   const head = descriptionHead((await ctx.wiki.summaries([attack.cardId])).get(attack.cardId)?.description);
-  const [sameKind, similar, random] = await Promise.all([
+  const knownIds = (attack.known ?? []).filter((id) => id !== attack.cardId);
+  const [sameKind, similar, random, known] = await Promise.all([
     head ? sameKindArticles(ctx.db, seed, attack.season, attack.cardId, head) : Promise.resolve([]),
     similarArticles(ctx.db, attack.season, attack.cardId, title),
     randomArticles(ctx.db, seed, attack.season, attack.rarity, attack.cardId),
+    knownIds.length
+      ? ctx.db.execute<ArticleRow>(
+          sql`select id, title, views_12m from cards where season = ${attack.season} and id in (${sql.join(
+            knownIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        )
+      : Promise.resolve([] as ArticleRow[]),
   ]);
   const others = [...similar, ...random];
   const candidates = [...sameKind, ...others].filter(
     (r, i, all) => all.findIndex((x) => Number(x.id) === Number(r.id)) === i,
   );
   // Résumés des leurres pas encore en cache (titres voisins, hasard) : le temps du bouclier.
-  const toLoad = others.slice(0, 8).map((c) => ({ cardId: Number(c.id), title: c.title }));
+  const toLoad = [...known, ...others.slice(0, 8)].map((c) => ({ cardId: Number(c.id), title: c.title }));
   await withTimeout(ctx.wiki.load(toLoad, undefined, { fresh: true }), QUESTION_PREP_MS - 1_500, []);
-  const summaries = await ctx.wiki.summaries([attack.cardId, ...candidates.map((c) => Number(c.id))]);
+  const summaries = await ctx.wiki.summaries([
+    attack.cardId,
+    ...known.map((c) => Number(c.id)),
+    ...candidates.map((c) => Number(c.id)),
+  ]);
   const article = (id: number, t: string, views: string | number): QuizArticle => {
     const s = summaries.get(id);
     return {
@@ -136,6 +151,10 @@ export async function quizQuestion(ctx: Ctx, attack: QuizTarget): Promise<Questi
     seed,
     article(attack.cardId, title, target?.views_12m ?? 0),
     candidates.map((c) => article(Number(c.id), c.title, c.views_12m)),
-    { avoid: attack.avoid ?? [], maxYear: parisYear },
+    {
+      avoid: attack.avoid ?? [],
+      maxYear: parisYear,
+      known: attack.known ? known.map((c) => article(Number(c.id), c.title, c.views_12m)) : undefined,
+    },
   );
 }

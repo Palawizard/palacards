@@ -8,6 +8,7 @@ import {
   BOSS_REWARDS,
   bossDamage,
   bossHit,
+  cardHiddenUntilAnswer,
   effectiveStats,
   parisDay,
   seededRandom,
@@ -98,17 +99,20 @@ async function bossCard(ctx: Ctx, boss: BossDay): Promise<{ card: CardDTO; extra
 
 const preparing = new Map<string, Promise<Question>>();
 
-function questionFor(ctx: Ctx, assault: Assault, hit: Hit, avoid: QuestionType[]): Promise<Question> {
+function questionFor(ctx: Ctx, assault: Assault, hit: Hit, hits: Hit[]): Promise<Question> {
   const key = `${assault.id}:${hit.idx}`;
   let p = preparing.get(key);
   if (!p) {
-    // « Qui suis-je ? » est évité : le joueur voit le titre de sa propre carte.
+    const avoid = hits.map((h) => (h.question as Question | null)?.type).filter((t): t is QuestionType => !!t);
+    // Le joueur a choisi ses cinq cartes : les leurres des questions de reconnaissance sont les quatre autres,
+    // sinon il reconnaîtrait la sienne parmi des inconnues.
     p = quizQuestion(ctx, {
       seed: `boss:${assault.day}:${assault.id}:${hit.idx}`,
       cardId: hit.cardId,
       season: hit.season,
       rarity: hit.rarity,
-      avoid: [...avoid, "who_am_i"],
+      avoid,
+      known: hits.filter((h) => h.idx !== hit.idx).map((h) => h.cardId),
     });
     preparing.set(key, p);
     void p.catch(() => {}).finally(() => setTimeout(() => preparing.delete(key), 60_000).unref?.());
@@ -124,8 +128,7 @@ async function hitsOf(db: Ctx["db"] | Tx, assaultId: number): Promise<Hit[]> {
 function prefetchNext(ctx: Ctx, assault: Assault, hits: Hit[]) {
   const next = hits.find((h) => !h.servedAt);
   if (!next) return;
-  const avoid = hits.map((h) => (h.question as Question | null)?.type).filter((t): t is QuestionType => !!t);
-  void questionFor(ctx, assault, next, avoid).catch(() => {});
+  void questionFor(ctx, assault, next, hits).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------
@@ -201,11 +204,10 @@ export async function serveNext(ctx: Ctx, userId: string, assaultId: number) {
   const open = hits.find((h) => h.servedAt && !h.answeredAt);
   const next = hits.find((h) => !h.servedAt);
   if (!open && next && !assault.finishedAt) {
-    const avoid = hits.map((h) => (h.question as Question | null)?.type).filter((t): t is QuestionType => !!t);
     // Préparation trop longue (Wikipédia lent) : on repart de ce qui est en cache.
     const question =
-      (await withTimeout(questionFor(ctx, assault, next, avoid), QUESTION_PREP_MS + 2_000, null)) ??
-      (await questionFor(ctx, { ...assault, id: -assault.id }, next, avoid));
+      (await withTimeout(questionFor(ctx, assault, next, hits), QUESTION_PREP_MS + 2_000, null)) ??
+      (await questionFor(ctx, { ...assault, id: -assault.id }, next, hits));
     await ctx.db
       .update(bh)
       .set({ question, servedAt: ctx.now() })
@@ -402,9 +404,13 @@ function assaultView(ctx: Ctx, assault: Assault, hits: Hit[], cards: Map<number,
   if (open?.question) {
     const q = open.question as Question;
     const elapsed = ctx.now().getTime() - open.servedAt!.getTime();
+    const card = cards.get(open.instanceId)!;
+    // Image ou « Qui suis-je ? » : la carte donnerait la réponse, elle reste face cachée jusqu'à la réponse.
+    const cardHidden = cardHiddenUntilAnswer(q);
     question = {
       idx: open.idx,
-      card: cards.get(open.instanceId)!,
+      card: cardHidden ? { ...card, instanceId: null, cardId: 0, title: "", thumbUrl: null, pageUrl: null } : card,
+      cardHidden,
       type: q.type,
       prompt: q.prompt,
       choices: q.choices,
