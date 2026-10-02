@@ -1,6 +1,7 @@
 import { and, eq, inArray, schema } from "@palacards/db";
 import {
   nextRarity,
+  rollShiny,
   UPGRADE_MAX_CARDS,
   UPGRADE_MIN_CARDS,
   upgradeChance,
@@ -12,6 +13,7 @@ import type { Ctx } from "../context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { instancesByIds, loadMediaInBackground } from "./cards.js";
 import { requestedInPendingTrades } from "./collection.js";
+import { announcePulls, logPulls } from "./feed.js";
 import { afterCommit } from "./notifications.js";
 import { drawCard } from "./packs.js";
 import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet, wallet } from "./players.js";
@@ -59,10 +61,11 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
     if (!success) {
       const refund = upgradeRefund(from, ids.length);
       if (refund) await movePw(tx, p, refund, "upgrade", ref);
-      return { success, chance, roll, refund, instanceId: null, drawn: null, player: p };
+      return { success, chance, roll, refund, instanceId: null, drawn: null, notable: [] as number[], player: p };
     }
     const season = await activeSeason(tx);
     const drawn = await drawCard(tx, season, target, ctx.random);
+    const shiny = rollShiny(ctx.random);
     const [inserted] = await tx
       .insert(ci)
       .values({
@@ -72,20 +75,25 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
         rarity: target,
         atk: drawn.atk,
         def: drawn.def,
+        shiny,
         source: "upgrade",
         obtainedAt: ctx.now(),
       })
       .returning({ id: ci.id });
     await logMovement(tx, ownerId, "card", 1, await ownedCount(tx, ownerId), "upgrade", ref);
-    return { success, chance, roll, refund: 0, instanceId: inserted!.id, drawn, player: p };
+    const notable = await logPulls(tx, ownerId, "upgrade", [
+      { cardId: drawn.id, season, rarity: target, shiny, title: drawn.title },
+    ]);
+    return { success, chance, roll, refund: 0, instanceId: inserted!.id, drawn, notable, player: p };
   });
 
   const card = res.instanceId ? ((await instancesByIds(ctx.db, [res.instanceId], ownerId))[0] ?? null) : null;
   await afterCommit(ctx, async () => {
     pushWallet(ctx, res.player);
+    void emit(ctx, ownerId, { type: "upgrade", success: res.success }, ...(res.drawn ? (["collection"] as const) : []));
     if (res.drawn) {
       loadMediaInBackground(ctx, ownerId, [{ cardId: res.drawn.id, title: res.drawn.title }]);
-      void emit(ctx, ownerId, "collection");
+      await announcePulls(ctx, ownerId, res.notable);
     }
   });
   return {

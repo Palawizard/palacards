@@ -14,22 +14,18 @@ import {
   cardHiddenUntilAnswer,
   CHALLENGE_TTL_MS,
   DECK_SIZE,
-  descriptionHead,
   effectiveStats,
   eloUpdate,
   LOBBY_TIMEOUT_MS,
-  makeQuestion,
   QUESTION_TIME_MS,
   resolveHit,
   REVEAL_TIME_MS,
-  seededRandom,
   SHIELD_TIME_MS,
   shieldPercent,
   TOTAL_TURNS,
   type BattlePhase,
   type Question,
   type QuestionType,
-  type QuizArticle,
   type Rarity,
 } from "@palacards/game";
 import type { BattleCardView, BattleStateDTO, BattleTurnView, CardDTO } from "@palacards/shared";
@@ -40,6 +36,7 @@ import { afterCommit, Effects } from "./notifications.js";
 import { bumpObjective } from "./guilds.js";
 import { lockPlayers, movePw, pushWallet, type DbOrTx, type Player } from "./players.js";
 import { findUserByName } from "./profiles.js";
+import { QUESTION_PREP_MS, quizQuestion, withTimeout } from "./quiz.js";
 import { articleUrl } from "./wiki.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
@@ -52,8 +49,6 @@ const bt = schema.battleTurns;
 
 /** Compte à rebours affiché avant la première attaque (ajouté au chrono du tour 1). */
 const START_DELAY_MS = 3_000;
-/** Préparation d'une question (résumés Wikipédia des leurres) : au-delà, repli sur ce qui est en cache. */
-const QUESTION_PREP_MS = 3_500;
 
 // ---------------------------------------------------------------------------
 // Lecture de l'état en base
@@ -249,121 +244,18 @@ export async function refuseChallenge(ctx: Ctx, userId: string, battleId: number
 // Questions : préparées dès le choix de l'attaque (résumés des leurres chargés pendant le bouclier)
 // ---------------------------------------------------------------------------
 
-type ArticleRow = {
-  id: number;
-  title: string;
-  views_12m: string | number;
-};
-
-/** Articles aux titres voisins (trigrammes) : les leurres les plus crédibles. */
-async function similarArticles(db: DbOrTx, season: number, cardId: number, title: string): Promise<ArticleRow[]> {
-  const base = title.replace(/\s*\(.*\)\s*$/, "");
-  try {
-    return await db.transaction(async (tx) => {
-      await tx.execute(sql`set local statement_timeout = 1500`);
-      await tx.execute(sql`set local pg_trgm.similarity_threshold = 0.35`);
-      return tx.execute<ArticleRow>(sql`
-        select id, title, views_12m from cards
-        where search_title % lower(f_unaccent(${base})) and season = ${season} and id <> ${cardId}
-        order by similarity(search_title, lower(f_unaccent(${base}))) desc
-        limit 12
-      `);
-    });
-  } catch {
-    return []; // recherche trop lente ou indisponible : leurres au hasard seulement
-  }
-}
-
-/** Articles au hasard de la même rareté (choisis par la graine). */
-async function randomArticles(
-  db: DbOrTx,
-  seed: string,
-  season: number,
-  rarity: Rarity,
-  cardId: number,
-): Promise<ArticleRow[]> {
-  const key = seededRandom(`${seed}:decoys`)();
-  const rows = await db.execute<ArticleRow>(sql`
-    (select id, title, views_12m from cards where season = ${season} and rarity = ${rarity}::rarity and rand_key >= ${key} and id <> ${cardId} order by rand_key limit 8)
-    union all
-    (select id, title, views_12m from cards where season = ${season} and rarity = ${rarity}::rarity and id <> ${cardId} order by rand_key limit 8)
-  `);
-  return rows;
-}
-
-const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T) =>
-  Promise.race([p.catch(() => fallback), new Promise<T>((r) => setTimeout(() => r(fallback), ms).unref?.())]);
-
-/** Construit la question d'un tour sur l'article de la carte attaquante. */
-/**
- * Articles du même genre que la cible, pris dans les résumés déjà en cache : leur description commence par
- * le même mot (« chaîne… », « homme… », « commune… »). Ils donnent des leurres crédibles pour les
- * définitions, les images et « Qui suis-je ? » (une personne contre des personnes, pas contre un oiseau).
- */
-async function sameKindArticles(
-  db: DbOrTx,
-  seed: string,
-  season: number,
-  cardId: number,
-  head: string,
-): Promise<ArticleRow[]> {
-  return db.execute<ArticleRow>(sql`
-    select c.id, c.title, c.views_12m
-    from wiki_summaries w
-    join cards c on c.season = ${season} and c.id = w.page_id
-    where w.status = 'ok' and w.version >= 2 and w.page_id <> ${cardId} and w.description is not null
-      and regexp_replace(lower(f_unaccent(split_part(trim(w.description), ' ', 1))), '[^a-z0-9]', '', 'g') = ${head}
-    order by md5(w.page_id::text || ${seed})
-    limit 30
-  `);
-}
-
-/** Construit la question d'un tour sur l'article de la carte attaquante. */
+/** Construit la question d'un tour sur l'article de la carte attaquante (types déjà posés évités). */
 async function buildQuestion(ctx: Ctx, battle: Battle, turn: number, attack: DeckRow): Promise<Question> {
-  const seed = `${battle.seed}:${turn}`;
-  const [target] = await ctx.db.execute<ArticleRow>(
-    sql`select id, title, views_12m from cards where season = ${attack.season} and id = ${attack.cardId}`,
-  );
-  const title = target?.title ?? "?";
-  // Résumé de la cible d'abord : sa description donne le genre des leurres.
-  await withTimeout(ctx.wiki.load([{ cardId: attack.cardId, title }], undefined, { fresh: true }), 2_000, []);
-  const head = descriptionHead((await ctx.wiki.summaries([attack.cardId])).get(attack.cardId)?.description);
-  const [sameKind, similar, random] = await Promise.all([
-    head ? sameKindArticles(ctx.db, seed, attack.season, attack.cardId, head) : Promise.resolve([]),
-    similarArticles(ctx.db, attack.season, attack.cardId, title),
-    randomArticles(ctx.db, seed, attack.season, attack.rarity, attack.cardId),
-  ]);
-  const others = [...similar, ...random];
-  const candidates = [...sameKind, ...others].filter(
-    (r, i, all) => all.findIndex((x) => Number(x.id) === Number(r.id)) === i,
-  );
-  // Résumés des leurres pas encore en cache (titres voisins, hasard) : le temps du bouclier.
-  const toLoad = others.slice(0, 8).map((c) => ({ cardId: Number(c.id), title: c.title }));
-  await withTimeout(ctx.wiki.load(toLoad, undefined, { fresh: true }), QUESTION_PREP_MS - 1_500, []);
-  const summaries = await ctx.wiki.summaries([attack.cardId, ...candidates.map((c) => Number(c.id))]);
-  const article = (id: number, t: string, views: string | number): QuizArticle => {
-    const s = summaries.get(id);
-    return {
-      cardId: id,
-      title: t,
-      views12m: Number(views),
-      extract: s?.extract ?? null,
-      description: s?.description ?? null,
-      thumbUrl: s?.thumbUrl ?? null,
-    };
-  };
   const used = (await turnsOf(ctx.db, battle.id))
     .map((t) => (t.question as Question | null)?.type)
     .filter((t): t is QuestionType => !!t);
-  const parisYear = Number(
-    new Intl.DateTimeFormat("fr-FR", { year: "numeric", timeZone: "Europe/Paris" }).format(ctx.now()),
-  );
-  return makeQuestion(
-    seed,
-    article(attack.cardId, title, target?.views_12m ?? 0),
-    candidates.map((c) => article(Number(c.id), c.title, c.views_12m)),
-    { avoid: used, maxYear: parisYear },
-  );
+  return quizQuestion(ctx, {
+    seed: `${battle.seed}:${turn}`,
+    cardId: attack.cardId,
+    season: attack.season,
+    rarity: attack.rarity,
+    avoid: used,
+  });
 }
 
 const preparing = new Map<string, Promise<Question>>();

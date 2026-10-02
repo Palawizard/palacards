@@ -1,6 +1,6 @@
 "use client";
 
-import { ECONOMY, isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITY_LABELS } from "@palacards/game";
+import { isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITY_LABELS, recycleValue } from "@palacards/game";
 import type { CardDTO, ReferencePriceDTO } from "@palacards/shared";
 import { ChevronsUp, ExternalLink, Gavel, Heart, Pin, Repeat, Star, Tag } from "lucide-react";
 import Link from "next/link";
@@ -66,6 +66,14 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
         <div className="tnum text-sm">
           <span className="font-semibold">
             ATK {fmt(card.atk)} · DEF {fmt(card.def)}
+            {card.shiny && (
+              <span
+                className="pc-shiny-tag !static ml-1.5 inline-block align-middle !text-[0.65rem]"
+                title="Carte brillante"
+              >
+                Brillante
+              </span>
+            )}
           </span>
           <span className="block text-xs text-faint">
             Édition S{card.season} · niveau {card.level} · obtenue {card.obtainedAt ? relative(card.obtainedAt) : ""}
@@ -134,7 +142,7 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
           disabled={!!card.locked}
           onClick={() => setConfirm(true)}
         >
-          Recycler +{ECONOMY.recycleValue[card.rarity]}
+          Recycler +{recycleValue(card.rarity, card.shiny)}
         </button>
       </div>
       {selling && (
@@ -203,16 +211,16 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
         open={confirm}
         danger
         title="Recycler cet exemplaire ?"
-        confirmLabel={`Recycler (+${ECONOMY.recycleValue[card.rarity]} PW)`}
+        confirmLabel={`Recycler (+${recycleValue(card.rarity, card.shiny)} PW)`}
         onConfirm={() =>
           run(
             () => api("/collection/recycle", { body: { instanceIds: [card.instanceId] } }),
-            `+${ECONOMY.recycleValue[card.rarity]} PW`,
+            `+${recycleValue(card.rarity, card.shiny)} PW`,
           )
         }
         onClose={() => setConfirm(false)}
       >
-        L’exemplaire disparaît de ta collection contre {ECONOMY.recycleValue[card.rarity]} points wiki.
+        L’exemplaire disparaît de ta collection contre {recycleValue(card.rarity, card.shiny)} points wiki.
       </ConfirmDialog>
     </li>
   );

@@ -6,7 +6,7 @@ import useSWR from "swr";
 import { ErrorBox } from "@/components/ui";
 import { fmt } from "@/lib/format";
 
-type Board = "collection" | "elo" | "wealth" | "guilds";
+type Board = "collection" | "elo" | "wealth" | "guilds" | "pass";
 interface Row {
   id: string;
   name: string;
@@ -22,6 +22,7 @@ const BOARDS: { value: Board; label: string; unit: string }[] = [
   { value: "elo", label: "Elo de bataille", unit: "Elo" },
   { value: "wealth", label: "Richesse", unit: "PW" },
   { value: "guilds", label: "Guildes", unit: "pts" },
+  { value: "pass", label: "Passe de saison", unit: "niv." },
 ];
 
 export default function LeaderboardPage() {

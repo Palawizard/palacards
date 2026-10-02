@@ -21,6 +21,7 @@ export const instanceColumns = {
   baseAtk: ci.atk,
   baseDef: ci.def,
   level: ci.level,
+  shiny: ci.shiny,
   views12m: c.views12m,
   favorite: ci.favorite,
   locked: ci.lockedBy,
@@ -40,6 +41,7 @@ type InstanceRow = {
   baseAtk: number;
   baseDef: number;
   level: number;
+  shiny: boolean;
   views12m: number;
   favorite: boolean;
   locked: "auction" | "trade" | null;
@@ -66,6 +68,7 @@ export function toCardDTO(r: InstanceRow, extra: Partial<CardDTO> = {}, viewerId
     atk,
     def,
     level: r.level,
+    ...(r.shiny ? { shiny: true } : {}),
     ...(viewerId !== null && r.ownerId === viewerId ? { views12m: r.views12m } : {}),
     favorite: r.favorite,
     locked: r.locked,

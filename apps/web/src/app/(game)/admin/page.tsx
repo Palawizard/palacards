@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { AdminBroadcasts } from "@/components/AdminBroadcasts";
 import { AdminCodes, AdminThemes } from "@/components/AdminEvents";
 import { ConfirmDialog, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -221,6 +222,8 @@ export default function AdminPage() {
           </p>
         )}
       </section>
+
+      <AdminBroadcasts />
 
       <AdminThemes />
 

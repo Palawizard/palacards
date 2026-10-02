@@ -58,6 +58,10 @@ const REASONS: Record<string, string> = {
   wheel: "Roue du jour",
   promo_code: "Code promo",
   theme_pack: "Booster à thème",
+  quest: "Quête",
+  season_pass: "Passe de saison",
+  daily_article: "Article du jour",
+  boss: "Boss du jour",
   test: "Test",
 };
 /** Motif d'une ligne du ledger, en français (code brut si inconnu). */
