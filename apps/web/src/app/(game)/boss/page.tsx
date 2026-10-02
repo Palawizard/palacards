@@ -1,12 +1,12 @@
 "use client";
 
-import { bossDamage, bossHitBase } from "@palacards/game";
+import { bossDamage, bossHitBase, RARITY_LABELS } from "@palacards/game";
 import type { BossDTO, BossLiveDTO, CardDTO, Page } from "@palacards/shared";
 import { Check, Crown, Sword, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { questionLabel } from "@/components/Battle";
+import { CardBack, questionLabel } from "@/components/Battle";
 import { Card } from "@/components/Card";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError, thumbSrc } from "@/lib/api";
@@ -310,7 +310,14 @@ function AssaultPanel({
   return (
     <div className="grid gap-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-start">
       <div className="mx-auto w-36 sm:w-full">
-        <Card card={q.card} href={null} />
+        {q.cardHidden ? (
+          <CardBack
+            rarity={q.card.rarity}
+            label={`Ta carte (${RARITY_LABELS[q.card.rarity].toLowerCase()}), face cachée jusqu'à ta réponse`}
+          />
+        ) : (
+          <Card card={q.card} href={null} />
+        )}
       </div>
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3 text-sm">
