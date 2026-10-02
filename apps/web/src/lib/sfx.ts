@@ -10,7 +10,19 @@ import { useSyncExternalStore } from "react";
  * défaut, à volume doux ; le choix est retenu sur l'appareil.
  */
 export type Sfx =
-  "tear" | "deal" | "flip" | "sr" | "ur" | "l" | "coin" | "achievement" | "correct" | "wrong" | "victory" | "defeat";
+  | "tear"
+  | "deal"
+  | "flip"
+  | "sr"
+  | "ur"
+  | "l"
+  | "shiny"
+  | "coin"
+  | "achievement"
+  | "correct"
+  | "wrong"
+  | "victory"
+  | "defeat";
 
 const STORAGE_KEY = "palacards:sfx";
 const MASTER_VOLUME = 0.32;
@@ -265,6 +277,16 @@ const RECIPES: Record<Sfx, Recipe> = {
     }
     const sparkle = [C7, G6, E6, B6, C7, G6, E6, C7, A5 * 4, G6];
     sparkle.forEach((f, i) => bell(c, out, hit + 0.15 + i * 0.11 + Math.random() * 0.04, f, 0.45, 0.07));
+  },
+  // Brillante : glissando de harpe sur trois octaves, puis un scintillement qui retombe en miroir.
+  shiny(c, out, t) {
+    const scale = [C5, E5, G5, A5, C6, E6, G6, A5 * 2, C7, E6 * 2, G6 * 2];
+    scale.forEach((f, i) => bell(c, out, t + i * 0.034, f, 0.5, 0.1 + i * 0.008));
+    hiss(c, out, t + 0.05, { a: 0.25, d: 0.9, peak: 0.08 }, { type: "bandpass", from: 6000, to: 12000, q: 4 });
+    const top = t + scale.length * 0.034;
+    [C7, G6 * 2, E6 * 2, C7, G6, E6].forEach((f, i) =>
+      bell(c, out, top + 0.08 + i * 0.09 + Math.random() * 0.03, f, 0.6, 0.06),
+    );
   },
   // Pièce : deux « ping » rapides, si puis mi.
   coin(c, out, t) {

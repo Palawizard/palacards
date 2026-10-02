@@ -610,6 +610,136 @@
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Brillante (shiny) : film holographique sur toute la vignette.       */
+/* Un dégradé prismatique surdimensionné glisse lentement sous un      */
+/* mélange « color-dodge » (seul transform s'anime) ; des étoiles      */
+/* scintillent par-dessus. Indépendant de la rareté.                   */
+/* ------------------------------------------------------------------ */
+
+.pc-holo {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  mix-blend-mode: color-dodge;
+  opacity: 0.55;
+}
+.pc-holo::before {
+  content: "";
+  position: absolute;
+  inset: -40% -90%;
+  background: repeating-linear-gradient(
+    112deg,
+    hsl(0 95% 72% / 0.85) 0%,
+    hsl(48 98% 66% / 0.85) 7%,
+    hsl(120 80% 66% / 0.85) 14%,
+    hsl(190 95% 66% / 0.85) 21%,
+    hsl(250 90% 74% / 0.85) 28%,
+    hsl(310 90% 72% / 0.85) 35%,
+    hsl(360 95% 72% / 0.85) 42%
+  );
+  transform: translateX(-12%);
+  animation: pc-holo-drift 7s linear infinite alternate;
+  will-change: transform;
+}
+/* Étoiles du film : quatre éclats qui s'allument tour à tour. */
+.pc-holo-stars {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.pc-holo-stars > svg {
+  position: absolute;
+  display: block;
+  width: 9cqi;
+  height: auto;
+  aspect-ratio: 1;
+  color: #fff;
+  filter: drop-shadow(0 0 2cqi rgb(255 255 255 / 0.85));
+  opacity: 0;
+  animation: pc-twinkle 3.2s ease-in-out infinite;
+}
+.pc-holo-stars > svg:nth-child(1) {
+  left: 70%;
+  top: 9%;
+}
+.pc-holo-stars > svg:nth-child(2) {
+  left: 12%;
+  top: 44%;
+  width: 6cqi;
+  animation-delay: 0.9s;
+}
+.pc-holo-stars > svg:nth-child(3) {
+  left: 80%;
+  top: 52%;
+  width: 7cqi;
+  animation-delay: 1.7s;
+}
+.pc-holo-stars > svg:nth-child(4) {
+  left: 38%;
+  top: 22%;
+  width: 5cqi;
+  animation-delay: 2.4s;
+}
+@keyframes pc-holo-drift {
+  to {
+    transform: translateX(12%);
+  }
+}
+@keyframes pc-twinkle {
+  0%,
+  60%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6) rotate(0deg);
+  }
+  75% {
+    opacity: 1;
+    transform: scale(1) rotate(45deg);
+  }
+}
+/* Cadre et pastille d'une brillante : liseré nacré qui change de teinte avec le film. */
+.pc-card[data-shiny] {
+  box-shadow:
+    0 0 0 2px rgb(255 255 255 / 0.9),
+    0 0 0 4px color-mix(in oklab, var(--r) 55%, #c4b5fd),
+    0 14px 30px -14px color-mix(in oklab, #a78bfa 70%, transparent);
+}
+.pc-shiny-tag {
+  position: absolute;
+  right: 3cqi;
+  top: 3cqi;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 1cqi;
+  padding: 0.6cqi 2.4cqi 0.6cqi 1.8cqi;
+  border-radius: 999px;
+  font-size: 0.74em;
+  font-weight: 800;
+  font-stretch: 75%;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #241047;
+  background: linear-gradient(105deg, #fde68a, #fbcfe8 30%, #bfdbfe 60%, #bbf7d0 90%);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.7),
+    0 2px 6px -2px rgb(0 0 0 / 0.45);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-holo::before,
+  .pc-holo-stars > svg {
+    animation: none;
+  }
+  .pc-holo-stars > svg:nth-child(1) {
+    opacity: 0.9;
+  }
+}
+
 .pc-sigil {
   display: inline-flex;
   align-items: center;

@@ -408,3 +408,225 @@
     transform: translate(-50%, -50%) rotate(-8deg);
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Révélation d'une brillante : prisme derrière, éclats et tampon      */
+/* holographique devant. Transform et opacity seulement.               */
+/* ------------------------------------------------------------------ */
+
+.pc-shiny-dim {
+  animation-duration: 3.1s;
+}
+.pc-shiny-rays {
+  inset: -75%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    hsl(0 95% 75% / 0.85) 0deg 3deg,
+    transparent 3deg 10deg,
+    hsl(55 95% 70% / 0.85) 10deg 13deg,
+    transparent 13deg 20deg,
+    hsl(150 85% 70% / 0.85) 20deg 23deg,
+    transparent 23deg 30deg,
+    hsl(205 95% 72% / 0.85) 30deg 33deg,
+    transparent 33deg 40deg,
+    hsl(275 90% 78% / 0.85) 40deg 43deg,
+    transparent 43deg 50deg
+  );
+  mask: radial-gradient(closest-side, #000 14%, transparent 100%);
+  animation-name: pc-shiny-rays;
+  animation-duration: 3s;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+@keyframes pc-shiny-rays {
+  0% {
+    opacity: 0;
+    transform: rotate(-40deg) scale(0.55);
+  }
+  16% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(80deg) scale(1.2);
+  }
+}
+/* Anneau prismatique : un dégradé conique masqué en couronne. */
+.pc-shiny-halo {
+  inset: -22%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    hsl(0 95% 72%),
+    hsl(60 95% 68%),
+    hsl(140 85% 66%),
+    hsl(200 95% 68%),
+    hsl(270 90% 74%),
+    hsl(330 90% 72%),
+    hsl(360 95% 72%)
+  );
+  mask: radial-gradient(closest-side, transparent 58%, #000 66%, #000 72%, transparent 82%);
+  animation-name: pc-shiny-halo;
+  animation-duration: 1.6s;
+  will-change: transform, opacity;
+}
+@keyframes pc-shiny-halo {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) rotate(0deg);
+  }
+  25% {
+    opacity: 0.95;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.45) rotate(140deg);
+  }
+}
+/* Bande arc-en-ciel qui traverse la face deux fois, comme un hologramme qu'on incline. */
+.pc-shiny-sweep {
+  inset: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  animation: none;
+}
+.pc-shiny-sweep::before {
+  content: "";
+  position: absolute;
+  inset: -10% -60%;
+  background: linear-gradient(
+    105deg,
+    transparent 30%,
+    hsl(0 95% 75% / 0.75) 38%,
+    hsl(55 95% 72% / 0.75) 42%,
+    hsl(140 85% 70% / 0.75) 46%,
+    hsl(205 95% 72% / 0.75) 50%,
+    hsl(280 90% 78% / 0.75) 54%,
+    transparent 62%
+  );
+  mix-blend-mode: color-dodge;
+  animation: pc-shiny-sweep 0.75s var(--ease-in-out) 2 both;
+  animation-delay: calc(var(--fx-delay, 0ms) + 80ms);
+  will-change: transform;
+}
+@keyframes pc-shiny-sweep {
+  0% {
+    transform: translateX(-80%);
+  }
+  100% {
+    transform: translateX(80%);
+  }
+}
+.pc-shiny-star {
+  left: 50%;
+  top: 45%;
+  width: var(--sz);
+  height: var(--sz);
+  margin: calc(var(--sz) / -2) 0 0 calc(var(--sz) / -2);
+  color: var(--c);
+  filter: drop-shadow(0 0 5px var(--c));
+  animation-name: pc-shiny-star;
+  animation-duration: var(--dur);
+  animation-timing-function: cubic-bezier(0.12, 0.9, 0.3, 1);
+}
+.pc-shiny-star > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@keyframes pc-shiny-star {
+  0% {
+    opacity: 0;
+    transform: rotate(var(--a)) translateY(0) rotate(calc(var(--a) * -1)) scale(0.3);
+  }
+  15% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+    transform: rotate(var(--a)) translateY(calc(var(--dist) * -0.85)) rotate(calc(var(--a) * -1 + 90deg)) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--a)) translateY(calc(var(--dist) * -1)) rotate(calc(var(--a) * -1 + 135deg)) scale(0.6);
+  }
+}
+/* Tampon holographique : papier nacré, encre violette, liseré pointillé de l'album. */
+.pc-shiny-stamp {
+  left: 50%;
+  top: 56%;
+  display: grid;
+  justify-items: center;
+  gap: 0.6cqi;
+  padding: 1.8cqi 5.5cqi 2cqi;
+  border-radius: 2.5cqi;
+  color: #2a0f5c;
+  background: linear-gradient(110deg, #fde68a, #fbcfe8 28%, #c7d2fe 55%, #bbf7d0 82%, #fde68a);
+  font-family: var(--font-sans);
+  font-stretch: 62%;
+  font-weight: 800;
+  font-size: 9.5cqi;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow:
+    0 8px 22px -8px rgb(40 10 90 / 0.6),
+    inset 0 0 0 0.8cqi rgb(255 255 255 / 0.6);
+  animation: pc-fx-stamp 2.9s linear both;
+  animation-delay: calc(var(--fx-delay, 0ms) + 120ms);
+  z-index: 4;
+}
+.pc-shiny-stamp small {
+  font-size: 0.5em;
+  letter-spacing: 0.06em;
+}
+.pc-shiny-stamp::before {
+  content: "";
+  position: absolute;
+  inset: 1.3cqi;
+  border-radius: 1.6cqi;
+  border: 1.5px dashed rgb(42 15 92 / 0.35);
+}
+/* Avant le retournement : le dos d'une brillante s'irise. */
+.pc-anticip-glow[data-shiny] {
+  background: conic-gradient(
+    from 0deg,
+    hsl(0 95% 72%),
+    hsl(60 95% 68%),
+    hsl(140 85% 66%),
+    hsl(200 95% 68%),
+    hsl(270 90% 74%),
+    hsl(330 90% 72%),
+    hsl(360 95% 72%)
+  );
+  border-radius: 26px;
+  animation:
+    pc-anticip 0.4s ease-in-out infinite alternate,
+    pc-anticip-spin 2.4s linear infinite;
+}
+@keyframes pc-anticip-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-shiny-rays,
+  .pc-shiny-star,
+  .pc-shiny-sweep {
+    display: none;
+  }
+  .pc-shiny-halo {
+    animation-name: pc-fx-fade;
+  }
+  .pc-shiny-stamp {
+    animation-name: pc-fx-stamp-fade;
+  }
+  .pc-anticip-glow[data-shiny] {
+    animation: pc-anticip 0.6s ease-in-out infinite alternate;
+  }
+}

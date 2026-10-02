@@ -1,8 +1,9 @@
 "use client";
 
 import type { ClientToServerEvents, MeDTO, ServerToClientEvents } from "@palacards/shared";
+import { RARITY_LABELS } from "@palacards/game";
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useEffectEvent, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 import { io, type Socket } from "socket.io-client";
 import useSWR, { SWRConfig, type KeyedMutator } from "swr";
 import { toast } from "sonner";
@@ -55,6 +56,10 @@ export function useSocketEvent<E extends keyof ServerToClientEvents>(event: E, h
 /** Bruitages des notifications reçues en direct (les autres restent silencieuses). */
 const NOTIFICATION_SFX: Partial<Record<string, Sfx>> = {
   achievement: "achievement",
+  achievement_backfill: "achievement",
+  quest_completed: "coin",
+  pass_level: "achievement",
+  boss_killed: "victory",
   guild_objective: "achievement",
   auction_sold: "coin",
   auction_won: "coin",
@@ -69,6 +74,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [socket, setSocket] = useState<GameSocket | null>(null);
   const [connection, setConnection] = useState(0);
   const { data: me, mutate: mutateMe, error } = useSWR<MeDTO>("/me", fetcher);
+  const meId = useRef<string | null>(null);
+  useEffect(() => {
+    meId.current = me?.id ?? null;
+  }, [me?.id]);
 
   useEffect(() => {
     if (error instanceof ApiError && error.status === 401) router.replace("/login");
@@ -99,6 +108,21 @@ export function GameProvider({ children }: { children: ReactNode }) {
       });
     });
     s.on("card:media", pushMedia);
+    // Quêtes, passe, succès : les compteurs du menu suivent.
+    s.on("progress:update", () => void mutateMe());
+    s.on("boss:update", (b) => {
+      if (b.killedAt)
+        void mutateMe((m) => (m ? { ...m, boss: { ...m.boss, alive: false } } : m), { revalidate: false });
+    });
+    // Gros tirage d'un pote (Légendaire ou brillante) : on le dit à toute la bande.
+    s.on("feed:new", (item) => {
+      if (item.user.id === meId.current) return;
+      if (item.card.rarity !== "L" && !item.card.shiny) return;
+      const what = `${RARITY_LABELS[item.card.rarity]}${item.card.shiny ? " brillante" : ""}`;
+      toast(`${item.user.name} a tiré ${item.card.title} (${what}) !`, {
+        action: { label: "Voir", onClick: () => router.push("/feed") },
+      });
+    });
     // Exposé aux composants une fois connecté ; après une coupure, on relit l'état manqué.
     s.on("connect", () => {
       setSocket(s);

@@ -21,14 +21,15 @@ export interface CopyRank {
   level: number;
   atk: number;
   def: number;
+  shiny?: boolean;
 }
 /**
- * Ordre des exemplaires d'un même article : rareté, niveau, puis ATK+DEF, le plus ancien (id le plus petit)
- * à égalité. Le meilleur est celui qu'on garde (doublons) et le seul dans lequel on fusionne.
+ * Ordre des exemplaires d'un même article : rareté, brillante, niveau, puis ATK+DEF, le plus ancien
+ * (id le plus petit) à égalité. Le meilleur est celui qu'on garde (doublons) et le seul dans lequel on fusionne.
  */
 export function isBetterCopy(a: CopyRank, b: CopyRank): boolean {
-  const x = [rarityRank(a.rarity), a.level, a.atk + a.def];
-  const y = [rarityRank(b.rarity), b.level, b.atk + b.def];
+  const x = [rarityRank(a.rarity), a.shiny ? 1 : 0, a.level, a.atk + a.def];
+  const y = [rarityRank(b.rarity), b.shiny ? 1 : 0, b.level, b.atk + b.def];
   for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) return x[i]! > y[i]!;
   return a.id < b.id;
 }
@@ -55,9 +56,10 @@ export type AutoRecycleRarity = (typeof AUTO_RECYCLE_RARITIES)[number];
 /**
  * Recyclage automatique d'un paquet : indices des cartes tirées à recycler, celles dont la rareté est
  * au plus `max`. Avec `keepNew`, un article jamais possédé est gardé (une seule fois s'il sort en double).
+ * Une brillante n'est jamais recyclée automatiquement.
  */
 export function autoRecyclePicks(
-  drawn: readonly { cardId: number; rarity: Rarity }[],
+  drawn: readonly { cardId: number; rarity: Rarity; shiny?: boolean }[],
   max: AutoRecycleRarity | null,
   keepNew: boolean,
   ownedBefore: ReadonlySet<number>,
@@ -66,7 +68,7 @@ export function autoRecyclePicks(
   const kept = new Set(ownedBefore);
   const picks: number[] = [];
   drawn.forEach((d, i) => {
-    if (rarityRank(d.rarity) > rarityRank(max)) return;
+    if (d.shiny || rarityRank(d.rarity) > rarityRank(max)) return;
     if (keepNew && !kept.has(d.cardId)) {
       kept.add(d.cardId);
       return;
