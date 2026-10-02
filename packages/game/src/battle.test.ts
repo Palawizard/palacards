@@ -200,6 +200,34 @@ describe("questions", () => {
     }
   });
 
+  it("ne prend les leurres de reconnaissance que parmi les articles connus du joueur (boss)", () => {
+    const known = [1, 2, 3, 4].map((n) =>
+      article({
+        cardId: 40 + n,
+        title: `Ma carte ${n}`,
+        views12m: n * 1_000,
+        extract: `Ma carte ${n} est un article de test assez long pour servir d'extrait dans une question.`,
+        description: `article de test numéro ${n}`,
+        thumbUrl: `https://upload.wikimedia.org/mienne-${n}.jpg`,
+      }),
+    );
+    const allowedTitles = new Set([valmy.title, ...known.map((k) => k.title)]);
+    const allowedThumbs = new Set([valmy.thumbUrl, ...known.map((k) => k.thumbUrl)]);
+    const seen = new Set<string>();
+    for (let i = 0; i < 80; i++) {
+      const q = makeQuestion(`k-${i}`, valmy, decoys, { maxYear: 2026, known });
+      seen.add(q.type);
+      if (q.type === "who_am_i" || q.type === "popular") for (const c of q.choices) expect(allowedTitles).toContain(c);
+      if (q.type === "image") for (const c of q.choices) expect(allowedThumbs).toContain(c);
+    }
+    expect(seen).toContain("image");
+    expect(seen).toContain("who_am_i");
+    // Pas assez d'images parmi les cartes connues : pas de question d'image.
+    const noThumbs = known.map((k) => ({ ...k, thumbUrl: null }));
+    for (let i = 0; i < 30; i++)
+      expect(makeQuestion(`n-${i}`, valmy, decoys, { known: noThumbs }).type).not.toBe("image");
+  });
+
   it("se replie sur « le plus lu » sans résumé ni description", () => {
     const bare = article({ cardId: 20, title: "Zorglub", views12m: 500 });
     const others = [1, 2, 3].map((n) => article({ cardId: 30 + n, title: `Article ${n}`, views12m: n * 1_000 }));
