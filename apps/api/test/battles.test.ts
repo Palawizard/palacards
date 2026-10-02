@@ -136,6 +136,12 @@ describe("duel Attaque / Bouclier", () => {
     s = await stateOf(a, id);
     expect(s).toMatchObject({ phase: "attack", turn: 2, attackerId: defender.userId });
     expect(s.turns).toHaveLength(1);
+    // Une parade parfaite renvoie des dégâts : selon les cartes tirées, l'attaquant du tour 1 pourrait
+    // tomber dès ce tour. PV remis au maximum pour que le duel continue.
+    await ctx.db
+      .update(schema.battles)
+      .set({ challengerHp: BATTLE_HP, opponentHp: BATTLE_HP })
+      .where(eq(schema.battles.id, id));
     await playTurn([a, b], id, true);
     s = await stateOf(a, id);
     expect(s.turns[1]?.outcome?.correct).toBe(true);
