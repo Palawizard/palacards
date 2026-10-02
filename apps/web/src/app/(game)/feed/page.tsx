@@ -99,7 +99,7 @@ function FeedItem({ item, fresh, now }: { item: FeedItemDTO; fresh: boolean; now
           })}
         </p>
       )}
-      <div className="flex flex-wrap gap-1" role="group" aria-label="Réagir">
+      <div className="pc-reacts" role="group" aria-label="Réagir">
         {FEED_REACTIONS.map((emoji) => {
           const r = reactions.find((x) => x.emoji === emoji);
           return (

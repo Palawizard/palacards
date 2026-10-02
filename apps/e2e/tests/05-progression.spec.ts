@@ -13,8 +13,9 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   await expect(page.getByText("Succès débloqué : Premier paquet.")).toBeVisible();
   await page.goto("achievements");
   // Au moins 1 : selon le tirage, une SR/UR peut débloquer d'autres succès dès le premier paquet.
-  await expect(page.getByText(/[1-9]\d* succès débloqués sur 20/)).toBeVisible();
-  await expect(page.locator("li", { hasText: "Premier paquet" }).getByText(/Débloqué le/)).toBeVisible();
+  await expect(page.getByText(/[1-9]\d* succès débloqués sur \d{3}/)).toBeVisible();
+  // Famille « Paquets ouverts » : le premier palier est débloqué.
+  await expect(page.getByText("Palier 1, Premier paquet, débloqué")).toBeAttached();
 
   // Fusion : deux exemplaires du même article → niveau 2.
   const owned = await apiCall<{ items: { cardId: number }[] }>(page, "GET", "/collection?limit=1");

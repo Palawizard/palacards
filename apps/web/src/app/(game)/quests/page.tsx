@@ -196,7 +196,7 @@ function LoyaltyCard({ pass }: { pass: PassDTO }) {
                   )}
                 </span>
               ) : (
-                <span className="tnum text-[0.68em] font-semibold" aria-hidden>
+                <span className="tnum font-semibold" aria-hidden>
                   {level}
                 </span>
               )}
