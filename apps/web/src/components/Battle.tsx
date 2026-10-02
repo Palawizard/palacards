@@ -1,7 +1,7 @@
 "use client";
 
 // Pièces du duel « Attaque / Bouclier » : jauges de PV, dos de cartes adverses, cartes de la main, journal.
-import { QUESTION_LABELS, RARITY_LABELS, type QuestionType } from "@palacards/game";
+import { QUESTION_LABELS, RARITY_LABELS, type QuestionType, type Rarity } from "@palacards/game";
 import type { BattleCardView, BattlePlayerView, BattleTurnView } from "@palacards/shared";
 import { Shield, Swords, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -94,10 +94,23 @@ export function HpBar({
 /** Dos de carte adverse : rareté, dégâts et bouclier visibles, titre caché tant qu'elle n'a pas attaqué. */
 export function CardBackMini({ card, className = "" }: { card: BattleCardView; className?: string }) {
   return (
+    <CardBack
+      rarity={card.rarity}
+      className={className}
+      label={`${RARITY_LABELS[card.rarity]} · ${card.damage} dégâts · bouclier ${pct(card.shieldPct)}`}
+    />
+  );
+}
+
+/** Dos de carte : seule la rareté se lit (titre et image cachés). */
+export function CardBack({ rarity, label, className = "" }: { rarity: Rarity; label: string; className?: string }) {
+  return (
     <div
       className={`relative aspect-[5/7] w-full [container-type:inline-size] ${className}`}
-      style={rarityVar(card.rarity)}
-      title={`${RARITY_LABELS[card.rarity]} · ${card.damage} dégâts · bouclier ${pct(card.shieldPct)}`}
+      style={rarityVar(rarity)}
+      title={label}
+      role="img"
+      aria-label={label}
     >
       <span className="pc-back !shadow-[inset_0_0_0_3px_rgb(255_255_255/0.9),var(--shadow-lift)]">
         <span className="grid aspect-square w-[46%] rotate-[-12deg] place-items-center rounded-full bg-accent font-display text-[26cqi] uppercase leading-none text-cover shadow-[0_4px_10px_-4px_rgb(0_0_0/0.5)]">
@@ -105,7 +118,7 @@ export function CardBackMini({ card, className = "" }: { card: BattleCardView; c
         </span>
       </span>
       <span className="absolute inset-0 rounded-[12px] shadow-[inset_0_0_0_3px_var(--r)]" aria-hidden />
-      <span className="pc-sigil absolute left-1/2 top-[7%] -translate-x-1/2 text-[max(10px,13cqi)]">{card.rarity}</span>
+      <span className="pc-sigil absolute left-1/2 top-[7%] -translate-x-1/2 text-[max(10px,13cqi)]">{rarity}</span>
     </div>
   );
 }

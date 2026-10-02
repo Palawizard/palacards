@@ -8,6 +8,7 @@ import {
   BOSS_REWARDS,
   bossDamage,
   bossHit,
+  cardHiddenUntilAnswer,
   effectiveStats,
   parisDay,
   seededRandom,
@@ -402,9 +403,13 @@ function assaultView(ctx: Ctx, assault: Assault, hits: Hit[], cards: Map<number,
   if (open?.question) {
     const q = open.question as Question;
     const elapsed = ctx.now().getTime() - open.servedAt!.getTime();
+    const card = cards.get(open.instanceId)!;
+    // Image ou « Qui suis-je ? » : la carte donnerait la réponse, elle reste face cachée jusqu'à la réponse.
+    const cardHidden = cardHiddenUntilAnswer(q);
     question = {
       idx: open.idx,
-      card: cards.get(open.instanceId)!,
+      card: cardHidden ? { ...card, instanceId: null, cardId: 0, title: "", thumbUrl: null, pageUrl: null } : card,
+      cardHidden,
       type: q.type,
       prompt: q.prompt,
       choices: q.choices,
