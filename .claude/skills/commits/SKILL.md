@@ -32,4 +32,8 @@ Un nom de branche, le nom du dépôt ou un message de commit ne suffisent pas. D
 
 - N'utilise **jamais** l'identité Palawi.
 - Avant le premier commit, demande via un widget de question (`AskUserQuestion`) quel nom et quel e-mail utiliser et si l'attribution de l'agent doit apparaître. Applique ensuite la réponse avec `git config user.name` / `git config user.email`.
-- Sans réponse possible (session non interactive), garde l'identité git déjà configurée et l'attribution par défaut de l'outil.
+- Sans réponse possible (session non interactive), garde l'identité git déjà configurée.
+
+## Réglage partagé
+
+`.claude/settings.json` désactive l'attribution automatique de Claude Code (`attribution.commit` et `attribution.pr` vides) pour tout le monde sur ce projet. Quelqu'un qui veut la garder peut la remettre dans son `.claude/settings.local.json` (non versionné).
