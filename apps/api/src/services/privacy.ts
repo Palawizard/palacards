@@ -74,6 +74,7 @@ export async function exportData(ctx: Ctx, userId: string) {
       .from(s.trades)
       .where(or(eq(s.trades.fromId, userId), eq(s.trades.toId, userId))),
     wishlist: await db.select().from(s.wishlist).where(eq(s.wishlist.userId, userId)),
+    suggestions: await db.select().from(s.suggestions).where(eq(s.suggestions.userId, userId)),
     notifications: await db.select().from(s.notifications).where(eq(s.notifications.userId, userId)),
     themePacks: await db.select().from(s.playerThemePacks).where(eq(s.playerThemePacks.userId, userId)),
     promoRedemptions: await db.select().from(s.promoRedemptions).where(eq(s.promoRedemptions.userId, userId)),

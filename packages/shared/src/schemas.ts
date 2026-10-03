@@ -47,3 +47,16 @@ export function avatarImage(avatar: string | null | undefined): { userId: string
   const [userId, version] = avatar.slice(AVATAR_IMAGE_PREFIX.length).split(".");
   return userId && version ? { userId, version } : null;
 }
+
+/** Suggestions des joueurs (page Suggestions) : même liste que `suggestions.kind` en base. */
+export const SUGGESTION_KINDS = ["bug", "feature", "content", "balance", "other"] as const;
+export type SuggestionKind = (typeof SUGGESTION_KINDS)[number];
+export const SUGGESTION_STATUSES = ["new", "accepted", "done", "declined"] as const;
+export type SuggestionStatus = (typeof SUGGESTION_STATUSES)[number];
+export const SUGGESTION_LIMITS = { title: 100, body: 2_000, reply: 1_000, perDay: 5 } as const;
+
+export const suggestionInputSchema = z.object({
+  kind: z.enum(SUGGESTION_KINDS),
+  title: z.string().trim().min(4, "4 caractères minimum").max(SUGGESTION_LIMITS.title),
+  body: z.string().trim().min(10, "10 caractères minimum").max(SUGGESTION_LIMITS.body),
+});

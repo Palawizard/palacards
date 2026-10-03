@@ -7,7 +7,7 @@ afterAll(() => app.close());
 describe("menu : nouveautés et paquets à ouvrir", () => {
   it("annonce les nouveautés jusqu'à la première visite", async () => {
     const p = await signUp(app);
-    const all = ["battle-v2", "quests", "article", "boss", "feed", "achievements-v2"];
+    const all = ["battle-v2", "quests", "article", "boss", "feed", "achievements-v2", "suggestions"];
     expect((await p.get("/me")).body.newFeatures).toEqual(all);
     expect((await p.post("/me/seen-feature", { key: "battle-v2" })).status).toBe(200);
     // Idempotent : une deuxième visite ne duplique rien.
