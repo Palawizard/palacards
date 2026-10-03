@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AvatarFace } from "@/components/Avatar";
+import { SuggestionBanner } from "@/components/Suggestions";
 import { usePackCountdown } from "@/lib/packs";
 import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
@@ -38,9 +39,20 @@ const DOT_LABEL = {
   boss: "Assauts disponibles contre le boss",
 } as const;
 
+/** Entrée du menu de la page en cours : le lien le plus précis (« Suggestions reçues » plutôt qu'« Admin »). */
+function activeHref(pathname: string): string | null {
+  let best: string | null = null;
+  for (const item of NAV.flatMap((g) => g.items)) {
+    const match = pathname === item.href || pathname.startsWith(`${item.href}/`);
+    if (match && (!best || item.href.length > best.length)) best = item.href;
+  }
+  return best;
+}
+
 function Portal({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const { me } = useMe();
+  const current = activeHref(pathname);
   return (
     <nav aria-label="Menu principal" className="flex flex-col gap-5">
       {NAV.map((group) => (
@@ -52,7 +64,7 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
             {group.items
               .filter((item) => !item.admin || me?.isAdmin)
               .map((item) => {
-                const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                const active = item.href === current;
                 const Icon = item.icon;
                 const badge =
                   item.badge === "messages"
@@ -61,7 +73,9 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                       ? packsToOpen(me)
                       : item.badge === "quests" && me
                         ? me.quests.total - me.quests.done
-                        : 0;
+                        : item.badge === "suggestions"
+                          ? (me?.newSuggestions ?? 0)
+                          : 0;
                 const isNew = !!item.feature && !!me?.newFeatures.includes(item.feature);
                 // La pastille « Nouveau » suffit : le point d'activité attend la première visite.
                 const dot =
@@ -101,7 +115,9 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                               ? `${badge} paquet${badge > 1 ? "s" : ""} à ouvrir`
                               : item.badge === "quests"
                                 ? `${badge} quête${badge > 1 ? "s" : ""} à terminer`
-                                : undefined
+                                : item.badge === "suggestions"
+                                  ? `${badge} nouvelle${badge > 1 ? "s" : ""} suggestion${badge > 1 ? "s" : ""}`
+                                  : undefined
                           }
                         >
                           {badge}
@@ -378,7 +394,10 @@ export function Shell({ children }: { children: ReactNode }) {
           </div>
         </header>
         <main className="mx-auto w-full max-w-[76rem] flex-1 px-4 pb-16 pt-6 sm:px-6 lg:px-8">
-          <MotionConfig reducedMotion="user">{children}</MotionConfig>
+          <MotionConfig reducedMotion="user">
+            <SuggestionBanner />
+            {children}
+          </MotionConfig>
         </main>
       </div>
     </div>
