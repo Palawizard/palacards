@@ -30,6 +30,7 @@ import { emit, ensureBackfill, passState } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
 import { ensureQuests } from "../services/quests.js";
 import { getProfile } from "../services/profiles.js";
+import { newSuggestionsCount, showSuggestionBanner } from "../services/suggestions.js";
 
 const rarityList = z
   .string()
@@ -67,6 +68,7 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "boss", until: "2026-12-01T00:00:00+01:00" },
   { key: "feed", until: "2026-12-01T00:00:00+01:00" },
   { key: "achievements-v2", until: "2026-12-01T00:00:00+01:00" },
+  { key: "suggestions", until: "2026-12-01T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */
@@ -108,6 +110,8 @@ export async function me(
     newFeatures: FEATURE_ANNOUNCEMENTS.filter(
       (f) => ctx.now() < new Date(f.until) && !p.seenFeatures.includes(f.key),
     ).map((f) => f.key),
+    suggestionBanner: showSuggestionBanner(p, ctx.now()),
+    newSuggestions: user.isAdmin ? await newSuggestionsCount(ctx) : 0,
     pass: { level: pass.level, into: pass.into, need: pass.need, xp: pass.xp },
     quests: { done: quests.filter((q) => q.completedAt).length, total: quests.length },
     articleReady: await articleReady(ctx, user.id),

@@ -96,6 +96,19 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
     }
     case "guild_objective":
       return { text: `Objectif de guilde atteint : un paquet bonus pour chacun !`, href: "/guild" };
+    case "suggestion_update": {
+      const title = `« ${s(p.title)} »`;
+      if (p.replied) return { text: `Palawi a répondu à ta suggestion ${title}.`, href: "/suggestions" };
+      const text = (
+        {
+          accepted: `Ta suggestion ${title} est retenue !`,
+          done: `Ta suggestion ${title} est en ligne. Merci !`,
+          declined: `Ta suggestion ${title} n'est pas retenue pour l'instant.`,
+          new: `Ta suggestion ${title} est de nouveau à l'étude.`,
+        } as Record<string, string>
+      )[s(p.status)];
+      return { text: text ?? `Ta suggestion ${title} a été mise à jour.`, href: "/suggestions" };
+    }
     default:
       return { text: "Nouvelle notification.", href: "/notifications" };
   }
