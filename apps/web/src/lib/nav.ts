@@ -4,7 +4,9 @@ import {
   CircleDot,
   Gavel,
   Heart,
+  Inbox,
   Layers,
+  Lightbulb,
   LibraryBig,
   MessageSquare,
   Package,
@@ -28,7 +30,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   /** Badge alimenté par /me : non-lus, roue prête, paquets à ouvrir, quêtes, article, boss. */
-  badge?: "messages" | "wheel" | "packs" | "quests" | "article" | "boss";
+  badge?: "messages" | "wheel" | "packs" | "quests" | "article" | "boss" | "suggestions";
   /** Clé de nouveauté (`/me.newFeatures`) : pastille « Nouveau » jusqu'à la première visite. */
   feature?: string;
   admin?: boolean;
@@ -71,6 +73,7 @@ export const NAV: NavGroup[] = [
       { href: "/feed", label: "Fil d'activité", icon: Radio, feature: "feed" },
       { href: "/guild", label: "Guilde", icon: Shield },
       { href: "/leaderboard", label: "Classement", icon: Trophy },
+      { href: "/suggestions", label: "Suggestions", icon: Lightbulb, feature: "suggestions" },
     ],
   },
   {
@@ -80,6 +83,7 @@ export const NAV: NavGroup[] = [
       { href: "/achievements", label: "Succès", icon: Award, feature: "achievements-v2" },
       { href: "/settings", label: "Paramètres", icon: Settings },
       { href: "/admin", label: "Admin", icon: Wrench, admin: true },
+      { href: "/admin/suggestions", label: "Suggestions reçues", icon: Inbox, admin: true, badge: "suggestions" },
     ],
   },
 ];
