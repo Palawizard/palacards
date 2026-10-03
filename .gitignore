@@ -11,6 +11,8 @@ GEMINI.md
 .claude/*
 # Exception : skills partagés par toutes les sessions (Impeccable…), versionnés.
 !.claude/skills/
+# Exception : réglages partagés de Claude Code (attribution désactivée), versionnés.
+!.claude/settings.json
 .agents/
 .codex/
 .cursor/
