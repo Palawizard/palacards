@@ -45,6 +45,8 @@ export interface Client {
   get: (url: string) => Promise<{ status: number; body: any }>; // eslint-disable-line @typescript-eslint/no-explicit-any -- réponses JSON libres dans les tests
   post: (url: string, body?: unknown) => Promise<{ status: number; body: any }>; // eslint-disable-line @typescript-eslint/no-explicit-any -- idem
   put: (url: string, body?: unknown) => Promise<{ status: number; body: any }>; // eslint-disable-line @typescript-eslint/no-explicit-any -- idem
+  patch: (url: string, body?: unknown) => Promise<{ status: number; body: any }>; // eslint-disable-line @typescript-eslint/no-explicit-any -- idem
+  del: (url: string) => Promise<{ status: number; body: any }>; // eslint-disable-line @typescript-eslint/no-explicit-any -- idem
 }
 
 export async function signUp(
@@ -61,7 +63,7 @@ export async function signUp(
   if (res.statusCode !== 200) throw new Error(`inscription échouée (${res.statusCode}) : ${res.body}`);
   const setCookie = [res.headers["set-cookie"]].flat().filter(Boolean) as string[];
   const cookie = setCookie.map((c) => c.split(";")[0]).join("; ");
-  const call = async (method: "GET" | "POST" | "PUT", url: string, body?: unknown) => {
+  const call = async (method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", url: string, body?: unknown) => {
     const r = await app.inject({
       method,
       url: `/palacards/api${url}`,
@@ -78,6 +80,8 @@ export async function signUp(
     get: (url) => call("GET", url),
     post: (url, body) => call("POST", url, body ?? {}),
     put: (url, body) => call("PUT", url, body ?? {}),
+    patch: (url, body) => call("PATCH", url, body ?? {}),
+    del: (url) => call("DELETE", url),
   };
 }
 

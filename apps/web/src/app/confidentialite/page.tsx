@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 };
 
 const CONTACT = "palawi.pro@gmail.com";
-const UPDATED = "1er octobre 2026";
+const UPDATED = "3 octobre 2026";
 // Politique commune de palawi.fr : URL absolue, hors du basePath /palacards.
 const COMMON_POLICY = "https://palawi.fr/confidentialite/";
 
@@ -49,6 +49,11 @@ const DATA: { what: string; detail: string; kept: string }[] = [
     what: "Profil",
     detail: "Avatar ou photo de profil que tu importes.",
     kept: "Jusqu'à ce que tu la retires ou supprimes ton compte",
+  },
+  {
+    what: "Suggestions",
+    detail: "Idées et bugs que tu envoies à l'admin depuis la page Suggestions, avec leur statut et sa réponse.",
+    kept: "Jusqu'à la suppression du compte",
   },
   { what: "Notifications", detail: "Alertes du jeu (enchère dépassée, défi reçu…).", kept: "6 mois" },
   {

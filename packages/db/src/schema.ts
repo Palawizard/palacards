@@ -229,6 +229,8 @@ export const players = pgTable(
       .notNull()
       .default(sql`'{}'::text[]`),
     lastSeenAt: tstz("last_seen_at"),
+    /** Bandeau « Une idée ? » masqué jusqu'à cette date (fermé ou suggestion envoyée : une semaine). */
+    suggestionBannerUntil: tstz("suggestion_banner_until"),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -1000,6 +1002,37 @@ export const broadcastReads = pgTable(
     readAt: tstz("read_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.broadcastId, t.userId] }), index("broadcast_reads_user_idx").on(t.userId)],
+);
+
+// ---------------------------------------------------------------------------
+// Suggestions des joueurs
+// ---------------------------------------------------------------------------
+
+export const SUGGESTION_KINDS = ["bug", "feature", "content", "balance", "other"] as const;
+export const SUGGESTION_STATUSES = ["new", "accepted", "done", "declined"] as const;
+
+/** Suggestion envoyée à l'admin : bug à corriger, idée, contenu… Suivie par un statut et une réponse. */
+export const suggestions = pgTable(
+  "suggestions",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    kind: text("kind", { enum: SUGGESTION_KINDS }).notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    status: text("status", { enum: SUGGESTION_STATUSES }).notNull().default("new"),
+    /** Réponse de l'admin, visible par l'auteur. */
+    reply: text("reply"),
+    repliedAt: tstz("replied_at"),
+    /** Première ouverture par un admin (null : pastille « nouvelle » du menu admin). */
+    adminSeenAt: tstz("admin_seen_at"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("suggestions_user_idx").on(t.userId, t.createdAt),
+    index("suggestions_status_idx").on(t.status, t.createdAt),
+  ],
 );
 
 // ---------------------------------------------------------------------------
