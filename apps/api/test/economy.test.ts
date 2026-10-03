@@ -3,7 +3,7 @@ import { ECONOMY, saleTax } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { closeAuctionIfDue } from "../src/services/market.js";
 import { progressionIdle } from "../src/services/progression.js";
-import { achievementPw, makeApp, signUp, type Client } from "./helpers.js";
+import { makeApp, progressionPw, signUp, type Client } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -41,8 +41,8 @@ describe("marché", () => {
     const instanceId = await giveCard(seller);
     const listed = await seller.post("/market", { instanceId, startPrice: 20, buyout: null, durationMs: HOUR });
     expect(listed.status).toBe(200);
-    // Succès (traités en arrière-plan) attendus AVANT de lire le solde, sinon course avec ur_10pct & co.
-    const listedBonus = await achievementPw(ctx, seller.userId);
+    // Succès et quêtes (traités en arrière-plan) attendus AVANT de lire le solde, sinon course avec ur_10pct & co.
+    const listedBonus = await progressionPw(ctx, seller.userId);
     expect((await wallet(seller)).balance).toBe(ECONOMY.startingBalance - ECONOMY.auctionListingFee + listedBonus);
     // Carte verrouillée : ni recyclage ni seconde vente.
     expect((await seller.post("/collection/recycle", { instanceIds: [instanceId] })).status).toBe(409);
@@ -61,7 +61,7 @@ describe("marché", () => {
     expect(await closeAuctionIfDue(ctx, listed.body.id)).toBe(true);
     expect(await closeAuctionIfDue(ctx, listed.body.id)).toBe(false); // idempotent
 
-    const bonus = { bidder: await achievementPw(ctx, bidder.userId), seller: await achievementPw(ctx, seller.userId) };
+    const bonus = { bidder: await progressionPw(ctx, bidder.userId), seller: await progressionPw(ctx, seller.userId) };
     expect(await wallet(bidder)).toEqual({
       balance: ECONOMY.startingBalance - 40 + bonus.bidder,
       locked: 0,
@@ -123,7 +123,7 @@ describe("marché", () => {
     expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
     // Les succès (« Premier achat ») paient à part, en arrière-plan : on les retire du solde.
     await progressionIdle();
-    const net = async (c: typeof x) => (await wallet(c)).balance - (await achievementPw(ctx, c.userId));
+    const net = async (c: typeof x) => (await wallet(c)).balance - (await progressionPw(ctx, c.userId));
     const balances = [await net(x), await net(y)].sort((m, n) => m - n);
     expect(balances).toEqual([ECONOMY.startingBalance - 50, ECONOMY.startingBalance]);
     const [sales] = await ctx.db.execute<{ n: number }>(
@@ -261,13 +261,13 @@ describe("échanges", () => {
     const [ib] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, cb));
     expect(ia).toMatchObject({ ownerId: b.userId, lockedBy: null });
     expect(ib!.ownerId).toBe(a.userId);
-    const bonusA = await achievementPw(ctx, a.userId);
+    const bonusA = await progressionPw(ctx, a.userId);
     expect(await wallet(a)).toEqual({
       balance: ECONOMY.startingBalance - 25 + bonusA,
       locked: 0,
       available: ECONOMY.startingBalance - 25 + bonusA,
     });
-    const bonusB = await achievementPw(ctx, b.userId);
+    const bonusB = await progressionPw(ctx, b.userId);
     expect((await wallet(b)).balance).toBe(ECONOMY.startingBalance + 25 + bonusB);
     await expectLedgerConsistent(a);
     await expectLedgerConsistent(b);

@@ -5,7 +5,7 @@ import { loadConfig } from "../src/config.js";
 import type { FastifyRequest } from "fastify";
 import { rateLimitKey } from "../src/app.js";
 import { adminCommand } from "../src/services/roles.js";
-import { achievementPw, makeApp, signUp, uniqueName } from "./helpers.js";
+import { makeApp, progressionPw, signUp, uniqueName } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -288,10 +288,12 @@ describe("collection et recyclage", () => {
 
   it("recycle en PW avec une ligne de ledger", async () => {
     const [first] = cards;
+    // Récompenses du paquet (succès, quêtes) versées AVANT le recyclage : sinon elles arrivent pendant ou après.
+    const bonus = await progressionPw(ctx, p.userId);
     const res = await p.post("/collection/recycle", { instanceIds: [first!.instanceId] });
     expect(res.status).toBe(200);
     expect(res.body.gain).toBe(ECONOMY.recycleValue[first!.rarity]);
-    expect(res.body.balance).toBe(ECONOMY.startingBalance + res.body.gain + (await achievementPw(ctx, p.userId)));
+    expect(res.body.balance).toBe(ECONOMY.startingBalance + res.body.gain + bonus);
     const again = await p.post("/collection/recycle", { instanceIds: [first!.instanceId] });
     expect(again.status).toBe(404);
   });
