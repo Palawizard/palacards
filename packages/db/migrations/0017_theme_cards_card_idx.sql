@@ -1,0 +1,1 @@
+CREATE INDEX "theme_cards_card_idx" ON "theme_cards" USING btree ("card_id");
