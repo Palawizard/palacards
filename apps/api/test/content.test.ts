@@ -1,5 +1,6 @@
 import { eq, schema, sql } from "@palacards/db";
 import { BOSS_REWARDS, passReward, xpForLevel } from "@palacards/game";
+import type { QuestDTO } from "@palacards/shared";
 import { afterAll, describe, expect, it } from "vitest";
 import { STATS_VERSION, progressionIdle } from "../src/services/progression.js";
 import { achievementPw, makeApp, signUp, signUpAdmin, type Client } from "./helpers.js";
@@ -38,7 +39,9 @@ describe("quêtes du jour et de la semaine", () => {
     const after = (await p.get("/quests")).body;
     expect(after.daily[0]).toMatchObject({ kind: "open_packs", progress: 2, target: 2 });
     expect(after.daily[0].completedAt).not.toBeNull();
-    expect(await ledgerSum(p.userId, "quest")).toBe(after.daily[0].reward.pw);
+    // Les autres quêtes tirées au hasard (« tirer une SR »…) peuvent aussi se terminer avec ces paquets.
+    const done = [...after.daily, after.weekly].filter((q: QuestDTO | null) => q?.completedAt) as QuestDTO[];
+    expect(await ledgerSum(p.userId, "quest")).toBe(done.reduce((sum, q) => sum + q.reward.pw, 0));
     const me = (await p.get("/me")).body;
     expect(me.quests.done).toBeGreaterThanOrEqual(1);
     expect(me.quests.total).toBe(4);

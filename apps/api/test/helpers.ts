@@ -100,3 +100,16 @@ export async function achievementPw(ctx: Ctx, userId: string): Promise<number> {
   );
   return Number(row?.n ?? 0);
 }
+
+/**
+ * PW versés en arrière-plan par la progression : succès, mais aussi quêtes du jour (un paquet ouvert peut en
+ * terminer une, selon les quêtes tirées) et paliers du passe de saison. Pour vérifier un solde.
+ */
+export async function progressionPw(ctx: Ctx, userId: string): Promise<number> {
+  await progressionIdle();
+  const [row] = await ctx.db.execute<{ n: string }>(
+    sql`select coalesce(sum(delta), 0) as n from ledger
+        where user_id = ${userId} and kind = 'pw' and reason in ('achievement', 'quest', 'season_pass')`,
+  );
+  return Number(row?.n ?? 0);
+}
