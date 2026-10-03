@@ -594,9 +594,12 @@ const engine = (() => {
     const prev = queues.get(battleId) ?? Promise.resolve();
     const next = prev.then(fn, fn);
     queues.set(battleId, next);
-    void next.finally(() => {
+    // `then(done, done)` et non `finally` : la promesse dérivée d'un `finally` rejetterait elle aussi, sans
+    // personne pour l'attraper (rejet non géré, qui arrête Node). L'erreur reste remontée par `next`.
+    const done = () => {
       if (queues.get(battleId) === next) queues.delete(battleId);
-    });
+    };
+    void next.then(done, done);
     return next;
   }
 
