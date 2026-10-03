@@ -325,6 +325,13 @@ export async function cardSheet(ctx: Ctx, userId: string, cardId: number) {
     .select({ n: sql<number>`1` })
     .from(schema.wishlist)
     .where(and(eq(schema.wishlist.userId, userId), eq(schema.wishlist.cardId, cardId)));
+  // Boosters à thème qui contiennent l'article (lien « Mes cartes de ce booster »).
+  const themes = await ctx.db
+    .select({ id: schema.themes.id, name: schema.themes.name })
+    .from(schema.themeCards)
+    .innerJoin(schema.themes, eq(schema.themes.id, schema.themeCards.themeId))
+    .where(eq(schema.themeCards.cardId, cardId))
+    .orderBy(desc(schema.themes.startsAt), desc(schema.themes.id));
 
   return {
     card: {
@@ -347,6 +354,7 @@ export async function cardSheet(ctx: Ctx, userId: string, cardId: number) {
     owners: owners.map((o) => ({ userId: o.user_id, username: o.username, copies: o.copies, bestLevel: o.best_level })),
     mine: mine.map((r) => toCardDTO(r, { tags: tags.get(r.instanceId) ?? [] }, userId)),
     wishlisted: Boolean(wish),
+    themes,
   };
 }
 

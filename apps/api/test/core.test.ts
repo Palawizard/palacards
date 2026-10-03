@@ -320,6 +320,66 @@ describe("collection et recyclage", () => {
     }
   });
 
+  it("propose les tags déjà utilisés, les plus fréquents d'abord", async () => {
+    await p.put(`/collection/${cards[4]!.instanceId}/tags`, { tags: ["top"] });
+    const res = await p.get("/collection/tags");
+    expect(res.status).toBe(200);
+    expect(res.body.tags).toEqual([
+      { tag: "top", count: 2 },
+      { tag: "histoire", count: 1 },
+    ]);
+    // Rien d'un autre joueur.
+    expect((await (await signUp(app)).get("/collection/tags")).body.tags).toEqual([]);
+    await p.put(`/collection/${cards[4]!.instanceId}/tags`, { tags: [] });
+  });
+
+  it("filtre la collection par booster à thème", async () => {
+    const card = (await p.get(`/collection?sort=date&limit=60`)).body.items.find(
+      (c: { instanceId: number }) => c.instanceId === cards[5]!.instanceId,
+    );
+    const [theme] = await ctx.db
+      .insert(schema.themes)
+      .values({
+        name: "Thème de test",
+        price: 100,
+        startsAt: new Date(Date.now() - 86_400_000),
+        endsAt: new Date(Date.now() + 86_400_000),
+        cardCount: 1,
+      })
+      .returning({ id: schema.themes.id });
+    await ctx.db.insert(schema.themeCards).values({ themeId: theme!.id, cardId: card.cardId });
+
+    const filtered = await p.get(`/collection?theme=${theme!.id}`);
+    expect(filtered.body.items.map((c: { cardId: number }) => c.cardId)).toEqual([card.cardId]);
+    const summary = await p.get("/collection/summary");
+    expect(summary.body.themes).toContainEqual({ id: theme!.id, name: "Thème de test", owned: 1, cardCount: 1 });
+    const sheet = await p.get(`/cards/${card.cardId}`);
+    expect(sheet.body.themes).toContainEqual({ id: theme!.id, name: "Thème de test" });
+    await ctx.db.delete(schema.themes).where(eq(schema.themes.id, theme!.id));
+  });
+
+  it("arrange la vitrine d'un coup : ajout, ordre, retrait", async () => {
+    const [a, b, c] = [cards[2]!.instanceId, cards[4]!.instanceId, cards[5]!.instanceId];
+    const showcase = async () =>
+      (await p.get(`/players/${p.username}`)).body.showcase.map((x: { instanceId: number }) => x.instanceId);
+
+    expect((await p.put("/collection/showcase", { instanceIds: [a, b, c] })).status).toBe(200);
+    expect(await showcase()).toEqual([a, b, c]);
+    expect((await p.put("/collection/showcase", { instanceIds: [c, a] })).status).toBe(200);
+    expect(await showcase()).toEqual([c, a]);
+
+    // Carte en vente : refusée si elle n'y était pas déjà.
+    expect((await p.put("/collection/showcase", { instanceIds: [c, cards[1]!.instanceId] })).status).toBe(409);
+    expect((await p.put("/collection/showcase", { instanceIds: [c, c] })).status).toBe(400);
+    expect((await p.put("/collection/showcase", { instanceIds: [1, 2, 3, 4, 5, 6] })).status).toBe(400);
+    const other = await signUp(app);
+    expect((await other.put("/collection/showcase", { instanceIds: [a] })).status).toBe(404);
+    expect(await showcase()).toEqual([c, a]);
+
+    expect((await p.put("/collection/showcase", { instanceIds: [] })).status).toBe(200);
+    expect(await showcase()).toEqual([]);
+  });
+
   it("« tout sélectionner » renvoie les cartes recyclables du filtre, sans les protégées", async () => {
     // Restent : cards[1] engagée (vente), cards[3] favorite, et les autres libres (cards[0] est recyclée).
     const all = await p.get("/collection/selectable");
