@@ -274,6 +274,8 @@ describe("collection et recyclage", () => {
   beforeAll(async () => {
     p = await signUp(app);
     cards = (await p.post("/packs/open")).body.cards;
+    // Une brillante tirée au hasard serait protégée et fausserait « tout sélectionner » : aucune ici.
+    await ctx.db.update(schema.cardInstances).set({ shiny: false }).where(eq(schema.cardInstances.ownerId, p.userId));
   });
 
   it("liste la collection avec la complétion par rareté", async () => {
