@@ -102,11 +102,14 @@ describe("duel Attaque / Bouclier", () => {
     const defender = attacker === a ? b : a;
     // Hors de son tour : refusé.
     expect((await defender.post(`/battles/${id}/attack`, { slot: 1 })).body.error).toBe("not_your_turn");
-    expect((await attacker.post(`/battles/${id}/attack`, { slot: 2 })).status).toBe(200);
+    // Pas de légendaire : le catalogue de test n'en compte que deux, aux titres numérotés qui se recoupent
+    // (« n° 1 » dans « n° 1X ») ; sa question n'aurait pas assez de leurres pour quatre choix.
+    const slot = (await stateOf(attacker, id)).myHand.find((c) => c.rarity !== "L")!.slot;
+    expect((await attacker.post(`/battles/${id}/attack`, { slot })).status).toBe(200);
     s = await stateOf(defender, id);
     expect(s.phase).toBe("shield");
     // Carte attaquante face cachée pour le défenseur : rareté et dégâts seulement.
-    expect(s.current?.attack.slot).toBe(2);
+    expect(s.current?.attack.slot).toBe(slot);
     expect(s.current?.attack.card).toBeNull();
     expect(s.current?.attack.damage).toBeGreaterThan(0);
     expect((await attacker.post(`/battles/${id}/shield`, { slot: 1 })).body.error).toBe("not_your_turn");
@@ -146,7 +149,7 @@ describe("duel Attaque / Bouclier", () => {
     s = await stateOf(a, id);
     expect(s.turns[1]?.outcome?.correct).toBe(true);
     expect(s.turns[1]?.outcome?.damage).toBe(0);
-    expect((await attacker.post(`/battles/${id}/attack`, { slot: 2 })).body.error).toBe("invalid_slot");
+    expect((await attacker.post(`/battles/${id}/attack`, { slot })).body.error).toBe("invalid_slot");
 
     // Le reste du duel : mauvaises réponses jusqu'à la fin.
     for (let t = 3; t <= TOTAL_TURNS; t++) {
