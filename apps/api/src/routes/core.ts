@@ -17,7 +17,10 @@ import {
   selectableIds,
   setFavorite,
   setPinned,
+  setShowcase,
   setTags,
+  SHOWCASE_SIZE,
+  tagCounts,
 } from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
 import { themesOnSale } from "../services/themes.js";
@@ -187,6 +190,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     rarity: rarityList,
     season: intParam.positive().optional(),
     tag: z.string().max(24).optional(),
+    theme: intParam.positive().optional(),
     favorites: z.stringbool().optional(),
     duplicates: z.stringbool().optional(),
     q: z.string().max(100).optional(),
@@ -207,6 +211,15 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     selectableIds(ctx, req.user.id, parse(collectionFilters, req.query)),
   );
   api.get("/collection/summary", auth, async (req) => completion(ctx, req.user.id));
+  api.get("/collection/tags", auth, async (req) => tagCounts(ctx, req.user.id));
+  // Vitrine entière d'un coup (ajout, retrait, nouvel ordre) : les identifiants dans l'ordre d'affichage.
+  api.put("/collection/showcase", auth, async (req) => {
+    const { instanceIds } = parse(
+      z.object({ instanceIds: z.array(z.number().int().positive()).max(SHOWCASE_SIZE) }),
+      req.body,
+    );
+    return setShowcase(ctx, req.user.id, instanceIds);
+  });
   api.post("/collection/:id/favorite", auth, async (req) => {
     const { id } = parse(idParams, req.params);
     const { favorite } = parse(z.object({ favorite: z.boolean() }), req.body);

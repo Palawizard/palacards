@@ -35,6 +35,8 @@ export interface CollectionQuery {
   rarity?: Rarity[];
   season?: number;
   tag?: string;
+  /** Booster à thème : seulement les articles qui en font partie. */
+  theme?: number;
   favorites?: boolean;
   duplicates?: boolean;
   q?: string;
@@ -54,6 +56,10 @@ function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
   if (query.favorites) where.push(eq(ci.favorite, true));
   if (query.tag)
     where.push(sql`exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag = ${query.tag})`);
+  if (query.theme)
+    where.push(
+      sql`exists (select 1 from theme_cards tc where tc.theme_id = ${query.theme} and tc.card_id = ${ci.cardId})`,
+    );
   if (query.duplicates) {
     where.push(
       sql`(select count(*) from card_instances d where d.owner_id = ${ownerId} and d.card_id = ${ci.cardId}) > 1`,
@@ -145,6 +151,7 @@ export async function completion(ctx: Ctx, ownerId: string) {
     .innerJoin(ci, eq(ci.id, schema.userTags.instanceId))
     .where(eq(ci.ownerId, ownerId))
     .orderBy(schema.userTags.tag);
+  const themes = await themesOwned(ctx.db, ownerId);
   const seasonsOwned = await ctx.db
     .selectDistinct({ season: ci.season })
     .from(ci)
@@ -157,7 +164,33 @@ export async function completion(ctx: Ctx, ownerId: string) {
     uniqueCards: all?.unique ?? 0,
     tags: tags.map((t) => t.tag),
     seasons: seasonsOwned.map((s) => s.season),
+    themes,
   };
+}
+
+/** Boosters à thème dont le joueur possède au moins un article (les plus récents d'abord). */
+async function themesOwned(db: DbOrTx, ownerId: string) {
+  const rows = await db.execute<{ id: string; name: string; owned: number; card_count: number }>(sql`
+    select t.id, t.name, t.card_count, count(distinct tc.card_id)::int as owned
+    from themes t
+    join theme_cards tc on tc.theme_id = t.id
+    where exists (select 1 from card_instances i where i.owner_id = ${ownerId} and i.card_id = tc.card_id)
+    group by t.id
+    order by t.starts_at desc, t.id desc
+  `);
+  return rows.map((r) => ({ id: Number(r.id), name: r.name, owned: r.owned, cardCount: r.card_count }));
+}
+
+/** Tags déjà utilisés par le joueur, les plus fréquents d'abord (suggestions de la fiche carte). */
+export async function tagCounts(ctx: Ctx, ownerId: string) {
+  const rows = await ctx.db
+    .select({ tag: schema.userTags.tag, count: sql<number>`count(*)::int` })
+    .from(schema.userTags)
+    .innerJoin(ci, eq(ci.id, schema.userTags.instanceId))
+    .where(eq(ci.ownerId, ownerId))
+    .groupBy(schema.userTags.tag)
+    .orderBy(sql`count(*) desc`, schema.userTags.tag);
+  return { tags: rows };
 }
 
 export async function setFavorite(ctx: Ctx, ownerId: string, instanceId: number, favorite: boolean) {
@@ -216,6 +249,43 @@ export async function setPinned(ctx: Ctx, ownerId: string, instanceId: number, w
     }
     await tx.update(ci).set({ pinnedSlot: slot }).where(eq(ci.id, instanceId));
   });
+}
+
+/** Places de la vitrine du profil. */
+export const SHOWCASE_SIZE = 5;
+
+/**
+ * Remplace toute la vitrine : `instanceIds` dans l'ordre d'affichage (emplacements 1, 2, 3…).
+ * Une carte en vente ou en échange peut y rester si elle y était déjà, mais pas y entrer.
+ */
+export async function setShowcase(ctx: Ctx, ownerId: string, instanceIds: number[]) {
+  const ids = [...new Set(instanceIds)];
+  if (ids.length !== instanceIds.length) throw badRequest("duplicate", "Une carte ne peut occuper qu'une place.");
+  if (ids.length > SHOWCASE_SIZE) throw badRequest("showcase_full", `Ta vitrine tient ${SHOWCASE_SIZE} cartes.`);
+  await ctx.db.transaction(async (tx) => {
+    await lockPlayer(tx, ownerId);
+    const rows = ids.length
+      ? await tx
+          .select({ id: ci.id, lockedBy: ci.lockedBy, pinnedSlot: ci.pinnedSlot })
+          .from(ci)
+          .where(and(inArray(ci.id, ids), eq(ci.ownerId, ownerId)))
+          .for("update")
+      : [];
+    if (rows.length !== ids.length) throw notFound("Carte introuvable dans ta collection.");
+    if (rows.some((r) => r.lockedBy && r.pinnedSlot === null))
+      throw conflict("card_locked", "Une carte en vente ou en échange ne peut pas être épinglée.");
+    // Tout est libéré d'abord : l'index unique (joueur, emplacement) ne voit jamais deux cartes au même endroit.
+    await tx
+      .update(ci)
+      .set({ pinnedSlot: null })
+      .where(and(eq(ci.ownerId, ownerId), sql`${ci.pinnedSlot} is not null`));
+    for (const [i, id] of ids.entries())
+      await tx
+        .update(ci)
+        .set({ pinnedSlot: i + 1 })
+        .where(eq(ci.id, id));
+  });
+  return { instanceIds: ids };
 }
 
 /**
