@@ -26,7 +26,8 @@ export type NotificationType =
   | "boss_killed"
   | "boss_consolation"
   | "guild_objective"
-  | "gift";
+  | "gift"
+  | "suggestion_update";
 
 /** Catégories réglables dans les paramètres (une notification désactivée n'est ni stockée ni envoyée). */
 export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {
