@@ -1,5 +1,6 @@
 import type { AutoRecycleRarity, Rarity } from "@palacards/game";
 import type { PackState, Wallet } from "./events.js";
+import type { SuggestionKind, SuggestionStatus } from "./schemas.js";
 
 /** Carte telle qu'affichée par le composant `Card` (exemplaire possédé ou article du catalogue). */
 export interface CardDTO {
@@ -59,6 +60,10 @@ export interface MeDTO {
   themePacks: number;
   /** Nouveautés pas encore vues (pastille « Nouveau » du menu), ex. `battle-v2`. */
   newFeatures: string[];
+  /** Bandeau « Une idée ? » à afficher (pas fermé ni suggestion envoyée depuis une semaine). */
+  suggestionBanner: boolean;
+  /** Admin : suggestions pas encore ouvertes (pastille du menu). 0 pour les autres joueurs. */
+  newSuggestions: number;
   /** Passe de saison : niveau, XP dans le niveau en cours et XP du niveau (0 au niveau maximal). */
   pass: { level: number; into: number; need: number; xp: number };
   /** Quêtes terminées (jour + semaine) sur le total. */
@@ -334,4 +339,23 @@ export interface AdminBroadcastDTO extends BroadcastDTO {
   expiresAt: string | null;
   /** Joueurs l'ayant vu. */
   reads: number;
+}
+
+/** Suggestion d'un joueur, telle qu'il la voit (page Suggestions). */
+export interface SuggestionDTO {
+  id: number;
+  kind: SuggestionKind;
+  title: string;
+  body: string;
+  status: SuggestionStatus;
+  reply: string | null;
+  repliedAt: string | null;
+  createdAt: string;
+}
+
+/** Vue admin : avec l'auteur et l'état « déjà ouverte ». */
+export interface AdminSuggestionDTO extends SuggestionDTO {
+  author: { id: string; username: string; displayName: string } | null;
+  seen: boolean;
+  updatedAt: string;
 }

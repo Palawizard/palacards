@@ -127,6 +127,13 @@
       "when": 1791025986976,
       "tag": "0017_theme_cards_card_idx",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1791033022131,
+      "tag": "0018_suggestions",
+      "breakpoints": true
     }
   ]
 }
