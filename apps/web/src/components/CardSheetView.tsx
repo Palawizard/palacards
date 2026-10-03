@@ -2,13 +2,14 @@
 
 import { isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITY_LABELS, recycleValue } from "@palacards/game";
 import type { CardDTO, ReferencePriceDTO } from "@palacards/shared";
-import { ChevronsUp, ExternalLink, Gavel, Heart, Pin, Repeat, Star, Tag } from "lucide-react";
+import { ChevronsUp, ExternalLink, Gavel, Heart, Layers, Pin, Repeat, Star, Tag } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Card, RaritySigil } from "@/components/Card";
 import { ReferenceLine, SellForm } from "@/components/market";
+import { TagEditor } from "@/components/TagEditor";
 import { ConfirmDialog, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { compact, fmt, relative } from "@/lib/format";
@@ -22,6 +23,8 @@ export interface CardSheet {
   owners: { userId: string; username: string; copies: number; bestLevel: number }[];
   mine: CardDTO[];
   wishlisted: boolean;
+  /** Boosters à thème qui contiennent l'article. */
+  themes: { id: number; name: string }[];
 }
 
 /** Stat au niveau suivant (les stats affichées incluent déjà le bonus du niveau actuel). */
@@ -46,7 +49,6 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
   const [fusing, setFusing] = useState(false);
   const source = card.level < MAX_LEVEL && !card.locked ? fusionSource(card, siblings) : null;
   const [selling, setSelling] = useState(false);
-  const [tags, setTags] = useState((card.tags ?? []).join(", "));
   const [confirm, setConfirm] = useState(false);
 
   async function run(fn: () => Promise<unknown>, ok?: string) {
@@ -61,8 +63,10 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
 
   return (
     <li className="flex flex-col gap-2 border-b border-line py-3 last:border-0 @3xl:flex-row @3xl:items-center">
-      <div className="flex flex-1 items-center gap-3">
-        <RaritySigil rarity={card.rarity} />
+      <div className="flex flex-1 items-start gap-3">
+        <span className="mt-0.5">
+          <RaritySigil rarity={card.rarity} />
+        </span>
         <div className="tnum text-sm">
           <span className="font-semibold">
             ATK {fmt(card.atk)} · DEF {fmt(card.def)}
@@ -79,6 +83,15 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
             Édition S{card.season} · niveau {card.level} · obtenue {card.obtainedAt ? relative(card.obtainedAt) : ""}
             {card.locked && ` · ${card.locked === "auction" ? "en vente" : "dans un échange"}`}
           </span>
+          {!editing && !!card.tags?.length && (
+            <span className="mt-1 flex flex-wrap gap-1" aria-label="Tags">
+              {card.tags.map((t) => (
+                <span key={t} className="pc-tag">
+                  {t}
+                </span>
+              ))}
+            </span>
+          )}
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
@@ -156,38 +169,13 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
           />
         </div>
       )}
-      {editing && (
-        <form
-          className="flex w-full gap-2 sm:basis-full"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(
-              () =>
-                api(`/collection/${card.instanceId}/tags`, {
-                  method: "PUT",
-                  body: {
-                    tags: tags
-                      .split(",")
-                      .map((t) => t.trim())
-                      .filter(Boolean),
-                  },
-                }),
-              "Tags enregistrés.",
-            );
-            setEditing(false);
-          }}
-        >
-          <input
-            className="field h-9 min-h-0 text-sm"
-            value={tags}
-            onChange={(e) => setTags(e.target.value)}
-            placeholder="histoire, top, à échanger"
-            aria-label="Tags, séparés par des virgules"
-          />
-          <button type="submit" className="btn btn-sm btn-primary">
-            Enregistrer
+      {editing && card.instanceId && (
+        <div className="flex w-full items-start gap-2 sm:basis-full">
+          <TagEditor instanceId={card.instanceId} initial={card.tags ?? []} onSaved={onChanged} />
+          <button type="button" className="btn btn-sm h-10 shrink-0" onClick={() => setEditing(false)}>
+            Terminé
           </button>
-        </form>
+        </div>
       )}
       {source && (
         <ConfirmDialog
@@ -347,6 +335,7 @@ export function CardSheetView({
                   ["Attaque", fmt(card.atk)],
                   ["Défense", fmt(card.def)],
                   ["Édition", `Saison ${card.season}`],
+                  ...(data.themes.length ? [["Booster", data.themes.map((t) => t.name).join(", ")]] : []),
                 ].map(([k, v]) => (
                   <tr key={String(k)} className="border-b border-line last:border-0">
                     <th scope="row" className="px-3 py-1.5 text-left font-semibold text-muted">
@@ -358,6 +347,13 @@ export function CardSheetView({
               </tbody>
             </table>
           </div>
+          {data.mine.length > 0 &&
+            data.themes.map((t) => (
+              <Link key={t.id} href={`/collection?theme=${t.id}`} className="btn w-full">
+                <Layers aria-hidden className="size-4 shrink-0" />
+                <span className="truncate">Mes cartes « {t.name} »</span>
+              </Link>
+            ))}
           <WishButton cardId={card.cardId} wishlisted={data.wishlisted} onChanged={() => mutate()} />
           <PriceHistory cardId={card.cardId} />
         </aside>
