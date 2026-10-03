@@ -4,7 +4,8 @@ import { ECONOMY, RARITY_LABELS, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import { Search } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useDeferredValue, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useDeferredValue, useMemo, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
@@ -20,6 +21,8 @@ interface Summary {
   uniqueCards: number;
   tags: string[];
   seasons: number[];
+  /** Boosters à thème dont le joueur possède au moins un article. */
+  themes: { id: number; name: string; owned: number; cardCount: number }[];
 }
 
 const SORTS = [
@@ -67,6 +70,23 @@ function Completion({ summary }: { summary: Summary }) {
 }
 
 export default function CollectionPage() {
+  return (
+    <Suspense fallback={<CardSkeletons />}>
+      <Collection />
+    </Suspense>
+  );
+}
+
+function Collection() {
+  // `?theme=<id>` : ouverte depuis « Mes cartes de ce booster » sur une fiche carte.
+  const urlTheme = useSearchParams().get("theme") ?? "";
+  const [theme, setTheme] = useState(urlTheme);
+  const [seenTheme, setSeenTheme] = useState(urlTheme);
+  if (urlTheme !== seenTheme) {
+    // Fiche ouverte par-dessus la collection : la page reste montée, l'URL change.
+    setSeenTheme(urlTheme);
+    setTheme(urlTheme);
+  }
   const [rarity, setRarity] = useState<Rarity[]>([]);
   const [sort, setSort] = useState<Sort>("rarity");
   const [q, setQ] = useState("");
@@ -92,9 +112,10 @@ export default function CollectionPage() {
     if (favorites) p.set("favorites", "true");
     if (duplicates) p.set("duplicates", "true");
     if (tag) p.set("tag", tag);
+    if (theme) p.set("theme", theme);
     if (season) p.set("season", season);
     return p.toString();
-  }, [rarity, query, favorites, duplicates, tag, season]);
+  }, [rarity, query, favorites, duplicates, tag, theme, season]);
   const params = `${filters}${filters ? "&" : ""}sort=${sort}&limit=60`;
 
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
@@ -169,6 +190,7 @@ export default function CollectionPage() {
     }
   }
 
+  const themeInfo = summary.data?.themes.find((t) => String(t.id) === theme);
   const selectedGain = [...selected.values()].reduce((s, r) => s + ECONOMY.recycleValue[r], 0);
 
   return (
@@ -220,6 +242,17 @@ export default function CollectionPage() {
                   options={[{ value: "", label: "Tous" }, ...summary.data.tags.map((t) => ({ value: t, label: t }))]}
                 />
               )}
+              {!!summary.data?.themes.length && (
+                <Select
+                  label="Booster"
+                  value={theme}
+                  onChange={setTheme}
+                  options={[
+                    { value: "", label: "Tous les boosters" },
+                    ...summary.data.themes.map((t) => ({ value: String(t.id), label: t.name })),
+                  ]}
+                />
+              )}
               {(summary.data?.seasons.length ?? 0) > 1 && (
                 <Select
                   label="Édition"
@@ -235,7 +268,15 @@ export default function CollectionPage() {
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-            <span className="tnum text-muted">{list.data ? `${fmt(total)} carte${total > 1 ? "s" : ""}` : " "}</span>
+            <span className="tnum text-muted">
+              {list.data ? `${fmt(total)} carte${total > 1 ? "s" : ""}` : " "}
+              {themeInfo && (
+                <span className="text-faint">
+                  {" "}
+                  · {fmt(themeInfo.owned)} / {fmt(themeInfo.cardCount)} articles du booster
+                </span>
+              )}
+            </span>
             <div className="flex flex-wrap gap-2">
               {selecting ? (
                 <>

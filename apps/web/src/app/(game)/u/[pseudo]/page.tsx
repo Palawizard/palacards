@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
 import { Card, CardGrid } from "@/components/Card";
+import { MyShowcase } from "@/components/Showcase";
 import { CardSkeletons, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -175,22 +176,22 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
         ))}
       </dl>
 
-      <section>
-        <h2 className="section-title mt-0">Vitrine</h2>
-        {p.showcase.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            {p.showcase.map((c) => (
-              <Card key={c.instanceId} card={c} />
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-muted">
-            {p.isMe
-              ? "Épingle jusqu’à 5 cartes depuis leur fiche (bouton « Épingler ») pour les montrer ici."
-              : "Aucune carte épinglée pour l’instant."}
-          </p>
-        )}
-      </section>
+      {p.isMe ? (
+        <MyShowcase cards={p.showcase} onChanged={() => mutate()} />
+      ) : (
+        <section>
+          <h2 className="section-title mt-0">Vitrine</h2>
+          {p.showcase.length ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
+              {p.showcase.map((c) => (
+                <Card key={c.instanceId} card={c} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted">Aucune carte épinglée pour l’instant.</p>
+          )}
+        </section>
+      )}
 
       <section>
         <h2 className="section-title mt-0">Collection</h2>
