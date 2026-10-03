@@ -497,7 +497,8 @@ export const themeCards = pgTable(
       .references(() => themes.id, { onDelete: "cascade" }),
     cardId: bigint("card_id", { mode: "number" }).notNull(),
   },
-  (t) => [primaryKey({ columns: [t.themeId, t.cardId] })],
+  // Index sur l'article seul : thèmes d'une carte (fiche carte).
+  (t) => [primaryKey({ columns: [t.themeId, t.cardId] }), index("theme_cards_card_idx").on(t.cardId)],
 );
 
 /** Boosters à thème achetés (ou reçus par code) pas encore ouverts. */
