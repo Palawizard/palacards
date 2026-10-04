@@ -13,8 +13,11 @@ describe("isArthropod", () => {
       "espèce de myriapodes",
       "espèce de scorpions",
       "nom vernaculaire de certains insectes",
+      "nom de plusieurs sortes d'insectes",
+      "groupe d'insectes connus par divers noms vernaculaires",
       "espèce de fourmis",
-      "insecte",
+      "insecte parasite situé dans les cheveux",
+      "araignée mythique de la province de Tarente",
     ])
       expect(isArthropod({ description }), description).toBe(true);
   });

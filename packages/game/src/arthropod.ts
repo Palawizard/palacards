@@ -3,9 +3,10 @@
 // mille-pattes d'après la description courte Wikidata (« espèce d'araignées ») et la première phrase du
 // résumé (« … est une espèce de coléoptères de la famille des Carabidae »). Les crustacés restent visibles.
 //
-// Précision d'abord : un groupe de rock « Scorpions » ou le film « La Mouche » ne doivent pas être floutés.
-// Dans le résumé, seules comptent donc les tournures taxonomiques (« espèce de », « famille d' »…) et
-// « est un insecte ». La description courte, elle, ne parle que de l'article : un nom de groupe y suffit.
+// Précision d'abord : le groupe de rock « Scorpions », le film « La Mouche » ou le fourmilier (« mangeur de
+// fourmis ») ne doivent pas être floutés. Seules comptent donc les tournures qui disent ce qu'est l'article :
+// « espèce de », « famille d' », « est un insecte », ou une description courte qui commence par le groupe.
+// Vérifié sur une cinquantaine de vrais résumés (espèces, crustacés, homonymes).
 // ---------------------------------------------------------------------------
 
 /** Groupes d'arthropodes floutés (minuscules, sans accents ; singulier et pluriel). */
@@ -97,10 +98,15 @@ const BETWEEN = "(?:[a-z-]+ ){0,2}";
 const TAXON = new RegExp(`\\b${RANK} ${BETWEEN}(?:de |d'|des |du )${BETWEEN}${GROUP}\\b`);
 /** « La fourmi rousse est un insecte… », « Le faucheux est une araignée… ». */
 const IS_A = new RegExp(`\\b(?:est|sont) (?:un|une|des|le|la|les) (?:petite?s? |grande?s? )?${GROUP}\\b`);
-const IN_DESCRIPTION = new RegExp(`(?:^|[^a-z-])${GROUP}(?:$|[^a-z-])`);
-/** Descriptions courtes à ne pas flouter même si elles nomment un groupe (« groupe de hard rock », film…). */
+/** Description qui commence par le groupe : « insecte parasite… », « araignée mythique… ». */
+const STARTS_WITH = new RegExp(`^(?:petite?s? |grande?s? )?${GROUP}\\b`);
+/** « nom de plusieurs sortes d'insectes », « groupe d'insectes connus… », « nom vernaculaire de certains insectes ». */
+const KIND_OF = new RegExp(
+  `\\b(?:sortes?|types?|groupes?|ensemble|noms?(?: vernaculaires?)?) ${BETWEEN}(?:de |d'|des )${BETWEEN}${GROUP}\\b`,
+);
+/** Descriptions courtes à ne pas flouter même si elles nomment un groupe (film, album, personnage…). */
 const NOT_A_CREATURE =
-  /\b(?:groupe|album|chanson|single|film|serie|roman|livre|bande dessinee|jeu|personnage|super-heros|constellation|navire|avion|vehicule|entreprise|marque|club|equipe|logiciel|commune|village|ville|maladie)\b/;
+  /\b(?:album|chanson|single|film|serie|roman|livre|bande dessinee|jeu|personnage|super-heros|constellation|navire|avion|vehicule|entreprise|marque|club|equipe|logiciel|commune|village|ville|maladie)\b/;
 
 /** Minuscules, sans accents, apostrophes droites, espaces simples. */
 function normalize(text: string): string {
@@ -120,7 +126,7 @@ function firstSentence(text: string): string {
 export function isArthropod(summary: { description?: string | null; extract?: string | null }): boolean {
   const description = normalize(summary.description ?? "");
   if (description && !NOT_A_CREATURE.test(description)) {
-    if (TAXON.test(description) || IN_DESCRIPTION.test(description)) return true;
+    if (TAXON.test(description) || STARTS_WITH.test(description) || KIND_OF.test(description)) return true;
   }
   const extract = normalize(firstSentence(summary.extract ?? ""));
   return !!extract && (TAXON.test(extract) || IS_A.test(extract));
