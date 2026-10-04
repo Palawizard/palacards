@@ -76,6 +76,7 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "feed", until: "2026-12-01T00:00:00+01:00" },
   { key: "achievements-v2", until: "2026-12-01T00:00:00+01:00" },
   { key: "suggestions", until: "2026-12-01T00:00:00+01:00" },
+  { key: "updates", until: "2026-12-01T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */
