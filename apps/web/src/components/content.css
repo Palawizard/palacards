@@ -474,17 +474,21 @@
   padding: 1.1rem 1.25rem 1rem;
   color: var(--color-cover-ink);
 }
-.pc-broadcast[data-tone="info"] .pc-broadcast-band {
-  background-color: var(--color-cover);
+/* Couleur du ton, partagée par l'affiche et la page « Mises à jour ». */
+:is(.pc-broadcast, .pc-update-latest, .pc-update-entry) {
+  --tone: var(--color-cover);
 }
-.pc-broadcast[data-tone="update"] .pc-broadcast-band {
-  background-color: #6d28d9;
+:is(.pc-broadcast, .pc-update-latest, .pc-update-entry)[data-tone="update"] {
+  --tone: #6d28d9;
 }
-.pc-broadcast[data-tone="event"] .pc-broadcast-band {
-  background-color: #b45309;
+:is(.pc-broadcast, .pc-update-latest, .pc-update-entry)[data-tone="event"] {
+  --tone: #b45309;
 }
-.pc-broadcast[data-tone="warning"] .pc-broadcast-band {
-  background-color: #b91c1c;
+:is(.pc-broadcast, .pc-update-latest, .pc-update-entry)[data-tone="warning"] {
+  --tone: #b91c1c;
+}
+.pc-broadcast-band {
+  background-color: var(--tone);
 }
 .pc-broadcast-body {
   white-space: pre-wrap;
@@ -492,6 +496,148 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .pc-broadcast[open] .pc-broadcast-card {
+    animation-name: pc-fade-in;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Page « Mises à jour » : l'affiche du dernier message, puis le       */
+/* journal des précédents, tamponnés à leur date.                      */
+/* ------------------------------------------------------------------ */
+
+.pc-update-latest {
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 18px;
+  background: var(--color-panel);
+  box-shadow: var(--shadow-lift);
+  scroll-margin-top: 5rem;
+  animation: pc-update-in 320ms var(--ease-out) both;
+}
+.pc-update-latest .pc-broadcast-band {
+  padding: 1.15rem 1.25rem 1.1rem;
+}
+@media (min-width: 640px) {
+  .pc-update-latest .pc-broadcast-band {
+    padding-inline: 1.5rem;
+  }
+}
+
+.pc-update-body {
+  max-width: 68ch;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.pc-update-body > * + * {
+  margin-top: 0.75rem;
+}
+.pc-update-body p {
+  white-space: pre-line;
+}
+.pc-update-body ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.pc-update-body li {
+  position: relative;
+  padding-left: 1.15rem;
+}
+.pc-update-body li::before {
+  content: "";
+  position: absolute;
+  left: 0.15rem;
+  top: 0.62em;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 2px;
+  background: var(--tone);
+  transform: rotate(45deg);
+}
+
+.pc-update-entry {
+  padding: 1.25rem 0;
+  animation: pc-update-in 280ms var(--ease-out) both;
+}
+.pc-update-entry + .pc-update-entry {
+  border-top: 2px dashed var(--color-line);
+}
+.pc-update-entry:nth-child(2) {
+  animation-delay: 40ms;
+}
+.pc-update-entry:nth-child(3) {
+  animation-delay: 80ms;
+}
+.pc-update-entry:nth-child(n + 4) {
+  animation-delay: 120ms;
+}
+.pc-update-entry .pc-update-body {
+  color: var(--color-muted);
+}
+.pc-update-entry > article {
+  display: grid;
+  scroll-margin-top: 5rem;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .pc-update-entry > article {
+    grid-template-columns: 4.25rem minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+}
+
+/* Tampon de date : jour en grand, mois en capitales, encre du ton. */
+.pc-update-date {
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.45rem 0 0.4rem;
+  border: 2px solid var(--tone);
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--tone) 16%, var(--color-panel));
+  line-height: 1;
+  transform: rotate(-2deg);
+}
+.pc-update-day {
+  font-family: var(--font-sans);
+  font-stretch: 62%;
+  font-weight: 800;
+  font-size: 1.75rem;
+}
+.pc-update-month {
+  margin-top: 0.2rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.pc-update-tone {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: var(--tone);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+@keyframes pc-update-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-update-latest,
+  .pc-update-entry {
     animation-name: pc-fade-in;
   }
 }

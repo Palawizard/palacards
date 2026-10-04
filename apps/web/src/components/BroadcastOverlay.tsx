@@ -1,20 +1,14 @@
 "use client";
 
 import type { BroadcastDTO } from "@palacards/shared";
-import { ExternalLink, Megaphone, Rocket, Siren, Sparkles, type LucideIcon } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { BROADCAST_TONE as TONE } from "@/lib/broadcasts";
 import { useConnection, useMe, useSocketEvent } from "@/lib/game";
 import { play } from "@/lib/sfx";
 import "./content.css";
-
-const TONE: Record<BroadcastDTO["tone"], { label: string; icon: LucideIcon }> = {
-  info: { label: "Message de l'équipe", icon: Megaphone },
-  update: { label: "Mise à jour", icon: Rocket },
-  event: { label: "Événement", icon: Sparkles },
-  warning: { label: "Important", icon: Siren },
-};
 
 /**
  * Messages serveur de l'admin, posés par-dessus la page : ceux envoyés pendant que le joueur est là
