@@ -391,4 +391,40 @@ describe("messages serveur", () => {
       (await admin.post("/admin/broadcasts", { title: "x", body: "y", linkUrl: "javascript:alert(1)" })).status,
     ).toBe(400);
   });
+
+  it("garde l'historique des messages envoyés pour la page Mises à jour", async () => {
+    const admin = await signUpAdmin(app, ctx);
+    const p = await signUp(app);
+    const first = await admin.post("/admin/broadcasts", {
+      title: "Historique 1",
+      body: "Un",
+      tone: "update",
+      send: true,
+    });
+    const second = await admin.post("/admin/broadcasts", {
+      title: "Historique 2",
+      body: "• Deux\n• Trois",
+      tone: "event",
+      linkUrl: "/boss",
+      linkLabel: "Voir le boss",
+      send: true,
+    });
+    const draft = await admin.post("/admin/broadcasts", { title: "Historique brouillon", body: "Pas encore" });
+    const archived = await admin.post("/admin/broadcasts", { title: "Historique archivé", body: "Retiré", send: true });
+    await admin.post(`/admin/broadcasts/${archived.body.id}/archive`);
+
+    // Même un message déjà fermé reste lisible dans l'historique, du plus récent au plus ancien.
+    await p.post(`/broadcasts/${first.body.id}/read`);
+    const list = (await p.get("/broadcasts")).body as { id: number; title: string }[];
+    const ids = list.map((m) => m.id);
+    expect(ids).toContain(first.body.id);
+    expect(ids.indexOf(second.body.id)).toBeLessThan(ids.indexOf(first.body.id));
+    expect(ids).not.toContain(draft.body.id);
+    expect(ids).not.toContain(archived.body.id);
+    expect(list.find((m) => m.id === second.body.id)).toMatchObject({
+      tone: "event",
+      linkUrl: "/boss",
+      linkLabel: "Voir le boss",
+    });
+  });
 });
