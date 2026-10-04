@@ -384,18 +384,28 @@ describe("collection et recyclage", () => {
     expect(await showcase()).toEqual([]);
   });
 
-  it("« tout sélectionner » renvoie les cartes recyclables du filtre, sans les protégées", async () => {
+  it("« tout sélectionner » renvoie les cartes du filtre, les protégées marquées comme telles", async () => {
     // Restent : cards[1] engagée (vente), cards[3] favorite, et les autres libres (cards[0] est recyclée).
     const all = await p.get("/collection/selectable");
     expect(all.status).toBe(200);
-    const ids = all.body.items.map((i: { id: number }) => i.id).sort((a: number, b: number) => a - b);
-    const free = cards
-      .slice(2)
-      .filter((_, i) => i !== 1)
-      .map((c) => c.instanceId)
-      .sort((a, b) => a - b);
-    expect(ids).toEqual(free);
+    const items = all.body.items as { id: number; protected: boolean; favorite: boolean }[];
+    const ids = items.map((i) => i.id).sort((a, b) => a - b);
+    expect(ids).toEqual(
+      cards
+        .slice(1)
+        .map((c) => c.instanceId)
+        .sort((a, b) => a - b),
+    );
+    const free = items.filter((i) => !i.protected).map((i) => i.id);
+    expect(free.sort((a, b) => a - b)).toEqual(
+      cards
+        .slice(2)
+        .filter((_, i) => i !== 1)
+        .map((c) => c.instanceId)
+        .sort((a, b) => a - b),
+    );
     expect(all.body.protected).toBe(2);
+    expect(items.find((i) => i.id === cards[3]!.instanceId)).toMatchObject({ favorite: true, protected: true });
     expect(all.body.truncated).toBe(false);
 
     // Même filtre que la liste : une rareté ne renvoie que les exemplaires de cette rareté.
@@ -403,7 +413,10 @@ describe("collection et recyclage", () => {
     const filtered = await p.get(`/collection/selectable?rarity=${rarity}&sort=rarity`);
     expect(filtered.body.items.length).toBeGreaterThan(0);
     expect(filtered.body.items.every((i: { rarity: string }) => i.rarity === rarity)).toBe(true);
-    expect((await p.get("/collection/selectable?favorites=true")).body).toMatchObject({ items: [], protected: 1 });
+    expect((await p.get("/collection/selectable?favorites=only")).body).toMatchObject({
+      items: [{ id: cards[3]!.instanceId, protected: true }],
+      protected: 1,
+    });
 
     // Chacun ne voit que sa collection.
     const other = await signUp(app);
