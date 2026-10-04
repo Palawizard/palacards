@@ -134,6 +134,11 @@ export async function deleteBroadcast(ctx: Ctx, id: number) {
 
 /** Derniers messages envoyés (historique « Nouveautés »). */
 export async function recentBroadcasts(ctx: Ctx, limit = 20): Promise<BroadcastDTO[]> {
-  const rows = await ctx.db.select().from(b).where(eq(b.status, "sent")).orderBy(desc(b.sentAt)).limit(limit);
+  const rows = await ctx.db
+    .select()
+    .from(b)
+    .where(eq(b.status, "sent"))
+    .orderBy(desc(b.sentAt), desc(b.id))
+    .limit(limit);
   return rows.map(toDTO);
 }
