@@ -23,6 +23,7 @@ import { useCardMedia } from "@/lib/media";
 import { play } from "@/lib/sfx";
 import { PHONE_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { Card, SparkStar } from "./Card";
+import { CardImage } from "./CardImage";
 import { FX_DURATION, isFxTier, RevealFx, SHINY_FX_DURATION, ShinyFx, type FxTier } from "./RevealFx";
 
 type Speed = "normal" | "fast" | "instant";
@@ -661,8 +662,7 @@ function Thumb({ card }: { card: CardDTO }) {
       className="relative block aspect-[5/7] w-9 shrink-0 overflow-hidden rounded-[5px] bg-sticker shadow-[0_0_0_2px_var(--r),var(--shadow-lift)]"
     >
       {src ? (
-        // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia servies telles quelles
-        <img src={src} alt="" loading="lazy" decoding="async" className="absolute inset-0 size-full object-cover" />
+        <CardImage cardId={card.cardId} src={src} revealable={false} />
       ) : (
         <span className="grid size-full place-items-center font-display text-lg uppercase text-sticker-muted">
           {card.title.slice(0, 1)}

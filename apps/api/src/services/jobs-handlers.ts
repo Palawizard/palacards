@@ -1,5 +1,6 @@
 import type { Ctx } from "../context.js";
 import { sweepBattles } from "./battles.js";
+import { backfillOwnedSummaries, SUMMARY_BACKFILL_JOB } from "./collection.js";
 import { BOSS_FINALIZE_JOB, finalizeBosses } from "./boss.js";
 import { purgeOldPulls, startWeirdRefresh, WEIRD_REFRESH_JOB } from "./feed.js";
 import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
@@ -41,7 +42,13 @@ export function registerJobs(ctx: Ctx) {
   ctx.jobs.schedule(PRIVACY_PURGE_JOB, "30 4 * * *", async () => {
     ctx.log.info(await purgeExpired(ctx), "purge des données expirées");
   });
-  // Boss du jour : lot de consolation des boss restés debout, juste après minuit (heure de Paris).
+  // Résumés Wikipédia des cartes possédées encore absents du cache (recherche « dans le résumé »).
+  ctx.jobs.schedule(SUMMARY_BACKFILL_JOB, "*/10 * * * *", async () => {
+    const loaded = await backfillOwnedSummaries(ctx);
+    if (loaded) ctx.log.info({ loaded }, "résumés des cartes possédées");
+  });
+  // Boss du jour, juste après minuit (heure de Paris) : consolation si le boss a tenu, sinon retardataires
+  // et meilleur assaillant.
   ctx.jobs.schedule(BOSS_FINALIZE_JOB, "5 0 * * *", async () => {
     await finalizeBosses(ctx);
   });

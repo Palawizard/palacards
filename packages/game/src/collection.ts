@@ -34,6 +34,54 @@ export function isBetterCopy(a: CopyRank, b: CopyRank): boolean {
   return a.id < b.id;
 }
 
+/** Exemplaire vu par la fusion en masse. */
+export interface FusionCopy extends CopyRank {
+  cardId: number;
+  /** Peut être consommé : dans les filtres en cours, ni favori, ni brillant, ni épinglé, ni engagé. */
+  consumable: boolean;
+  /** Engagé dans une vente ou un échange : ne peut pas recevoir de fusion. */
+  locked: boolean;
+}
+
+export interface FusionPlan {
+  cardId: number;
+  targetId: number;
+  fromLevel: number;
+  toLevel: number;
+  /** Exemplaires consommés, du plus faible au moins faible. */
+  sourceIds: number[];
+}
+
+/**
+ * Fusion en masse : pour chaque article, les doublons consommables (du plus faible au plus fort) montent
+ * le meilleur exemplaire (règle de `isBetterCopy`, comme la fusion à l'unité) jusqu'au niveau maximal.
+ * Rien si ce meilleur exemplaire est engagé ou déjà au maximum ; les doublons en trop restent.
+ */
+export function planFusions(copies: FusionCopy[]): FusionPlan[] {
+  const byCard = new Map<number, FusionCopy[]>();
+  for (const c of copies) byCard.set(c.cardId, [...(byCard.get(c.cardId) ?? []), c]);
+  const plans: FusionPlan[] = [];
+  for (const [cardId, group] of byCard) {
+    if (group.length < 2) continue;
+    const target = group.reduce((best, c) => (isBetterCopy(c, best) ? c : best));
+    const room = MAX_LEVEL - target.level;
+    if (target.locked || room <= 0) continue;
+    const sources = group
+      .filter((c) => c.id !== target.id && c.consumable)
+      .sort((a, b) => (isBetterCopy(a, b) ? 1 : -1))
+      .slice(0, room);
+    if (!sources.length) continue;
+    plans.push({
+      cardId,
+      targetId: target.id,
+      fromLevel: target.level,
+      toLevel: target.level + sources.length,
+      sourceIds: sources.map((c) => c.id),
+    });
+  }
+  return plans.sort((a, b) => a.targetId - b.targetId);
+}
+
 /**
  * Score de collection : somme des points de rareté sur les cartes **uniques** (un article compte une fois,
  * à sa meilleure rareté possédée). Récompense la diversité plutôt que les doublons.

@@ -2,7 +2,7 @@
 
 import { bossDamage, bossHitBase, RARITY_LABELS } from "@palacards/game";
 import type { BossDTO, BossLiveDTO, CardDTO, Page } from "@palacards/shared";
-import { Check, Crown, Sword, X, Zap } from "lucide-react";
+import { Check, Crown, Sword, Users, X, Zap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -94,6 +94,34 @@ function Gauge({ boss, hit }: { boss: BossDTO; hit: { key: number; damage: numbe
           <span className="ml-1.5 font-sans text-xs font-semibold text-cover-ink [font-stretch:100%]">{hit.name}</span>
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Boss tombé : les retardataires peuvent encore toucher la récompense en finissant un assaut (« renfort »),
+ * et le paquet du meilleur assaillant n'est attribué qu'à minuit.
+ */
+function Reinforcement({ boss, left }: { boss: BossDTO; left: number }) {
+  const { pw, packs } = boss.rewards.kill;
+  const [title, body] = boss.rewarded
+    ? [
+        "Récompense touchée",
+        `Tes assauts comptent encore pour la place de meilleur assaillant, désignée à minuit (${boss.rewards.mvpPacks} paquet bonus de plus).`,
+      ]
+    : left > 0
+      ? [
+          "Pas trop tard pour un renfort",
+          `Finis un assaut avant minuit : tu touches toi aussi ${fmt(pw)} PW et ${packs} paquets bonus.`,
+        ]
+      : ["Renfort en cours", "Termine ton assaut pour toucher la récompense de la chute."];
+  return (
+    <div className="pc-boss-reinforce" data-rewarded={boss.rewarded || undefined} role="status">
+      <Users className="mt-0.5 size-5 shrink-0" aria-hidden />
+      <p className="min-w-0 text-sm">
+        <span className="block font-semibold text-text">{title}</span>
+        <span className="text-muted">{body}</span>
+      </p>
     </div>
   );
 }
@@ -316,7 +344,7 @@ function AssaultPanel({
             label={`Ta carte (${RARITY_LABELS[q.card.rarity].toLowerCase()}), face cachée jusqu'à ta réponse`}
           />
         ) : (
-          <Card card={q.card} href={null} />
+          <Card card={q.card} href={null} revealable />
         )}
       </div>
       <div className="flex flex-col gap-3">
@@ -421,12 +449,12 @@ export default function BossPage() {
       <div>
         <h1 className="page-title">Boss du jour</h1>
         <p className="hatnote mt-2">
-          Une Légendaire à abattre ensemble avant minuit. Deux assauts par jour et par joueur ; s&apos;il tombe, chaque
-          assaillant gagne{" "}
+          Une Légendaire à abattre ensemble avant minuit, avec des PV à la mesure des assaillants habituels. Deux
+          assauts par jour et par joueur ; s&apos;il tombe, chaque assaillant gagne{" "}
           {data
             ? `${fmt(data.rewards.kill.pw)} PW et ${data.rewards.kill.packs} paquets bonus`
             : "des PW et des paquets"}
-          , le meilleur un paquet de plus.
+          , même en renfort après la chute. Le meilleur de la journée, désigné à minuit, gagne un paquet de plus.
         </p>
       </div>
 
@@ -469,7 +497,7 @@ export default function BossPage() {
                       {i === 0 && (
                         <Crown
                           className="mr-1 inline size-3.5 align-[-0.1rem] text-warn"
-                          aria-label="Meilleur assaillant"
+                          aria-label="En tête : un paquet bonus de plus à minuit"
                         />
                       )}
                       {r.me ? "Toi" : r.name} · {fmt(r.damage)}
@@ -477,12 +505,19 @@ export default function BossPage() {
                   ))}
                 </ol>
               )}
+              {data.killedAt && <Reinforcement boss={data} left={left} />}
             </div>
           </section>
 
           <section aria-labelledby="assault-title" className="infobox">
             <h2 id="assault-title" className="infobox-head flex flex-wrap items-baseline justify-between gap-2">
-              <span>{running ? `Assaut ${data.current!.number}` : "Ton assaut"}</span>
+              <span>
+                {running
+                  ? `Assaut ${data.current!.number}`
+                  : data.killedAt && !data.rewarded
+                    ? "Ton renfort"
+                    : "Ton assaut"}
+              </span>
               <span className="tnum font-sans text-sm font-semibold normal-case text-muted [font-stretch:100%]">
                 {fmt(data.myDamage)} dégâts aujourd&apos;hui · {left} assaut{left > 1 ? "s" : ""} restant
                 {left > 1 ? "s" : ""}

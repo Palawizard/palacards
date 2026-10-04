@@ -102,6 +102,8 @@ export const wikiSummaries = pgTable("wiki_summaries", {
   pageUrl: text("page_url"),
   /** Description courte (Wikidata) : questions « C'est quoi ? » des duels. */
   description: text("description"),
+  /** Article d'arthropode (option « flouter les arthropodes ») ; null : pas encore calculé depuis ce résumé. */
+  arthropod: boolean("arthropod"),
   /** Version du cache : 1 = avant la description (rechargée à la demande par les duels). */
   version: smallint("version").notNull().default(2),
   status: text("status", { enum: ["ok", "missing", "error"] }).notNull(),
@@ -209,6 +211,8 @@ export const players = pgTable(
     autoRecycleMax: text("auto_recycle_max", { enum: ["C", "PC", "R", "SR"] }),
     /** Garder les articles jamais possédés malgré le recyclage automatique. */
     autoRecycleKeepNew: boolean("auto_recycle_keep_new").notNull().default(true),
+    /** Images d'arthropodes (araignées, insectes…) floutées jusqu'au clic. */
+    hideArthropods: boolean("hide_arthropods").notNull().default(false),
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
     loginStreak: integer("login_streak").notNull().default(0),
     lastLoginDay: date("last_login_day"),
@@ -871,7 +875,7 @@ export const bossDays = pgTable(
     hp: integer("hp").notNull(),
     killedAt: tstz("killed_at"),
     killedBy: text("killed_by").references(() => user.id, { onDelete: "set null" }),
-    /** Récompenses de consolation versées (boss survivant à minuit). */
+    /** Journée close à minuit : consolation (boss debout) ou meilleur assaillant et retardataires payés (boss tombé). */
     finalizedAt: tstz("finalized_at"),
   },
   (t) => [check("boss_days_hp_ok", sql`${t.hp} >= 0 AND ${t.hp} <= ${t.maxHp}`)],
@@ -893,6 +897,20 @@ export const bossAssaults = pgTable(
     uniqueIndex("boss_assaults_day_user_uq").on(t.day, t.userId, t.number),
     index("boss_assaults_day_idx").on(t.day),
   ],
+);
+
+/**
+ * Récompense de chute du boss versée à un joueur pour un jour : une seule fois, que ce soit à la chute,
+ * en renfort (assaut fini après la chute) ou au rattrapage de minuit.
+ */
+export const bossRewards = pgTable(
+  "boss_rewards",
+  {
+    day: date("day").notNull(),
+    userId: userRef("user_id").notNull(),
+    paidAt: tstz("paid_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.userId] })],
 );
 
 /** Question d'un assaut : carte jouée, question (bonne réponse comprise, jamais envoyée avant la réponse). */

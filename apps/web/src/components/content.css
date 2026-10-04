@@ -315,6 +315,21 @@
   filter: grayscale(0.85) brightness(0.8);
   transition: filter 600ms ease;
 }
+/* Après la chute : bandeau de renfort, pointillé jaune pochette tant que la récompense reste à prendre. */
+.pc-boss-reinforce {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 2px dashed color-mix(in oklab, var(--color-accent) 70%, var(--color-line-strong));
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--color-accent) 9%, var(--color-panel));
+  color: var(--color-highlight);
+}
+.pc-boss-reinforce[data-rewarded] {
+  border-color: var(--color-line-strong);
+  background: var(--color-panel-2);
+  color: var(--color-good);
+}
 /* Choix des cartes de l'assaut. */
 .pc-boss-pick {
   transition: transform 160ms var(--ease-out);

@@ -8,7 +8,7 @@ import {
   shareLine,
   titlePattern,
 } from "./article.js";
-import { bossDamage, bossHit, bossHitBase, BOSS_MAX_HP } from "./boss.js";
+import { bossDamage, bossHit, bossHitBase, bossMaxHp, BOSS_HP_CAP, BOSS_MIN_HP } from "./boss.js";
 import type { GameEvent } from "./achievements.js";
 import { autoRecyclePicks, isBetterCopy } from "./collection.js";
 import { weirdGenresOfTitle } from "./feed.js";
@@ -157,7 +157,20 @@ describe("boss du jour", () => {
   it("peut tomber avec dix joueurs moyens (2 assauts de 5 questions)", () => {
     // 65 % de bonnes réponses dont un quart de critiques, cartes à 2 500 ATK.
     const perQuestion = 0.4 * 65 + 0.25 * 98;
-    expect(10 * 2 * 5 * perQuestion).toBeGreaterThan(BOSS_MAX_HP);
+    expect(10 * 2 * 5 * perQuestion).toBeGreaterThan(bossMaxHp(10));
+  });
+
+  it("a des PV à la mesure des assaillants habituels, sans tomber en un rush de minuit", () => {
+    const perPlayerPerDay = 2 * 5 * (0.4 * 65 + 0.25 * 98);
+    expect(bossMaxHp(0)).toBe(BOSS_MIN_HP);
+    expect(bossMaxHp(Number.NaN)).toBe(BOSS_MIN_HP);
+    expect(bossMaxHp(8)).toBe(BOSS_MIN_HP);
+    expect(bossMaxHp(20)).toBe(9_000);
+    expect(bossMaxHp(20.4)).toBe(9_250);
+    expect(bossMaxHp(1e9)).toBe(BOSS_HP_CAP);
+    // Vingt habitués : la moitié d'entre eux (le rush de minuit) ne suffit pas, presque tous oui.
+    expect(10 * perPlayerPerDay).toBeLessThan(bossMaxHp(20));
+    expect(19 * perPlayerPerDay).toBeGreaterThan(bossMaxHp(20));
   });
 });
 
