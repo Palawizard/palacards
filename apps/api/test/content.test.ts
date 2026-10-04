@@ -1,7 +1,8 @@
 import { eq, schema, sql } from "@palacards/db";
-import { BOSS_REWARDS, passReward, xpForLevel } from "@palacards/game";
+import { BOSS_HP_PER_PLAYER, BOSS_MIN_HP, BOSS_REWARDS, passReward, xpForLevel } from "@palacards/game";
 import type { QuestDTO } from "@palacards/shared";
 import { afterAll, describe, expect, it } from "vitest";
+import { bossOfDay, finalizeBosses } from "../src/services/boss.js";
 import { STATS_VERSION, progressionIdle } from "../src/services/progression.js";
 import { achievementPw, makeApp, signUp, signUpAdmin, type Client } from "./helpers.js";
 
@@ -227,27 +228,113 @@ describe("boss du jour", () => {
     if (visible) expect(hit.card.title).toBe(visible);
   });
 
-  it("paie tous les participants quand le boss tombe", async () => {
+  it("paie les participants à la chute, puis chaque renfort une seule fois", async () => {
     const a = await signUp(app);
     const b = await signUp(app);
+    const c = await signUp(app);
     const idsA = await fiveCards(a);
     const idsB = await fiveCards(b);
+    const idsC = await fiveCards(c);
     // B a déjà participé ; on met le boss à 1 PV pour que le premier coup juste de A le tue.
     await b.post("/boss/assault", { instanceIds: idsB });
     await playAssault(b, false);
     const day = (await a.get("/boss")).body.day as string;
-    await ctx.db.update(schema.bossDays).set({ hp: 1 }).where(eq(schema.bossDays.day, day));
+    await ctx.db
+      .update(schema.bossDays)
+      .set({ hp: 1, killedAt: null, finalizedAt: null })
+      .where(eq(schema.bossDays.day, day));
     await a.post("/boss/assault", { instanceIds: idsA });
     const end = await playAssault(a, true);
     expect(end.hp).toBe(0);
     expect(end.killedAt).not.toBeNull();
+    expect(end.rewarded).toBe(true);
     await progressionIdle();
     for (const p of [a, b]) {
       expect(await ledgerSum(p.userId, "boss")).toBe(BOSS_REWARDS.kill.pw);
-      expect(await ledgerSum(p.userId, "boss", "bonus_pack")).toBeGreaterThanOrEqual(BOSS_REWARDS.kill.packs);
+      // Le paquet du meilleur assaillant attend minuit.
+      expect(await ledgerSum(p.userId, "boss", "bonus_pack")).toBe(BOSS_REWARDS.kill.packs);
     }
-    // Les vieux participants (assauts précédents) sont payés aussi : on ne repaie personne deux fois.
-    await ctx.db.update(schema.bossDays).set({ hp: 0 }).where(eq(schema.bossDays.day, day));
+
+    // C arrive après la chute : rien tant qu'il n'a pas fini un assaut, puis la même récompense.
+    const before = (await c.get("/boss")).body;
+    expect(before.rewarded).toBe(false);
+    expect((await c.get("/me")).body.boss).toMatchObject({ alive: false, rewarded: false, assaultsLeft: 2 });
+    await c.post("/boss/assault", { instanceIds: idsC });
+    expect(await ledgerSum(c.userId, "boss")).toBe(0);
+    const after = await playAssault(c, false);
+    expect(after.current.finished).toBe(true);
+    expect(after.rewarded).toBe(true);
+    await progressionIdle();
+    expect(await ledgerSum(c.userId, "boss")).toBe(BOSS_REWARDS.kill.pw);
+    expect(await ledgerSum(c.userId, "boss", "bonus_pack")).toBe(BOSS_REWARDS.kill.packs);
+    const [notif] = await ctx.db.execute<{ payload: { late: boolean } }>(
+      sql`select payload from notifications where user_id = ${c.userId} and type = 'boss_killed'`,
+    );
+    expect(notif?.payload.late).toBe(true);
+
+    // Deuxième assaut de renfort, et un autre de A : personne n'est payé deux fois.
+    await c.post("/boss/assault", { instanceIds: idsC });
+    await playAssault(c, false);
+    await a.post("/boss/assault", { instanceIds: idsA });
+    await playAssault(a, false);
+    for (const p of [a, c]) expect(await ledgerSum(p.userId, "boss")).toBe(BOSS_REWARDS.kill.pw);
+  });
+
+  it("clôt à minuit : retardataires payés, paquet au meilleur assaillant, une seule fois", async () => {
+    const top = await signUp(app);
+    const paid = await signUp(app);
+    const [today] = await ctx.db.select().from(schema.bossDays).limit(1);
+    const day = "2001-02-03";
+    await ctx.db.delete(schema.bossDays).where(eq(schema.bossDays.day, day));
+    await ctx.db.insert(schema.bossDays).values({
+      day,
+      cardId: today!.cardId,
+      season: today!.season,
+      maxHp: 4_000,
+      hp: 0,
+      killedAt: new Date("2001-02-03T12:00:00Z"),
+    });
+    // Le meilleur a lancé son assaut avant la chute mais ne l'a jamais fini ; l'autre a été payé à la chute.
+    await ctx.db.insert(schema.bossAssaults).values([
+      { day, userId: top.userId, number: 1, damage: 500, startedAt: new Date("2001-02-03T13:00:00Z") },
+      {
+        day,
+        userId: paid.userId,
+        number: 1,
+        damage: 100,
+        startedAt: new Date("2001-02-03T11:00:00Z"),
+        finishedAt: new Date("2001-02-03T11:05:00Z"),
+      },
+    ]);
+    await ctx.db.insert(schema.bossRewards).values({ day, userId: paid.userId });
+    await finalizeBosses(ctx);
+    await finalizeBosses(ctx);
+    await progressionIdle();
+    expect(await ledgerSum(top.userId, "boss")).toBe(BOSS_REWARDS.kill.pw);
+    expect(await ledgerSum(top.userId, "boss", "bonus_pack")).toBe(BOSS_REWARDS.kill.packs + BOSS_REWARDS.mvpPacks);
+    expect(await ledgerSum(paid.userId, "boss")).toBe(0);
+    expect(await ledgerSum(paid.userId, "boss", "bonus_pack")).toBe(0);
+    const types = await ctx.db.execute<{ type: string }>(
+      sql`select type from notifications where user_id = ${top.userId} order by id`,
+    );
+    expect(types.map((t) => t.type)).toEqual(expect.arrayContaining(["boss_killed", "boss_mvp"]));
+    const stats = await ctx.db.select().from(schema.playerStats).where(eq(schema.playerStats.userId, top.userId));
+    expect(stats.find((x) => x.key === "boss_mvp")?.value).toBe(1);
+  });
+
+  it("donne au boss des PV à la mesure des assaillants habituels", async () => {
+    const players = await Promise.all(Array.from({ length: 12 }, () => signUp(app)));
+    // Douze assaillants par jour sur la semaine écoulée (et un jour sans boss, ignoré).
+    const days = ["2098-12-26", "2098-12-28", "2098-12-30", "2098-12-31"];
+    await ctx.db
+      .insert(schema.bossAssaults)
+      .values(days.flatMap((day) => players.map((p) => ({ day, userId: p.userId, number: 1 }))));
+    const boss = await bossOfDay(ctx, "2099-01-01");
+    expect(boss.maxHp).toBe(Math.max(BOSS_MIN_HP, Math.ceil((12 * BOSS_HP_PER_PLAYER) / 250) * 250));
+    expect(boss.maxHp).toBeGreaterThan(BOSS_MIN_HP);
+    expect(boss.hp).toBe(boss.maxHp);
+    // Sans historique : le minimum.
+    expect((await bossOfDay(ctx, "2099-06-01")).maxHp).toBe(BOSS_MIN_HP);
   });
 });
 

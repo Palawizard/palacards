@@ -871,7 +871,7 @@ export const bossDays = pgTable(
     hp: integer("hp").notNull(),
     killedAt: tstz("killed_at"),
     killedBy: text("killed_by").references(() => user.id, { onDelete: "set null" }),
-    /** Récompenses de consolation versées (boss survivant à minuit). */
+    /** Journée close à minuit : consolation (boss debout) ou meilleur assaillant et retardataires payés (boss tombé). */
     finalizedAt: tstz("finalized_at"),
   },
   (t) => [check("boss_days_hp_ok", sql`${t.hp} >= 0 AND ${t.hp} <= ${t.maxHp}`)],
@@ -893,6 +893,20 @@ export const bossAssaults = pgTable(
     uniqueIndex("boss_assaults_day_user_uq").on(t.day, t.userId, t.number),
     index("boss_assaults_day_idx").on(t.day),
   ],
+);
+
+/**
+ * Récompense de chute du boss versée à un joueur pour un jour : une seule fois, que ce soit à la chute,
+ * en renfort (assaut fini après la chute) ou au rattrapage de minuit.
+ */
+export const bossRewards = pgTable(
+  "boss_rewards",
+  {
+    day: date("day").notNull(),
+    userId: userRef("user_id").notNull(),
+    paidAt: tstz("paid_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.userId] })],
 );
 
 /** Question d'un assaut : carte jouée, question (bonne réponse comprise, jamais envoyée avant la réponse). */
