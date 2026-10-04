@@ -9,9 +9,16 @@ afterAll(() => app.close());
 
 const ci = schema.cardInstances;
 
-/** Ouvre un paquet ; sans brillante tirée au hasard, pour des comptes exacts. */
-async function freshCollection(p: Client) {
-  const cards = (await p.post("/packs/open")).body.cards as { instanceId: number; cardId: number; rarity: string }[];
+/**
+ * Ouvre un paquet ; sans brillante ni doublon tirés au hasard, pour des comptes exacts (avec peu de cartes
+ * légendaires ou UR dans la base de test, un paquet sort parfois deux fois le même article).
+ */
+async function freshCollection(p: Client, { unique = true } = {}) {
+  const pulled = (await p.post("/packs/open")).body.cards as { instanceId: number; cardId: number; rarity: string }[];
+  const seen = new Set<number>();
+  const cards = unique ? pulled.filter((c) => !seen.has(c.cardId) && seen.add(c.cardId)) : pulled;
+  const twins = pulled.filter((c) => !cards.includes(c)).map((c) => c.instanceId);
+  if (twins.length) await ctx.db.delete(ci).where(inArray(ci.id, twins));
   await ctx.db.update(ci).set({ shiny: false }).where(eq(ci.ownerId, p.userId));
   await progressionIdle();
   return cards;
@@ -181,7 +188,7 @@ describe("fusion en masse des doublons", () => {
 describe("collection d'un autre joueur (échanges)", () => {
   it("se parcourt en entier, page par page, filtrée par rareté et brillantes, sans favoris ni vues", async () => {
     const owner = await signUp(app);
-    for (let i = 0; i < 7; i++) await freshCollection(owner);
+    for (let i = 0; i < 7; i++) await freshCollection(owner, { unique: false });
     const viewer = await signUp(app);
     const url = `/players/${owner.username}/collection`;
     const first = await viewer.get(`${url}?limit=30`);
