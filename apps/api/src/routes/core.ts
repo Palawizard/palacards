@@ -1,5 +1,5 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
-import { AUTO_RECYCLE_RARITIES, parisDay, RARITIES } from "@palacards/game";
+import { AUTO_RECYCLE_RARITIES, parisDay, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
 import { avatarSchema, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -7,15 +7,22 @@ import { requireUser, type Ctx } from "../context.js";
 import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
 import { answeringQuestion } from "../services/battles.js";
-import { cardSheet, catalog } from "../services/cards.js";
+import { arthropodFlags, cardSheet, catalog } from "../services/cards.js";
 import {
+  bulkTag,
   completion,
   duplicateIds,
   fuse,
+  fuseDuplicates,
+  fusionPreview,
   listCollection,
+  loadOwnedSummaries,
+  ownInstances,
   recycle,
   selectableIds,
+  SELECT_ALL_MAX,
   setFavorite,
+  setFavorites,
   setPinned,
   setShowcase,
   setTags,
@@ -97,6 +104,7 @@ export async function me(
     ...user,
     avatar: p.avatar,
     animationSpeed: p.animationSpeed,
+    hideArthropods: p.hideArthropods,
     autoRecycle: { max: p.autoRecycleMax, keepNew: p.autoRecycleKeepNew },
     wallet: wallet(p),
     packs: packState(p, ctx.now()),
@@ -143,6 +151,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
           avatar: avatarSchema.nullable().optional(),
           autoRecycleMax: z.enum(AUTO_RECYCLE_RARITIES).nullable().optional(),
           autoRecycleKeepNew: z.boolean().optional(),
+          hideArthropods: z.boolean().optional(),
         })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
       req.body,
@@ -195,9 +204,15 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     season: intParam.positive().optional(),
     tag: z.string().max(24).optional(),
     theme: intParam.positive().optional(),
-    favorites: z.stringbool().optional(),
+    // `true` : ancienne forme de « seulement les favorites ».
+    favorites: z
+      .enum(["true", "only", "exclude"])
+      .optional()
+      .transform((v) => (v === "true" ? "only" : v)),
+    shiny: z.stringbool().optional(),
     duplicates: z.stringbool().optional(),
     q: z.string().max(100).optional(),
+    inSummary: z.stringbool().optional(),
   });
   api.get("/collection", auth, async (req) => {
     const q = parse(
@@ -208,12 +223,27 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       }),
       req.query,
     );
+    if (q.inSummary && q.q?.trim()) loadOwnedSummaries(ctx, req.user.id);
     return listCollection(ctx, req.user.id, q, req.user.id);
   });
   // « Tout sélectionner » : les exemplaires recyclables du filtre en cours (paramètres de GET /collection).
   api.get("/collection/selectable", auth, async (req) =>
     selectableIds(ctx, req.user.id, parse(collectionFilters, req.query)),
   );
+  // Ses propres exemplaires par id (échange ouvert depuis une fiche carte : la carte proposée d'office).
+  api.get("/collection/instances", auth, async (req) => {
+    const { ids } = parse(
+      z.object({
+        ids: z
+          .string()
+          .max(400)
+          .transform((v) => v.split(",").map(Number))
+          .pipe(z.array(z.number().int().positive()).min(1).max(TRADE_MAX_CARDS_PER_SIDE)),
+      }),
+      req.query,
+    );
+    return ownInstances(ctx, req.user.id, ids);
+  });
   api.get("/collection/summary", auth, async (req) => completion(ctx, req.user.id));
   api.get("/collection/tags", auth, async (req) => tagCounts(ctx, req.user.id));
   // Vitrine entière d'un coup (ajout, retrait, nouvel ordre) : les identifiants dans l'ordre d'affichage.
@@ -224,6 +254,27 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     return setShowcase(ctx, req.user.id, instanceIds);
   });
+  // Actions en masse sur une sélection (jusqu'à « Tout sélectionner ») : favoris et tags.
+  const bulkIds = z.array(z.number().int().positive()).min(1).max(SELECT_ALL_MAX);
+  api.post("/collection/favorite", auth, async (req) => {
+    const { instanceIds, favorite } = parse(z.object({ instanceIds: bulkIds, favorite: z.boolean() }), req.body);
+    return setFavorites(ctx, req.user.id, instanceIds, favorite);
+  });
+  api.post("/collection/tags", auth, async (req) => {
+    const tag = z.string().trim().min(1).max(24);
+    const body = parse(
+      z.union([z.object({ instanceIds: bulkIds, add: tag }), z.object({ instanceIds: bulkIds, remove: tag })]),
+      req.body,
+    );
+    return bulkTag(ctx, req.user.id, body.instanceIds, "add" in body ? { add: body.add } : { remove: body.remove });
+  });
+  // Fusion en masse des doublons du filtre en cours : aperçu (GET), puis application (POST, mêmes filtres).
+  api.get("/collection/fusions", auth, async (req) =>
+    fusionPreview(ctx, req.user.id, parse(collectionFilters, req.query)),
+  );
+  api.post("/collection/fusions", auth, async (req) =>
+    fuseDuplicates(ctx, req.user.id, parse(collectionFilters, req.query)),
+  );
   api.post("/collection/:id/favorite", auth, async (req) => {
     const { id } = parse(idParams, req.params);
     const { favorite } = parse(z.object({ favorite: z.boolean() }), req.body);
@@ -283,6 +334,20 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     if (await answeringQuestion(ctx, req.user.id)) throw duelInProgress();
     return catalog(ctx, req.user.id, q);
+  });
+  // Option « flouter les arthropodes » : lesquelles de ces cartes en montrent un (par lots, depuis l'affichage).
+  api.get("/cards/arthropods", auth, async (req) => {
+    const { ids } = parse(
+      z.object({
+        ids: z
+          .string()
+          .max(4000)
+          .transform((v) => v.split(",").map(Number))
+          .pipe(z.array(z.number().int().positive()).min(1).max(200)),
+      }),
+      req.query,
+    );
+    return arthropodFlags(ctx, req.user.id, ids);
   });
   api.get("/cards/:id", { ...auth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req) => {
     const { id } = parse(idParams, req.params);

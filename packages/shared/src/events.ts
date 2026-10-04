@@ -18,6 +18,8 @@ export interface CardMedia {
   thumbUrl: string | null;
   extract: string | null;
   pageUrl: string | null;
+  /** Article d'arthropode (option « flouter les arthropodes »), quand il vient d'être chargé. */
+  arthropod?: boolean;
 }
 
 export interface Wallet {

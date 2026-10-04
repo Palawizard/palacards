@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { autoRecyclePicks, collectionScore, effectiveStats, isBetterCopy, MAX_LEVEL } from "./collection.js";
+import {
+  autoRecyclePicks,
+  collectionScore,
+  effectiveStats,
+  isBetterCopy,
+  MAX_LEVEL,
+  planFusions,
+  type FusionCopy,
+} from "./collection.js";
 
 describe("effectiveStats", () => {
   it("+4 % par niveau au-delà du premier", () => {
@@ -62,5 +70,55 @@ describe("autoRecyclePicks", () => {
 
   it("garde les nouveaux articles, une seule fois", () => {
     expect(autoRecyclePicks(drawn, "R", true, new Set([1]))).toEqual([0, 2]);
+  });
+});
+
+describe("planFusions", () => {
+  const copy = (id: number, over: Partial<FusionCopy> = {}): FusionCopy => ({
+    id,
+    cardId: 1,
+    rarity: "C",
+    level: 1,
+    atk: 100,
+    def: 100,
+    consumable: true,
+    locked: false,
+    ...over,
+  });
+
+  it("monte le meilleur exemplaire avec les plus faibles doublons, jusqu'au niveau maximal", () => {
+    const plans = planFusions([
+      copy(1, { level: 3 }),
+      copy(2, { atk: 50 }),
+      copy(3),
+      copy(4, { atk: 10 }),
+      copy(5, { level: 2 }),
+    ]);
+    expect(plans).toEqual([{ cardId: 1, targetId: 1, fromLevel: 3, toLevel: MAX_LEVEL, sourceIds: [4, 2] }]);
+  });
+
+  it("ne consomme ni les exemplaires protégés ni le meilleur, et ne fusionne pas dans un exemplaire engagé", () => {
+    expect(planFusions([copy(1), copy(2, { consumable: false })])).toEqual([]);
+    // La brillante est le meilleur exemplaire : elle reçoit la fusion, jamais l'inverse.
+    expect(planFusions([copy(1), copy(2, { shiny: true, consumable: false })])).toEqual([
+      { cardId: 1, targetId: 2, fromLevel: 1, toLevel: 2, sourceIds: [1] },
+    ]);
+    expect(planFusions([copy(1, { rarity: "R", locked: true }), copy(2)])).toEqual([]);
+    expect(planFusions([copy(1, { level: MAX_LEVEL }), copy(2)])).toEqual([]);
+    expect(planFusions([copy(1)])).toEqual([]);
+  });
+
+  it("traite chaque article à part", () => {
+    const plans = planFusions([
+      copy(1),
+      copy(2),
+      copy(3, { cardId: 9 }),
+      copy(4, { cardId: 9 }),
+      copy(5, { cardId: 7 }),
+    ]);
+    expect(plans.map((p) => [p.cardId, p.targetId, p.sourceIds])).toEqual([
+      [1, 1, [2]],
+      [9, 3, [4]],
+    ]);
   });
 });

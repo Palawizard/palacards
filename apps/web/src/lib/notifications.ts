@@ -79,7 +79,17 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
     case "boss_killed": {
       const r = (p.reward ?? {}) as { pw?: unknown; packs?: unknown };
       return {
-        text: `${p.lastHit ? "Coup de grâce ! " : ""}Le boss du jour est tombé : +${fmt(n(r.pw))} PW et ${n(r.packs)} paquets${p.mvp ? " (meilleur assaillant)" : ""}.`,
+        text: p.late
+          ? `Renfort payé : le boss du jour était déjà tombé, tu touches quand même +${fmt(n(r.pw))} PW et ${n(r.packs)} paquets.`
+          : `${p.lastHit ? "Coup de grâce ! " : ""}Le boss du jour est tombé : +${fmt(n(r.pw))} PW et ${n(r.packs)} paquets.`,
+        href: "/boss",
+      };
+    }
+    case "boss_mvp": {
+      const r = (p.reward ?? {}) as { packs?: unknown };
+      const packs = n(r.packs);
+      return {
+        text: `Meilleur assaillant du boss d'hier (${fmt(n(p.damage))} dégâts) : ${packs} paquet${packs > 1 ? "s" : ""} bonus en plus.`,
         href: "/boss",
       };
     }

@@ -1511,3 +1511,104 @@ button:disabled .pc-pack-foil {
   color: var(--color-cover);
   box-shadow: 0 1px 2px rgb(4 6 20 / 0.3);
 }
+
+/*
+ * Barre d'actions d'une sélection (Collection) : collée en bas de l'écran pendant qu'on fait défiler la grille.
+ * Entrée courte depuis le bas (elle arrive d'où elle se colle), sans rebond.
+ */
+.pc-selbar {
+  position: sticky;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--color-panel) 94%, transparent);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(8px);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@media (min-width: 40rem) {
+  .pc-selbar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-selbar {
+    transition-property: opacity;
+    @starting-style {
+      transform: none;
+    }
+  }
+}
+
+/*
+ * Option « flouter les arthropodes ». En attente du verdict, l'image reste retenue (le fond de la vignette
+ * se voit) puis apparaît en fondu ; un arthropode reste flou, agrandi pour que le flou ne laisse pas
+ * deviner les bords, jusqu'au clic sur « Afficher ».
+ */
+.pc-veil-img {
+  transition:
+    opacity 200ms ease,
+    filter 240ms var(--ease-out),
+    transform 240ms var(--ease-out);
+}
+.pc-veil-img[data-veil="pending"] {
+  opacity: 0;
+}
+.pc-veil-img[data-veil="veiled"] {
+  filter: blur(18px) saturate(0.5);
+  transform: scale(1.2);
+}
+.pc-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35em;
+  background: radial-gradient(closest-side, rgb(12 16 39 / 0.45), transparent);
+  pointer-events: none;
+}
+.pc-veil-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.35em 0.8em;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  background: rgb(12 16 39 / 0.72);
+  color: #fff;
+  font-size: max(11px, 0.95em);
+  font-weight: 700;
+  transition: transform 160ms var(--ease-out);
+}
+.pc-veil-btn:active {
+  transform: scale(0.97);
+}
+.pc-veil-btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.pc-veil-note {
+  color: rgb(255 255 255 / 0.9);
+  font-size: max(10px, 0.72em);
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.6);
+}
