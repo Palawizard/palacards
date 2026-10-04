@@ -21,7 +21,7 @@ import {
   placeBid,
   priceHistory,
 } from "../services/market.js";
-import { listCollection } from "../services/collection.js";
+import { listCollection, loadOwnedSummaries } from "../services/collection.js";
 import { listNotifications, markRead } from "../services/notifications.js";
 import { findUserByName } from "../services/profiles.js";
 import { acceptTrade, closeTrade, counterTrade, listTrades, proposeTrade } from "../services/trades.js";
@@ -125,23 +125,30 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   );
 
   // Collection d'un joueur (composer un échange, collections de guilde) : sans tags, favoris ni vues.
+  // Collection d'un autre joueur (échanges) : toute la collection, page par page, avec ses filtres.
   api.get("/players/:username/collection", auth, async (req) => {
     const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
     const q = parse(
       z.object({
         q: z.string().max(100).optional(),
+        inSummary: z.stringbool().optional(),
         rarity: z
           .string()
           .optional()
           .transform((v) => (v ? v.split(",") : undefined))
           .pipe(z.array(z.enum(RARITIES)).optional()),
+        shiny: z.stringbool().optional(),
+        // Sans « Vues » : elles donneraient la réponse de « Plus lu » en duel.
+        sort: z.enum(["rarity", "title", "atk", "def", "date"]).default("rarity"),
         page: z.coerce.number().int().min(0).default(0),
+        limit: z.coerce.number().int().min(1).max(120).default(60),
       }),
       req.query,
     );
     const owner = await findUserByName(ctx.db, username);
-    // Sans vues (« Plus lu » en duel) : listCollection ne les donne qu'au propriétaire.
-    const res = await listCollection(ctx, owner.id, { ...q, sort: "rarity", limit: 60 }, req.user.id);
+    if (q.inSummary && q.q?.trim()) loadOwnedSummaries(ctx, owner.id);
+    // Sans vues ni favoris ni tags : listCollection ne donne les vues qu'au propriétaire.
+    const res = await listCollection(ctx, owner.id, q, req.user.id);
     return { ...res, items: res.items.map(({ tags: _t, favorite: _f, views12m: _v, ...c }) => c) };
   });
 
