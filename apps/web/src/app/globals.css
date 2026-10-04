@@ -1511,3 +1511,39 @@ button:disabled .pc-pack-foil {
   color: var(--color-cover);
   box-shadow: 0 1px 2px rgb(4 6 20 / 0.3);
 }
+
+/*
+ * Barre d'actions d'une sélection (Collection) : collée en bas de l'écran pendant qu'on fait défiler la grille.
+ * Entrée courte depuis le bas (elle arrive d'où elle se colle), sans rebond.
+ */
+.pc-selbar {
+  position: sticky;
+  bottom: max(0.75rem, env(safe-area-inset-bottom));
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 16px;
+  background: color-mix(in oklab, var(--color-panel) 94%, transparent);
+  box-shadow: var(--shadow-pop);
+  backdrop-filter: blur(8px);
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+  @starting-style {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-selbar {
+    transition-property: opacity;
+    @starting-style {
+      transform: none;
+    }
+  }
+}
