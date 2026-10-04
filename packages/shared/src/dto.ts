@@ -44,6 +44,8 @@ export interface MeDTO {
   isAdmin: boolean;
   avatar: string | null;
   animationSpeed: "normal" | "fast" | "instant";
+  /** Images d'arthropodes floutées jusqu'au clic. */
+  hideArthropods: boolean;
   /** Recyclage automatique des cartes tirées (rareté maximale, null : désactivé). */
   autoRecycle: { max: AutoRecycleRarity | null; keepNew: boolean };
   wallet: Wallet;

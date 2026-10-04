@@ -215,3 +215,31 @@ describe("exemplaires par id", () => {
     expect((await p.get("/collection/instances?ids=abc")).status).toBe(400);
   });
 });
+
+describe("option « flouter les arthropodes »", () => {
+  it("s'active dans les réglages et repère les cartes d'arthropodes depuis leur résumé", async () => {
+    const p = await signUp(app);
+    expect((await p.get("/me")).body.hideArthropods).toBe(false);
+    expect((await p.patch("/me/settings", { hideArthropods: true })).body.hideArthropods).toBe(true);
+
+    const [spider, plain, unknown] = await freshCollection(p);
+    const summary = (pageId: number, description: string) =>
+      ctx.db
+        .insert(schema.wikiSummaries)
+        .values({ pageId, description, status: "ok" })
+        .onConflictDoUpdate({ target: schema.wikiSummaries.pageId, set: { description, arthropod: null } });
+    await summary(spider!.cardId, "espèce d'araignées");
+    await summary(plain!.cardId, "château fort de France");
+    await ctx.db.delete(schema.wikiSummaries).where(eq(schema.wikiSummaries.pageId, unknown!.cardId));
+
+    const res = await p.get(`/cards/arthropods?ids=${spider!.cardId},${plain!.cardId},${unknown!.cardId}`);
+    expect(res.body).toEqual({ arthropods: [spider!.cardId], pending: [unknown!.cardId] });
+    // Le drapeau calculé est gardé en cache.
+    const [row] = await ctx.db
+      .select({ arthropod: schema.wikiSummaries.arthropod })
+      .from(schema.wikiSummaries)
+      .where(eq(schema.wikiSummaries.pageId, plain!.cardId));
+    expect(row!.arthropod).toBe(false);
+    expect((await p.get("/cards/arthropods?ids=")).status).toBe(400);
+  });
+});

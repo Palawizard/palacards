@@ -14,3 +14,4 @@ export * from "./quests.js";
 export * from "./article.js";
 export * from "./boss.js";
 export * from "./feed.js";
+export * from "./arthropod.js";

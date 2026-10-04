@@ -4,6 +4,7 @@ import { RARITY_LABELS, type Rarity } from "@palacards/game";
 import type { CardDTO } from "@palacards/shared";
 import { Lock, Sparkles, Star } from "lucide-react";
 import Link from "next/link";
+import { CardImage } from "@/components/CardImage";
 import { thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useCardMedia } from "@/lib/media";
@@ -102,13 +103,12 @@ export function Card({ card, href, className = "", selected = false, priority = 
       <div className="pc-frame flex h-full flex-col p-[4cqi] text-[length:max(10px,6cqi)]">
         <figure className="pc-art relative flex-1 overflow-hidden rounded-t-[6px] bg-sticker-line">
           {thumb ? (
-            // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API (pas d'optimiseur Next)
-            <img
+            <CardImage
+              cardId={card.cardId}
               src={thumb}
-              alt=""
               loading={priority ? "eager" : "lazy"}
-              decoding="async"
-              className="absolute inset-0 size-full object-cover"
+              // Dans un bouton (sélection, choix d'assaut) : pas de second bouton, la carte en grand le dévoile.
+              revealable={target !== null}
             />
           ) : (
             <div

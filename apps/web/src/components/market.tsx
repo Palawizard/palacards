@@ -10,6 +10,7 @@ import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { useDebounced } from "@/lib/use-debounced";
 import { Card } from "./Card";
+import { CardImage } from "./CardImage";
 import { CardSkeletons, ConfirmDialog, Empty } from "./ui";
 
 const DURATIONS = [
@@ -29,8 +30,7 @@ export function Thumb({ card, size = "md" }: { card: CardDTO; size?: "sm" | "md"
       aria-hidden
     >
       {card.thumbUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element -- vignette Wikimedia
-        <img src={thumbSrc(card.thumbUrl)} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
+        <CardImage cardId={card.cardId} src={thumbSrc(card.thumbUrl)} revealable={false} />
       ) : (
         card.title.slice(0, 1)
       )}

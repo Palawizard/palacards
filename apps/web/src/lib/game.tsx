@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { api, API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
 import { describe } from "./notifications";
 import { play, unlockAudioOnFirstGesture, type Sfx } from "./sfx";
+import { setArthropodFlag } from "./arthropods";
 import { pushMedia } from "./media";
 
 type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -108,7 +109,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         action: { label: "Rejoindre", onClick: () => router.push(`/battle/${battleId}`) },
       });
     });
-    s.on("card:media", pushMedia);
+    s.on("card:media", (m) => {
+      if (m.arthropod !== undefined) setArthropodFlag(m.cardId, m.arthropod);
+      pushMedia(m);
+    });
     // Quêtes, passe, succès : les compteurs du menu suivent.
     s.on("progress:update", () => void mutateMe());
     // Boss tombé : la pastille du menu reste tant qu'un renfort peut encore toucher la récompense.

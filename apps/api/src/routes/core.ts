@@ -7,7 +7,7 @@ import { requireUser, type Ctx } from "../context.js";
 import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
 import { answeringQuestion } from "../services/battles.js";
-import { cardSheet, catalog } from "../services/cards.js";
+import { arthropodFlags, cardSheet, catalog } from "../services/cards.js";
 import {
   bulkTag,
   completion,
@@ -104,6 +104,7 @@ export async function me(
     ...user,
     avatar: p.avatar,
     animationSpeed: p.animationSpeed,
+    hideArthropods: p.hideArthropods,
     autoRecycle: { max: p.autoRecycleMax, keepNew: p.autoRecycleKeepNew },
     wallet: wallet(p),
     packs: packState(p, ctx.now()),
@@ -150,6 +151,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
           avatar: avatarSchema.nullable().optional(),
           autoRecycleMax: z.enum(AUTO_RECYCLE_RARITIES).nullable().optional(),
           autoRecycleKeepNew: z.boolean().optional(),
+          hideArthropods: z.boolean().optional(),
         })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
       req.body,
@@ -332,6 +334,20 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     if (await answeringQuestion(ctx, req.user.id)) throw duelInProgress();
     return catalog(ctx, req.user.id, q);
+  });
+  // Option « flouter les arthropodes » : lesquelles de ces cartes en montrent un (par lots, depuis l'affichage).
+  api.get("/cards/arthropods", auth, async (req) => {
+    const { ids } = parse(
+      z.object({
+        ids: z
+          .string()
+          .max(4000)
+          .transform((v) => v.split(",").map(Number))
+          .pipe(z.array(z.number().int().positive()).min(1).max(200)),
+      }),
+      req.query,
+    );
+    return arthropodFlags(ctx, req.user.id, ids);
   });
   api.get("/cards/:id", { ...auth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req) => {
     const { id } = parse(idParams, req.params);
