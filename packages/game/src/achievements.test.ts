@@ -148,7 +148,8 @@ describe("succès à paliers", () => {
   it("compte boss, article du jour, quêtes, recyclage et upgrades", () => {
     const stats = run([
       { type: "boss_assault", damage: 320 },
-      { type: "boss_killed", mvp: true, lastHit: false },
+      { type: "boss_killed", lastHit: false },
+      { type: "boss_mvp" },
       { type: "article_played", found: true, guesses: 1 },
       { type: "article_played", found: false, guesses: 6 },
       { type: "quest_completed", period: "day" },

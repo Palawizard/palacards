@@ -1,5 +1,5 @@
 import { schema } from "@palacards/db";
-import { effectiveStats, RARITIES, type Rarity } from "@palacards/game";
+import { effectiveStats, isArthropod, RARITIES, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import { and, desc, eq, inArray, sql, type SQL } from "@palacards/db";
 import type { Ctx } from "../context.js";
@@ -114,6 +114,50 @@ export function loadMediaInBackground(ctx: Ctx, userId: string, cards: { cardId:
   void ctx.wiki
     .load(cards, (media) => ctx.rt.toUser(userId, "card:media", media))
     .catch((err) => ctx.log.warn({ err }, "chargement des images"));
+}
+
+/**
+ * Option « flouter les arthropodes » : articles d'arthropodes parmi `ids`. Le drapeau est calculé une fois
+ * depuis le résumé en cache puis gardé (`wiki_summaries.arthropod`). Sans résumé (pas d'image non plus) :
+ * chargé en arrière-plan et poussé par socket (`card:media`, drapeau compris), `pending` en attendant.
+ */
+export async function arthropodFlags(
+  ctx: Ctx,
+  userId: string,
+  ids: number[],
+): Promise<{ arthropods: number[]; pending: number[] }> {
+  const wanted = [...new Set(ids)];
+  if (!wanted.length) return { arthropods: [], pending: [] };
+  const rows = await ctx.db
+    .select({ id: w.pageId, arthropod: w.arthropod, description: w.description, extract: w.extract })
+    .from(w)
+    .where(inArray(w.pageId, wanted));
+  const todo = rows.filter((r) => r.arthropod === null).map((r) => ({ ...r, arthropod: isArthropod(r) }));
+  if (todo.length) {
+    const values = sql.join(
+      todo.map((r) => sql`(${r.id}::bigint, ${r.arthropod}::boolean)`),
+      sql`, `,
+    );
+    await ctx.db.execute(sql`
+      update wiki_summaries s set arthropod = v.flag from (values ${values}) as v(id, flag)
+      where s.page_id = v.id and s.arthropod is null
+    `);
+  }
+  const computed = new Map(todo.map((r) => [r.id, r.arthropod]));
+  const known = new Set(rows.map((r) => r.id));
+  const missing = wanted.filter((id) => !known.has(id));
+  if (missing.length) {
+    const titles = await ctx.db
+      .selectDistinctOn([c.id], { cardId: c.id, title: c.title })
+      .from(c)
+      .where(inArray(c.id, missing))
+      .orderBy(c.id, desc(c.season));
+    loadMediaInBackground(ctx, userId, titles);
+  }
+  return {
+    arthropods: rows.filter((r) => computed.get(r.id) ?? r.arthropod).map((r) => r.id),
+    pending: missing,
+  };
 }
 
 // ---------------------------------------------------------------------------

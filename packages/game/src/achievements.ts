@@ -50,7 +50,10 @@ export type GameEvent =
   | { type: "quest_completed"; period: "day" | "week" }
   | { type: "article_played"; found: boolean; /** Essais utilisés (1 à 6). */ guesses: number }
   | { type: "boss_assault"; damage: number }
-  | { type: "boss_killed"; mvp: boolean; lastHit: boolean }
+  /** Récompense de chute touchée (à la chute, ou en renfort après). */
+  | { type: "boss_killed"; lastHit: boolean }
+  /** Meilleur assaillant de la journée, désigné à minuit. */
+  | { type: "boss_mvp" }
   | { type: "pass_level"; level: number };
 
 export const STAT_KEYS = [
@@ -221,8 +224,10 @@ export function statUpdates(e: GameEvent): StatUpdate[] {
       break;
     case "boss_killed":
       out.push(add("boss_kills"));
-      if (e.mvp) out.push(add("boss_mvp"));
       if (e.lastHit) out.push(add("boss_last_hit"));
+      break;
+    case "boss_mvp":
+      out.push(add("boss_mvp"));
       break;
     case "pass_level":
       out.push(max("pass_level", e.level));

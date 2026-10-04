@@ -21,6 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
+import { CardImage } from "@/components/CardImage";
 import { CardBack, FlipCard } from "@/components/PackOpener";
 import { CardSkeletons, Empty, ErrorBox, LoadMore, Toggle } from "@/components/ui";
 import { chanceText, UpgradeDial, type DialState } from "@/components/UpgradeDial";
@@ -71,8 +72,7 @@ function SlotTile({ card }: { card: CardDTO }) {
     >
       <div className="relative flex-1 bg-[color-mix(in_oklab,var(--r)_18%,var(--color-sticker))]">
         {thumb ? (
-          // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia servies telles quelles
-          <img src={thumb} alt="" className="absolute inset-0 size-full object-cover" />
+          <CardImage cardId={card.cardId} src={thumb} revealable={false} loading="eager" />
         ) : (
           <span className="grid size-full place-items-center font-display text-2xl uppercase text-sticker-muted">
             {card.title.slice(0, 1)}

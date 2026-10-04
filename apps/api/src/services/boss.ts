@@ -3,11 +3,12 @@ import {
   BOSS_ANSWER_GRACE_MS,
   BOSS_ASSAULTS_PER_DAY,
   BOSS_CARDS_PER_ASSAULT,
-  BOSS_MAX_HP,
+  BOSS_HP_WINDOW_DAYS,
   BOSS_QUESTION_MS,
   BOSS_REWARDS,
   bossDamage,
   bossHit,
+  bossMaxHp,
   cardHiddenUntilAnswer,
   effectiveStats,
   parisDay,
@@ -39,7 +40,7 @@ const bh = schema.bossHits;
 
 /**
  * Boss du jour : une Légendaire de la saison, tirée d'après le jour, créée à la première demande.
- * Ses PV sont partagés par tous les joueurs.
+ * Ses PV sont partagés par tous les joueurs, et fixés à sa création d'après les assaillants des derniers jours.
  */
 export async function bossOfDay(ctx: Ctx, day = parisDay(ctx.now())): Promise<BossDay> {
   const [existing] = await ctx.db.select().from(schema.bossDays).where(eq(schema.bossDays.day, day));
@@ -54,13 +55,26 @@ export async function bossOfDay(ctx: Ctx, day = parisDay(ctx.now())): Promise<Bo
       sql`select id from cards where season = ${season} and rarity = 'L' order by rand_key limit 1`,
     );
   if (!row) throw conflict("no_boss", "Aucune Légendaire dans la saison : pas de boss aujourd'hui.");
+  const maxHp = bossMaxHp(await dailyAssailants(ctx, day));
   await ctx.db
     .insert(schema.bossDays)
-    .values({ day, cardId: Number(row.id), season, maxHp: BOSS_MAX_HP, hp: BOSS_MAX_HP })
+    .values({ day, cardId: Number(row.id), season, maxHp, hp: maxHp })
     .onConflictDoNothing();
   const [boss] = await ctx.db.select().from(schema.bossDays).where(eq(schema.bossDays.day, day));
   void ctx.wiki.load([{ cardId: boss!.cardId, title: (await ctx.wiki.titleOf(boss!.cardId)) ?? "" }]).catch(() => {});
   return boss!;
+}
+
+/** Assaillants par jour, en moyenne sur les derniers jours où quelqu'un a attaqué (0 sans historique). */
+async function dailyAssailants(ctx: Ctx, day: string): Promise<number> {
+  const [row] = await ctx.db.execute<{ avg: number | null }>(sql`
+    select avg(n)::float as avg from (
+      select count(distinct user_id) as n from boss_assaults
+      where day < ${day}::date and day >= ${day}::date - ${BOSS_HP_WINDOW_DAYS}::int
+      group by day
+    ) t
+  `);
+  return Number(row?.avg ?? 0);
 }
 
 async function bossCard(ctx: Ctx, boss: BossDay): Promise<{ card: CardDTO; extract: string | null }> {
@@ -271,14 +285,14 @@ async function resolveHit(ctx: Ctx, userId: string, assaultId: number, idx: numb
       .set({ damage: assault.damage + damage })
       .where(eq(ba.id, assaultId));
 
-    let killed: { participants: string[]; mvp: string | null; paid: Player[] } | null = null;
+    let killed: Player[] | null = null;
     const hp = Math.max(0, boss!.hp - damage);
     if (boss && damage > 0 && boss.hp > 0) {
       await tx
         .update(schema.bossDays)
         .set({ hp, ...(hp === 0 ? { killedAt: now, killedBy: userId } : {}) })
         .where(eq(schema.bossDays.day, boss.day));
-      if (hp === 0) killed = await payKill(tx, boss, userId, fx);
+      if (hp === 0) killed = await payKill(tx, boss, userId, now, fx);
     }
     return {
       boss: boss!,
@@ -302,54 +316,99 @@ async function resolveHit(ctx: Ctx, userId: string, assaultId: number, idx: numb
     };
     ctx.rt.toAll("boss:update", live);
     if (res.killed) {
-      pushPaid(ctx, res.killed.paid);
-      for (const id of res.killed.participants) {
-        void emit(ctx, id, { type: "boss_killed", mvp: id === res.killed.mvp, lastHit: id === userId });
-      }
+      pushPaid(ctx, res.killed);
+      for (const p of res.killed) void emit(ctx, p.userId, { type: "boss_killed", lastHit: p.userId === userId });
     }
     await fx.flush(ctx);
   });
 }
 
 /**
- * Coup fatal : chaque joueur ayant lancé un assaut aujourd'hui reçoit la récompense (PW et paquets bonus),
- * le meilleur assaillant un paquet de plus. Joueurs verrouillés dans l'ordre habituel (après le boss).
+ * Coup fatal : chaque joueur ayant lancé un assaut aujourd'hui reçoit la récompense (PW et paquets bonus).
+ * Le paquet du meilleur assaillant attend minuit : les renforts peuvent encore le lui prendre.
  */
-async function payKill(tx: Tx, boss: BossDay, killerId: string, fx: Effects) {
-  const rows = await tx.execute<{ user_id: string; damage: number }>(sql`
-    select user_id, sum(damage)::int as damage from boss_assaults where day = ${boss.day}
-    group by user_id order by damage desc, user_id
-  `);
-  const participants = rows.map((r) => r.user_id);
-  const mvp = rows[0]?.user_id ?? killerId;
-  const players = await lockPlayers(tx, participants);
-  const paid: Player[] = [];
-  for (const id of participants) {
-    const p = players.get(id)!;
-    const packs = BOSS_REWARDS.kill.packs + (id === mvp ? BOSS_REWARDS.mvpPacks : 0);
-    await movePw(tx, p, BOSS_REWARDS.kill.pw, "boss", `boss:${boss.day}`);
-    const bonusPacks = p.bonusPacks + packs;
-    await tx.update(schema.players).set({ bonusPacks }).where(eq(schema.players.userId, id));
-    await logMovement(tx, id, "bonus_pack", packs, bonusPacks, "boss", `boss:${boss.day}`);
-    p.bonusPacks = bonusPacks;
-    paid.push(p);
-    await fx.notify(tx, id, "boss_killed", {
-      day: boss.day,
-      mvp: id === mvp,
-      lastHit: id === killerId,
-      reward: { pw: BOSS_REWARDS.kill.pw, packs },
-    });
-  }
-  return { participants, mvp, paid };
+async function payKill(tx: Tx, boss: BossDay, killerId: string, now: Date, fx: Effects) {
+  const rows = await tx.execute<{ user_id: string }>(
+    sql`select distinct user_id from boss_assaults where day = ${boss.day}`,
+  );
+  return payKillReward(
+    tx,
+    boss,
+    rows.map((r) => r.user_id),
+    { killerId, late: false, now },
+    fx,
+  );
 }
 
+/**
+ * Verse la récompense de chute aux joueurs qui ne l'ont pas encore touchée ce jour-là (une ligne
+ * `boss_rewards` par joueur et par jour). À appeler boss verrouillé ; les joueurs le sont ensuite.
+ */
+async function payKillReward(
+  tx: Tx,
+  boss: BossDay,
+  userIds: string[],
+  opts: { killerId: string | null; late: boolean; now: Date },
+  fx: Effects,
+): Promise<Player[]> {
+  if (!userIds.length) return [];
+  const fresh = await tx
+    .insert(schema.bossRewards)
+    .values(userIds.map((userId) => ({ day: boss.day, userId, paidAt: opts.now })))
+    .onConflictDoNothing()
+    .returning({ userId: schema.bossRewards.userId });
+  const players = await lockPlayers(
+    tx,
+    fresh.map((r) => r.userId),
+  );
+  const { pw, packs } = BOSS_REWARDS.kill;
+  for (const p of players.values()) {
+    await movePw(tx, p, pw, "boss", `boss:${boss.day}`);
+    const bonusPacks = p.bonusPacks + packs;
+    await tx.update(schema.players).set({ bonusPacks }).where(eq(schema.players.userId, p.userId));
+    await logMovement(tx, p.userId, "bonus_pack", packs, bonusPacks, "boss", `boss:${boss.day}`);
+    p.bonusPacks = bonusPacks;
+    await fx.notify(tx, p.userId, "boss_killed", {
+      day: boss.day,
+      lastHit: p.userId === opts.killerId,
+      late: opts.late,
+      reward: { pw, packs },
+    });
+  }
+  return [...players.values()];
+}
+
+/**
+ * Fin d'un assaut. Boss déjà tombé : c'est un renfort, payé comme les participants de la chute s'il ne l'a
+ * pas encore été (boss verrouillé d'abord, puis le joueur, comme partout).
+ */
 async function finishAssault(ctx: Ctx, userId: string, assaultId: number) {
-  const done = await ctx.db
-    .update(ba)
-    .set({ finishedAt: ctx.now() })
-    .where(and(eq(ba.id, assaultId), eq(ba.userId, userId), isNull(ba.finishedAt)))
-    .returning();
-  if (done[0]) void emit(ctx, userId, { type: "boss_assault", damage: done[0].damage });
+  const fx = new Effects();
+  const res = await ctx.db.transaction(async (tx) => {
+    const [peek] = await tx.select({ day: ba.day }).from(ba).where(eq(ba.id, assaultId));
+    if (!peek) return null;
+    const [boss] = await tx.select().from(schema.bossDays).where(eq(schema.bossDays.day, peek.day)).for("update");
+    const [done] = await tx
+      .update(ba)
+      .set({ finishedAt: ctx.now() })
+      .where(and(eq(ba.id, assaultId), eq(ba.userId, userId), isNull(ba.finishedAt)))
+      .returning();
+    if (!done) return null;
+    const paid =
+      boss?.killedAt && !boss.finalizedAt
+        ? await payKillReward(tx, boss, [userId], { killerId: null, late: true, now: ctx.now() }, fx)
+        : [];
+    return { damage: done.damage, paid };
+  });
+  if (!res) return;
+  void emit(ctx, userId, { type: "boss_assault", damage: res.damage });
+  await afterCommit(ctx, async () => {
+    if (res.paid.length) {
+      pushPaid(ctx, res.paid);
+      void emit(ctx, userId, { type: "boss_killed", lastHit: false });
+    }
+    await fx.flush(ctx);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -455,6 +514,10 @@ export async function bossState(ctx: Ctx, userId: string): Promise<BossDTO> {
     group by a.user_id, u.display_username, u.name, u.username
     order by damage desc, u.username
   `);
+  const [reward] = await ctx.db
+    .select({ day: schema.bossRewards.day })
+    .from(schema.bossRewards)
+    .where(and(eq(schema.bossRewards.day, boss.day), eq(schema.bossRewards.userId, userId)));
   const [killer] = boss.killedBy
     ? await ctx.db.execute<{ name: string }>(
         sql`select coalesce(display_username, name) as name from "user" where id = ${boss.killedBy}`,
@@ -473,6 +536,7 @@ export async function bossState(ctx: Ctx, userId: string): Promise<BossDTO> {
     cardsPerAssault: BOSS_CARDS_PER_ASSAULT,
     current,
     myDamage: mine.reduce((s, a) => s + a.damage, 0),
+    rewarded: !!reward,
     ranking: ranking.map((r) => ({
       userId: r.user_id,
       name: r.name,
@@ -486,7 +550,7 @@ export async function bossState(ctx: Ctx, userId: string): Promise<BossDTO> {
   };
 }
 
-/** Résumé pour l'en-tête (/me) : boss encore debout, assauts restants. */
+/** Résumé pour l'en-tête (/me) : boss encore debout, assauts restants, récompense de chute déjà touchée. */
 export async function bossSummary(ctx: Ctx, userId: string) {
   const day = parisDay(ctx.now());
   const [boss] = await ctx.db.select().from(schema.bossDays).where(eq(schema.bossDays.day, day));
@@ -494,12 +558,23 @@ export async function bossSummary(ctx: Ctx, userId: string) {
     .select({ n: sql<number>`count(*)::int` })
     .from(ba)
     .where(and(eq(ba.day, day), eq(ba.userId, userId)));
-  return { alive: !boss || boss.hp > 0, assaultsLeft: Math.max(0, BOSS_ASSAULTS_PER_DAY - (used?.n ?? 0)) };
+  const [reward] = await ctx.db
+    .select({ day: schema.bossRewards.day })
+    .from(schema.bossRewards)
+    .where(and(eq(schema.bossRewards.day, day), eq(schema.bossRewards.userId, userId)));
+  return {
+    alive: !boss || boss.hp > 0,
+    assaultsLeft: Math.max(0, BOSS_ASSAULTS_PER_DAY - (used?.n ?? 0)),
+    rewarded: !!reward,
+  };
 }
 
 /**
- * Job de minuit : un boss resté debout la veille donne un lot de consolation (PW) à chaque participant.
- * Idempotent (`finalized_at`), rattrape aussi les jours manqués.
+ * Job de minuit, pour chaque journée passée pas encore close (idempotent, `finalized_at`, rattrape les jours
+ * manqués) :
+ * - boss tombé : les participants pas encore payés (assaut abandonné en cours de route) touchent la
+ *   récompense de chute, et le meilleur assaillant de la journée, renforts compris, son paquet en plus ;
+ * - boss debout : lot de consolation (PW) à chaque participant qui l'a touché.
  */
 export async function finalizeBosses(ctx: Ctx) {
   const today = parisDay(ctx.now());
@@ -509,11 +584,11 @@ export async function finalizeBosses(ctx: Ctx) {
     .where(and(lt(schema.bossDays.day, today), isNull(schema.bossDays.finalizedAt)));
   for (const boss of due) {
     const fx = new Effects();
-    const paid = await ctx.db.transaction(async (tx) => {
+    const res = await ctx.db.transaction(async (tx) => {
       const [locked] = await tx.select().from(schema.bossDays).where(eq(schema.bossDays.day, boss.day)).for("update");
-      if (!locked || locked.finalizedAt) return [];
+      if (!locked || locked.finalizedAt) return { paid: [] as Player[], late: [] as string[], mvp: null };
       await tx.update(schema.bossDays).set({ finalizedAt: ctx.now() }).where(eq(schema.bossDays.day, boss.day));
-      if (locked.killedAt) return [];
+      if (locked.killedAt) return finalizeKilled(ctx, tx, locked, fx);
       const rows = await tx.execute<{ user_id: string }>(
         sql`select distinct user_id from boss_assaults where day = ${boss.day} and damage > 0`,
       );
@@ -528,13 +603,50 @@ export async function finalizeBosses(ctx: Ctx) {
           reward: { pw: BOSS_REWARDS.consolationPw },
         });
       }
-      return [...players.values()];
+      return { paid: [...players.values()], late: [] as string[], mvp: null };
     });
     await afterCommit(ctx, async () => {
-      for (const p of paid) pushWallet(ctx, p);
+      pushPaid(ctx, res.paid);
+      for (const id of res.late) void emit(ctx, id, { type: "boss_killed", lastHit: false });
+      if (res.mvp) void emit(ctx, res.mvp, { type: "boss_mvp" });
       await fx.flush(ctx);
     });
   }
+}
+
+/** Clôture d'un boss tombé : retardataires payés, puis paquet du meilleur assaillant de la journée. */
+async function finalizeKilled(ctx: Ctx, tx: Tx, boss: BossDay, fx: Effects) {
+  const rows = await tx.execute<{ user_id: string; damage: number }>(sql`
+    select user_id, sum(damage)::int as damage from boss_assaults where day = ${boss.day}
+    group by user_id order by damage desc, user_id
+  `);
+  // Tous les participants verrouillés d'emblée, dans l'ordre habituel : les relectures suivantes sont sûres.
+  await lockPlayers(
+    tx,
+    rows.map((r) => r.user_id),
+  );
+  const late = await payKillReward(
+    tx,
+    boss,
+    rows.map((r) => r.user_id),
+    { killerId: null, late: true, now: ctx.now() },
+    fx,
+  );
+  const top = rows[0];
+  if (!top || top.damage <= 0) return { paid: late, late: late.map((p) => p.userId), mvp: null };
+  // Relu après les paiements ci-dessus (déjà verrouillé par cette transaction).
+  const p = (await lockPlayers(tx, [top.user_id])).get(top.user_id)!;
+  const bonusPacks = p.bonusPacks + BOSS_REWARDS.mvpPacks;
+  await tx.update(schema.players).set({ bonusPacks }).where(eq(schema.players.userId, p.userId));
+  await logMovement(tx, p.userId, "bonus_pack", BOSS_REWARDS.mvpPacks, bonusPacks, "boss", `boss:${boss.day}:mvp`);
+  p.bonusPacks = bonusPacks;
+  await fx.notify(tx, p.userId, "boss_mvp", {
+    day: boss.day,
+    damage: top.damage,
+    reward: { packs: BOSS_REWARDS.mvpPacks },
+  });
+  const paid = [...late.filter((x) => x.userId !== p.userId), p];
+  return { paid, late: late.map((x) => x.userId), mvp: p.userId };
 }
 
 /** Pousse solde et paquets des joueurs payés par la chute du boss. */

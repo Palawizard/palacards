@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import { api, API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
 import { describe } from "./notifications";
 import { play, unlockAudioOnFirstGesture, type Sfx } from "./sfx";
+import { setArthropodFlag } from "./arthropods";
 import { pushMedia } from "./media";
 
 type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -60,6 +61,7 @@ const NOTIFICATION_SFX: Partial<Record<string, Sfx>> = {
   quest_completed: "coin",
   pass_level: "achievement",
   boss_killed: "victory",
+  boss_mvp: "achievement",
   guild_objective: "achievement",
   auction_sold: "coin",
   auction_won: "coin",
@@ -107,12 +109,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
         action: { label: "Rejoindre", onClick: () => router.push(`/battle/${battleId}`) },
       });
     });
-    s.on("card:media", pushMedia);
+    s.on("card:media", (m) => {
+      if (m.arthropod !== undefined) setArthropodFlag(m.cardId, m.arthropod);
+      pushMedia(m);
+    });
     // Quêtes, passe, succès : les compteurs du menu suivent.
     s.on("progress:update", () => void mutateMe());
+    // Boss tombé : la pastille du menu reste tant qu'un renfort peut encore toucher la récompense.
     s.on("boss:update", (b) => {
-      if (b.killedAt)
-        void mutateMe((m) => (m ? { ...m, boss: { ...m.boss, alive: false } } : m), { revalidate: false });
+      if (b.killedAt) void mutateMe((m) => (m ? { ...m, boss: { ...m.boss, alive: false } } : m));
     });
     // Gros tirage d'un pote (Légendaire ou brillante) : on le dit à toute la bande.
     s.on("feed:new", (item) => {
