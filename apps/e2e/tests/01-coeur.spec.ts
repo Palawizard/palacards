@@ -94,15 +94,62 @@ test("tout sélectionner les cartes du filtre pour les recycler", async ({ brows
     .getByRole("button", { name: /^Commune/ })
     .click();
   await expect(page.getByText(`${commons.total} carte`, { exact: false }).first()).toBeVisible();
-  await page.getByRole("button", { name: "Tout sélectionner" }).click();
-  await expect(page.getByRole("button", { name: "Tout désélectionner" })).toBeVisible();
-  await page.getByRole("button", { name: new RegExp(`^Recycler ${commons.total} `) }).click();
-  await page
-    .getByRole("dialog")
-    .getByRole("button", { name: /Recycler \(\+/ })
-    .click();
+  const bar = page.getByRole("region", { name: "Actions sur la sélection" });
+  await bar.getByRole("button", { name: "Tout sélectionner" }).click();
+  await expect(bar.getByRole("button", { name: "Tout désélectionner" })).toBeVisible();
+  await expect(bar.getByText(`${commons.total} sélectionnée`)).toBeVisible();
+  await bar.getByRole("button", { name: /^Recycler \(\+/ }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: `Recycler ${commons.total} carte`, exact: false })).toBeVisible();
+  await dialog.getByRole("button", { name: /Recycler \(\+/ }).click();
   await expect(page.getByText(`${commons.total} cartes recyclées`, { exact: false })).toBeVisible();
   expect((await apiCall<{ total: number }>(page, "GET", "/collection?rarity=C&limit=1")).total).toBe(0);
+});
+
+test("fusionne les doublons d'un coup, puis met une sélection en favori et la tague", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "lot");
+  await instantPacks(page);
+  await apiCall(page, "POST", "/packs/open");
+  const { instanceIds } = await apiCall<{ instanceIds: number[] }>(page, "POST", "/test/grant-card", { count: 3 });
+  const [granted] = await apiCall<{ cardId: number }[]>(page, "GET", `/collection/instances?ids=${instanceIds[0]}`);
+
+  // Fusion en masse : l'aperçu annonce les doublons consommés, puis le meilleur exemplaire monte.
+  await page.goto("collection");
+  await page.getByRole("button", { name: "Fusionner les doublons" }).click();
+  const fusion = page.getByRole("dialog");
+  await expect(fusion.getByRole("heading", { name: "Fusionner les doublons ?" })).toBeVisible();
+  await expect(fusion.getByText(/tu renonces aux \d+ PW/)).toBeVisible();
+  await fusion.getByRole("button", { name: /^Fusionner \d+ doublons?$/ }).click();
+  await expect(page.getByText(/montées? de \d+ niveaux?/)).toBeVisible();
+  const copies = await apiCall<{ items: { cardId: number; level: number }[] }>(page, "GET", "/collection?limit=120");
+  // Quatre exemplaires (celui du paquet et trois donnés) : le meilleur gagne trois niveaux.
+  expect(
+    Math.max(...copies.items.filter((c) => c.cardId === granted!.cardId).map((c) => c.level)),
+  ).toBeGreaterThanOrEqual(4);
+
+  // Sélection : deux cartes en favori, puis un tag sur les deux.
+  await page.getByRole("button", { name: "Sélectionner", exact: true }).click();
+  const cards = page.getByRole("button", { name: /, attaque \d/ });
+  await cards.nth(0).click();
+  await cards.nth(1).click();
+  const bar = page.getByRole("region", { name: "Actions sur la sélection" });
+  await expect(bar.getByText("2 sélectionnées")).toBeVisible();
+  await bar.getByRole("button", { name: "Favori", exact: true }).click();
+  await expect(page.getByText("2 cartes en favori.")).toBeVisible();
+  await expect(bar.getByRole("button", { name: "Retirer des favoris" })).toBeVisible();
+  expect((await apiCall<{ total: number }>(page, "GET", "/collection?favorites=only&limit=1")).total).toBe(2);
+
+  await bar.getByRole("button", { name: "Tag", exact: true }).click();
+  const tag = page.getByRole("dialog", { name: "Tag sur 2 cartes" });
+  await tag.getByLabel("Tag").fill("Châteaux");
+  await tag.getByRole("button", { name: "Ajouter à 2 cartes" }).click();
+  await expect(page.getByText("« châteaux » ajouté à 2 cartes.")).toBeVisible();
+  expect((await apiCall<{ total: number }>(page, "GET", "/collection?tag=ch%C3%A2teaux&limit=1")).total).toBe(2);
+  // Filtre « Sans favoris » : les deux cartes disparaissent de la liste.
+  await bar.getByRole("button", { name: "Quitter la sélection" }).click();
+  const all = (await apiCall<{ total: number }>(page, "GET", "/collection?limit=1")).total;
+  await page.getByRole("button", { name: "Sans favoris" }).click();
+  await expect(page.getByText(`${all - 2} cartes`, { exact: true })).toBeVisible();
 });
 
 test("redirige vers la connexion sans session", async ({ page }) => {
