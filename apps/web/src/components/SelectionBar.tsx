@@ -33,7 +33,7 @@ export function SelectionBar({
   const none = count === 0;
   return (
     <div className="pc-selbar" role="region" aria-label="Actions sur la sélection">
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1 sm:gap-2">
         <button
           type="button"
           className="btn btn-sm btn-ghost px-2"
@@ -42,12 +42,13 @@ export function SelectionBar({
         >
           <X aria-hidden className="size-4" />
         </button>
-        <p className="tnum min-w-0 text-sm font-semibold" aria-live="polite">
+        <p className="tnum min-w-0 flex-1 truncate text-sm font-semibold sm:flex-none" aria-live="polite">
           {count ? `${fmt(count)} sélectionnée${count > 1 ? "s" : ""}` : "Touche des cartes"}
         </p>
         {selectAll}
       </div>
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
+      {/* Téléphone : une rangée pleine largeur sous le compte ; « Recycler » prend la place qui reste. */}
+      <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-1.5 sm:flex sm:items-center">
         <button type="button" className="btn btn-sm" disabled={none || busy} onClick={onFavorite}>
           <Star aria-hidden className="size-4" />
           {favoriteLabel}

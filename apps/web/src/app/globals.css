@@ -1521,10 +1521,8 @@ button:disabled .pc-pack-foil {
   bottom: max(0.75rem, env(safe-area-inset-bottom));
   z-index: 20;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
+  flex-direction: column;
+  gap: 0.4rem;
   padding: 0.5rem 0.6rem;
   border: 1px solid var(--color-line-strong);
   border-radius: 16px;
@@ -1537,6 +1535,15 @@ button:disabled .pc-pack-foil {
   @starting-style {
     opacity: 0;
     transform: translateY(12px);
+  }
+}
+@media (min-width: 40rem) {
+  .pc-selbar {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
   }
 }
 @media (prefers-reduced-motion: reduce) {

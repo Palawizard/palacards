@@ -79,13 +79,26 @@ interface CardProps {
    * de routeur pendant l'animation.
    */
   prefetch?: boolean;
+  /**
+   * Bouton « Afficher » sur une image d'arthropode floutée. Par défaut : seulement si la carte est un lien
+   * (une carte posée dans un bouton ne peut pas en contenir un autre ; la fiche en grand le propose).
+   */
+  revealable?: boolean;
 }
 
 /**
  * Une carte = une vignette d'album : image de l'article, bande de titre à la couleur de la rareté,
  * relevé ATK / DEF, pied d'étiquette (rareté, édition, niveau) et lien vers l'article (CC BY-SA).
  */
-export function Card({ card, href, className = "", selected = false, priority = false, prefetch }: CardProps) {
+export function Card({
+  card,
+  href,
+  className = "",
+  selected = false,
+  priority = false,
+  prefetch,
+  revealable,
+}: CardProps) {
   const live = useCardMedia(card.cardId);
   const thumbUrl = live?.thumbUrl ?? card.thumbUrl;
   const thumb = thumbUrl && thumbSrc(thumbUrl);
@@ -107,8 +120,7 @@ export function Card({ card, href, className = "", selected = false, priority = 
               cardId={card.cardId}
               src={thumb}
               loading={priority ? "eager" : "lazy"}
-              // Dans un bouton (sélection, choix d'assaut) : pas de second bouton, la carte en grand le dévoile.
-              revealable={target !== null}
+              revealable={revealable ?? target !== null}
             />
           ) : (
             <div

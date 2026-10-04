@@ -323,7 +323,7 @@ export function CardSheetView({
       >
         <aside className={`order-first flex flex-col gap-3 ${modal ? "md:order-last" : "lg:order-last"}`}>
           <div className={`mx-auto w-full ${modal ? "max-w-[15rem]" : "max-w-[18rem]"}`}>
-            <Card card={card} href={null} priority />
+            <Card card={card} href={null} priority revealable />
           </div>
           <div className="infobox overflow-hidden">
             <table className="tnum w-full text-sm">
