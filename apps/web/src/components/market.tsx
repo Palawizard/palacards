@@ -259,7 +259,7 @@ export function SellDialog({ open, onClose, onListed }: { open: boolean; onClose
       {card ? (
         <div className="grid gap-5 overflow-y-auto p-5 sm:grid-cols-[11rem_minmax(0,1fr)]">
           <div className="mx-auto flex w-40 flex-col gap-2 sm:w-full">
-            <Card card={card} href={null} />
+            <Card card={card} href={null} revealable />
             <button type="button" className="btn btn-sm btn-ghost" onClick={() => setCard(null)}>
               <ArrowLeft aria-hidden className="size-4" /> Changer de carte
             </button>

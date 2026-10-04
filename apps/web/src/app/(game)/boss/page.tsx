@@ -344,7 +344,7 @@ function AssaultPanel({
             label={`Ta carte (${RARITY_LABELS[q.card.rarity].toLowerCase()}), face cachée jusqu'à ta réponse`}
           />
         ) : (
-          <Card card={q.card} href={null} />
+          <Card card={q.card} href={null} revealable />
         )}
       </div>
       <div className="flex flex-col gap-3">

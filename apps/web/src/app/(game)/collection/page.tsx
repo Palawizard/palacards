@@ -507,53 +507,6 @@ function Collection() {
               <LoadMore onVisible={loadMore} loading={list.isValidating} done={done} />
             </>
           )}
-
-          {selecting && (
-            <SelectionBar
-              count={selected.size}
-              busy={busy}
-              selectAll={
-                allFor === filters && selected.size > 0 ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => (setSelected(new Map()), setAllFor(null))}
-                  >
-                    Tout désélectionner
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-ghost"
-                    onClick={selectAll}
-                    disabled={selectingAll || total === 0}
-                    aria-busy={selectingAll}
-                  >
-                    Tout sélectionner
-                  </button>
-                )
-              }
-              favoriteLabel={allFavorite ? "Retirer des favoris" : "Favori"}
-              onFavorite={() => void favoriteSelection()}
-              onTag={() => setTagging(true)}
-              onRecycle={() => {
-                if (!recyclable.length)
-                  return toast("Rien à recycler : ces cartes sont favorites, brillantes, épinglées ou engagées.");
-                setConfirm({
-                  ids: recyclable.map(([id]) => id),
-                  gain: selectedGain,
-                  label: `${fmt(recyclable.length)} ${plural(recyclable.length, "carte")}`,
-                  kept: selected.size - recyclable.length,
-                });
-              }}
-              recycleLabel={
-                <>
-                  Recycler <span className="tnum">(+{fmt(selectedGain)} PW)</span>
-                </>
-              }
-              onCancel={stopSelecting}
-            />
-          )}
         </div>
 
         <aside className="infobox lg:sticky lg:top-20">
@@ -563,6 +516,53 @@ function Collection() {
           </div>
         </aside>
       </div>
+
+      {selecting && (
+        <SelectionBar
+          count={selected.size}
+          busy={busy}
+          selectAll={
+            allFor === filters && selected.size > 0 ? (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => (setSelected(new Map()), setAllFor(null))}
+              >
+                Tout désélectionner
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={selectAll}
+                disabled={selectingAll || total === 0}
+                aria-busy={selectingAll}
+              >
+                Tout sélectionner
+              </button>
+            )
+          }
+          favoriteLabel={allFavorite ? "Retirer des favoris" : "Favori"}
+          onFavorite={() => void favoriteSelection()}
+          onTag={() => setTagging(true)}
+          onRecycle={() => {
+            if (!recyclable.length)
+              return toast("Rien à recycler : ces cartes sont favorites, brillantes, épinglées ou engagées.");
+            setConfirm({
+              ids: recyclable.map(([id]) => id),
+              gain: selectedGain,
+              label: `${fmt(recyclable.length)} ${plural(recyclable.length, "carte")}`,
+              kept: selected.size - recyclable.length,
+            });
+          }}
+          recycleLabel={
+            <>
+              Recycler <span className="tnum">(+{fmt(selectedGain)} PW)</span>
+            </>
+          }
+          onCancel={stopSelecting}
+        />
+      )}
 
       <ConfirmDialog
         open={!!confirm}
