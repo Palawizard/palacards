@@ -70,8 +70,8 @@ export interface MeDTO {
   quests: { done: number; total: number };
   /** Article du jour pas encore joué. */
   articleReady: boolean;
-  /** Boss du jour : encore debout, assauts restants pour le joueur. */
-  boss: { alive: boolean; assaultsLeft: number };
+  /** Boss du jour : encore debout, assauts restants pour le joueur, récompense de chute déjà touchée. */
+  boss: { alive: boolean; assaultsLeft: number; rewarded: boolean };
 }
 
 /** Booster à thème temporaire (page Paquets). */
@@ -293,6 +293,8 @@ export interface BossDTO {
   /** Assaut en cours du joueur (question à répondre ou à demander). */
   current: BossAssaultDTO | null;
   myDamage: number;
+  /** Récompense de chute déjà touchée aujourd'hui (à la chute, ou en renfort après). */
+  rewarded: boolean;
   ranking: { userId: string; name: string; username: string; damage: number; me: boolean }[];
   participants: number;
   rewards: { kill: { pw: number; packs: number }; mvpPacks: number; consolationPw: number };
