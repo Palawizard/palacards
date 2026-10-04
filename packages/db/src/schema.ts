@@ -102,6 +102,8 @@ export const wikiSummaries = pgTable("wiki_summaries", {
   pageUrl: text("page_url"),
   /** Description courte (Wikidata) : questions « C'est quoi ? » des duels. */
   description: text("description"),
+  /** Article d'arthropode (option « flouter les arthropodes ») ; null : pas encore calculé depuis ce résumé. */
+  arthropod: boolean("arthropod"),
   /** Version du cache : 1 = avant la description (rechargée à la demande par les duels). */
   version: smallint("version").notNull().default(2),
   status: text("status", { enum: ["ok", "missing", "error"] }).notNull(),
@@ -209,6 +211,8 @@ export const players = pgTable(
     autoRecycleMax: text("auto_recycle_max", { enum: ["C", "PC", "R", "SR"] }),
     /** Garder les articles jamais possédés malgré le recyclage automatique. */
     autoRecycleKeepNew: boolean("auto_recycle_keep_new").notNull().default(true),
+    /** Images d'arthropodes (araignées, insectes…) floutées jusqu'au clic. */
+    hideArthropods: boolean("hide_arthropods").notNull().default(false),
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
     loginStreak: integer("login_streak").notNull().default(0),
     lastLoginDay: date("last_login_day"),

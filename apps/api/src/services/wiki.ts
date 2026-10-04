@@ -1,4 +1,5 @@
 import { schema, type Db } from "@palacards/db";
+import { isArthropod } from "@palacards/game";
 import type { CardMedia } from "@palacards/shared";
 import { and, eq, inArray, sql } from "@palacards/db";
 import type { FastifyBaseLogger } from "fastify";
@@ -106,6 +107,8 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     } catch (err) {
       log.warn({ err, cardId }, "résumé Wikipédia indisponible");
     }
+    const arthropod = isArthropod({ description, extract: media.extract });
+    if (status === "ok") media.arthropod = arthropod;
     // Les erreurs réseau ne sont pas mises en cache définitivement : on réessaiera au prochain affichage.
     if (status !== "error") {
       await db
@@ -116,6 +119,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
           thumbUrl: media.thumbUrl,
           pageUrl: media.pageUrl,
           description,
+          arthropod,
           version: SUMMARY_VERSION,
           status,
         })
@@ -126,6 +130,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
             thumbUrl: media.thumbUrl,
             pageUrl: media.pageUrl,
             description,
+            arthropod,
             version: SUMMARY_VERSION,
             status,
             fetchedAt: sql`now()`,
