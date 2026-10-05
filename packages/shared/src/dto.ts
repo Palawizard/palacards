@@ -1,4 +1,4 @@
-import type { AutoRecycleRarity, Rarity } from "@palacards/game";
+import type { AutoRecycleRarity, Rarity, WheelReward, WheelTier } from "@palacards/game";
 import type { PackState, Wallet } from "./events.js";
 import type { SuggestionKind, SuggestionStatus } from "./schemas.js";
 
@@ -54,7 +54,7 @@ export interface MeDTO {
   unreadMessages: number;
   season: number;
   elo: number;
-  /** Tour de roue quotidienne disponible aujourd'hui. */
+  /** Une roue du jour est prête à tourner maintenant. */
   wheelReady: boolean;
   /** Boosters à thème en vente en ce moment. */
   themesOnSale: number;
@@ -96,24 +96,80 @@ export interface ThemeDTO {
   preview: CardDTO[];
 }
 
-/** Roue quotidienne : état et cases (dans l'ordre d'affichage). */
+/** Roues du jour (petite, moyenne, grande), dans l'ordre d'ouverture. */
 export interface WheelDTO {
+  wheels: WheelFaceDTO[];
+  /** Prochaine roue à tourner aujourd'hui (null : les trois sont faites). */
+  next: WheelTier | null;
+  /** La prochaine roue est prête maintenant. */
   ready: boolean;
-  /** Prochain tour possible (minuit, heure de Paris). */
-  nextAt: string;
+  /** Heure à laquelle la prochaine roue sera prête (null : prête, ou plus rien aujourd'hui). */
+  availableAt: string | null;
+  /** La prochaine roue ne serait prête qu'après minuit : perdue pour aujourd'hui. */
+  missed: boolean;
+  /** Minuit (Paris) : tout repart de la petite roue. */
+  resetAt: string;
+  /** Attente entre deux roues, en minutes. */
+  gapMinutes: number;
+  /** Booster à thème que donnent les cases « booster » (null : aucun en vente, deux paquets à la place). */
+  theme: { id: number; name: string } | null;
+}
+
+export type WheelStatus = "done" | "ready" | "waiting" | "locked" | "missed";
+
+export interface WheelFaceDTO {
+  tier: WheelTier;
+  status: WheelStatus;
+  /** Prête à partir de (roue en attente seulement). */
+  availableAt: string | null;
   segments: { reward: WheelRewardDTO; weight: number }[];
 }
 
-export type WheelRewardDTO =
-  { kind: "pw"; amount: number } | { kind: "packs"; amount: number } | { kind: "card"; rarity: "UR" | "L" };
+export type WheelRewardDTO = WheelReward;
+
+/** Ce que le joueur a réellement reçu (un booster à thème devient des paquets si aucun n'est en vente). */
+export type WheelPrizeDTO =
+  Exclude<WheelReward, { kind: "theme" }> | { kind: "theme"; amount: number; themeId: number; themeName: string };
 
 export interface WheelSpinDTO {
+  tier: WheelTier;
   segment: number;
   reward: WheelRewardDTO;
+  prize: WheelPrizeDTO;
   card: CardDTO | null;
   wallet: Wallet;
   packs: PackState;
-  nextAt: string;
+  wheel: WheelDTO;
+}
+
+/** Upgrade en série : lots prévus avec les doublons d'une rareté (jamais favoris, brillantes ni cartes engagées). */
+export interface UpgradeSeriesPreviewDTO {
+  rarity: Rarity;
+  target: Rarity;
+  /** Doublons utilisables (le meilleur exemplaire de chaque article est toujours gardé). */
+  available: number;
+  /** Lots du prochain lancement, chance en points de base (sur 10 000). */
+  lots: { cards: number; chance: number }[];
+  /** Cartes engagées par ce lancement (au plus `maxLots` lots par clic). */
+  cards: number;
+  /** Nombre moyen de réussites. */
+  expectedSuccesses: number;
+  /** PW rendus si tous les lots échouent. */
+  refundIfAllFail: number;
+  maxLots: number;
+}
+
+export interface UpgradeSeriesResultDTO {
+  rarity: Rarity;
+  target: Rarity;
+  lots: { cards: number; chance: number; roll: number; success: boolean }[];
+  successes: number;
+  /** Cartes gagnées, dans l'ordre des lots. */
+  cards: CardDTO[];
+  refund: number;
+  wallet: Wallet;
+  /** Doublons de cette rareté encore utilisables après ce lancement. */
+  remaining: number;
 }
 
 export interface UpgradeResultDTO {

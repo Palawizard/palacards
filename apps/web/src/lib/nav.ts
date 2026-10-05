@@ -49,7 +49,7 @@ export const NAV: NavGroup[] = [
     items: [
       { href: "/pulls", label: "Paquets", icon: Package, badge: "packs" },
       { href: "/quests", label: "Quêtes et passe", icon: Stamp, badge: "quests", feature: "quests" },
-      { href: "/wheel", label: "Roue du jour", icon: CircleDot, badge: "wheel" },
+      { href: "/wheel", label: "Roues du jour", icon: CircleDot, badge: "wheel", feature: "wheels" },
       { href: "/article", label: "Article du jour", icon: Puzzle, badge: "article", feature: "article" },
       { href: "/boss", label: "Boss du jour", icon: Skull, badge: "boss", feature: "boss" },
       { href: "/collection", label: "Collection", icon: Layers },
