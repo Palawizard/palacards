@@ -21,7 +21,7 @@ import {
   placeBid,
   priceHistory,
 } from "../services/market.js";
-import { listCollection, loadOwnedSummaries } from "../services/collection.js";
+import { completion, listCollection, loadOwnedSummaries } from "../services/collection.js";
 import { listNotifications, markRead } from "../services/notifications.js";
 import { findUserByName } from "../services/profiles.js";
 import { acceptTrade, closeTrade, counterTrade, listTrades, proposeTrade } from "../services/trades.js";
@@ -124,8 +124,8 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     counterTrade(ctx, req.user.id, parse(idParams, req.params).id, parse(offer, req.body)),
   );
 
-  // Collection d'un joueur (composer un échange, collections de guilde) : sans tags, favoris ni vues.
-  // Collection d'un autre joueur (échanges) : toute la collection, page par page, avec ses filtres.
+  // Collection d'un autre joueur (profil, échanges) : toute la collection, page par page, avec les filtres de la
+  // sienne sauf favoris et tags (privés). Sans tags, favoris ni vues.
   api.get("/players/:username/collection", auth, async (req) => {
     const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
     const q = parse(
@@ -138,6 +138,9 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
           .transform((v) => (v ? v.split(",") : undefined))
           .pipe(z.array(z.enum(RARITIES)).optional()),
         shiny: z.stringbool().optional(),
+        duplicates: z.stringbool().optional(),
+        season: z.coerce.number().int().positive().optional(),
+        theme: z.coerce.number().int().positive().optional(),
         // Sans « Vues » : elles donneraient la réponse de « Plus lu » en duel.
         sort: z.enum(["rarity", "title", "atk", "def", "date"]).default("rarity"),
         page: z.coerce.number().int().min(0).default(0),
@@ -150,6 +153,12 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     // Sans vues ni favoris ni tags : listCollection ne donne les vues qu'au propriétaire.
     const res = await listCollection(ctx, owner.id, q, req.user.id);
     return { ...res, items: res.items.map(({ tags: _t, favorite: _f, views12m: _v, ...c }) => c) };
+  });
+  // De quoi remplir ses filtres (boosters, éditions) ; ses tags restent privés.
+  api.get("/players/:username/collection/summary", auth, async (req) => {
+    const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
+    const { tags: _t, ...summary } = await completion(ctx, (await findUserByName(ctx.db, username)).id);
+    return summary;
   });
 
   // --- Wishlist ---
