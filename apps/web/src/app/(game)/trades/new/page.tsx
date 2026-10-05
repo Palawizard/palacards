@@ -1,8 +1,8 @@
 "use client";
 
-import { TRADE_MAX_CARDS_PER_SIDE, type Rarity } from "@palacards/game";
+import { TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
 import type { CardDTO, Page, TradeDTO } from "@palacards/shared";
-import { Check, Search, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -10,26 +10,24 @@ import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import { RaritySigil } from "@/components/Card";
 import { Thumb } from "@/components/market";
-import { LoadMore, RarityFilter, Select, Toggle } from "@/components/ui";
+import {
+  CollectionFilterBar,
+  useCollectionFilters,
+  type CollectionFilterOptions,
+} from "@/components/CollectionFilters";
+import { LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { useDebounced } from "@/lib/use-debounced";
 
-const SORTS = [
-  { value: "rarity", label: "Rareté" },
-  { value: "title", label: "Titre" },
-  { value: "atk", label: "Attaque" },
-  { value: "date", label: "Plus récentes" },
-] as const;
-type Sort = (typeof SORTS)[number]["value"];
-
 /**
- * Une collection entière, cochable : recherche (titre, ou résumé aussi), raretés, brillantes, tri, et la suite
- * qui se charge en faisant défiler la liste.
+ * Une collection entière, cochable, avec les filtres de la page Collection (favoris et tags seulement sur la
+ * sienne, `owner`), et la suite qui se charge en faisant défiler la liste.
  */
 function Picker({
   source,
+  owner,
   selected,
   onToggle,
   emptyText,
@@ -37,26 +35,16 @@ function Picker({
   label,
 }: {
   source: string | null;
+  owner: boolean;
   selected: Map<number, CardDTO>;
   onToggle: (c: CardDTO) => void;
   emptyText: string;
   allowed: Set<number>;
   label: string;
 }) {
-  const [q, setQ] = useState("");
-  const query = useDebounced(q);
-  const [inSummary, setInSummary] = useState(false);
-  const [rarity, setRarity] = useState<Rarity[]>([]);
-  const [shiny, setShiny] = useState(false);
-  const [sort, setSort] = useState<Sort>("rarity");
-  const params = new URLSearchParams({ sort, limit: "40" });
-  if (query.trim()) {
-    params.set("q", query.trim());
-    if (inSummary) params.set("inSummary", "true");
-  }
-  if (rarity.length) params.set("rarity", rarity.join(","));
-  if (shiny) params.set("shiny", "true");
-  const base = source ? `${source}${source.includes("?") ? "&" : "?"}${params}` : null;
+  const { value: f, set, params } = useCollectionFilters();
+  const summary = useSWR<CollectionFilterOptions>(source && `${source}/summary`);
+  const base = source ? `${source}?${params}${params ? "&" : ""}sort=${f.sort}&limit=40` : null;
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
     !base || (prev && !prev.nextCursor) ? null : `${base}&page=${i}`,
   );
@@ -69,33 +57,15 @@ function Picker({
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-40 flex-1">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint"
-          />
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={inSummary ? "Titre ou mot du résumé" : "Filtrer par titre"}
-            aria-label={`${label} : ${inSummary ? "chercher dans le titre et le résumé" : "filtrer par titre"}`}
-            className="field h-9 min-h-0 pl-8 text-sm"
-            disabled={!source}
-          />
-        </div>
-        <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <RarityFilter value={rarity} onChange={setRarity} />
-        <Toggle pressed={shiny} onChange={setShiny}>
-          Brillantes
-        </Toggle>
-        <Toggle pressed={inSummary} onChange={setInSummary}>
-          Résumé aussi
-        </Toggle>
-      </div>
+      <CollectionFilterBar
+        value={f}
+        onChange={set}
+        options={summary.data}
+        owner={owner}
+        label={label}
+        disabled={!source}
+        className="gap-2"
+      />
       <ul
         className="flex h-[min(28rem,60dvh)] flex-col gap-1 overflow-y-auto overscroll-contain rounded-xl border border-line bg-bg p-1"
         aria-label={label}
@@ -291,6 +261,7 @@ function Composer() {
           <Picker
             label="Ta collection"
             source="/collection"
+            owner
             selected={give}
             onToggle={toggle(setGive)}
             emptyText=""
@@ -317,6 +288,7 @@ function Composer() {
             label={partnerOk ? `Collection de ${partner}` : "Collection de ton ami"}
             allowed={allowed}
             source={partnerOk ? `/players/${encodeURIComponent(partner)}/collection` : null}
+            owner={false}
             selected={want}
             onToggle={toggle(setWant)}
             emptyText="Indique d’abord le pseudo de ton ami pour voir sa collection."

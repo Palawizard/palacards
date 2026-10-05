@@ -9,9 +9,16 @@ afterAll(() => app.close());
 
 const ci = schema.cardInstances;
 
-/** Ouvre un paquet ; sans brillante tirée au hasard, pour des comptes exacts. */
-async function freshCollection(p: Client) {
-  const cards = (await p.post("/packs/open")).body.cards as { instanceId: number; cardId: number; rarity: string }[];
+/**
+ * Ouvre un paquet ; sans brillante ni doublon tirés au hasard, pour des comptes exacts (avec peu de cartes
+ * légendaires ou UR dans la base de test, un paquet sort parfois deux fois le même article).
+ */
+async function freshCollection(p: Client, { unique = true } = {}) {
+  const pulled = (await p.post("/packs/open")).body.cards as { instanceId: number; cardId: number; rarity: string }[];
+  const seen = new Set<number>();
+  const cards = unique ? pulled.filter((c) => !seen.has(c.cardId) && seen.add(c.cardId)) : pulled;
+  const twins = pulled.filter((c) => !cards.includes(c)).map((c) => c.instanceId);
+  if (twins.length) await ctx.db.delete(ci).where(inArray(ci.id, twins));
   await ctx.db.update(ci).set({ shiny: false }).where(eq(ci.ownerId, p.userId));
   await progressionIdle();
   return cards;
@@ -181,7 +188,7 @@ describe("fusion en masse des doublons", () => {
 describe("collection d'un autre joueur (échanges)", () => {
   it("se parcourt en entier, page par page, filtrée par rareté et brillantes, sans favoris ni vues", async () => {
     const owner = await signUp(app);
-    for (let i = 0; i < 7; i++) await freshCollection(owner);
+    for (let i = 0; i < 7; i++) await freshCollection(owner, { unique: false });
     const viewer = await signUp(app);
     const url = `/players/${owner.username}/collection`;
     const first = await viewer.get(`${url}?limit=30`);
@@ -201,6 +208,19 @@ describe("collection d'un autre joueur (échanges)", () => {
     await ctx.db.update(ci).set({ shiny: true }).where(eq(ci.id, one!.instanceId));
     expect(ids((await viewer.get(`${url}?shiny=true`)).body)).toEqual([one!.instanceId]);
     expect((await viewer.get(`${url}?sort=views`)).status).toBe(400);
+
+    // Mêmes filtres que sa propre collection : doublons, édition, résumé des menus (sans ses tags).
+    await addCopies(one!.instanceId, 1);
+    // Le paquet peut déjà contenir des doublons : on vérifie seulement que les deux copies ajoutées y sont.
+    const dups = (await viewer.get(`${url}?duplicates=true&limit=120`)).body.items as { cardId: number }[];
+    const oneCard = first.body.items[0].cardId as number;
+    expect(dups.filter((c) => c.cardId === oneCard).length).toBeGreaterThanOrEqual(2);
+    expect((await viewer.get(`${url}?season=999`)).body.total).toBe(0);
+    await owner.post("/collection/tags", { instanceIds: [one!.instanceId], add: "secret" });
+    const summary = await viewer.get(`${url}/summary`);
+    expect(summary.status).toBe(200);
+    expect(summary.body).not.toHaveProperty("tags");
+    expect(summary.body.seasons.length).toBeGreaterThan(0);
   });
 });
 
