@@ -138,6 +138,17 @@ export function isOnSale(theme: Pick<Theme, "startsAt" | "endsAt">, now: Date) {
   return theme.startsAt <= now && now < theme.endsAt;
 }
 
+/** Booster à thème en vente qui se termine le plus tôt (celui que donnent les roues du jour). */
+export async function endingSoonestTheme(db: DbOrTx, now: Date): Promise<{ id: number; name: string } | null> {
+  const [row] = await db
+    .select({ id: schema.themes.id, name: schema.themes.name })
+    .from(schema.themes)
+    .where(and(sql`${schema.themes.startsAt} <= ${now.toISOString()}::timestamptz`, gt(schema.themes.endsAt, now)))
+    .orderBy(schema.themes.endsAt, schema.themes.id)
+    .limit(1);
+  return row ?? null;
+}
+
 /** Articles du thème par rareté, dans la saison active. */
 async function rarityCounts(db: DbOrTx, themeId: number, season: number): Promise<Record<Rarity, number>> {
   const rows = await db.execute<{ rarity: Rarity; n: number }>(sql`
@@ -266,7 +277,7 @@ export async function addThemePacks(
   userId: string,
   themeId: number,
   delta: number,
-  reason: "promo_code" | "pack_open",
+  reason: "promo_code" | "pack_open" | "wheel",
   refId?: string,
 ) {
   const pt = schema.playerThemePacks;
