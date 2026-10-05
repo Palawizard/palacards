@@ -208,6 +208,19 @@ describe("collection d'un autre joueur (échanges)", () => {
     await ctx.db.update(ci).set({ shiny: true }).where(eq(ci.id, one!.instanceId));
     expect(ids((await viewer.get(`${url}?shiny=true`)).body)).toEqual([one!.instanceId]);
     expect((await viewer.get(`${url}?sort=views`)).status).toBe(400);
+
+    // Mêmes filtres que sa propre collection : doublons, édition, résumé des menus (sans ses tags).
+    await addCopies(one!.instanceId, 1);
+    // Le paquet peut déjà contenir des doublons : on vérifie seulement que les deux copies ajoutées y sont.
+    const dups = (await viewer.get(`${url}?duplicates=true&limit=120`)).body.items as { cardId: number }[];
+    const oneCard = first.body.items[0].cardId as number;
+    expect(dups.filter((c) => c.cardId === oneCard).length).toBeGreaterThanOrEqual(2);
+    expect((await viewer.get(`${url}?season=999`)).body.total).toBe(0);
+    await owner.post("/collection/tags", { instanceIds: [one!.instanceId], add: "secret" });
+    const summary = await viewer.get(`${url}/summary`);
+    expect(summary.status).toBe(200);
+    expect(summary.body).not.toHaveProperty("tags");
+    expect(summary.body.seasons.length).toBeGreaterThan(0);
   });
 });
 

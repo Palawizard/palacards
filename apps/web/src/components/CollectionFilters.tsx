@@ -1,0 +1,179 @@
+// Filtres de collection partagés, importés uniquement par des composants client.
+import type { Rarity } from "@palacards/game";
+import { Search } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { RarityFilter, Select, Toggle } from "@/components/ui";
+import { useDebounced } from "@/lib/use-debounced";
+
+const SORTS = [
+  { value: "rarity", label: "Rareté" },
+  { value: "date", label: "Plus récentes" },
+  { value: "atk", label: "Attaque" },
+  { value: "def", label: "Défense" },
+  { value: "views", label: "Vues" },
+  { value: "title", label: "Titre" },
+] as const;
+export type CollectionSort = (typeof SORTS)[number]["value"];
+/** Sans « Vues » chez les autres : elles donneraient la réponse de « Plus lu » en duel. */
+const OTHER_SORTS = SORTS.filter((s) => s.value !== "views");
+
+export interface CollectionFilterState {
+  q: string;
+  /** La recherche porte aussi sur le résumé de l'article. */
+  inSummary: boolean;
+  rarity: Rarity[];
+  favorites: "" | "only" | "exclude";
+  shiny: boolean;
+  duplicates: boolean;
+  tag: string;
+  theme: string;
+  season: string;
+  sort: CollectionSort;
+}
+
+/** Listes des menus déroulants : `/collection/summary` ou `/players/:pseudo/collection/summary` (sans tags). */
+export interface CollectionFilterOptions {
+  tags?: string[];
+  themes: { id: number; name: string }[];
+  seasons: number[];
+}
+
+const EMPTY: CollectionFilterState = {
+  q: "",
+  inSummary: false,
+  rarity: [],
+  favorites: "",
+  shiny: false,
+  duplicates: false,
+  tag: "",
+  theme: "",
+  season: "",
+  sort: "rarity",
+};
+
+/**
+ * Filtres d'une collection (la sienne ou celle d'un autre joueur). `params` : la requête des filtres, sans tri ni
+ * pagination (la même sert à la liste, à « Tout sélectionner » et à la fusion) ; `q` : la recherche envoyée.
+ */
+export function useCollectionFilters(init: Partial<CollectionFilterState> = {}) {
+  const [value, setValue] = useState<CollectionFilterState>(() => ({ ...EMPTY, ...init }));
+  const set = useCallback((patch: Partial<CollectionFilterState>) => setValue((v) => ({ ...v, ...patch })), []);
+  const q = useDebounced(value.q).trim();
+  const { rarity, inSummary, favorites, shiny, duplicates, tag, theme, season } = value;
+  const params = useMemo(() => {
+    const p = new URLSearchParams();
+    if (rarity.length) p.set("rarity", rarity.join(","));
+    if (q) {
+      p.set("q", q);
+      if (inSummary) p.set("inSummary", "true");
+    }
+    if (favorites) p.set("favorites", favorites);
+    if (shiny) p.set("shiny", "true");
+    if (duplicates) p.set("duplicates", "true");
+    if (tag) p.set("tag", tag);
+    if (theme) p.set("theme", theme);
+    if (season) p.set("season", season);
+    return p.toString();
+  }, [rarity, q, inSummary, favorites, shiny, duplicates, tag, theme, season]);
+  return { value, set, q, params };
+}
+
+/**
+ * Barre de filtres d'une collection : recherche (titre, ou résumé aussi), tri, raretés, brillantes, doublons,
+ * booster et édition. Favoris et tags seulement sur sa propre collection (`owner`) : ceux des autres sont privés.
+ */
+export function CollectionFilterBar({
+  value: f,
+  onChange: set,
+  options,
+  owner,
+  label,
+  disabled = false,
+  className = "",
+}: {
+  value: CollectionFilterState;
+  onChange: (patch: Partial<CollectionFilterState>) => void;
+  options?: CollectionFilterOptions;
+  owner: boolean;
+  /** Préfixe du nom accessible de la recherche quand plusieurs collections sont à l'écran (échanges). */
+  label?: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const searchLabel = f.inSummary ? "Chercher dans le titre et le résumé" : "Filtrer par titre";
+  return (
+    <div className={`flex flex-col gap-3 ${className}`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-40 flex-1">
+          <Search
+            aria-hidden
+            className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint"
+          />
+          <input
+            type="search"
+            value={f.q}
+            onChange={(e) => set({ q: e.target.value })}
+            placeholder={f.inSummary ? "Titre ou mot du résumé" : "Filtrer par titre"}
+            aria-label={label ? `${label} : ${searchLabel.toLowerCase()}` : searchLabel}
+            className="field h-9 min-h-0 pl-8 text-sm"
+            disabled={disabled}
+          />
+        </div>
+        <Toggle pressed={f.inSummary} onChange={(inSummary) => set({ inSummary })}>
+          Résumé aussi
+        </Toggle>
+        <Select label="Trier" value={f.sort} onChange={(sort) => set({ sort })} options={owner ? SORTS : OTHER_SORTS} />
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <RarityFilter value={f.rarity} onChange={(rarity) => set({ rarity })} />
+        <span className="mx-1 hidden h-5 w-px bg-line sm:block" aria-hidden />
+        {owner && (
+          <div className="flex gap-1.5" role="group" aria-label="Favoris">
+            <Toggle pressed={f.favorites === "only"} onChange={(on) => set({ favorites: on ? "only" : "" })}>
+              Favoris
+            </Toggle>
+            <Toggle pressed={f.favorites === "exclude"} onChange={(on) => set({ favorites: on ? "exclude" : "" })}>
+              Sans favoris
+            </Toggle>
+          </div>
+        )}
+        <Toggle pressed={f.shiny} onChange={(shiny) => set({ shiny })}>
+          Brillantes
+        </Toggle>
+        <Toggle pressed={f.duplicates} onChange={(duplicates) => set({ duplicates })}>
+          Doublons
+        </Toggle>
+        {owner && !!options?.tags?.length && (
+          <Select
+            label="Tag"
+            value={f.tag}
+            onChange={(tag) => set({ tag })}
+            options={[{ value: "", label: "Tous" }, ...options.tags.map((t) => ({ value: t, label: t }))]}
+          />
+        )}
+        {!!options?.themes.length && (
+          <Select
+            label="Booster"
+            value={f.theme}
+            onChange={(theme) => set({ theme })}
+            options={[
+              { value: "", label: "Tous les boosters" },
+              ...options.themes.map((t) => ({ value: String(t.id), label: t.name })),
+            ]}
+          />
+        )}
+        {(options?.seasons.length ?? 0) > 1 && (
+          <Select
+            label="Édition"
+            value={f.season}
+            onChange={(season) => set({ season })}
+            options={[
+              { value: "", label: "Toutes" },
+              ...options!.seasons.map((s) => ({ value: String(s), label: `Saison ${s}` })),
+            ]}
+          />
+        )}
+      </div>
+    </div>
+  );
+}

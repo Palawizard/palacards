@@ -3,13 +3,19 @@
 import type { CardDTO, Page } from "@palacards/shared";
 import { MessageSquare, Repeat, Swords, UserCheck, UserPlus } from "lucide-react";
 import Link from "next/link";
-import { use, useState } from "react";
+import { use, useCallback, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import useSWRInfinite from "swr/infinite";
 import { Avatar } from "@/components/Avatar";
 import { Card, CardGrid } from "@/components/Card";
+import {
+  CollectionFilterBar,
+  useCollectionFilters,
+  type CollectionFilterOptions,
+} from "@/components/CollectionFilters";
 import { MyShowcase } from "@/components/Showcase";
-import { CardSkeletons, ErrorBox } from "@/components/ui";
+import { CardSkeletons, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 
@@ -95,30 +101,65 @@ function Actions({ p, onChanged }: { p: ProfileDTO; onChanged: () => void }) {
   );
 }
 
+/** Collection d'un autre joueur, avec les filtres de la sienne (sauf favoris et tags, privés). */
 function TheirCollection({ username }: { username: string }) {
-  const [page, setPage] = useState(0);
-  const { data, error } = useSWR<Page<CardDTO>>(`/players/${encodeURIComponent(username)}/collection?page=${page}`);
-  if (error) return <ErrorBox error={error} />;
-  if (!data) return <CardSkeletons count={6} />;
-  if (!data.items.length) return <p className="text-sm text-muted">Collection vide pour l’instant.</p>;
+  const source = `/players/${encodeURIComponent(username)}/collection`;
+  const { value: f, set, q, params } = useCollectionFilters();
+  const summary = useSWR<CollectionFilterOptions>(`${source}/summary`);
+  const query = `${params}${params ? "&" : ""}sort=${f.sort}&limit=60`;
+  const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
+    prev && !prev.nextCursor ? null : `${source}?${query}&page=${i}`,
+  );
+  const items = list.data?.flatMap((p) => p.items) ?? [];
+  const total = list.data?.[0]?.total ?? 0;
+  const done = !!list.data && !list.data[list.data.length - 1]?.nextCursor;
+  const loadMore = useCallback(() => {
+    if (!list.isValidating) void list.setSize((s) => s + 1);
+  }, [list]);
+
   return (
     <div className="flex flex-col gap-4">
-      <CardGrid dense>
-        {data.items.map((c) => (
-          <Card key={c.instanceId} card={c} />
-        ))}
-      </CardGrid>
-      <div className="flex items-center justify-center gap-2 text-sm">
-        <button type="button" className="btn btn-sm" disabled={page === 0} onClick={() => setPage((x) => x - 1)}>
-          Précédentes
-        </button>
-        <span className="tnum text-muted">
-          page {page + 1} / {Math.max(1, Math.ceil((data.total ?? 0) / 60))}
-        </span>
-        <button type="button" className="btn btn-sm" disabled={!data.nextCursor} onClick={() => setPage((x) => x + 1)}>
-          Suivantes
-        </button>
-      </div>
+      <CollectionFilterBar
+        value={f}
+        onChange={set}
+        options={summary.data}
+        owner={false}
+        className="rounded-xl border border-line bg-panel p-3"
+      />
+      <p className="tnum text-sm text-muted" aria-live="polite">
+        {list.data ? `${fmt(total)} carte${total > 1 ? "s" : ""}` : "\u00a0"}
+      </p>
+      {list.error ? (
+        <ErrorBox error={list.error} retry={() => list.mutate()} />
+      ) : !list.data ? (
+        <CardSkeletons count={6} />
+      ) : items.length === 0 ? (
+        params ? (
+          <Empty title="Aucune carte ne correspond">
+            {f.inSummary || !q ? (
+              "Change les filtres pour voir d'autres cartes."
+            ) : (
+              <>
+                Aucun titre ne contient « {q} ».{" "}
+                <button type="button" className="article-link" onClick={() => set({ inSummary: true })}>
+                  Chercher aussi dans les résumés
+                </button>
+              </>
+            )}
+          </Empty>
+        ) : (
+          <p className="text-sm text-muted">Collection vide pour l’instant.</p>
+        )
+      ) : (
+        <>
+          <CardGrid dense>
+            {items.map((c) => (
+              <Card key={c.instanceId} card={c} />
+            ))}
+          </CardGrid>
+          <LoadMore onVisible={loadMore} loading={list.isValidating} done={done} />
+        </>
+      )}
     </div>
   );
 }

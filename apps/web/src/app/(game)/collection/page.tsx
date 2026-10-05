@@ -2,16 +2,17 @@
 
 import { ECONOMY, MAX_LEVEL, RARITY_LABELS, recycleValue, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
-import { ChevronsUp, Search } from "lucide-react";
+import { ChevronsUp } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useDeferredValue, useMemo, useState } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid, RaritySigil } from "@/components/Card";
+import { CollectionFilterBar, useCollectionFilters } from "@/components/CollectionFilters";
 import { BulkTagDialog, SelectionBar } from "@/components/SelectionBar";
-import { CardSkeletons, ConfirmDialog, Empty, ErrorBox, LoadMore, RarityFilter, Select, Toggle } from "@/components/ui";
+import { CardSkeletons, ConfirmDialog, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 
@@ -25,16 +26,6 @@ interface Summary {
   /** Boosters à thème dont le joueur possède au moins un article. */
   themes: { id: number; name: string; owned: number; cardCount: number }[];
 }
-
-const SORTS = [
-  { value: "rarity", label: "Rareté" },
-  { value: "date", label: "Plus récentes" },
-  { value: "atk", label: "Attaque" },
-  { value: "def", label: "Défense" },
-  { value: "views", label: "Vues" },
-  { value: "title", label: "Titre" },
-] as const;
-type Sort = (typeof SORTS)[number]["value"];
 
 function Completion({ summary }: { summary: Summary }) {
   return (
@@ -117,23 +108,14 @@ async function inBatches<T extends Record<string, unknown>>(
 function Collection() {
   // `?theme=<id>` : ouverte depuis « Mes cartes de ce booster » sur une fiche carte.
   const urlTheme = useSearchParams().get("theme") ?? "";
-  const [theme, setTheme] = useState(urlTheme);
+  /** Filtres en cours (`filters`), partagés par la liste, « Tout sélectionner » et la fusion en masse. */
+  const { value: f, set, q: query, params: filters } = useCollectionFilters({ theme: urlTheme });
   const [seenTheme, setSeenTheme] = useState(urlTheme);
   if (urlTheme !== seenTheme) {
     // Fiche ouverte par-dessus la collection : la page reste montée, l'URL change.
     setSeenTheme(urlTheme);
-    setTheme(urlTheme);
+    set({ theme: urlTheme });
   }
-  const [rarity, setRarity] = useState<Rarity[]>([]);
-  const [sort, setSort] = useState<Sort>("rarity");
-  const [q, setQ] = useState("");
-  const query = useDeferredValue(q);
-  const [inSummary, setInSummary] = useState(false);
-  const [favorites, setFavorites] = useState<"" | "only" | "exclude">("");
-  const [shiny, setShiny] = useState(false);
-  const [duplicates, setDuplicates] = useState(false);
-  const [tag, setTag] = useState("");
-  const [season, setSeason] = useState("");
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Map<number, Picked>>(new Map());
   const [confirm, setConfirm] = useState<null | { ids: number[]; gain: number; label: string; kept?: number }>(null);
@@ -147,23 +129,7 @@ function Collection() {
 
   const summary = useSWR<Summary>("/collection/summary");
   const { mutate } = useSWRConfig();
-  /** Filtres en cours, partagés par la liste, « Tout sélectionner » et la fusion en masse. */
-  const filters = useMemo(() => {
-    const p = new URLSearchParams();
-    if (rarity.length) p.set("rarity", rarity.join(","));
-    if (query.trim()) {
-      p.set("q", query.trim());
-      if (inSummary) p.set("inSummary", "true");
-    }
-    if (favorites) p.set("favorites", favorites);
-    if (shiny) p.set("shiny", "true");
-    if (duplicates) p.set("duplicates", "true");
-    if (tag) p.set("tag", tag);
-    if (theme) p.set("theme", theme);
-    if (season) p.set("season", season);
-    return p.toString();
-  }, [rarity, query, inSummary, favorites, shiny, duplicates, tag, theme, season]);
-  const params = `${filters}${filters ? "&" : ""}sort=${sort}&limit=60`;
+  const params = `${filters}${filters ? "&" : ""}sort=${f.sort}&limit=60`;
 
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
     prev && !prev.nextCursor ? null : `/collection?${params}&page=${i}`,
@@ -338,8 +304,7 @@ function Collection() {
     }
   }
 
-  const themeInfo = summary.data?.themes.find((t) => String(t.id) === theme);
-  const searchLabel = inSummary ? "Chercher dans le titre et le résumé" : "Filtrer par titre";
+  const themeInfo = summary.data?.themes.find((t) => String(t.id) === f.theme);
 
   return (
     <div className="flex flex-col gap-6">
@@ -354,77 +319,13 @@ function Collection() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_19rem] lg:items-start">
         <div className="flex min-w-0 flex-col gap-4">
-          {/* Barre de filtres */}
-          <div className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-40 flex-1">
-                <Search
-                  aria-hidden
-                  className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint"
-                />
-                <input
-                  type="search"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder={inSummary ? "Titre ou mot du résumé" : "Filtrer par titre"}
-                  aria-label={searchLabel}
-                  className="field h-9 min-h-0 pl-8 text-sm"
-                />
-              </div>
-              <Toggle pressed={inSummary} onChange={setInSummary}>
-                Résumé aussi
-              </Toggle>
-              <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <RarityFilter value={rarity} onChange={setRarity} />
-              <span className="mx-1 hidden h-5 w-px bg-line sm:block" aria-hidden />
-              <div className="flex gap-1.5" role="group" aria-label="Favoris">
-                <Toggle pressed={favorites === "only"} onChange={(on) => setFavorites(on ? "only" : "")}>
-                  Favoris
-                </Toggle>
-                <Toggle pressed={favorites === "exclude"} onChange={(on) => setFavorites(on ? "exclude" : "")}>
-                  Sans favoris
-                </Toggle>
-              </div>
-              <Toggle pressed={shiny} onChange={setShiny}>
-                Brillantes
-              </Toggle>
-              <Toggle pressed={duplicates} onChange={setDuplicates}>
-                Doublons
-              </Toggle>
-              {!!summary.data?.tags.length && (
-                <Select
-                  label="Tag"
-                  value={tag}
-                  onChange={setTag}
-                  options={[{ value: "", label: "Tous" }, ...summary.data.tags.map((t) => ({ value: t, label: t }))]}
-                />
-              )}
-              {!!summary.data?.themes.length && (
-                <Select
-                  label="Booster"
-                  value={theme}
-                  onChange={setTheme}
-                  options={[
-                    { value: "", label: "Tous les boosters" },
-                    ...summary.data.themes.map((t) => ({ value: String(t.id), label: t.name })),
-                  ]}
-                />
-              )}
-              {(summary.data?.seasons.length ?? 0) > 1 && (
-                <Select
-                  label="Édition"
-                  value={season}
-                  onChange={setSeason}
-                  options={[
-                    { value: "", label: "Toutes" },
-                    ...summary.data!.seasons.map((s) => ({ value: String(s), label: `Saison ${s}` })),
-                  ]}
-                />
-              )}
-            </div>
-          </div>
+          <CollectionFilterBar
+            value={f}
+            onChange={set}
+            options={summary.data}
+            owner
+            className="rounded-xl border border-line bg-panel p-3"
+          />
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <span className="tnum text-muted">
@@ -473,12 +374,12 @@ function Collection() {
                     Aller aux paquets
                   </Link>
                 </>
-              ) : inSummary || !query.trim() ? (
+              ) : f.inSummary || !query ? (
                 "Change les filtres pour voir d'autres cartes."
               ) : (
                 <>
-                  Aucun titre ne contient « {query.trim()} ».{" "}
-                  <button type="button" className="article-link" onClick={() => setInSummary(true)}>
+                  Aucun titre ne contient « {query} ».{" "}
+                  <button type="button" className="article-link" onClick={() => set({ inSummary: true })}>
                     Chercher aussi dans les résumés
                   </button>
                 </>
