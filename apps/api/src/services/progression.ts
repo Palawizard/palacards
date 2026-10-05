@@ -531,6 +531,8 @@ interface Row {
   id: string;
   name: string;
   username: string | null;
+  /** Photo ou emoji du joueur ; emblème pour une guilde. */
+  avatar: string | null;
   value: number;
   extra?: string;
   /** Classement « Chance » : paquets mesurés. */
@@ -546,28 +548,45 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
   const season = await activeSeason(ctx.db);
   let rows: Row[] = [];
   if (board === "collection") {
-    const res = await ctx.db.execute<{ owner_id: string; score: number; username: string; name: string }>(sql`
-      select s.owner_id, s.score, u.username, coalesce(u.display_username, u.name) as name
+    const res = await ctx.db.execute<{
+      owner_id: string;
+      score: number;
+      username: string;
+      name: string;
+      avatar: string | null;
+    }>(sql`
+      select s.owner_id, s.score, u.username, coalesce(u.display_username, u.name) as name, p.avatar
       from (${collectionScoresSql(period === "season" ? season : undefined)}) s join "user" u on u.id = s.owner_id
+      left join players p on p.user_id = s.owner_id
       order by s.score desc limit 100
     `);
-    rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, value: r.score }));
+    rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.score }));
   } else if (board === "packs" || board === "luck") {
     const seasonFilter = period === "season" ? sql`where ps.season = ${season}` : sql``;
-    const res = await ctx.db.execute<{ user_id: string; value: string; packs: number; username: string; name: string }>(
+    const res = await ctx.db.execute<{
+      user_id: string;
+      value: string;
+      packs: number;
+      username: string;
+      name: string;
+      avatar: string | null;
+    }>(
       board === "packs"
         ? sql`
-          select ps.user_id, sum(ps.packs) as value, 0 as packs, u.username, coalesce(u.display_username, u.name) as name
-          from pack_stats ps join "user" u on u.id = ps.user_id ${seasonFilter}
-          group by ps.user_id, u.username, u.display_username, u.name
+          select ps.user_id, sum(ps.packs) as value, 0 as packs, u.username, coalesce(u.display_username, u.name) as name,
+            p.avatar
+          from pack_stats ps join "user" u on u.id = ps.user_id left join players p on p.user_id = ps.user_id
+          ${seasonFilter}
+          group by ps.user_id, u.username, u.display_username, u.name, p.avatar
           having sum(ps.packs) > 0
           order by value desc, u.username limit 100
         `
         : sql`
           select ps.user_id, round(sum(ps.pulled_points) * 100.0 / sum(ps.expected_points)) as value,
-            sum(ps.luck_packs)::int as packs, u.username, coalesce(u.display_username, u.name) as name
-          from pack_stats ps join "user" u on u.id = ps.user_id ${seasonFilter}
-          group by ps.user_id, u.username, u.display_username, u.name
+            sum(ps.luck_packs)::int as packs, u.username, coalesce(u.display_username, u.name) as name, p.avatar
+          from pack_stats ps join "user" u on u.id = ps.user_id left join players p on p.user_id = ps.user_id
+          ${seasonFilter}
+          group by ps.user_id, u.username, u.display_username, u.name, p.avatar
           having sum(ps.luck_packs) >= ${LUCK_MIN_PACKS} and sum(ps.expected_points) > 0
           order by sum(ps.pulled_points)::float8 / sum(ps.expected_points) desc, packs desc, u.username limit 100
         `,
@@ -576,6 +595,7 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       id: r.user_id,
       name: r.name,
       username: r.username,
+      avatar: r.avatar,
       value: Number(r.value),
       ...(board === "luck" ? { packs: r.packs } : {}),
     }));
@@ -590,8 +610,14 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
           : period === "season"
             ? sql`p.balance`
             : sql`greatest(p.balance, coalesce((select max(a.wealth) from season_archives a where a.user_id = p.user_id), 0))`;
-    const res = await ctx.db.execute<{ user_id: string; value: string; username: string; name: string }>(sql`
-      select p.user_id, ${value} as value, u.username, coalesce(u.display_username, u.name) as name
+    const res = await ctx.db.execute<{
+      user_id: string;
+      value: string;
+      username: string;
+      name: string;
+      avatar: string | null;
+    }>(sql`
+      select p.user_id, ${value} as value, u.username, coalesce(u.display_username, u.name) as name, p.avatar
       from players p join "user" u on u.id = p.user_id
       order by value desc, u.username limit 100
     `);
@@ -599,6 +625,7 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       id: r.user_id,
       name: r.name,
       username: r.username,
+      avatar: r.avatar,
       value: board === "pass" ? passProgress(Number(r.value)).level : Number(r.value),
     }));
   } else {
@@ -609,7 +636,7 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       left join (${collectionScoresSql(period === "season" ? season : undefined)}) s on s.owner_id = m.user_id
       group by g.id order by score desc limit 100
     `);
-    rows = res.map((r) => ({ id: r.id, name: `${r.emblem} ${r.name}`, username: null, value: r.score, extra: r.tag }));
+    rows = res.map((r) => ({ id: r.id, name: r.name, username: null, avatar: r.emblem, value: r.score, extra: r.tag }));
   }
   const myGuild =
     board === "guilds"

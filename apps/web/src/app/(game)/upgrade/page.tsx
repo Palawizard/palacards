@@ -14,9 +14,10 @@ import {
   type Rarity,
 } from "@palacards/game";
 import type { CardDTO, Page, UpgradeResultDTO } from "@palacards/shared";
-import { ArrowRight, X } from "lucide-react";
+import { ArrowRight, Info, X } from "lucide-react";
 import { animate, AnimatePresence, motion, useMotionValue, useReducedMotion } from "motion/react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWRInfinite from "swr/infinite";
@@ -120,6 +121,31 @@ export default function UpgradePage() {
   const loadMore = useCallback(() => {
     if (!list.isValidating) void list.setSize((s) => s + 1);
   }, [list]);
+
+  // Retour d'une fiche ouverte par-dessus (favori, recyclage, fusion, vente…) : la liste se recharge et l'établi
+  // lâche les cartes devenues favorites, engagées ou disparues.
+  const pathname = usePathname();
+  const away = useRef(false);
+  const { mutate: reloadList } = list;
+  useEffect(() => {
+    if (pathname !== "/upgrade") {
+      away.current = true;
+      return;
+    }
+    if (!away.current) return;
+    away.current = false;
+    void reloadList().then((pages) => {
+      if (!pages) return;
+      const fresh = new Map(pages.flatMap((p) => p.items).map((c) => [c.instanceId, c]));
+      setPicked((p) => {
+        const kept = p.filter((c) => {
+          const now = fresh.get(c.instanceId);
+          return now && !now.favorite && !now.locked;
+        });
+        return kept.length === p.length ? p : kept;
+      });
+    });
+  }, [pathname, reloadList]);
 
   // Cliquetis de l'aiguille, comme la roue du jour.
   useEffect(
@@ -464,17 +490,29 @@ export default function UpgradePage() {
                 const on = picked.some((c) => c.instanceId === card.instanceId);
                 const full = !on && picked.length >= useful;
                 return (
-                  <button
-                    key={card.instanceId}
-                    type="button"
-                    aria-pressed={on}
-                    disabled={!!card.locked || busy || (full && phase === "idle")}
-                    title={card.locked ? "Engagée dans une vente ou un échange" : undefined}
-                    className="text-left transition-[transform,opacity] duration-150 active:scale-[0.98] disabled:opacity-40"
-                    onClick={() => toggle(card)}
-                  >
-                    <Card card={card} href={null} selected={on} />
-                  </button>
+                  <div key={card.instanceId} className="group/card relative">
+                    <button
+                      type="button"
+                      aria-pressed={on}
+                      disabled={!!card.locked || busy || (full && phase === "idle")}
+                      title={card.locked ? "Engagée dans une vente ou un échange" : undefined}
+                      className="w-full text-left transition-[transform,opacity] duration-150 active:scale-[0.98] disabled:opacity-40"
+                      onClick={() => toggle(card)}
+                    >
+                      <Card card={card} href={null} selected={on} />
+                    </button>
+                    {/* Fiche par-dessus l'upgrader (favori, tags…) ; au survol à la souris, toujours au doigt. */}
+                    <Link
+                      href={`/card/${card.cardId}`}
+                      scroll={false}
+                      prefetch={false}
+                      aria-label={`Fiche de ${card.title}`}
+                      title="Voir la fiche"
+                      className="absolute -right-1.5 -top-1.5 z-[3] grid size-7 place-items-center rounded-full border border-line-strong bg-panel text-muted shadow-sm transition-[opacity,transform,color] duration-150 ease-out after:absolute after:-inset-2 after:content-[''] hover:text-text active:scale-95 pointer-fine:opacity-0 pointer-fine:group-hover/card:opacity-100 pointer-fine:focus-visible:opacity-100"
+                    >
+                      <Info className="size-4" aria-hidden />
+                    </Link>
+                  </div>
                 );
               })}
             </CardGrid>
