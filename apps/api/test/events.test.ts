@@ -1,5 +1,13 @@
 import { sql } from "@palacards/db";
-import { upgradeChance, upgradeRefund, WHEEL_SEGMENTS, type Rarity } from "@palacards/game";
+import {
+  upgradeCardsToCap,
+  upgradeChance,
+  upgradeRefund,
+  WHEEL_GAP_MS,
+  WHEELS,
+  type Rarity,
+  type WheelTier,
+} from "@palacards/game";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { createTheme } from "../src/services/themes.js";
 import { nextParisMidnight } from "../src/services/wheel.js";
@@ -8,8 +16,10 @@ import { makeApp, signUp, signUpAdmin, uniqueName, type Client } from "./helpers
 
 const { app, ctx } = await makeApp();
 const secure = ctx.random;
+const clock = ctx.now;
 afterEach(() => {
   ctx.random = secure;
+  ctx.now = clock;
 });
 afterAll(() => app.close());
 
@@ -112,41 +122,173 @@ describe("upgrader", () => {
   });
 });
 
-describe("roue quotidienne", () => {
-  it("un tour par jour, avec la récompense de la case tirée", async () => {
+describe("upgrade en série", () => {
+  it("upgrade les doublons par lots au plafond, sans toucher aux favoris, brillantes ni au meilleur exemplaire", async () => {
+    const p = await signUp(app);
+    const lot = upgradeCardsToCap("C")!;
+    // La brillante est le meilleur exemplaire (gardé) ; avec le favori, il reste 2 lots pleins.
+    const ids = await grantCards(p, "C", lot * 2 + 2);
+    const [fav, shiny] = [ids[1]!, ids[2]!];
+    await p.post(`/collection/${fav}/favorite`, { favorite: true });
+    await ctx.db.execute(sql`update card_instances set shiny = true where id = ${shiny}`);
+
+    const preview = (await p.get("/upgrade/series?rarity=C")).body;
+    expect(preview).toMatchObject({ rarity: "C", target: "PC", available: lot * 2, cards: lot * 2 });
+    expect(preview.lots).toEqual([
+      { cards: lot, chance: upgradeChance("C", lot) },
+      { cards: lot, chance: upgradeChance("C", lot) },
+    ]);
+
+    // Premier lot réussi (tirage 0), second raté (tirage 9 999).
+    let call = 0;
+    ctx.random = (max) => (max === 10_000 ? (call++ === 0 ? 0 : 9_999) : 0);
+    const before = await balance(p);
+    const run = await p.post("/upgrade/series", { rarity: "C" });
+    expect(run.status).toBe(200);
+    expect(run.body).toMatchObject({ successes: 1, remaining: 0, refund: upgradeRefund("C", lot) });
+    expect(run.body.lots.map((l: { success: boolean }) => l.success)).toEqual([true, false]);
+    expect(run.body.cards).toHaveLength(1);
+    expect(run.body.cards[0]).toMatchObject({ rarity: "PC" });
+    expect(await balance(p)).toBe(before + upgradeRefund("C", lot));
+
+    const left = await ctx.db.execute<{ id: number }>(
+      sql`select id::int as id from card_instances where owner_id = ${p.userId}
+          and card_id = (select card_id from card_instances where id = ${fav})`,
+    );
+    expect(left.map((r) => r.id).sort((a, b) => a - b)).toEqual([fav, shiny].sort((a, b) => a - b));
+    expect((await p.post("/upgrade/series", { rarity: "C" })).body.error).toBe("no_duplicates");
+    expect((await p.get("/upgrade/series?rarity=L")).body.error).toBe("max_rarity");
+    await expectLedgerConsistent(p);
+  });
+});
+
+describe("roues du jour", () => {
+  /** Premier tirage aléatoire : la case `segment` de la roue `tier` ; les suivants : `then`. */
+  function landOn(tier: WheelTier, segment: number, then: (max: number) => number = (max) => Math.floor(max / 2)) {
+    const at = WHEELS[tier].slice(0, segment).reduce((a, s) => a + s.weight, 0);
+    let first = true;
+    ctx.random = (max) => (first ? ((first = false), at) : then(max));
+  }
+  const findSegment = (tier: WheelTier, test: (r: (typeof WHEELS)[WheelTier][number]["reward"]) => boolean) =>
+    WHEELS[tier].findIndex((s) => test(s.reward));
+  /** Midi à Paris, loin de minuit (le 2026-07-01 : heure d'été). */
+  const noon = new Date("2026-07-01T10:00:00Z").getTime();
+
+  it("petite, puis moyenne 2 h 30 après, puis grande 2 h 30 après, puis plus rien jusqu'à minuit", async () => {
+    ctx.now = () => new Date(noon);
     const p = await signUp(app);
     expect((await p.get("/me")).body.wheelReady).toBe(true);
-    const state = await p.get("/wheel");
-    expect(state.body.ready).toBe(true);
-    expect(state.body.segments).toHaveLength(WHEEL_SEGMENTS.length);
+    const state = (await p.get("/wheel")).body;
+    expect(state).toMatchObject({ next: "small", ready: true, missed: false, gapMinutes: 150 });
+    expect(state.wheels.map((w: { status: string }) => w.status)).toEqual(["ready", "locked", "locked"]);
 
     const before = await balance(p);
-    ctx.random = () => 0; // première case : 25 PW
-    const spin = await p.post("/wheel/spin");
-    expect(spin.status).toBe(200);
-    expect(spin.body).toMatchObject({ segment: 0, reward: { kind: "pw", amount: 25 } });
-    expect(await balance(p)).toBe(before + 25);
-    expect((await p.post("/wheel/spin")).body.error).toBe("wheel_used");
+    landOn("small", 0); // 100 PW
+    const small = await p.post("/wheel/spin");
+    expect(small.status).toBe(200);
+    expect(small.body).toMatchObject({ tier: "small", segment: 0, prize: { kind: "pw", amount: 100 } });
+    expect(await balance(p)).toBe(before + 100);
+    expect(small.body.wheel).toMatchObject({ next: "medium", ready: false });
+    expect(small.body.wheel.availableAt).toBe(new Date(noon + WHEEL_GAP_MS).toISOString());
+    expect((await p.post("/wheel/spin")).body.error).toBe("wheel_not_ready");
     expect((await p.get("/me")).body.wheelReady).toBe(false);
+
+    ctx.now = () => new Date(noon + WHEEL_GAP_MS - 1_000);
+    expect((await p.post("/wheel/spin")).body.error).toBe("wheel_not_ready");
+    ctx.now = () => new Date(noon + WHEEL_GAP_MS);
+    expect((await p.get("/me")).body.wheelReady).toBe(true);
+    landOn("medium", 0); // 200 PW
+    expect((await p.post("/wheel/spin")).body).toMatchObject({ tier: "medium", prize: { kind: "pw", amount: 200 } });
+
+    ctx.now = () => new Date(noon + 2 * WHEEL_GAP_MS);
+    const packsAt = findSegment("large", (r) => r.kind === "packs");
+    landOn("large", packsAt);
+    const large = await p.post("/wheel/spin");
+    expect(large.body).toMatchObject({ tier: "large", prize: WHEELS.large[packsAt]!.reward });
+    expect(large.body.packs.bonus).toBe((WHEELS.large[packsAt]!.reward as { amount: number }).amount);
+    expect(large.body.wheel.wheels.map((w: { status: string }) => w.status)).toEqual(["done", "done", "done"]);
+    expect((await p.post("/wheel/spin")).body.error).toBe("wheel_used");
+
+    // Le lendemain, tout repart de la petite roue.
+    ctx.now = () => new Date(noon + 24 * 3_600_000);
+    expect((await p.get("/wheel")).body).toMatchObject({ next: "small", ready: true });
     await expectLedgerConsistent(p);
   });
 
-  it("donne des paquets bonus ou une carte légendaire", async () => {
-    const packsAt = WHEEL_SEGMENTS.findIndex((s) => s.reward.kind === "packs");
-    const legendAt = WHEEL_SEGMENTS.findIndex((s) => s.reward.kind === "card" && s.reward.rarity === "L");
-    const start = (i: number) => WHEEL_SEGMENTS.slice(0, i).reduce((a, s) => a + s.weight, 0);
+  it("une roue qui ne serait prête qu'après minuit est perdue pour la journée", async () => {
+    const late = new Date("2026-07-01T20:30:00Z").getTime(); // 22 h 30 à Paris
+    ctx.now = () => new Date(late);
+    const p = await signUp(app);
+    landOn("small", 0);
+    await p.post("/wheel/spin");
+    const state = (await p.get("/wheel")).body;
+    expect(state).toMatchObject({ next: "medium", ready: false, missed: true });
+    expect(state.wheels.map((w: { status: string }) => w.status)).toEqual(["done", "missed", "missed"]);
+    expect((await p.post("/wheel/spin")).body.error).toBe("wheel_too_late");
+    ctx.now = () => new Date(late + 2 * 3_600_000); // après minuit
+    expect((await p.get("/wheel")).body).toMatchObject({ next: "small", ready: true });
+  });
 
-    const a = await signUp(app);
-    ctx.random = () => start(packsAt);
-    const spinA = await a.post("/wheel/spin");
-    expect(spinA.body.packs.bonus).toBe((WHEEL_SEGMENTS[packsAt]!.reward as { amount: number }).amount);
+  it("donne un booster à thème en vente, ou deux paquets par booster s'il n'y en a aucun", async () => {
+    // Un jour sans autre thème en vente (ceux des autres tests sont autour de l'heure réelle).
+    const start = new Date("2026-06-10T08:00:00Z").getTime();
+    ctx.now = () => new Date(start);
+    const admin = await signUpAdmin(app, ctx);
+    const titles = await ctx.db.execute<{ title: string }>(sql`
+      select title from cards where season = (select id from seasons where status = 'active')
+        and rarity in ('C', 'R') order by id desc limit 20
+    `);
+    const theme = await admin.post("/admin/themes", {
+      name: `Thème ${uniqueName("roue")}`,
+      titles: titles.map((t) => t.title),
+      price: 200,
+      startsAt: new Date(start - 60_000).toISOString(),
+      endsAt: new Date(start + 2 * 86_400_000).toISOString(),
+    });
+    expect(theme.status).toBe(200);
+    const themeAt = findSegment("medium", (r) => r.kind === "theme");
 
-    const b = await signUp(app);
-    let first = true;
-    // Premier appel : la case ; les suivants : le tirage de l'article.
-    ctx.random = (max) => (first ? ((first = false), start(legendAt)) : Math.floor(max / 2));
-    const spinB = await b.post("/wheel/spin");
-    expect(spinB.body.card).toMatchObject({ rarity: "L" });
+    const p = await signUp(app);
+    landOn("small", 0);
+    await p.post("/wheel/spin");
+    ctx.now = () => new Date(start + WHEEL_GAP_MS + 1_000);
+    expect((await p.get("/wheel")).body.theme).toMatchObject({ id: theme.body.id });
+    landOn("medium", themeAt);
+    const spin = await p.post("/wheel/spin");
+    expect(spin.body.prize).toMatchObject({ kind: "theme", amount: 1 });
+    const [stock] = await ctx.db.execute<{ count: number }>(
+      sql`select count from player_theme_packs where user_id = ${p.userId} and theme_id = ${spin.body.prize.themeId}`,
+    );
+    expect(stock!.count).toBe(1);
+
+    // Bien après la fin de tous les thèmes : deux paquets bonus par booster.
+    const far = new Date("2031-03-03T10:00:00Z").getTime();
+    ctx.now = () => new Date(far);
+    const q = await signUp(app);
+    landOn("small", 0);
+    await q.post("/wheel/spin");
+    ctx.now = () => new Date(far + 2 * WHEEL_GAP_MS);
+    expect((await q.get("/wheel")).body.theme).toBeNull();
+    landOn("medium", 0);
+    await q.post("/wheel/spin");
+    const largeTheme = findSegment("large", (r) => r.kind === "theme");
+    ctx.now = () => new Date(far + 4 * WHEEL_GAP_MS);
+    landOn("large", largeTheme);
+    const fallback = await q.post("/wheel/spin");
+    expect(fallback.body.prize).toEqual({ kind: "packs", amount: 4 });
+    expect(fallback.body.packs.bonus).toBe(4);
+    await expectLedgerConsistent(q);
+  });
+
+  it("peut donner une carte légendaire", async () => {
+    ctx.now = () => new Date(noon);
+    const p = await signUp(app);
+    landOn(
+      "small",
+      findSegment("small", (r) => r.kind === "card" && r.rarity === "L"),
+    );
+    const spin = await p.post("/wheel/spin");
+    expect(spin.body.card).toMatchObject({ rarity: "L" });
   });
 
   it("repart à minuit, heure de Paris", () => {
@@ -201,6 +343,10 @@ describe("boosters à thème", () => {
       sql`select card_id from theme_cards where theme_id = ${created.body.id}`,
     );
     const pool = new Set(inTheme.map((r) => Number(r.card_id)));
+    // Tous les articles du booster se parcourent dans le catalogue.
+    const listed = await p.get(`/cards?theme=${created.body.id}&limit=100`);
+    expect(listed.body.items).toHaveLength(30);
+    for (const c of listed.body.items) expect(pool.has(c.cardId)).toBe(true);
     expect(opened.body.theme.themedCardIds.length).toBeGreaterThan(0);
     for (const id of opened.body.theme.themedCardIds) expect(pool.has(id)).toBe(true);
     await expectLedgerConsistent(p);

@@ -10,6 +10,8 @@ import {
   upgradeChance,
   upgradeChancePerCard,
   upgradeRefund,
+  upgradeSeriesLots,
+  UPGRADE_SERIES_MAX_LOTS,
 } from "./upgrade.js";
 
 /** Nombre moyen de cartes d'une rareté par paquet. */
@@ -61,5 +63,27 @@ describe("upgrader", () => {
     expect(upgradeRefund("UR", 4)).toBe(ECONOMY.recycleValue.UR);
     expect(upgradeRefund("SR", 5)).toBe(50);
     expect(upgradeRefund("C", 3)).toBe(0);
+  });
+});
+
+describe("upgrade en série", () => {
+  it("fait des lots au plafond, puis un dernier lot avec le reste", () => {
+    const cap = upgradeCardsToCap("C")!;
+    expect(upgradeSeriesLots("C", cap * 3 + 1)).toEqual([cap, cap, cap, 1]);
+    expect(upgradeSeriesLots("SR", 23)).toEqual([10, 10, 3]);
+    // Le plafond n'est jamais atteint vers une légendaire : lots de 10.
+    expect(upgradeSeriesLots("UR", 12)).toEqual([10, 2]);
+  });
+
+  it("ne dépasse pas le nombre de lots par clic, et rien pour une légendaire ou sans doublon", () => {
+    expect(upgradeSeriesLots("C", 10_000)).toHaveLength(UPGRADE_SERIES_MAX_LOTS);
+    expect(upgradeSeriesLots("L", 20)).toEqual([]);
+    expect(upgradeSeriesLots("R", 0)).toEqual([]);
+  });
+
+  it("aucun lot ne perd de rendement par carte (plafond mis à part)", () => {
+    for (const r of ["C", "PC", "R", "SR", "UR"] as const)
+      for (const n of upgradeSeriesLots(r, 17))
+        expect(upgradeChance(r, n)).toBeGreaterThanOrEqual(Math.min(UPGRADE_MAX_CHANCE, n * upgradeChance(r, 1)));
   });
 });

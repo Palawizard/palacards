@@ -174,6 +174,8 @@ interface CatalogQuery {
   minDef?: number;
   maxDef?: number;
   owned?: "yes" | "no";
+  /** Articles d'un booster à thème. */
+  theme?: number;
   sort: CatalogSort;
   cursor?: string;
   limit: number;
@@ -251,6 +253,8 @@ async function catalogPage(
   if (query.owned === "yes")
     where.push(sql`c.id in (select o.card_id from card_instances o where o.owner_id = ${userId})`);
   if (query.owned === "no") where.push(sql`not ${ownedExpr}`);
+  if (query.theme !== undefined)
+    where.push(sql`c.id in (select tc.card_id from theme_cards tc where tc.theme_id = ${query.theme})`);
 
   if (q && fuzzy) where.push(sql`lower(f_unaccent(${q})) <% c.search_title`);
   else if (q)

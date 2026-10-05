@@ -1,13 +1,16 @@
 "use client";
 
 import type { Rarity } from "@palacards/game";
-import type { CardDTO, Page } from "@palacards/shared";
-import { Search } from "lucide-react";
+import type { CardDTO, Page, ThemeDTO } from "@palacards/shared";
+import { Search, X } from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useMemo, useState } from "react";
+import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
 import { CardSkeletons, Empty, ErrorBox, LoadMore, RarityFilter, Select } from "@/components/ui";
+import { fmt } from "@/lib/format";
 import { useDebounced } from "@/lib/use-debounced";
 
 const SORTS = [
@@ -32,6 +35,17 @@ function Catalog() {
   const [owned, setOwned] = useState<(typeof OWNED)[number]["value"]>("");
   const [minAtk, setMinAtk] = useState("");
   const [minDef, setMinDef] = useState("");
+  // Articles d'un booster à thème (lien « Voir les articles » de la page Paquets).
+  const [theme, setTheme] = useState(search.get("theme") ?? "");
+  const themes = useSWR<ThemeDTO[]>("/themes");
+  const themeOptions = useMemo(
+    () => [
+      { value: "", label: "Tous les articles" },
+      ...(themes.data ?? []).map((t) => ({ value: String(t.id), label: t.name })),
+    ],
+    [themes.data],
+  );
+  const chosen = themes.data?.find((t) => String(t.id) === theme);
 
   const params = useMemo(() => {
     const p = new URLSearchParams({ sort, limit: "48" });
@@ -40,8 +54,9 @@ function Catalog() {
     if (owned) p.set("owned", owned);
     if (/^\d+$/.test(minAtk)) p.set("minAtk", minAtk);
     if (/^\d+$/.test(minDef)) p.set("minDef", minDef);
+    if (/^\d+$/.test(theme)) p.set("theme", theme);
     return p.toString();
-  }, [query, rarity, sort, owned, minAtk, minDef]);
+  }, [query, rarity, sort, owned, minAtk, minDef, theme]);
 
   const list = useSWRInfinite<Page<CardDTO> & { approximate?: boolean }>(
     (i, prev) =>
@@ -57,7 +72,23 @@ function Catalog() {
 
   return (
     <div className="flex flex-col gap-6">
-      <h1 className="page-title">Toutes les cartes</h1>
+      <div>
+        <h1 className="page-title">{chosen ? chosen.name : "Toutes les cartes"}</h1>
+        {chosen && (
+          <p className="hatnote mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span>
+              Les {fmt(chosen.cardCount)} articles du booster à thème, à tirer dans ses boosters.{" "}
+              <Link href="/pulls" className="article-link">
+                Voir le booster
+              </Link>
+            </span>
+            <button type="button" className="chip" onClick={() => setTheme("")}>
+              <X aria-hidden className="size-3.5" />
+              Tous les articles
+            </button>
+          </p>
+        )}
+      </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-3">
         <form
@@ -86,6 +117,9 @@ function Catalog() {
           <RarityFilter value={rarity} onChange={setRarity} />
           <span className="mx-1 hidden h-5 w-px bg-line sm:block" aria-hidden />
           <Select label="Possession" value={owned} onChange={setOwned} options={OWNED} />
+          {themeOptions.length > 1 && (
+            <Select label="Booster" value={theme} onChange={setTheme} options={themeOptions} />
+          )}
           <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />
           <details className="group relative">
             <summary className="chip cursor-pointer list-none">Stats minimales</summary>
@@ -140,10 +174,10 @@ function Catalog() {
   );
 }
 
-/** Remonte le catalogue quand la recherche de l'en-tête change l'URL. */
+/** Remonte le catalogue quand la recherche de l'en-tête (ou un lien vers un booster) change l'URL. */
 function CatalogFromUrl() {
-  const q = useSearchParams().get("q") ?? "";
-  return <Catalog key={q} />;
+  const search = useSearchParams();
+  return <Catalog key={`${search.get("q") ?? ""}|${search.get("theme") ?? ""}`} />;
 }
 
 export default function CardsPage() {

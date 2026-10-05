@@ -216,8 +216,12 @@ export const players = pgTable(
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
     loginStreak: integer("login_streak").notNull().default(0),
     lastLoginDay: date("last_login_day"),
-    /** Dernier jour (Paris) où la roue quotidienne a été tournée. */
+    /** Jour (Paris) des roues du jour déjà tournées (`wheel_step` d'entre elles). */
     lastWheelDay: date("last_wheel_day"),
+    /** Roues tournées le jour `last_wheel_day` : 1 petite, 2 moyenne, 3 grande. */
+    wheelStep: smallint("wheel_step").notNull().default(0),
+    /** Heure du dernier tour de roue (la suivante s'ouvre 2 h 30 après). */
+    wheelLastAt: tstz("wheel_last_at"),
     /** XP du passe de saison, valable pour la saison `pass_season` (une autre saison : on repart de 0). */
     seasonXp: integer("season_xp").notNull().default(0),
     passSeason: smallint("pass_season"),
