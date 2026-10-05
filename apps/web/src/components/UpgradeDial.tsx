@@ -18,9 +18,12 @@ export type DialState = "idle" | "spinning" | "win" | "lose";
 export const chanceText = (bp: number) =>
   (bp / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** Arrondi au centième : cos/sin diffèrent au dernier chiffre entre Node et le navigateur (erreur d'hydratation). */
+const round = (n: number) => Math.round(n * 100) / 100;
+
 function polar(deg: number, radius: number) {
   const a = ((deg - 90) * Math.PI) / 180;
-  return [C + radius * Math.cos(a), C + radius * Math.sin(a)] as const;
+  return [round(C + radius * Math.cos(a)), round(C + radius * Math.sin(a))] as const;
 }
 
 /**
