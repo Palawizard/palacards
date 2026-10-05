@@ -13,7 +13,8 @@ import {
   type DropTable,
 } from "@palacards/game";
 import type { ThemeDTO } from "@palacards/shared";
-import { ExternalLink, Ticket } from "lucide-react";
+import { ExternalLink, LayoutGrid, Ticket } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -295,6 +296,10 @@ function ThemeBox({ theme }: { theme: ThemeDTO }) {
             </div>
           </div>
         )}
+        <Link href={`/cards?theme=${theme.id}`} className="btn w-full">
+          <LayoutGrid aria-hidden className="size-4" />
+          Voir les {fmt(theme.cardCount)} articles
+        </Link>
       </div>
       <div className="border-t border-line">
         <RatesTable table={DROP_TABLE_THEMED} last={DROP_TABLE_THEMED_GUARANTEED} />

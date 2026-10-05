@@ -1,5 +1,5 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
-import { AUTO_RECYCLE_RARITIES, parisDay, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
+import { AUTO_RECYCLE_RARITIES, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
 import { avatarSchema, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -38,6 +38,7 @@ import { activeSeason, getPlayer, packState, wallet } from "../services/players.
 import { ensureQuests } from "../services/quests.js";
 import { getProfile } from "../services/profiles.js";
 import { newSuggestionsCount, showSuggestionBanner } from "../services/suggestions.js";
+import { playerWheelSchedule } from "../services/wheel.js";
 
 const rarityList = z
   .string()
@@ -77,6 +78,7 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "achievements-v2", until: "2026-12-01T00:00:00+01:00" },
   { key: "suggestions", until: "2026-12-01T00:00:00+01:00" },
   { key: "updates", until: "2026-12-01T00:00:00+01:00" },
+  { key: "wheels", until: "2026-12-01T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */
@@ -113,7 +115,7 @@ export async function me(
     unreadMessages: await unreadMessages(ctx, user.id),
     season,
     elo: p.elo,
-    wheelReady: p.lastWheelDay !== parisDay(ctx.now()),
+    wheelReady: playerWheelSchedule(p, ctx.now()).ready,
     themesOnSale: await themesOnSale(ctx),
     themePacks: await unopenedThemePacks(ctx, user.id),
     newFeatures: FEATURE_ANNOUNCEMENTS.filter(
@@ -327,6 +329,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
         minDef: statParam.optional(),
         maxDef: statParam.optional(),
         owned: z.enum(["yes", "no"]).optional(),
+        theme: intParam.positive().optional(),
         sort: z.enum(["views", "atk", "def", "title"]).default("views"),
         cursor: z.string().max(200).optional(),
         limit: intParam.min(1).max(100).default(48),

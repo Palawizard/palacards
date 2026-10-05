@@ -641,3 +641,147 @@
     animation-name: pc-fade-in;
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* Roues du jour : trois roues, de plus en plus grandes et dorées.     */
+/* ------------------------------------------------------------------ */
+
+[data-tier="small"] {
+  --wheel-a: var(--color-cover);
+  --wheel-b: var(--color-cover-2);
+  --wheel-ink: var(--color-accent);
+  --wheel-bulb: var(--color-accent);
+  --wheel-hub: var(--color-cover);
+  --wheel-rim-hi: color-mix(in oklab, var(--color-cover) 70%, #fff);
+  --wheel-rim-lo: var(--color-cover-2);
+  --wheel-accent: color-mix(in oklab, var(--color-cover) 70%, #fff);
+}
+[data-tier="medium"] {
+  --wheel-a: #6d28d9;
+  --wheel-b: #4c1d95;
+  --wheel-ink: #fde68a;
+  --wheel-bulb: #fde68a;
+  --wheel-hub: #4c1d95;
+  --wheel-rim-hi: #a78bfa;
+  --wheel-rim-lo: #3b0f7a;
+  --wheel-accent: #8b5cf6;
+}
+[data-tier="large"] {
+  --wheel-a: #17153a;
+  --wheel-b: #262058;
+  --wheel-ink: var(--color-accent);
+  --wheel-bulb: #fff3b0;
+  --wheel-hub: #17153a;
+  --wheel-rim-hi: #ffe27a;
+  --wheel-rim-lo: #a86b00;
+  --wheel-accent: #e0a526;
+}
+
+/* La roue grandit avec son rang (la grande prend toute la place). */
+.pc-wheel-stage {
+  position: relative;
+  width: min(21rem, 78vw);
+}
+.pc-wheel-stage[data-tier="medium"] {
+  width: min(23.5rem, 82vw);
+}
+.pc-wheel-stage[data-tier="large"] {
+  width: min(26rem, 86vw);
+}
+
+/* Programme de la journée : trois tickets, la roue affichée est en relief. */
+.pc-wheel-day {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+  max-width: 48rem;
+}
+@media (min-width: 768px) {
+  .pc-wheel-day {
+    gap: 0.75rem;
+    margin-inline: auto;
+    width: 100%;
+  }
+}
+.pc-wheel-station {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 3.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 2px dashed var(--color-line-strong);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--color-panel) 60%, transparent);
+  color: var(--color-muted);
+  text-align: left;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms var(--ease-out);
+}
+.pc-wheel-station:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.pc-wheel-station:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+.pc-wheel-station[aria-pressed="true"] {
+  border-style: solid;
+  border-color: var(--wheel-accent);
+  background: var(--color-panel);
+  color: var(--color-text);
+  box-shadow: var(--shadow-lift);
+}
+@media (hover: hover) and (pointer: fine) {
+  .pc-wheel-station:hover:not(:disabled):not([aria-pressed="true"]) {
+    border-color: var(--wheel-accent);
+    color: var(--color-text);
+  }
+}
+/* Petit disque aux couleurs de la roue, ampoule allumée quand elle est prête. */
+.pc-wheel-glyph {
+  position: relative;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: conic-gradient(var(--wheel-a) 0 25%, var(--wheel-b) 0 50%, var(--wheel-a) 0 75%, var(--wheel-b) 0);
+  box-shadow:
+    0 0 0 3px var(--wheel-rim-lo),
+    0 0 0 4px rgb(0 0 0 / 0.15);
+}
+.pc-wheel-glyph::after {
+  content: "";
+  position: absolute;
+  inset: 34%;
+  border-radius: 999px;
+  background: var(--color-accent);
+}
+.pc-wheel-station[data-status="done"] .pc-wheel-glyph,
+.pc-wheel-station[data-status="missed"] .pc-wheel-glyph {
+  filter: saturate(0.25) brightness(0.85);
+}
+.pc-wheel-station[data-status="ready"] .pc-wheel-state {
+  color: var(--color-good);
+}
+.pc-wheel-station[data-status="ready"] .pc-wheel-glyph::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px rgb(255 210 63 / 0.25);
+}
+@media (max-width: 420px) {
+  .pc-wheel-station {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+}
