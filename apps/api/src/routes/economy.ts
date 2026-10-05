@@ -27,7 +27,7 @@ import { findUserByName } from "../services/profiles.js";
 import { acceptTrade, closeTrade, counterTrade, listTrades, proposeTrade } from "../services/trades.js";
 import { redeemCode } from "../services/codes.js";
 import { listThemes } from "../services/themes.js";
-import { upgrade } from "../services/upgrade.js";
+import { upgrade, upgradeSeries, upgradeSeriesPreview } from "../services/upgrade.js";
 import { spinWheel, wheelState } from "../services/wheel.js";
 
 const id = z.coerce.number().int().positive();
@@ -189,6 +189,13 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     return upgrade(ctx, req.user.id, instanceIds);
   });
+  const seriesRarity = z.object({ rarity: z.enum(RARITIES) });
+  api.get("/upgrade/series", auth, async (req) =>
+    upgradeSeriesPreview(ctx, req.user.id, parse(seriesRarity, req.query).rarity),
+  );
+  api.post("/upgrade/series", limited(10), async (req) =>
+    upgradeSeries(ctx, req.user.id, parse(seriesRarity, req.body).rarity),
+  );
   api.get("/wheel", auth, async (req) => wheelState(ctx, req.user.id));
   api.post("/wheel/spin", limited(10), async (req) => spinWheel(ctx, req.user.id));
   // Limite serrée : pas de devinette de codes à la chaîne.
