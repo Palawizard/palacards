@@ -401,8 +401,9 @@ export async function duplicateIds(
   ctx: Ctx,
   ownerId: string,
   rarities?: Rarity[],
+  db: DbOrTx = ctx.db,
 ): Promise<{ instanceIds: number[]; gain: number }> {
-  const rows = await ctx.db
+  const rows = await db
     .select({
       id: ci.id,
       cardId: ci.cardId,
@@ -423,7 +424,7 @@ export async function duplicateIds(
     if (!cur || isBetterCopy(r, cur)) best.set(r.cardId, r);
   }
   const requested = await requestedInPendingTrades(
-    ctx.db,
+    db,
     rows.filter((r) => best.get(r.cardId)?.id !== r.id).map((r) => r.id),
   );
   const dups = rows

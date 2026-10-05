@@ -92,7 +92,7 @@ export function questLabel(q: QuestDef): string {
     case "recycle_cards":
       return `Recycler ${n} carte${s}`;
     case "spin_wheel":
-      return "Tourner la roue du jour";
+      return "Tourner une roue du jour";
     case "play_article":
       return "Jouer à l'article du jour";
     case "find_article":

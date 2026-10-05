@@ -34,7 +34,7 @@ function packsToOpen(me: MeDTO): number {
 }
 
 const DOT_LABEL = {
-  wheel: "Tour gratuit disponible",
+  wheel: "Une roue est prête",
   article: "Article du jour à deviner",
   boss: "Assauts disponibles contre le boss",
 } as const;

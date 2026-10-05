@@ -58,3 +58,20 @@ export function upgradeCardsToCap(from: Rarity): number | null {
 export function upgradeRefund(from: Rarity, count: number): number {
   return Math.floor(ECONOMY.recycleValue[from] * count * UPGRADE_REFUND_RATE);
 }
+
+/** Upgrade en série : lots lancés au plus en un clic (les doublons restants attendent le clic suivant). */
+export const UPGRADE_SERIES_MAX_LOTS = 50;
+
+/**
+ * Découpe `cards` doublons d'une rareté en lots pour l'upgrade en série. La chance est proportionnelle au
+ * nombre de cartes jusqu'au plafond : des lots juste au plafond (10 cartes s'il n'est jamais atteint)
+ * tirent le meilleur de chaque carte, et le reste forme un dernier lot plus petit, au même rendement.
+ */
+export function upgradeSeriesLots(from: Rarity, cards: number): number[] {
+  if (!nextRarity(from) || cards < UPGRADE_MIN_CARDS) return [];
+  const size = upgradeCardsToCap(from) ?? UPGRADE_MAX_CARDS;
+  const lots: number[] = [];
+  for (let left = cards; left > 0 && lots.length < UPGRADE_SERIES_MAX_LOTS; left -= size)
+    lots.push(Math.min(size, left));
+  return lots;
+}
