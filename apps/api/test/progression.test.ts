@@ -100,8 +100,9 @@ describe("classements et saisons", () => {
         expect(res.status).toBe(200);
       }
     }
+    await p.patch("/me/settings", { avatar: "🦉" });
     const res = await p.get("/leaderboard?board=collection&period=season");
-    expect(res.body.rows.some((r: { me: boolean }) => r.me)).toBe(true);
+    expect(res.body.rows.find((r: { me: boolean }) => r.me)?.avatar).toBe("🦉");
   });
 
   it("verrouille les joueurs dans le même ordre en SQL (bascule) et en JS (lockPlayers)", async () => {
