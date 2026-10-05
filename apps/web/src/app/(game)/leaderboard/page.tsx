@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { LUCK_MIN_PACKS } from "@palacards/game";
 import useSWR from "swr";
+import { Avatar } from "@/components/Avatar";
 import { ErrorBox } from "@/components/ui";
 import { fmt } from "@/lib/format";
 
@@ -12,6 +13,8 @@ interface Row {
   id: string;
   name: string;
   username: string | null;
+  /** Photo ou emoji du joueur ; emblème pour une guilde. */
+  avatar: string | null;
   value: number;
   extra?: string;
   /** Classement « Chance » : boosters mesurés. */
@@ -118,22 +121,34 @@ export default function LeaderboardPage() {
                 >
                   {r.rank}
                 </td>
-                <td className="px-3 py-2">
-                  {r.username ? (
-                    <Link href={`/u/${r.username}`} className="font-semibold hover:underline">
-                      {r.name}
-                    </Link>
-                  ) : (
-                    <span className="font-semibold">
-                      {r.name} {r.extra && <span className="text-faint">[{r.extra}]</span>}
-                    </span>
-                  )}
-                  {r.me && <span className="ml-2 text-xs text-good">toi</span>}
-                  {r.packs !== undefined && (
-                    <span className="ml-2 text-xs text-faint">
-                      {fmt(r.packs)} booster{r.packs > 1 ? "s" : ""}
-                    </span>
-                  )}
+                <td className="px-3 py-1.5">
+                  <div className="flex items-center gap-2.5">
+                    {r.username ? (
+                      // Doublon du lien du nom, hors tabulation : l'avatar aussi mène au profil.
+                      <Link href={`/u/${r.username}`} tabIndex={-1} aria-hidden className="rounded-full">
+                        <Avatar name={r.name} avatar={r.avatar} size="sm" />
+                      </Link>
+                    ) : (
+                      <Avatar name={r.name} avatar={r.avatar} size="sm" />
+                    )}
+                    <div className="min-w-0">
+                      {r.username ? (
+                        <Link href={`/u/${r.username}`} className="font-semibold hover:underline">
+                          {r.name}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold">
+                          {r.name} {r.extra && <span className="text-faint">[{r.extra}]</span>}
+                        </span>
+                      )}
+                      {r.me && <span className="ml-2 text-xs text-good">toi</span>}
+                      {r.packs !== undefined && (
+                        <span className="ml-2 text-xs text-faint">
+                          {fmt(r.packs)} booster{r.packs > 1 ? "s" : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-right font-semibold">
                   {fmt(r.value)}
