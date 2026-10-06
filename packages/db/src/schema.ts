@@ -241,6 +241,9 @@ export const players = pgTable(
     lastSeenAt: tstz("last_seen_at"),
     /** Bandeau « Une idée ? » masqué jusqu'à cette date (fermé ou suggestion envoyée : une semaine). */
     suggestionBannerUntil: tstz("suggestion_banner_until"),
+    /** Titre affiché (profil, classements) : une ligne de `player_titles` (null : aucun). */
+    titleSeason: smallint("title_season"),
+    titleBoard: text("title_board"),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -789,6 +792,22 @@ export const seasonArchives = pgTable(
     guildId: bigint("guild_id", { mode: "number" }),
   },
   (t) => [primaryKey({ columns: [t.season, t.userId] })],
+);
+
+/**
+ * Titres cosmétiques gagnés à la fin d'une saison (TITLE_MAX_RANK premiers de chaque classement de saison),
+ * gardés pour toujours. `board` : classement (`collection`, `luck`…), `rank` : place obtenue.
+ */
+export const playerTitles = pgTable(
+  "player_titles",
+  {
+    userId: userRef("user_id").notNull(),
+    season: smallint("season").notNull(),
+    board: text("board").notNull(),
+    rank: smallint("rank").notNull(),
+    awardedAt: tstz("awarded_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.season, t.board] })],
 );
 
 // ---------------------------------------------------------------------------
