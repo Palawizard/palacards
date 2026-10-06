@@ -231,6 +231,8 @@ describe("comptes rendus des workflows et actions admin", () => {
       openQuestions: 1,
     });
     expect(res.statusCode).toBe(200);
+    // Rien du tri dans la réponse : elle finit dans les journaux publics des workflows.
+    expect(res.json()).toEqual({ ok: true, buildStatus: "ready" });
     expect(await rowOf(id)).toMatchObject({
       buildStatus: "ready",
       prNumber: 77,
