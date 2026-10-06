@@ -7,6 +7,7 @@ import {
 } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { notFound } from "../errors.js";
+import { automationDTO, onSuggestionCreated } from "./automation.js";
 import { Effects } from "./notifications.js";
 
 const s = schema.suggestions;
@@ -59,6 +60,7 @@ export async function createSuggestion(
     .returning();
   // Une suggestion vient d'être envoyée : inutile de la lui proposer à nouveau avant une semaine.
   await pauseSuggestionBanner(ctx, userId);
+  await onSuggestionCreated(ctx, row!.id, userId);
   return toDTO(row!);
 }
 
@@ -77,22 +79,25 @@ export async function adminSuggestions(
   const rows = await ctx.db
     .select({
       suggestion: s,
+      automation: schema.suggestionAutomation,
       username: schema.user.username,
       displayName: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})`,
     })
     .from(s)
     .leftJoin(schema.user, eq(schema.user.id, s.userId))
+    .leftJoin(schema.suggestionAutomation, eq(schema.suggestionAutomation.suggestionId, s.id))
     .orderBy(desc(s.createdAt))
     .limit(500);
   const counts: Record<SuggestionStatus, number> = { new: 0, accepted: 0, done: 0, declined: 0 };
   for (const r of rows) counts[r.suggestion.status]++;
   return {
     counts,
-    items: rows.map(({ suggestion: r, username, displayName }) => ({
+    items: rows.map(({ suggestion: r, automation, username, displayName }) => ({
       ...toDTO(r),
       author: username ? { id: r.userId, username, displayName } : null,
       seen: r.adminSeenAt !== null,
       updatedAt: r.updatedAt.toISOString(),
+      automation: automation ? automationDTO(automation, ctx.config.GITHUB_REPOSITORY) : null,
     })),
   };
 }

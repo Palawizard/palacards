@@ -87,3 +87,6 @@ test-results/
 
 # CSV de cartes déposé sur le serveur (deploy/load-cards.sh)
 /import/
+
+# Travail des branches de suggestion automatisées (cahier des charges, résultat) : jamais commité
+.automation/

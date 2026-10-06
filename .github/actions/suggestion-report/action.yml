@@ -1,0 +1,35 @@
+name: Compte rendu à PalaCards
+description: Envoie l'état d'une branche de suggestion à l'API (page Admin et message Discord).
+inputs:
+  suggestion:
+    description: Numéro de la suggestion
+    required: true
+  payload:
+    description: Corps JSON du compte rendu
+    required: true
+  api:
+    description: URL de l'API (sans / final)
+    required: true
+  token:
+    description: Jeton AUTOMATION_TOKEN
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        SUGGESTION: ${{ inputs.suggestion }}
+        PAYLOAD: ${{ inputs.payload }}
+        API: ${{ inputs.api }}
+        TOKEN: ${{ inputs.token }}
+      run: |
+        if [ -z "$API" ] || [ -z "$TOKEN" ]; then
+          echo "::warning::AUTOMATION_API_URL ou AUTOMATION_TOKEN absent : pas de compte rendu."
+          exit 0
+        fi
+        # Jeton passé par la config curl sur stdin : jamais dans la ligne de commande ni les journaux.
+        if ! printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl --fail-with-body -sS --max-time 20 -K - \
+            -H 'content-type: application/json' --data-binary "$PAYLOAD" \
+            "$API/automation/suggestions/$SUGGESTION/build"; then
+          echo "::warning::Compte rendu refusé ou API injoignable."
+        fi
