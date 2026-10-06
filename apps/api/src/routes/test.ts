@@ -1,4 +1,5 @@
 import { and, eq, schema, sql } from "@palacards/db";
+import { TITLE_BOARDS, TITLE_MAX_RANK } from "@palacards/game";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
@@ -81,6 +82,23 @@ export function testRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     pushWallet(ctx, p);
     return { balance: p.balance };
+  });
+
+  /** Donne un titre de fin de saison au joueur connecté (sans l'afficher : c'est à lui de le choisir). */
+  api.post("/test/grant-title", auth, async (req) => {
+    const body = parse(
+      z.object({
+        season: z.number().int().positive(),
+        board: z.enum(TITLE_BOARDS),
+        rank: z.number().int().min(1).max(TITLE_MAX_RANK),
+      }),
+      req.body,
+    );
+    await ctx.db
+      .insert(schema.playerTitles)
+      .values({ userId: req.user.id, ...body })
+      .onConflictDoNothing();
+    return { ok: true };
   });
 
   /** Donne le rôle admin au joueur connecté (en prod : CLI `node dist/cli/admin.js grant <pseudo>`). */

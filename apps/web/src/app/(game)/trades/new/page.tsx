@@ -22,8 +22,8 @@ import { useMe } from "@/lib/game";
 import { useDebounced } from "@/lib/use-debounced";
 
 /**
- * Une collection entière, cochable, avec les filtres de la page Collection (favoris et tags seulement sur la
- * sienne, `owner`), et la suite qui se charge en faisant défiler la liste.
+ * Une collection entière, cochable, avec les filtres de la page Collection (favoris seulement sur la sienne,
+ * `owner` ; tags de l'ami s'il les partage), et la suite qui se charge en faisant défiler la liste.
  */
 function Picker({
   source,
@@ -285,6 +285,8 @@ function Composer() {
           </h2>
           <Chosen cards={[...want.values()]} onRemove={toggle(setWant)} />
           <Picker
+            // Filtres remis à zéro d'un ami à l'autre : ses tags et boosters ne sont pas ceux du précédent.
+            key={partnerOk ? partner : ""}
             label={partnerOk ? `Collection de ${partner}` : "Collection de ton ami"}
             allowed={allowed}
             source={partnerOk ? `/players/${encodeURIComponent(partner)}/collection` : null}

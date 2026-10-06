@@ -1,10 +1,11 @@
 import { schema, sql, type SQL } from "@palacards/db";
-import { COLLECTION_POINTS, RARITIES } from "@palacards/game";
+import { COLLECTION_POINTS, RARITIES, type TitleRef } from "@palacards/game";
 import type { CardDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { notFound } from "../errors.js";
 import { selectInstances, toCardDTO } from "./cards.js";
 import type { DbOrTx } from "./players.js";
+import { displayedTitles, listTitles } from "./titles.js";
 
 /** Points de collection d'une rareté, en SQL (valeurs lues dans packages/game). */
 export const rarityPointsSql = (col: SQL): SQL =>
@@ -59,6 +60,10 @@ export interface ProfileDTO {
   creator: boolean;
   /** Boosters à thème ouverts, par édition (les plus récentes d'abord). */
   themePacks: { id: number; name: string; opened: number }[];
+  /** Titre affiché (choisi parmi `titles`). */
+  title: TitleRef | null;
+  /** Titres gagnés en fin de saison, les plus récents d'abord. */
+  titles: TitleRef[];
 }
 
 export async function findUserByName(db: DbOrTx, username: string) {
@@ -127,5 +132,7 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
       : null,
     creator: u.is_admin === true,
     themePacks: themePacks.map((t) => ({ id: Number(t.id), name: t.name, opened: t.opened })),
+    title: (await displayedTitles(ctx.db, [u.id])).get(u.id) ?? null,
+    titles: await listTitles(ctx.db, u.id),
   };
 }

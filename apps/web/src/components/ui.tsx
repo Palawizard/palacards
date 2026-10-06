@@ -1,5 +1,6 @@
 // Composants d'interface partagés, importés uniquement par des composants client.
-import { RARITIES, RARITY_LABELS, type Rarity } from "@palacards/game";
+import { RARITIES, RARITY_LABELS, TITLE_NAMES, titleDetail, type Rarity, type TitleRef } from "@palacards/game";
+import { Award } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
 /** Filtre de raretés : les sigles eux-mêmes servent de bascules. Sans sélection, tout est affiché. */
@@ -200,6 +201,23 @@ export function ConfirmDialog({
 }
 
 /** Badge « Créateur » à côté du pseudo (compte admin du jeu) : classements et profil. */
+/** Titre cosmétique gagné en fin de saison (profil, classements) ; le détail (rang, saison) en infobulle. */
+export function TitleBadge({ title, size = "sm" }: { title: TitleRef; size?: "sm" | "lg" }) {
+  const detail = titleDetail(title);
+  return (
+    <span
+      title={detail}
+      className={`inline-flex max-w-full shrink-0 items-center gap-1 rounded-full border border-[color-mix(in_oklab,var(--color-warn)_45%,var(--color-line))] bg-[color-mix(in_oklab,var(--color-warn)_10%,transparent)] font-semibold leading-none text-text ${
+        size === "lg" ? "px-2.5 py-1 text-[0.8rem]" : "px-1.5 py-[3px] text-[0.7rem]"
+      }`}
+    >
+      <Award aria-hidden className={`shrink-0 text-warn ${size === "lg" ? "size-3.5" : "size-3"}`} strokeWidth={2.5} />
+      <span className="truncate">{TITLE_NAMES[title.board]}</span>
+      <span className="sr-only"> ({detail})</span>
+    </span>
+  );
+}
+
 export function CreatorBadge({ size = "sm" }: { size?: "sm" | "lg" }) {
   return (
     <span

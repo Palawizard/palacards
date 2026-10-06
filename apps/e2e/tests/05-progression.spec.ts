@@ -41,6 +41,42 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   expect((await apiCall<{ animationSpeed: string }>(page, "GET", "/me")).animationSpeed).toBe("normal");
 });
 
+test("titres de classement : choix du titre affiché sur le profil et dans les classements", async ({ browser }) => {
+  const { page, name } = await newPlayer(browser, "titre");
+  await instantPacks(page);
+  await page
+    .getByRole("button", { name: /Ouvrir un paquet/ })
+    .first()
+    .click();
+
+  // Sans titre : la section explique comment en gagner un.
+  await page.goto("profile");
+  const titles = page.getByRole("region", { name: "Titres" });
+  await expect(titles.getByText(/pour gagner un titre/)).toBeVisible();
+
+  // Deux titres gagnés : aucun affiché tant que le joueur n'a pas choisi.
+  const { season } = await apiCall<{ season: number }>(page, "GET", "/me");
+  await apiCall(page, "POST", "/test/grant-title", { season, board: "luck", rank: 1 });
+  await apiCall(page, "POST", "/test/grant-title", { season, board: "packs", rank: 3 });
+  await page.reload();
+  const lucky = titles.getByRole("button", { name: /Lucky guy/ });
+  await expect(lucky).toHaveAttribute("aria-pressed", "false");
+  await expect(titles.getByRole("button", { name: /Accro aux boosters/ })).toBeVisible();
+  await lucky.click();
+  await expect(lucky).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("header").getByText("Lucky guy")).toBeVisible();
+
+  // Le titre suit le joueur dans les classements.
+  await page.goto("leaderboard");
+  await expect(page.getByRole("row", { name: new RegExp(name) }).getByText("Lucky guy")).toBeVisible();
+
+  // Touché de nouveau : plus aucun titre affiché.
+  await page.goto("profile");
+  await lucky.click();
+  await expect(lucky).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("header").getByText("Lucky guy")).toHaveCount(0);
+});
+
 test("paramètres : volume des sons au clavier, retenu après rechargement", async ({ browser }) => {
   const { page } = await newPlayer(browser, "volume");
   await page.goto("settings");

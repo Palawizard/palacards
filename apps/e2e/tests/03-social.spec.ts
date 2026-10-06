@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { newPlayer } from "./helpers";
+import { apiCall, newPlayer } from "./helpers";
 
 test("ami → message en temps réel → guilde", async ({ browser }) => {
   const alice = await newPlayer(browser, "alice");
@@ -66,4 +66,33 @@ test("photo de profil importée depuis les paramètres", async ({ browser }) => 
   await page.getByRole("button", { name: "Retirer la photo" }).click();
   await expect(page.getByText("Photo retirée.")).toBeVisible();
   await expect(header).toHaveCount(0);
+});
+
+test("filtre la collection d'un autre joueur par ses tags, sauf s'il les garde pour lui", async ({ browser }) => {
+  const alice = await newPlayer(browser, "alice");
+  const bob = await newPlayer(browser, "bob");
+  const pack = await apiCall<{ cards: { instanceId: number }[] }>(alice.page, "POST", "/packs/open");
+  const tagged = pack.cards.slice(0, 2).map((c) => c.instanceId);
+  await apiCall(alice.page, "POST", "/collection/tags", { instanceIds: tagged, add: "Châteaux" });
+
+  // Tags privés par défaut : Bob ne peut pas filtrer par tag.
+  await bob.page.goto(`u/${alice.name.toLowerCase()}`);
+  await expect(bob.page.getByText("10 cartes")).toBeVisible();
+  await expect(bob.page.getByLabel("Tag")).toHaveCount(0);
+
+  // Alice les partage depuis ses paramètres : Bob filtre sa collection sur son tag.
+  await alice.page.goto("settings");
+  await alice.page.getByLabel("Partager mes tags").check();
+  await expect(alice.page.getByText("Tes tags sont partagés.")).toBeVisible();
+  await bob.page.reload();
+  await expect(bob.page.getByText("10 cartes")).toBeVisible();
+  await bob.page.getByLabel("Tag").selectOption("châteaux");
+  await expect(bob.page.getByText("2 cartes")).toBeVisible();
+
+  // Alice les garde de nouveau pour elle : plus de filtre par tag chez Bob.
+  await alice.page.getByLabel("Partager mes tags").uncheck();
+  await expect(alice.page.getByText("Tes tags restent privés.")).toBeVisible();
+  await bob.page.reload();
+  await expect(bob.page.getByText("10 cartes")).toBeVisible();
+  await expect(bob.page.getByLabel("Tag")).toHaveCount(0);
 });

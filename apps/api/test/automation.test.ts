@@ -290,7 +290,7 @@ describe("comptes rendus des workflows et actions admin", () => {
     expect(msg).toContain("**Branche prête**");
     expect(msg).toContain("CI verte");
     expect(msg).toContain("https://github.com/Palawizard/palacards/pull/77");
-    expect(msg).toContain("1 question à trancher");
+    expect(msg).toContain("1 point à trancher, déjà codé avec l'option recommandée");
 
     // Rien n'a été envoyé au joueur.
     const mine = (await p.get("/suggestions")).body.find((x: { id: number }) => x.id === id);
