@@ -91,7 +91,9 @@ export function suggestionRoutes(api: FastifyInstance, ctx: Ctx) {
     { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
     async (req) => {
       checkAutomationToken(ctx, req.headers.authorization);
-      return reportBuild(ctx, parse(idParams, req.params).id, parse(report, req.body));
+      // Réponse minimale : les workflows tournent dans un dépôt public, leurs journaux sont visibles de tous.
+      const row = await reportBuild(ctx, parse(idParams, req.params).id, parse(report, req.body));
+      return { ok: true, buildStatus: row.buildStatus };
     },
   );
 }
