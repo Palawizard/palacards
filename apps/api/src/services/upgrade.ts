@@ -14,7 +14,7 @@ import type { UpgradeResultDTO, UpgradeSeriesPreviewDTO, UpgradeSeriesResultDTO 
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { instancesByIds, loadMediaInBackground } from "./cards.js";
-import { duplicateIds, requestedInPendingTrades } from "./collection.js";
+import { freeCopies, requestedInPendingTrades } from "./collection.js";
 import { announcePulls, logPulls } from "./feed.js";
 import { afterCommit } from "./notifications.js";
 import { drawCard } from "./packs.js";
@@ -123,22 +123,38 @@ function seriesTarget(from: Rarity): Rarity {
   return target;
 }
 
-/** Doublons d'une rareté pour l'upgrade en série (mêmes protections que le recyclage des doublons). */
-async function seriesCandidates(ctx: Ctx, ownerId: string, from: Rarity, db: DbOrTx = ctx.db) {
-  return (await duplicateIds(ctx, ownerId, [from], db)).instanceIds.sort((a, b) => a - b);
+/**
+ * Cartes d'une rareté pour l'upgrade en série (mêmes protections que le recyclage des doublons) : les doublons
+ * d'abord, puis, si le joueur l'a demandé, le dernier exemplaire libre de chaque article (`singles`).
+ */
+async function seriesCandidates(ctx: Ctx, ownerId: string, from: Rarity, singles: boolean, db: DbOrTx = ctx.db) {
+  const copies = await freeCopies(ctx, ownerId, [from], db);
+  const ids = (rows: { id: number }[]) => rows.map((r) => r.id).sort((a, b) => a - b);
+  const duplicates = ids(copies.duplicates);
+  const best = ids(copies.best);
+  return { ids: singles ? [...duplicates, ...best] : duplicates, duplicates: duplicates.length, singles: best.length };
 }
 
 /** Aperçu de l'upgrade en série : lots, chances, réussites attendues, PW rendus si tout échoue. */
-export async function upgradeSeriesPreview(ctx: Ctx, ownerId: string, from: Rarity): Promise<UpgradeSeriesPreviewDTO> {
+export async function upgradeSeriesPreview(
+  ctx: Ctx,
+  ownerId: string,
+  from: Rarity,
+  singles = false,
+): Promise<UpgradeSeriesPreviewDTO> {
   const target = seriesTarget(from);
-  const available = (await seriesCandidates(ctx, ownerId, from)).length;
-  const lots = upgradeSeriesLots(from, available).map((cards) => ({ cards, chance: upgradeChance(from, cards) }));
+  const c = await seriesCandidates(ctx, ownerId, from, singles);
+  const lots = upgradeSeriesLots(from, c.ids.length).map((cards) => ({ cards, chance: upgradeChance(from, cards) }));
+  const cards = lots.reduce((s, l) => s + l.cards, 0);
   return {
     rarity: from,
     target,
-    available,
+    available: c.ids.length,
+    duplicates: c.duplicates,
+    singles: c.singles,
+    singlesUsed: Math.max(0, cards - c.duplicates),
     lots,
-    cards: lots.reduce((s, l) => s + l.cards, 0),
+    cards,
     expectedSuccesses: Math.round(lots.reduce((s, l) => s + l.chance, 0) / 1_000) / 10,
     refundIfAllFail: lots.reduce((s, l) => s + upgradeRefund(from, l.cards), 0),
     maxLots: UPGRADE_SERIES_MAX_LOTS,
@@ -147,16 +163,25 @@ export async function upgradeSeriesPreview(ctx: Ctx, ownerId: string, from: Rari
 
 /**
  * Upgrade en série : les doublons d'une rareté (jamais favoris, brillantes, épinglées ni cartes engagées ;
- * le meilleur exemplaire de chaque article reste) partent en lots au rendement maximal, chacun tiré comme un
- * upgrade normal. Une transaction pour tout le lancement ; une ligne de ledger par lot, comme à l'unité.
+ * le meilleur exemplaire de chaque article reste, sauf avec `singles`) partent en lots au rendement maximal,
+ * chacun tiré comme un upgrade normal. Une transaction pour tout le lancement ; une ligne de ledger par lot.
  */
-export async function upgradeSeries(ctx: Ctx, ownerId: string, from: Rarity): Promise<UpgradeSeriesResultDTO> {
+export async function upgradeSeries(
+  ctx: Ctx,
+  ownerId: string,
+  from: Rarity,
+  singles = false,
+): Promise<UpgradeSeriesResultDTO> {
   const target = seriesTarget(from);
   const res = await ctx.db.transaction(async (tx) => {
     const p = await lockPlayer(tx, ownerId);
-    const candidates = await seriesCandidates(ctx, ownerId, from, tx);
+    const candidates = (await seriesCandidates(ctx, ownerId, from, singles, tx)).ids;
     const plan = upgradeSeriesLots(from, candidates.length);
-    if (!plan.length) throw badRequest("no_duplicates", "Aucun doublon à upgrader dans cette rareté.");
+    if (!plan.length)
+      throw badRequest(
+        "no_duplicates",
+        singles ? "Aucune carte à upgrader dans cette rareté." : "Aucun doublon à upgrader dans cette rareté.",
+      );
     const used = candidates.slice(
       0,
       plan.reduce((s, n) => s + n, 0),
@@ -220,7 +245,7 @@ export async function upgradeSeries(ctx: Ctx, ownerId: string, from: Rarity): Pr
       );
       won.push({ instanceId: inserted!.id, cardId: drawn.id, title: drawn.title });
     }
-    const remaining = (await seriesCandidates(ctx, ownerId, from, tx)).length;
+    const remaining = (await seriesCandidates(ctx, ownerId, from, singles, tx)).ids.length;
     return { lots, won, notable, refund, remaining, player: p };
   });
 

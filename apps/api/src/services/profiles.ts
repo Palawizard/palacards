@@ -55,11 +55,21 @@ export interface ProfileDTO {
   relation: "self" | "friends" | "incoming" | "outgoing" | "none";
   online: boolean;
   guild: { id: number; name: string; tag: string; emblem: string; role: string } | null;
+  /** Badge « Créateur » : compte admin du jeu. */
+  creator: boolean;
+  /** Boosters à thème ouverts, par édition (les plus récentes d'abord). */
+  themePacks: { id: number; name: string; opened: number }[];
 }
 
 export async function findUserByName(db: DbOrTx, username: string) {
-  const [u] = await db.execute<{ id: string; username: string; display_name: string; created_at: Date }>(sql`
-    select id, username, coalesce(display_username, name) as display_name, created_at
+  const [u] = await db.execute<{
+    id: string;
+    username: string;
+    display_name: string;
+    created_at: Date;
+    is_admin: boolean;
+  }>(sql`
+    select id, username, coalesce(display_username, name) as display_name, created_at, is_admin
     from "user" where username = ${username.toLowerCase()}
   `);
   if (!u) throw notFound("Ce joueur n'existe pas.");
@@ -88,6 +98,11 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
   const [guild] = await ctx.db.execute<{ id: string; name: string; tag: string; emblem: string; role: string }>(sql`
     select g.id, g.name, g.tag, g.emblem, m.role from guild_members m join guilds g on g.id = m.guild_id where m.user_id = ${u.id}
   `);
+  const themePacks = await ctx.db.execute<{ id: string; name: string; opened: number }>(sql`
+    select t.id, t.name, p.opened from player_theme_packs p join themes t on t.id = p.theme_id
+    where p.user_id = ${u.id} and p.opened > 0
+    order by t.starts_at desc, t.id desc
+  `);
   const pinned = await selectInstances(ctx.db)
     .where(sql`${schema.cardInstances.ownerId} = ${u.id} and ${schema.cardInstances.pinnedSlot} is not null`)
     .orderBy(schema.cardInstances.pinnedSlot);
@@ -110,5 +125,7 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
     guild: guild
       ? { id: Number(guild.id), name: guild.name, tag: guild.tag, emblem: guild.emblem, role: guild.role }
       : null,
+    creator: u.is_admin === true,
+    themePacks: themePacks.map((t) => ({ id: Number(t.id), name: t.name, opened: t.opened })),
   };
 }

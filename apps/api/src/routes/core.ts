@@ -330,6 +330,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
         maxDef: statParam.optional(),
         owned: z.enum(["yes", "no"]).optional(),
         theme: intParam.positive().optional(),
+        inSummary: z.stringbool().optional(),
         sort: z.enum(["views", "atk", "def", "title"]).default("views"),
         cursor: z.string().max(200).optional(),
         limit: intParam.min(1).max(100).default(48),

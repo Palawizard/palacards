@@ -440,6 +440,23 @@ describe("catalogue", () => {
       (await p.get("/cards?q=%25%25%25&limit=5")).body.items.filter((c: { title: string }) => !c.title.includes("%")),
     ).toHaveLength(0);
 
+    // « Résumé aussi » : le résumé Wikipédia déjà chargé compte, le titre aussi.
+    const [card] = await ctx.db.execute<{ id: string; title: string }>(sql`
+      select id, title from cards where season = (select id from seasons where status = 'active') order by id limit 1
+    `);
+    await ctx.db.execute(sql`
+      insert into wiki_summaries (page_id, extract, description, status)
+      values (${card!.id}, 'Un ornithorynque mélomane très discret.', null, 'ok')
+      on conflict (page_id) do update set extract = excluded.extract, status = 'ok'
+    `);
+    const bySummary = await p.get("/cards?q=ornithorynque%20melomane&inSummary=true&limit=5");
+    expect(bySummary.body.items.map((c: { cardId: number }) => c.cardId)).toContain(Number(card!.id));
+    expect((await p.get("/cards?q=synthetique%20n%C2%B0%2042&inSummary=true&limit=5")).body.items[0].title).toBe(
+      "Carte synthétique n° 42",
+    );
+    const titleOnly = await p.get("/cards?q=ornithorynque%20melomane&limit=5");
+    expect(titleOnly.body.items.map((c: { cardId: number }) => c.cardId)).not.toContain(Number(card!.id));
+
     const page1 = await p.get("/cards?limit=10&sort=views");
     const page2 = await p.get(`/cards?limit=10&sort=views&cursor=${page1.body.nextCursor}`);
     expect(page2.body.items).toHaveLength(10);

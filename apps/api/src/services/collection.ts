@@ -396,13 +396,17 @@ export async function recycle(ctx: Ctx, ownerId: string, instanceIds: number[]) 
   return { gain: res.gain, balance: res.player.balance };
 }
 
-/** Exemplaires en double (on garde le meilleur de chaque article : rareté, niveau, puis stats). */
-export async function duplicateIds(
+/**
+ * Exemplaires libres d'un joueur (ni engagés, favoris, brillants, épinglés, ni demandés dans un échange en
+ * cours), séparés en doublons et en meilleurs exemplaires (meilleur de chaque article : rareté, niveau, puis
+ * stats ; le dernier exemplaire d'un article est son meilleur).
+ */
+export async function freeCopies(
   ctx: Ctx,
   ownerId: string,
   rarities?: Rarity[],
   db: DbOrTx = ctx.db,
-): Promise<{ instanceIds: number[]; gain: number }> {
+): Promise<{ duplicates: { id: number; rarity: Rarity }[]; best: { id: number; rarity: Rarity }[] }> {
   const rows = await db
     .select({
       id: ci.id,
@@ -423,21 +427,29 @@ export async function duplicateIds(
     const cur = best.get(r.cardId);
     if (!cur || isBetterCopy(r, cur)) best.set(r.cardId, r);
   }
+  const free = rows.filter(
+    (r) => !r.lockedBy && !r.favorite && !r.shiny && r.pinned === null && (!rarities || rarities.includes(r.rarity)),
+  );
   const requested = await requestedInPendingTrades(
     db,
-    rows.filter((r) => best.get(r.cardId)?.id !== r.id).map((r) => r.id),
+    free.map((r) => r.id),
   );
-  const dups = rows
-    .filter(
-      (r) =>
-        best.get(r.cardId)?.id !== r.id &&
-        !r.lockedBy &&
-        !r.favorite &&
-        !r.shiny &&
-        r.pinned === null &&
-        !requested.has(r.id),
-    )
-    .filter((r) => !rarities || rarities.includes(r.rarity));
+  const out = { duplicates: [] as { id: number; rarity: Rarity }[], best: [] as { id: number; rarity: Rarity }[] };
+  for (const r of free) {
+    if (requested.has(r.id)) continue;
+    (best.get(r.cardId)?.id === r.id ? out.best : out.duplicates).push({ id: r.id, rarity: r.rarity });
+  }
+  return out;
+}
+
+/** Exemplaires en double (on garde le meilleur de chaque article : rareté, niveau, puis stats). */
+export async function duplicateIds(
+  ctx: Ctx,
+  ownerId: string,
+  rarities?: Rarity[],
+  db: DbOrTx = ctx.db,
+): Promise<{ instanceIds: number[]; gain: number }> {
+  const dups = (await freeCopies(ctx, ownerId, rarities, db)).duplicates;
   return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + recycleValue(r.rarity), 0) };
 }
 

@@ -34,7 +34,7 @@ interface OpenResponse {
   packs: PackState;
   usedBonus: boolean;
   pityTriggered: boolean;
-  theme?: { id: number; name: string; themedCardIds: number[]; owned: number };
+  theme?: { id: number; name: string; themedCardIds: number[]; owned: number; opened: number };
   autoRecycled?: { instanceIds: number[]; gain: number };
 }
 
