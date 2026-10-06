@@ -91,6 +91,30 @@ services:
     logging: *logging
     networks: [palacards, caddy]
 
+  # Tri des suggestions par Claude (sans outils) et publication des issues GitHub : seulement avec
+  # COMPOSE_PROFILES=automation dans le .env (et AUTOMATION_ENABLED=1 pour l'API). Voir .env.example.
+  triage:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: triage
+    image: palacards-triage:0.1.0
+    container_name: palacards-triage
+    profiles: [automation]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      BASE_PATH: /palacards
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    mem_limit: 768m
+    logging: *logging
+    networks: [palacards]
+
   web:
     build:
       context: .

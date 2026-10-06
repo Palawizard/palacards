@@ -241,6 +241,135 @@
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Tri de Claude (admin) : une fiche de carton, verdict en pastille     */
+/* ------------------------------------------------------------------ */
+
+.pc-auto {
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.85rem 0.8rem;
+  border-radius: 10px;
+  border: 1px solid var(--color-line);
+  background: color-mix(in oklab, var(--color-panel-2) 70%, var(--color-panel));
+}
+.pc-auto-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-block: 0.45rem;
+}
+.pc-auto-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+.pc-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 1.45rem;
+  padding: 0 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--color-line-strong);
+  font-size: 0.76rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--color-muted);
+}
+.pc-verdict::before {
+  content: "";
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: currentColor;
+}
+.pc-verdict[data-verdict="build"] {
+  color: var(--color-good);
+  border-color: color-mix(in oklab, var(--color-good) 45%, var(--color-line));
+  background: color-mix(in oklab, var(--color-good) 8%, transparent);
+}
+.pc-verdict[data-verdict="decision"] {
+  color: var(--color-warn);
+  border-color: color-mix(in oklab, var(--color-warn) 50%, var(--color-line));
+  background: color-mix(in oklab, var(--color-warn) 8%, transparent);
+}
+.pc-verdict[data-verdict="bug"],
+.pc-verdict[data-verdict="error"] {
+  color: var(--color-danger);
+  border-color: color-mix(in oklab, var(--color-danger) 45%, var(--color-line));
+}
+.pc-verdict[data-verdict="non"] {
+  color: var(--color-faint);
+}
+/* Attente (tri, branche) : le point respire, sans bouger le texte. */
+.pc-verdict[data-live]::before,
+.pc-build[data-live] svg {
+  animation: pc-auto-breathe 1.6s ease-in-out infinite;
+}
+@keyframes pc-auto-breathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+.pc-auto-questions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-left: 1.1rem;
+  list-style: decimal;
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+.pc-auto-more summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--color-link);
+  text-underline-offset: 0.18em;
+}
+.pc-auto-more summary:hover {
+  text-decoration: underline;
+}
+.pc-auto-more[open] {
+  flex-basis: 100%;
+}
+.pc-auto-more p {
+  margin-top: 0.35rem;
+  max-width: 75ch;
+  white-space: pre-wrap;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+.pc-build {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+.pc-build[data-state="ok"] svg {
+  color: var(--color-good);
+}
+.pc-build[data-state="bad"] svg {
+  color: var(--color-danger);
+}
+.pc-build[data-state="wait"] svg {
+  color: var(--color-warn);
+}
+.pc-auto-reply {
+  padding-top: 0.65rem;
+  border-top: 2px dashed var(--color-line);
+}
+.pc-auto-reply .pc-auto-label {
+  margin-bottom: 0.25rem;
+}
+
 /* Nouvelle suggestion dans la liste : entrée douce, la liste ne saute pas. */
 .pc-suggestion {
   transition:
@@ -253,6 +382,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .pc-verdict[data-live]::before,
+  .pc-build[data-live] svg {
+    animation: none;
+  }
   .pc-suggest-banner,
   .pc-suggestion {
     @starting-style {

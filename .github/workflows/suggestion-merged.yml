@@ -1,0 +1,60 @@
+# Fin d'une branche de suggestion : pull request mergée dans dev (ou fermée sans merge). Met à jour la page Admin
+# (réponse au joueur prête à envoyer après la mise en prod), ferme l'issue et supprime la branche.
+name: Suggestion (fin)
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+
+permissions: {}
+
+jobs:
+  done:
+    name: Suggestion terminée
+    if: startsWith(github.head_ref, 'feat/suggestion-') || startsWith(github.head_ref, 'fix/suggestion-')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - name: Suggestion
+        id: meta
+        env:
+          BRANCH: ${{ github.head_ref }}
+          MERGED: ${{ github.event.pull_request.merged }}
+        run: |
+          [[ "$BRANCH" =~ ^(feat|fix)/suggestion-([0-9]+)$ ]] || { echo "::error::Branche inattendue : $BRANCH"; exit 1; }
+          echo "suggestion=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          if [ "$MERGED" = true ]; then echo "status=merged" >> "$GITHUB_OUTPUT"; else echo "status=closed" >> "$GITHUB_OUTPUT"; fi
+          # Numéro de l'issue, écrit par le workflow de construction en tête de la description.
+          issue=$(jq -r '.pull_request.body // ""' "$GITHUB_EVENT_PATH" | grep -oE 'issue #[0-9]+' | grep -oE '[0-9]+' | head -n 1 || true)
+          echo "issue=$issue" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/actions
+
+      - uses: ./.github/actions/suggestion-report
+        with:
+          suggestion: ${{ steps.meta.outputs.suggestion }}
+          payload: '{"status":"${{ steps.meta.outputs.status }}","prNumber":${{ github.event.pull_request.number }}}'
+          api: ${{ vars.AUTOMATION_API_URL }}
+          token: ${{ secrets.AUTOMATION_TOKEN }}
+
+      - name: Issue et branche
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ steps.meta.outputs.issue }}
+          STATUS: ${{ steps.meta.outputs.status }}
+          BRANCH: ${{ github.head_ref }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [ -n "$ISSUE" ]; then
+            if [ "$STATUS" = merged ]; then
+              gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --reason completed --comment "Mergée dans dev (#$PR)."
+            else
+              gh issue close "$ISSUE" --repo "$GITHUB_REPOSITORY" --reason "not planned" --comment "Pull request #$PR fermée sans merge."
+            fi
+          fi
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/$BRANCH" || true

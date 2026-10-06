@@ -48,6 +48,22 @@ const schema = z.object({
    * Absente (ou sur un autre hôte) : la page « Mon compte » d'Authentik, qui porte le même bouton.
    */
   AUTHENTIK_UNENROLLMENT_URL: z.url().optional(),
+  /**
+   * Suggestions automatisées : chaque nouvelle suggestion est triée par Claude (service `triage`), puis les
+   * suggestions à coder partent en branche via GitHub Actions. Désactivé : rien n'est trié.
+   */
+  AUTOMATION_ENABLED: bool,
+  /** Jeton partagé avec les workflows GitHub (POST /automation/…), 32 caractères au moins. */
+  /**
+   * Tri automatique au plus N suggestions par joueur sur 24 h (les suivantes attendent un clic « Trier avec
+   * Claude » dans Admin). Les joueurs n'ont pas de plafond : ceci protège seulement le forfait Claude.
+   */
+  AUTOMATION_AUTO_TRIAGE_PER_USER: z.coerce.number().int().min(0).default(5),
+  AUTOMATION_TOKEN: z.string().min(32, "AUTOMATION_TOKEN : 32 caractères minimum").optional(),
+  /** Dépôt GitHub des issues et pull requests (liens de la page Admin). */
+  GITHUB_REPOSITORY: z.string().default("Palawizard/palacards"),
+  /** Webhook Discord (salon privé de l'admin) : tri, branches prêtes, échecs. */
+  DISCORD_WEBHOOK_URL: z.url().optional(),
 });
 
 export type Config = z.infer<typeof schema>;
