@@ -1,7 +1,8 @@
 "use client";
 
+import { TITLE_MAX_RANK, TITLE_NAMES, titleDetail, type TitleRef } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
-import { MessageSquare, Repeat, Swords, UserCheck, UserPlus } from "lucide-react";
+import { Award, MessageSquare, Repeat, Swords, UserCheck, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useState } from "react";
 import { toast } from "sonner";
@@ -15,7 +16,7 @@ import {
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
 import { MyShowcase } from "@/components/Showcase";
-import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore } from "@/components/ui";
+import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore, TitleBadge } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 
@@ -39,6 +40,89 @@ interface ProfileDTO {
   creator: boolean;
   /** Boosters à thème ouverts, par édition (les plus récentes d'abord). */
   themePacks: { id: number; name: string; opened: number }[];
+  /** Titre affiché (choisi parmi `titles`). */
+  title: TitleRef | null;
+  /** Titres gagnés en fin de saison, les plus récents d'abord. */
+  titles: TitleRef[];
+}
+
+const sameTitle = (a: TitleRef | null, b: TitleRef) => !!a && a.board === b.board && a.season === b.season;
+
+/** Titres gagnés ; sur son propre profil, chacun sert de bascule pour choisir celui qui s'affiche. */
+function Titles({ p, onChanged }: { p: ProfileDTO; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function choose(title: TitleRef | null) {
+    setBusy(true);
+    try {
+      await api("/settings/title", {
+        method: "PUT",
+        body: { title: title && { season: title.season, board: title.board } },
+      });
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Impossible de changer de titre.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!p.titles.length && !p.isMe) return null;
+  return (
+    <section aria-labelledby="titles-title">
+      <h2 id="titles-title" className="section-title mt-0">
+        Titres
+      </h2>
+      {!p.titles.length ? (
+        <p className="text-sm text-muted">
+          Termine une saison dans les {TITLE_MAX_RANK} premiers d’un{" "}
+          <Link href="/leaderboard" className="article-link">
+            classement
+          </Link>{" "}
+          pour gagner un titre.
+        </p>
+      ) : (
+        <>
+          {p.isMe && (
+            <p className="mb-3 text-sm text-muted">
+              Choisis le titre affiché sur ton profil et dans les classements. Touche-le de nouveau pour n’en afficher
+              aucun.
+            </p>
+          )}
+          <ul className="flex flex-wrap gap-2">
+            {p.titles.map((t) => {
+              const label = (
+                <>
+                  <Award aria-hidden className="size-3.5 shrink-0" strokeWidth={2.5} />
+                  <span>
+                    <span className="font-semibold">{TITLE_NAMES[t.board]}</span>
+                    <span className="font-normal"> · {titleDetail(t)}</span>
+                  </span>
+                </>
+              );
+              return (
+                <li key={`${t.season}-${t.board}`}>
+                  {p.isMe ? (
+                    <button
+                      type="button"
+                      className="chip h-auto min-h-9 py-1.5 text-left"
+                      aria-pressed={sameTitle(p.title, t)}
+                      disabled={busy}
+                      onClick={() => choose(sameTitle(p.title, t) ? null : t)}
+                    >
+                      {label}
+                    </button>
+                  ) : (
+                    <span className="flex items-center gap-1.5 rounded-full border border-line bg-panel px-3 py-1.5 text-[0.82rem] text-muted [&>svg]:text-warn">
+                      {label}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+    </section>
+  );
 }
 
 const since = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
@@ -185,6 +269,7 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
               {p.displayName}
             </h1>
             {p.creator && <CreatorBadge size="lg" />}
+            {p.title && <TitleBadge title={p.title} size="lg" />}
           </div>
           <p className="text-sm text-muted">
             Joueur depuis {since(p.createdAt)}
@@ -223,6 +308,8 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
           </div>
         ))}
       </dl>
+
+      <Titles p={p} onChanged={() => mutate()} />
 
       {p.themePacks.length > 0 && (
         <section aria-labelledby="themes-title">

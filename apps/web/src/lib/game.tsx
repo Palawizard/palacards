@@ -58,6 +58,7 @@ export function useSocketEvent<E extends keyof ServerToClientEvents>(event: E, h
 const NOTIFICATION_SFX: Partial<Record<string, Sfx>> = {
   achievement: "achievement",
   achievement_backfill: "achievement",
+  title_won: "achievement",
   quest_completed: "coin",
   pass_level: "achievement",
   boss_killed: "victory",

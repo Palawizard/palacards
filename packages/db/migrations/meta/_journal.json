@@ -183,6 +183,13 @@
       "when": 1791321230282,
       "tag": "0025_public_tags",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791321231762,
+      "tag": "0026_player_titles",
+      "breakpoints": true
     }
   ]
 }

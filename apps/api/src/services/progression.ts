@@ -15,6 +15,8 @@ import {
   type GameEvent,
   type QuestKind,
   type StatKey,
+  type TitleBoard,
+  type TitleRef,
 } from "@palacards/game";
 import type { Ctx } from "../context.js";
 import {
@@ -31,6 +33,7 @@ import { afterCommit, Effects } from "./notifications.js";
 import { battleRewarded, onBattleFinished } from "./battles.js";
 import { collectionScoresSql } from "./profiles.js";
 import { ensureQuests, type QuestRow } from "./quests.js";
+import { displayedTitles } from "./titles.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
 
@@ -525,7 +528,8 @@ export function passState(player: Pick<Player, "seasonXp" | "passSeason">, seaso
 // Classements
 // ---------------------------------------------------------------------------
 
-export type Board = "collection" | "packs" | "luck" | "elo" | "wealth" | "guilds" | "pass";
+/** Les classements, qui donnent chacun un titre en fin de saison. */
+export type Board = TitleBoard;
 
 interface Row {
   id: string;
@@ -539,6 +543,8 @@ interface Row {
   packs?: number;
   /** Badge « Créateur » (compte admin du jeu). */
   creator?: boolean;
+  /** Titre affiché par le joueur. */
+  title?: TitleRef;
 }
 
 /**
@@ -548,9 +554,49 @@ interface Row {
  */
 export async function leaderboard(ctx: Ctx, userId: string, board: Board, period: "season" | "all") {
   const season = await activeSeason(ctx.db);
+  const rows = await boardRows(ctx.db, board, period, season);
+  if (board !== "guilds" && rows.length) {
+    const admins = await ctx.db.execute<{ id: string }>(sql`
+      select id from "user" where is_admin and id in (${sql.join(
+        rows.map((r) => sql`${r.id}`),
+        sql`, `,
+      )})
+    `);
+    const ids = new Set(admins.map((a) => a.id));
+    const titles = await displayedTitles(
+      ctx.db,
+      rows.map((r) => r.id),
+    );
+    for (const r of rows) {
+      if (ids.has(r.id)) r.creator = true;
+      const title = titles.get(r.id);
+      if (title) r.title = title;
+    }
+  }
+  const myGuild =
+    board === "guilds"
+      ? (
+          await ctx.db
+            .select({ g: schema.guildMembers.guildId })
+            .from(schema.guildMembers)
+            .where(eq(schema.guildMembers.userId, userId))
+        )[0]?.g
+      : undefined;
+  return {
+    season,
+    rows: rows.map((r, i) => ({
+      ...r,
+      rank: i + 1,
+      me: board === "guilds" ? String(myGuild) === r.id : r.id === userId,
+    })),
+  };
+}
+
+/** Les 100 premiers d'un classement, dans l'ordre (relu aussi à la bascule de saison, pour les titres). */
+export async function boardRows(db: DbOrTx, board: Board, period: "season" | "all", season: number) {
   let rows: Row[] = [];
   if (board === "collection") {
-    const res = await ctx.db.execute<{
+    const res = await db.execute<{
       owner_id: string;
       score: number;
       username: string;
@@ -560,12 +606,12 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       select s.owner_id, s.score, u.username, coalesce(u.display_username, u.name) as name, p.avatar
       from (${collectionScoresSql(period === "season" ? season : undefined)}) s join "user" u on u.id = s.owner_id
       left join players p on p.user_id = s.owner_id
-      order by s.score desc limit 100
+      order by s.score desc, u.username limit 100
     `);
     rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.score }));
   } else if (board === "packs" || board === "luck") {
     const seasonFilter = period === "season" ? sql`where ps.season = ${season}` : sql``;
-    const res = await ctx.db.execute<{
+    const res = await db.execute<{
       user_id: string;
       value: string;
       packs: number;
@@ -612,7 +658,7 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
           : period === "season"
             ? sql`p.balance`
             : sql`greatest(p.balance, coalesce((select max(a.wealth) from season_archives a where a.user_id = p.user_id), 0))`;
-    const res = await ctx.db.execute<{
+    const res = await db.execute<{
       user_id: string;
       value: string;
       username: string;
@@ -631,42 +677,16 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       value: board === "pass" ? passProgress(Number(r.value)).level : Number(r.value),
     }));
   } else {
-    const res = await ctx.db.execute<{ id: string; name: string; tag: string; emblem: string; score: number }>(sql`
+    const res = await db.execute<{ id: string; name: string; tag: string; emblem: string; score: number }>(sql`
       select g.id::text, g.name, g.tag, g.emblem, coalesce(sum(s.score), 0)::int as score
       from guilds g
       left join guild_members m on m.guild_id = g.id
       left join (${collectionScoresSql(period === "season" ? season : undefined)}) s on s.owner_id = m.user_id
-      group by g.id order by score desc limit 100
+      group by g.id order by score desc, g.name limit 100
     `);
     rows = res.map((r) => ({ id: r.id, name: r.name, username: null, avatar: r.emblem, value: r.score, extra: r.tag }));
   }
-  if (board !== "guilds" && rows.length) {
-    const admins = await ctx.db.execute<{ id: string }>(sql`
-      select id from "user" where is_admin and id in (${sql.join(
-        rows.map((r) => sql`${r.id}`),
-        sql`, `,
-      )})
-    `);
-    const ids = new Set(admins.map((a) => a.id));
-    for (const r of rows) if (ids.has(r.id)) r.creator = true;
-  }
-  const myGuild =
-    board === "guilds"
-      ? (
-          await ctx.db
-            .select({ g: schema.guildMembers.guildId })
-            .from(schema.guildMembers)
-            .where(eq(schema.guildMembers.userId, userId))
-        )[0]?.g
-      : undefined;
-  return {
-    season,
-    rows: rows.map((r, i) => ({
-      ...r,
-      rank: i + 1,
-      me: board === "guilds" ? String(myGuild) === r.id : r.id === userId,
-    })),
-  };
+  return rows;
 }
 
 export type { Player };
