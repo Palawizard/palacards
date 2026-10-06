@@ -38,6 +38,10 @@ Un nom de branche, le nom du dépôt ou un message de commit ne suffisent pas. D
 
 Les branches `feat/suggestion-<n>` et `fix/suggestion-<n>` sont construites par GitHub Actions (workflows `suggestion-*.yml`, skill `build-suggestion`) : leurs commits sont signés `github-actions[bot]`, sans aucune mention d'IA dans les messages. Palawi les intègre avec **Squash and merge** vers `dev` : le commit qui arrive dans `dev` est alors à son nom. Ne réécris pas l'historique de ces branches pour changer l'auteur.
 
+## Mise en prod (dev → main)
+
+Palawi met en prod avec le workflow **« Mise en prod »** (`.github/workflows/release.yml`, bouton Run workflow dans l'onglet Actions) : il vérifie la CI de `dev`, crée le commit `Merge dev : …` à son nom et le pousse avec le secret `RELEASE_TOKEN`, ce qui lance la CI de `main` puis le déploiement sur vm-apps. Ne merge pas `dev` dans `main` toi-même sauf si Palawi le demande explicitement.
+
 ## Réglage partagé
 
 `.claude/settings.json` désactive l'attribution automatique de Claude Code (`attribution.commit` et `attribution.pr` vides) pour tout le monde sur ce projet. Quelqu'un qui veut la garder peut la remettre dans son `.claude/settings.local.json` (non versionné).

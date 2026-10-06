@@ -1,0 +1,111 @@
+# Bouton « Mise en prod » : merge dev dans main (commit de merge au nom de Palawi), après avoir vérifié que la
+# CI de dev est verte. Le push se fait avec RELEASE_TOKEN (jeton fine-grained limité au dépôt : Contents et
+# Workflows en écriture) pour déclencher la CI de main ; vm-apps déploie ensuite tout seul quand elle est verte.
+# À lancer depuis l'onglet Actions (ou l'app GitHub mobile) : « Mise en prod » → Run workflow.
+name: Mise en prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: Description du merge (vide = titres des commits de dev)
+        type: string
+        required: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mise-en-prod
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Merge dev dans main
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Jeton présent
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::Secret RELEASE_TOKEN absent : sans lui, la CI de main ne se lance pas et rien n'est déployé."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Quelque chose à mettre en prod ?
+        id: diff
+        run: |
+          git fetch --quiet origin dev
+          DEV=$(git rev-parse origin/dev)
+          echo "dev=$DEV" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$DEV" HEAD; then
+            echo "Rien de nouveau : main contient déjà dev ($(git rev-parse --short "$DEV"))." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "todo=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "todo=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: CI de dev verte
+        if: steps.diff.outputs.todo == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEV: ${{ steps.diff.outputs.dev }}
+        run: |
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$DEV&event=push&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == "CI")]')
+          total=$(jq length <<<"$runs")
+          ok=$(jq '[.[] | select(.status == "completed" and .conclusion == "success")] | length' <<<"$runs")
+          short=${DEV:0:7}
+          if [ "$total" -eq 0 ]; then
+            echo "::error::Aucune CI sur dev ($short) : attends qu'elle se lance, puis relance la mise en prod."
+            exit 1
+          fi
+          if [ "$ok" -ne "$total" ]; then
+            echo "::error::CI de dev ($short) pas encore verte ou en échec : rien n'est mis en prod."
+            jq -r '.[] | "- \(.status) \(.conclusion // "") \(.html_url)"' <<<"$runs"
+            exit 1
+          fi
+          echo "CI de dev ($short) verte."
+
+      - name: Merge et push
+        if: steps.diff.outputs.todo == 'true'
+        env:
+          DEV: ${{ steps.diff.outputs.dev }}
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          git config user.name "Palawi"
+          git config user.email "bapcoloj@gmail.com"
+          if [ -n "$MESSAGE" ]; then
+            desc=$MESSAGE
+          else
+            # Titres des commits de dev (premier parent), sans « Merge <branche> : », le préfixe feat:/fix:,
+            # la référence de PR « (#72) » ni la mention « (suggestion n° N) ».
+            desc=$(git log --first-parent --reverse --format=%s HEAD.."$DEV" \
+              | sed -E -e 's/^Merge [^ ]+ : //' -e 's/^[a-z]+(\([^)]*\))?!?: //' \
+                       -e 's/ \(#[0-9]+\)$//' -e 's/ \(suggestion n° [0-9]+\)$//' \
+              | awk 'NF && !seen[$0]++' | paste -sd ';' | sed 's/;/, /g')
+          fi
+          [ -n "$desc" ] || desc="mise à jour"
+          [ ${#desc} -le 200 ] || desc="${desc:0:197}…"
+          git merge --no-ff "$DEV" -m "Merge dev : $desc"
+          git push origin HEAD:main
+          {
+            echo "### Mis en prod"
+            echo
+            echo "\`$(git log -1 --format='%h %s')\`"
+            echo
+            echo "Commits de dev :"
+            git log --first-parent --format='- %h %s' HEAD^1..HEAD^2
+            echo
+            echo "La CI de main se lance ; vm-apps déploie quand elle est verte (message Discord)."
+          } >> "$GITHUB_STEP_SUMMARY"

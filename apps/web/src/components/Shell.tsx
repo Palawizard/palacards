@@ -1,19 +1,20 @@
 "use client";
 
 import type { MeDTO } from "@palacards/shared";
-import { Bell, Menu, Moon, Package, Search, Sun, Volume2, VolumeX, X } from "lucide-react";
+import { Bell, Menu, Moon, Package, Search, Sun, Volume1, Volume2, VolumeX, X } from "lucide-react";
 import { MotionConfig } from "motion/react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AvatarFace } from "@/components/Avatar";
+import { VolumeControl } from "@/components/SoundSettings";
 import { SuggestionBanner } from "@/components/Suggestions";
 import { usePackCountdown } from "@/lib/packs";
 import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { NAV } from "@/lib/nav";
 import { authClient } from "@/lib/auth-client";
-import { setSfxEnabled, useSfxEnabled } from "@/lib/sfx";
+import { setSfxEnabled, useSfxEnabled, useSfxVolume } from "@/lib/sfx";
 import { setTheme, useResolvedTheme } from "@/lib/theme";
 
 /** Logo : capitales condensées sur une pastille couverture, comme le titre d'un album. */
@@ -221,24 +222,32 @@ function ThemeToggle() {
   );
 }
 
-/** Son du jeu : coupé ou non, retenu sur l'appareil (visible aussi sur téléphone). */
+/**
+ * Son du jeu : coupé ou non, retenu sur l'appareil (visible aussi sur téléphone). À la souris, le
+ * survol déplie le curseur de volume sous le bouton ; au clavier, Tab depuis le bouton l'atteint.
+ * Sur écran tactile, le volume reste dans les paramètres.
+ */
 function SoundToggle() {
   const on = useSfxEnabled();
+  const volume = useSfxVolume();
+  const Icon = !on ? VolumeX : volume < 50 ? Volume1 : Volume2;
   return (
-    <button
-      type="button"
-      className="flex size-9 items-center justify-center rounded-lg text-muted transition-colors duration-150 hover:bg-panel hover:text-text"
-      onClick={() => setSfxEnabled(!on)}
-      aria-pressed={on}
-      aria-label="Sons du jeu"
-      title={on ? "Couper les sons" : "Activer les sons"}
-    >
-      {on ? (
-        <Volume2 className="size-[1.1rem]" strokeWidth={1.75} />
-      ) : (
-        <VolumeX className="size-[1.1rem]" strokeWidth={1.75} />
-      )}
-    </button>
+    <div className="group/sound relative">
+      <button
+        type="button"
+        className="flex size-9 items-center justify-center rounded-lg text-muted transition-colors duration-150 group-hover/sound:bg-panel group-hover/sound:text-text"
+        onClick={() => setSfxEnabled(!on)}
+        aria-pressed={on}
+        aria-label="Sons du jeu"
+        title={on ? "Couper les sons" : "Activer les sons"}
+      >
+        <Icon className="size-[1.1rem]" strokeWidth={1.75} />
+      </button>
+      {/* Le pt-2 fait pont entre le bouton et le panneau : la souris y passe sans le refermer. */}
+      <div className="pointer-events-none absolute right-0 top-full z-50 hidden origin-top-right scale-95 pt-2 opacity-0 transition-[opacity,transform] duration-100 ease-[var(--ease-out)] motion-reduce:scale-100 group-hover/sound:pointer-events-auto group-hover/sound:scale-100 group-hover/sound:opacity-100 group-hover/sound:delay-75 group-hover/sound:duration-150 group-has-[:focus-visible]/sound:pointer-events-auto group-has-[:focus-visible]/sound:scale-100 group-has-[:focus-visible]/sound:opacity-100 group-has-[:focus-visible]/sound:duration-150 pointer-fine:block">
+        <VolumeControl className="w-52 rounded-xl border border-line-strong bg-panel px-3 py-2.5 text-sm shadow-pop" />
+      </div>
+    </div>
   );
 }
 
