@@ -115,14 +115,22 @@ jobs:
           BRANCH: ${{ steps.meta.outputs.branch }}
         run: git push origin "$BRANCH"
 
+      # PR ouverte au nom de Palawi (RELEASE_TOKEN, permission Pull requests) : le commit « Squash and merge »
+      # est alors à son nom. Sans ce jeton, ou s'il est refusé, la PR est ouverte par le bot.
       - name: Pull request vers dev
         id: pr
         env:
           GH_TOKEN: ${{ github.token }}
+          OWNER_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           BRANCH: ${{ steps.meta.outputs.branch }}
           TITLE: ${{ steps.result.outputs.title }}
         run: |
-          url=$(gh pr create --base dev --head "$BRANCH" --title "$TITLE" --body-file .automation/pr.md)
+          url=""
+          if [ -n "$OWNER_TOKEN" ]; then
+            url=$(GH_TOKEN="$OWNER_TOKEN" gh pr create --base dev --head "$BRANCH" --title "$TITLE" --body-file .automation/pr.md) \
+              || echo "::warning::PR non ouverte avec RELEASE_TOKEN (permission Pull requests ?) : ouverture par le bot."
+          fi
+          [ -n "$url" ] || url=$(gh pr create --base dev --head "$BRANCH" --title "$TITLE" --body-file .automation/pr.md)
           echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
           gh issue comment "${{ github.event.issue.number }}" --body "Branche prête : $url"
 
