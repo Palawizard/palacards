@@ -7,7 +7,7 @@ import { useSyncExternalStore } from "react";
  * suivre, et chaque son reste accordé au reste (même gamme, même « papier » que l'album).
  *
  * Le contexte audio naît au premier geste du joueur (règle des navigateurs). Le son est activé par
- * défaut, à volume doux ; le choix est retenu sur l'appareil.
+ * défaut, à volume doux ; le choix (activé, volume) est retenu sur l'appareil.
  */
 export type Sfx =
   | "tear"
@@ -25,12 +25,32 @@ export type Sfx =
   | "defeat";
 
 const STORAGE_KEY = "palacards:sfx";
+const VOLUME_KEY = "palacards:sfx-volume";
+/** Gain de sortie à 100 % : le volume d'origine du jeu, que le curseur ne fait que baisser. */
 const MASTER_VOLUME = 0.32;
+/** Volume par défaut, en pourcentage (100 = volume d'origine). */
+export const DEFAULT_SFX_VOLUME = 100;
 
-// --- Réglage (activé / coupé), partagé entre composants ---------------------------------------
+// --- Réglage (activé / coupé, volume), partagé entre composants -------------------------------
 
 const listeners = new Set<() => void>();
 let enabledCache: boolean | null = null;
+let volumeCache: number | null = null;
+
+function store(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // stockage indisponible (navigation privée) : le réglage vaut pour la session
+  }
+}
+
+function subscribe(l: () => void) {
+  listeners.add(l);
+  return () => {
+    listeners.delete(l);
+  };
+}
 
 function readEnabled(): boolean {
   if (enabledCache !== null) return enabledCache;
@@ -42,26 +62,69 @@ function readEnabled(): boolean {
   return enabledCache;
 }
 
+/** Ramène une valeur quelconque à un pourcentage entier entre 0 et 100. */
+export function clampVolume(v: number): number {
+  return Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : DEFAULT_SFX_VOLUME;
+}
+
+function readVolume(): number {
+  if (volumeCache !== null) return volumeCache;
+  try {
+    const raw = localStorage.getItem(VOLUME_KEY);
+    volumeCache = raw === null ? DEFAULT_SFX_VOLUME : clampVolume(Number(raw));
+  } catch {
+    volumeCache = DEFAULT_SFX_VOLUME;
+  }
+  return volumeCache;
+}
+
+/** Son réellement audible : activé et volume au-dessus de 0 %. */
+function readAudible(): boolean {
+  return readEnabled() && readVolume() > 0;
+}
+
+/** Gain de sortie pour un pourcentage : courbe quadratique, plus proche de l'oreille qu'une droite. */
+function gainFor(volume: number): number {
+  return MASTER_VOLUME * (volume / 100) ** 2;
+}
+
 export function setSfxEnabled(on: boolean) {
   enabledCache = on;
-  try {
-    localStorage.setItem(STORAGE_KEY, on ? "on" : "off");
-  } catch {
-    // stockage indisponible (navigation privée) : le réglage vaut pour la session
-  }
+  store(STORAGE_KEY, on ? "on" : "off");
+  // Réactiver depuis un curseur à 0 % : on repart du volume par défaut, sinon rien ne s'entendrait.
+  if (on && readVolume() === 0) setVolume(DEFAULT_SFX_VOLUME);
   listeners.forEach((l) => l());
   if (on) play("coin");
 }
 
+function setVolume(volume: number) {
+  volumeCache = volume;
+  store(VOLUME_KEY, String(volume));
+  if (master) master.gain.value = gainFor(volume);
+}
+
+/**
+ * Règle le volume (0 à 100 %), appliqué tout de suite aux sons suivants. Monter le curseur alors que
+ * le son est coupé le réactive : le curseur et le bouton de son disent toujours la même chose.
+ */
+export function setSfxVolume(volume: number) {
+  const v = clampVolume(volume);
+  setVolume(v);
+  if (v > 0 && !readEnabled()) {
+    enabledCache = true;
+    store(STORAGE_KEY, "on");
+  }
+  listeners.forEach((l) => l());
+}
+
+/** Son audible (activé et volume au-dessus de 0 %) : c'est ce qu'affiche le bouton de son. */
 export function useSfxEnabled(): boolean {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    readEnabled,
-    () => true,
-  );
+  return useSyncExternalStore(subscribe, readAudible, () => true);
+}
+
+/** Volume réglé, en pourcentage. */
+export function useSfxVolume(): number {
+  return useSyncExternalStore(subscribe, readVolume, () => DEFAULT_SFX_VOLUME);
 }
 
 // --- Moteur ---------------------------------------------------------------------------------
@@ -95,7 +158,7 @@ function engine(): { ctx: AudioContext; out: GainNode } | null {
     comp.knee.value = 12;
     comp.ratio.value = 4;
     master = ctx.createGain();
-    master.gain.value = MASTER_VOLUME;
+    master.gain.value = gainFor(readVolume());
     master.connect(comp).connect(ctx.destination);
   }
   if (ctx.state === "suspended") void ctx.resume();
@@ -109,7 +172,7 @@ function engine(): { ctx: AudioContext; out: GainNode } | null {
 export function unlockAudioOnFirstGesture(): () => void {
   if (typeof window === "undefined") return () => {};
   const unlock = () => {
-    if (readEnabled()) engine();
+    if (readAudible()) engine();
     remove();
   };
   const remove = () => {
@@ -320,9 +383,12 @@ const RECIPES: Record<Sfx, Recipe> = {
 /** Dernier départ de chaque son : dix cartes retournées d'un coup ne font qu'un seul claquement. */
 const lastPlayed = new Map<string, number>();
 
-/** Joue un bruitage (sans effet si le son est coupé ou si le navigateur n'a pas encore autorisé l'audio). */
+/**
+ * Joue un bruitage (sans effet si le son est coupé, à 0 %, ou si le navigateur n'a pas encore
+ * autorisé l'audio).
+ */
 export function play(name: Sfx, delayMs = 0, retry = true) {
-  if (!readEnabled()) return;
+  if (!readAudible()) return;
   const at = performance.now() + delayMs;
   if (Math.abs(at - (lastPlayed.get(name) ?? -1e9)) < 45) return;
   lastPlayed.set(name, at);
