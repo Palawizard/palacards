@@ -41,6 +41,38 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   expect((await apiCall<{ animationSpeed: string }>(page, "GET", "/me")).animationSpeed).toBe("normal");
 });
 
+test("paramètres : volume des sons au clavier, retenu après rechargement", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "volume");
+  await page.goto("settings");
+  const slider = page.getByRole("slider", { name: "Volume" });
+  const enabled = page.getByRole("checkbox", { name: "Sons du jeu" });
+  const header = page.getByRole("button", { name: "Sons du jeu" });
+  // Par défaut : le volume d'origine du jeu.
+  await expect(slider).toHaveValue("100");
+  await expect(enabled).toBeChecked();
+
+  // Au clavier : chaque flèche retire un cran de 5 %.
+  await slider.focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await expect(slider).toHaveValue("90");
+  await expect(page.getByText("90 %")).toBeVisible();
+  await page.reload();
+  await expect(slider).toHaveValue("90");
+
+  // À 0 % : plus de son, la case et le bouton de l'en-tête suivent.
+  await slider.focus();
+  await page.keyboard.press("Home");
+  await expect(slider).toHaveValue("0");
+  await expect(enabled).not.toBeChecked();
+  await expect(header).toHaveAttribute("aria-pressed", "false");
+
+  // Réactiver le son depuis 0 % repart du volume par défaut.
+  await enabled.check();
+  await expect(slider).toHaveValue("100");
+  await expect(header).toHaveAttribute("aria-pressed", "true");
+});
+
 test("admin : don de PW réservé aux comptes admin", async ({ browser }) => {
   const player = await newPlayer(browser, "don");
   await player.page.goto("admin");
