@@ -30,6 +30,7 @@ jobs:
       branch: ${{ steps.meta.outputs.branch }}
       pr: ${{ steps.pr.outputs.number }}
       pushed: ${{ steps.push.outcome }}
+      limit: ${{ steps.limit.outputs.hit }}
     services:
       postgres:
         image: postgres:17.6-alpine
@@ -82,6 +83,7 @@ jobs:
           jq -r '.issue.body' "$GITHUB_EVENT_PATH" > .automation/issue.md
 
       - name: Claude code la suggestion
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -124,6 +126,30 @@ jobs:
           echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
           gh issue comment "${{ github.event.issue.number }}" --body "Branche prête : $url"
 
+      # Limite du forfait Claude (ou API saturée) : pas un échec de la suggestion. L'issue est fermée ; le service
+      # de tri remet la suggestion en file et met toute la file en pause une heure.
+      - name: Limite du forfait ?
+        id: limit
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXEC: ${{ steps.claude.outputs.execution_file }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          hit=false
+          if [ -n "$EXEC" ] && [ -f "$EXEC" ]; then
+            msg=$(jq -r '[.[] | select(.type == "result")] | last | .result // ""' "$EXEC" 2>/dev/null || true)
+            if grep -qiE 'usage limit|hit your (usage )?limit|limit reached|rate.?limit|overloaded' <<<"$msg"; then
+              hit=true
+            fi
+          fi
+          echo "hit=$hit" >> "$GITHUB_OUTPUT"
+          if [ "$hit" = true ]; then
+            echo "::warning::Limite du forfait Claude atteinte : la branche repartira dans une heure."
+            gh issue close "$ISSUE" -R "$GITHUB_REPOSITORY" --reason "not planned" \
+              --comment "Limite du forfait Claude atteinte : la suggestion repartira automatiquement (nouvelle issue)."
+          fi
+
       - name: Compte rendu (fichier)
         if: always()
         uses: actions/upload-artifact@v6
@@ -165,6 +191,7 @@ jobs:
           BUILD: ${{ needs.build.result }}
           CI: ${{ needs.ci.result }}
           PR: ${{ needs.build.outputs.pr }}
+          LIMIT: ${{ needs.build.outputs.limit }}
           BRANCH: ${{ needs.build.outputs.branch }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -173,6 +200,8 @@ jobs:
           if [ "$BUILD" = success ] && [ -n "$PR" ]; then
             payload=$(jq -c --arg ci "$CI" --argjson pr "$PR" --arg branch "$BRANCH" --arg run "$RUN_URL" \
               '. + {status: "ready", ciConclusion: $ci, prNumber: $pr, branch: $branch, runUrl: $run}' <<<"$base")
+          elif [ "$LIMIT" = true ]; then
+            payload=$(jq -cn --arg run "$RUN_URL" '{status: "failed", reason: "usage_limit", runUrl: $run}')
           else
             payload=$(jq -cn --arg run "$RUN_URL" '{status: "failed", runUrl: $run}')
           fi

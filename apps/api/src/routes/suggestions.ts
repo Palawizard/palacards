@@ -85,6 +85,7 @@ export function suggestionRoutes(api: FastifyInstance, ctx: Ctx) {
     title: z.string().trim().max(200).optional(),
     openQuestions: z.number().int().min(0).max(20).optional(),
     runUrl: z.url().startsWith("https://github.com/").optional(),
+    reason: z.enum(["usage_limit"]).optional(),
   });
   api.post(
     "/automation/suggestions/:id/build",
