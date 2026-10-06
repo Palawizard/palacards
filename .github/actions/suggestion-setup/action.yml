@@ -1,0 +1,26 @@
+name: Préparation d'une branche de suggestion
+description: Node, pnpm, dépendances, build et navigateur Playwright, pour que Claude parte d'un dépôt prêt.
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v5
+    - uses: actions/setup-node@v5
+      with:
+        node-version: 22
+        cache: pnpm
+    - name: Dépendances et build
+      shell: bash
+      run: |
+        cp .env.example .env
+        pnpm install --frozen-lockfile
+        pnpm build
+    - name: Navigateur Playwright
+      shell: bash
+      run: pnpm --filter @palacards/e2e exec playwright install --with-deps chromium
+    - name: Identité git (commits de la branche ; le squash final sera au nom de Palawi)
+      shell: bash
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        mkdir -p .automation
+        echo ".automation/" >> .git/info/exclude
