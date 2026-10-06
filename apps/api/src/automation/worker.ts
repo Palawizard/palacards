@@ -18,7 +18,7 @@ const env = z
     /** Jeton GitHub limité aux issues du dépôt (fine-grained, Issues : lecture et écriture). */
     GITHUB_ISSUES_TOKEN: z.string().min(1).optional(),
     DISCORD_WEBHOOK_URL: z.url().optional(),
-    AUTOMATION_MAX_BUILDS_PER_DAY: z.coerce.number().int().min(0).max(50).default(5),
+    AUTOMATION_MAX_BUILDS_PER_DAY: z.coerce.number().int().min(0).max(50).default(15),
     WEB_ORIGIN: z.string().default("https://palawi.fr"),
     BASE_PATH: z.string().default("/palacards"),
   })

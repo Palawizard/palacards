@@ -302,6 +302,12 @@
   color: var(--color-danger);
   border-color: color-mix(in oklab, var(--color-danger) 45%, var(--color-line));
 }
+/* À faire en prod : pas de branche, une action pour Palawi. */
+.pc-verdict[data-verdict="prod"] {
+  color: var(--color-accent);
+  border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-line));
+  background: color-mix(in oklab, var(--color-accent) 8%, transparent);
+}
 .pc-verdict[data-verdict="non"] {
   color: var(--color-faint);
 }

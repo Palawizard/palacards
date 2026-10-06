@@ -422,7 +422,8 @@ export interface SuggestionDTO {
 }
 
 /** Verdict du tri automatique : à coder, à trancher par l'admin, refus proposé, bug à corriger. */
-export type TriageVerdict = "build" | "decision" | "non" | "bug";
+/** prod : action à faire en production (contenu, données, page Admin), sans branche de code. */
+export type TriageVerdict = "build" | "decision" | "non" | "bug" | "prod";
 export type TriageCategory = "important" | "confort" | "bloat" | "refus" | "troll";
 export type TriageStatus = "pending" | "running" | "done" | "error";
 /**

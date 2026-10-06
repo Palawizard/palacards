@@ -17,6 +17,7 @@ const VERDICTS: Record<TriageVerdict, string> = {
   decision: "À trancher",
   bug: "Bug à corriger",
   non: "Refus proposé",
+  prod: "À faire en prod",
 };
 const CATEGORIES: Record<string, string> = {
   important: "important",
@@ -31,7 +32,12 @@ function buildLine(a: SuggestionAutomationDTO): { state: string; text: string; l
     case "none":
       return null;
     case "queued":
-      return { state: "wait", text: "En file : part dès que le plafond du jour le permet." };
+      // Pause sur la limite du forfait Claude : le message dit quand la branche repart.
+      if (a.error?.startsWith("Limite du forfait")) return { state: "wait", text: a.error };
+      return {
+        state: "wait",
+        text: "En file : part dès que la branche en cours est finie (une à la fois, plafond du jour).",
+      };
     case "published":
       return { state: "wait", text: "Issue ouverte : Claude va commencer la branche.", live: true };
     case "running":
@@ -178,7 +184,7 @@ export function AutomationPanel({
               )}
               {a.spec && (
                 <details className="pc-auto-more">
-                  <summary>Cahier des charges publié</summary>
+                  <summary>{a.verdict === "prod" ? "À faire en prod" : "Cahier des charges publié"}</summary>
                   <p>{a.spec}</p>
                 </details>
               )}
