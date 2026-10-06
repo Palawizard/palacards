@@ -1,13 +1,12 @@
-import { and, desc, eq, gt, isNull, schema, sql } from "@palacards/db";
+import { and, desc, eq, isNull, schema, sql } from "@palacards/db";
 import {
-  SUGGESTION_LIMITS,
   type AdminSuggestionDTO,
   type SuggestionDTO,
   type SuggestionKind,
   type SuggestionStatus,
 } from "@palacards/shared";
 import type { Ctx } from "../context.js";
-import { GameError, notFound } from "../errors.js";
+import { notFound } from "../errors.js";
 import { Effects } from "./notifications.js";
 
 const s = schema.suggestions;
@@ -54,17 +53,6 @@ export async function createSuggestion(
   userId: string,
   input: { kind: SuggestionKind; title: string; body: string },
 ): Promise<SuggestionDTO> {
-  const since = new Date(ctx.now().getTime() - 86_400_000);
-  const [recent] = await ctx.db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(s)
-    .where(and(eq(s.userId, userId), gt(s.createdAt, since)));
-  if ((recent?.n ?? 0) >= SUGGESTION_LIMITS.perDay)
-    throw new GameError(
-      429,
-      "too_many_suggestions",
-      `${SUGGESTION_LIMITS.perDay} suggestions par jour au maximum : regroupe tes idées, ou reviens demain.`,
-    );
   const [row] = await ctx.db
     .insert(s)
     .values({ userId, kind: input.kind, title: input.title, body: input.body })
