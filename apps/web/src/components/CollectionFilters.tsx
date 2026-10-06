@@ -31,7 +31,10 @@ export interface CollectionFilterState {
   sort: CollectionSort;
 }
 
-/** Listes des menus déroulants : `/collection/summary` ou `/players/:pseudo/collection/summary` (sans tags). */
+/**
+ * Listes des menus déroulants : `/collection/summary` ou `/players/:pseudo/collection/summary` (tags vides si le
+ * joueur ne les partage pas).
+ */
 export interface CollectionFilterOptions {
   tags?: string[];
   themes: { id: number; name: string }[];
@@ -80,7 +83,8 @@ export function useCollectionFilters(init: Partial<CollectionFilterState> = {}) 
 
 /**
  * Barre de filtres d'une collection : recherche (titre, ou résumé aussi), tri, raretés, brillantes, doublons,
- * booster et édition. Favoris et tags seulement sur sa propre collection (`owner`) : ceux des autres sont privés.
+ * tag, booster et édition. Favoris seulement sur sa propre collection (`owner`) : ceux des autres sont privés ; tags
+ * d'un autre joueur seulement s'il les partage (le résumé les donne alors).
  * L'upgrader masque les raretés (fixées par l'établi) et les favoris (son propre interrupteur, dans `children`).
  */
 export function CollectionFilterBar({
@@ -157,7 +161,7 @@ export function CollectionFilterBar({
         <Toggle pressed={f.duplicates} onChange={(duplicates) => set({ duplicates })}>
           Doublons
         </Toggle>
-        {owner && !!options?.tags?.length && (
+        {!!options?.tags?.length && (
           <Select
             label="Tag"
             value={f.tag}

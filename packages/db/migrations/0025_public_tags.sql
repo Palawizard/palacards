@@ -1,0 +1,1 @@
+ALTER TABLE "players" ADD COLUMN "public_tags" boolean DEFAULT false NOT NULL;
