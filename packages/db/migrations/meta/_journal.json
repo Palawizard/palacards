@@ -176,6 +176,13 @@
       "when": 1791320700340,
       "tag": "0024_recompute_arthropods",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791321230282,
+      "tag": "0025_public_tags",
+      "breakpoints": true
     }
   ]
 }
