@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { LUCK_MIN_PACKS } from "@palacards/game";
+import { LUCK_MIN_PACKS, TITLE_MAX_RANK, type TitleRef } from "@palacards/game";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
-import { CreatorBadge, ErrorBox } from "@/components/ui";
+import { CreatorBadge, ErrorBox, TitleBadge } from "@/components/ui";
 import { fmt } from "@/lib/format";
 
 type Board = "collection" | "packs" | "luck" | "elo" | "wealth" | "guilds" | "pass";
@@ -21,6 +21,8 @@ interface Row {
   packs?: number;
   /** Badge « Créateur » (compte admin du jeu). */
   creator?: boolean;
+  /** Titre affiché par le joueur. */
+  title?: TitleRef;
   rank: number;
   me: boolean;
 }
@@ -53,7 +55,8 @@ export default function LeaderboardPage() {
         <h1 className="page-title">Classement</h1>
         <p className="hatnote mt-2">
           Le score de collection additionne les points de rareté des articles différents possédés (1 pour une commune, 1
-          000 pour une légendaire). Les classements de saison repartent à zéro chaque mois.
+          000 pour une légendaire). Les classements de saison repartent à zéro chaque mois&nbsp;: à la fin de la saison,
+          les {TITLE_MAX_RANK} premiers de chacun gagnent un titre à afficher sur leur profil.
         </p>
         {board === "luck" && (
           <p className="hatnote mt-2">
@@ -146,6 +149,11 @@ export default function LeaderboardPage() {
                       {r.creator && (
                         <span className="ml-2 align-[1px]">
                           <CreatorBadge />
+                        </span>
+                      )}
+                      {r.title && (
+                        <span className="ml-2 inline-flex max-w-full align-[1px]">
+                          <TitleBadge title={r.title} />
                         </span>
                       )}
                       {r.me && <span className="ml-2 text-xs text-good">toi</span>}

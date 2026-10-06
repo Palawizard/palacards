@@ -46,6 +46,8 @@ export interface MeDTO {
   animationSpeed: "normal" | "fast" | "instant";
   /** Images d'arthropodes floutées jusqu'au clic. */
   hideArthropods: boolean;
+  /** Ses tags servent de filtre aux autres joueurs sur sa collection. */
+  publicTags: boolean;
   /** Recyclage automatique des cartes tirées (rareté maximale, null : désactivé). */
   autoRecycle: { max: AutoRecycleRarity | null; keepNew: boolean };
   wallet: Wallet;

@@ -2,8 +2,10 @@ import { eq, schema, sql } from "@palacards/db";
 import { ELO_START } from "@palacards/game";
 import type { Ctx } from "../context.js";
 import { conflict } from "../errors.js";
+import { afterCommit, Effects } from "./notifications.js";
 import { activeSeason, PLAYER_LOCK_ORDER } from "./players.js";
 import { collectionScoresSql } from "./profiles.js";
+import { awardSeasonTitles } from "./titles.js";
 
 export const SEASON_ROLLOVER_JOB = "season-rollover";
 /** Purge des vieilles cartes : job à part, long (jusqu'à 2,7 M lignes), jamais relancé en parallèle. */
@@ -31,7 +33,7 @@ export async function seasonStatus(ctx: Ctx) {
  * Bascule de saison, en une transaction :
  * 1. les cartes de la saison suivante viennent de l'import (`load_cards.sql -v season=N+1`) ;
  *    à défaut, on reconduit les cartes de la saison en cours (nouvelles clés de tirage) ;
- * 2. archivage des classements de la saison (collection, Elo, richesse, guilde) ;
+ * 2. archivage des classements de la saison (collection, Elo, richesse, guilde) et titres de leurs premiers ;
  * 3. remise à zéro de l'Elo de saison (le meilleur Elo historique est conservé) ;
  * 4. activation de la nouvelle saison jusqu'au 1er du mois suivant (heure de Paris).
  * Les exemplaires déjà possédés gardent leurs stats et leur tampon d'édition.
@@ -39,6 +41,7 @@ export async function seasonStatus(ctx: Ctx) {
  * pour qu'une nouvelle tentative n'enchaîne jamais deux saisons.
  */
 export async function rolloverSeason(ctx: Ctx, options: { onlyIfDue?: boolean; expectedFrom?: number } = {}) {
+  const fx = new Effects();
   const res = await ctx.db.transaction(async (tx) => {
     // Verrou exclusif : deux bascules simultanées (job + admin) ne peuvent pas se chevaucher.
     await tx.execute(sql`lock table seasons in exclusive mode`);
@@ -69,6 +72,8 @@ export async function rolloverSeason(ctx: Ctx, options: { onlyIfDue?: boolean; e
       left join guild_members m on m.user_id = p.user_id
       on conflict (season, user_id) do nothing
     `);
+    // Titres lus sur les classements de la saison qui se termine : avant la remise à zéro de l'Elo.
+    const titles = await awardSeasonTitles(tx, fx, current.id);
     // Joueurs verrouillés dans le même ordre que `lockPlayers` (duels, marché, échanges…) : id croissant
     // octet par octet (collation "C"), pas celui de la collation de la base (en_US mélange majuscules et
     // minuscules) ; sinon deux ordres opposés sur des ids à casse mixte peuvent s'interbloquer.
@@ -89,9 +94,10 @@ export async function rolloverSeason(ctx: Ctx, options: { onlyIfDue?: boolean; e
       from f
       on conflict (id) do update set status = 'active', started_at = now(), ends_at = excluded.ends_at
     `);
-    return { from: current.id, to: next, copied };
+    return { from: current.id, to: next, copied, titles };
   });
   if (!res) return null;
+  await afterCommit(ctx, () => fx.flush(ctx));
   await ctx.db.execute(sql`analyze cards`);
   ctx.log.info(res, "nouvelle saison");
   return res;

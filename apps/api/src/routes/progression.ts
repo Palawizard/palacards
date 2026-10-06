@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, MAX_PRICE } from "@palacards/game";
+import { ECONOMY, MAX_PRICE, TITLE_BOARDS } from "@palacards/game";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
@@ -11,6 +11,7 @@ import { NOTIFICATION_GROUPS } from "../services/notifications.js";
 import { leaderboard, listAchievements } from "../services/progression.js";
 import { CARDS_PURGE_JOB, rolloverSeason } from "../services/seasons.js";
 import { changeUsername } from "../services/settings.js";
+import { chooseTitle } from "../services/titles.js";
 import { me } from "./core.js";
 
 export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
@@ -22,7 +23,7 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/leaderboard", auth, async (req) => {
     const q = parse(
       z.object({
-        board: z.enum(["collection", "packs", "luck", "elo", "wealth", "guilds", "pass"]).default("collection"),
+        board: z.enum(TITLE_BOARDS).default("collection"),
         period: z.enum(["season", "all"]).default("season"),
       }),
       req.query,
@@ -50,6 +51,16 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
       })
       .where(eq(schema.players.userId, req.user.id));
     return { ok: true };
+  });
+  // Titre affiché (null : aucun).
+  api.put("/settings/title", auth, async (req) => {
+    const { title } = parse(
+      z.object({
+        title: z.object({ season: z.number().int().positive(), board: z.enum(TITLE_BOARDS) }).nullable(),
+      }),
+      req.body,
+    );
+    return chooseTitle(ctx, req.user.id, title);
   });
   api.post("/settings/username", { ...auth, config: { rateLimit: { max: 5, timeWindow: "1 hour" } } }, async (req) => {
     const { username } = parse(z.object({ username: z.string() }), req.body);

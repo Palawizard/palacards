@@ -1,4 +1,5 @@
 import type { NotificationDTO } from "@palacards/shared";
+import { TITLE_BOARD_LABELS, titleDetail, type TitleBoard } from "@palacards/game";
 import { fmt } from "./format";
 
 const s = (v: unknown) => (typeof v === "string" ? v : "");
@@ -66,6 +67,12 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
         text: `Nouveaux succès à paliers : ${n(p.count)} déjà atteints, ${gain || "récompenses"} pour toi !`,
         href: "/achievements",
       };
+    }
+    case "title_won": {
+      const board = s(p.board) as TitleBoard;
+      const detail =
+        board in TITLE_BOARD_LABELS ? ` (${titleDetail({ board, rank: n(p.rank), season: n(p.season) })})` : "";
+      return { text: `Titre gagné : « ${s(p.name)} »${detail}. À afficher sur ton profil !`, href: "/profile" };
     }
     case "quest_completed": {
       const r = (p.reward ?? {}) as { pw?: unknown; xp?: unknown };

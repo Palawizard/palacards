@@ -107,6 +107,7 @@ export async function exportData(ctx: Ctx, userId: string) {
       .where(or(eq(s.battleTurns.attackerId, userId), eq(s.battleTurns.defenderId, userId))),
     achievements: await db.select().from(s.achievementsProgress).where(eq(s.achievementsProgress.userId, userId)),
     seasonArchives: await db.select().from(s.seasonArchives).where(eq(s.seasonArchives.userId, userId)),
+    titles: await db.select().from(s.playerTitles).where(eq(s.playerTitles.userId, userId)),
   };
 }
 
