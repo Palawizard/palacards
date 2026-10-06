@@ -6,7 +6,8 @@
 // Précision d'abord : le groupe de rock « Scorpions », le film « La Mouche » ou le fourmilier (« mangeur de
 // fourmis ») ne doivent pas être floutés. Seules comptent donc les tournures qui disent ce qu'est l'article :
 // « espèce de », « famille d' », « est un insecte », ou une description courte qui commence par le groupe.
-// Vérifié sur une cinquantaine de vrais résumés (espèces, crustacés, homonymes).
+// Vérifié sur une cinquantaine de vrais résumés (espèces, crustacés, homonymes). Les noms à double sens
+// (« puce » de la carte SIM) ne comptent que dans une tournure taxonomique directe.
 // ---------------------------------------------------------------------------
 
 /** Groupes d'arthropodes floutés (minuscules, sans accents ; singulier et pluriel). */
@@ -42,7 +43,6 @@ const GROUPS = [
   "coccinelles?",
   "lepidopteres?",
   "papillons?",
-  "chenilles?",
   "dipteres?",
   "mouches?",
   "moustiques?",
@@ -51,10 +51,8 @@ const GROUPS = [
   "abeilles?",
   "guepes?",
   "frelons?",
-  "bourdons?",
   "hemipteres?",
   "heteropteres?",
-  "punaises?",
   "cigales?",
   "pucerons?",
   "cochenilles?",
@@ -71,7 +69,6 @@ const GROUPS = [
   "phasmes?",
   "termites?",
   "poux",
-  "puces?",
   "trichopteres?",
   "ephemeropteres?",
   "nevropteres?",
@@ -89,13 +86,19 @@ const GROUPS = [
 ];
 const GROUP = `(?:${GROUPS.join("|")})`;
 
+/**
+ * Noms d'arthropodes qui désignent aussi un objet courant : « carte à puce », « chenille » d'un char, « punaise »
+ * (le clou), « bourdon » (la cloche). Comptés seulement juste après un rang : « espèce de puces ».
+ */
+const AMBIGUOUS = `(?:${["puces?", "chenilles?", "punaises?", "bourdons?"].join("|")})`;
+
 /** Rangs taxonomiques qui introduisent un groupe (« espèce de », « famille d' », « genre fossile de »…). */
 const RANK =
   "(?:especes?|sous-especes?|genres?|sous-genres?|familles?|sous-familles?|super-familles?|tribus?|sous-tribus?|ordres?|sous-ordres?|infra-ordres?|classes?|sous-classes?|clades?|taxons?)";
 
 /** Jusqu'à deux mots entre le rang et le groupe : « espèce de petites araignées », « genre éteint d'insectes ». */
 const BETWEEN = "(?:[a-z-]+ ){0,2}";
-const TAXON = new RegExp(`\\b${RANK} ${BETWEEN}(?:de |d'|des |du )${BETWEEN}${GROUP}\\b`);
+const TAXON = new RegExp(`\\b${RANK} ${BETWEEN}(?:de |d'|des |du )(?:${BETWEEN}${GROUP}|${AMBIGUOUS})\\b`);
 /** « La fourmi rousse est un insecte… », « Le faucheux est une araignée… ». */
 const IS_A = new RegExp(`\\b(?:est|sont) (?:un|une|des|le|la|les) (?:petite?s? |grande?s? )?${GROUP}\\b`);
 /** Description qui commence par le groupe : « insecte parasite… », « araignée mythique… ». */

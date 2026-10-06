@@ -169,6 +169,13 @@
       "when": 1791308205297,
       "tag": "0023_suggestion_automation",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791320700340,
+      "tag": "0024_recompute_arthropods",
+      "breakpoints": true
     }
   ]
 }
