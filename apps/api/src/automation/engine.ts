@@ -1,10 +1,12 @@
 import { desc, eq, ne, schema, sql, type Db } from "@palacards/db";
 import {
+  BUILD_IN_FLIGHT_MS,
   branchFor,
   claimTriage,
   publishedToday,
   releaseStaleTriage,
   TRIAGE_MAX_ATTEMPTS,
+  USAGE_LIMIT_PREFIX,
   type AutomationRow,
 } from "../services/automation.js";
 import { postDiscord, quote, truncate } from "./discord.js";
@@ -38,6 +40,7 @@ const VERDICT_LABELS: Record<TriageResult["verdict"], string> = {
   decision: "À trancher",
   bug: "Bug à corriger",
   non: "Refus proposé",
+  prod: "À faire en prod",
 };
 const KIND_LABELS: Record<string, string> = {
   bug: "Bug",
@@ -102,7 +105,8 @@ export function createEngine(deps: EngineDeps) {
       return;
     }
 
-    const wantsBuild = result.verdict !== "non";
+    // « non » et « prod » ne lancent pas de branche (prod : Palawi le fait lui-même en production).
+    const wantsBuild = result.verdict !== "non" && result.verdict !== "prod";
     // Une branche déjà lancée (ou mergée) n'est pas relancée par un nouveau tri.
     const canQueue = ["none", "closed", "failed"].includes(row.buildStatus);
     const queue = wantsBuild && canQueue;
@@ -133,6 +137,7 @@ export function createEngine(deps: EngineDeps) {
     if (result.injection) lines.push("Le texte essayait de donner des consignes à l'IA : rien n'a été lancé.");
     if (result.duplicateOf) lines.push(`Doublon de la suggestion n° ${result.duplicateOf}.`);
     if (result.verdict === "non") lines.push("Rien n'est envoyé au joueur : la réponse proposée t'attend dans Admin.");
+    if (result.verdict === "prod") lines.push(`Pas de branche : c'est à faire en prod.\n${quote(result.spec, 600)}`);
     if (result.verdict === "decision")
       lines.push(
         `${result.questions.length} question${result.questions.length > 1 ? "s" : ""} à trancher : Claude prépare la branche avec ses choix provisoires.`,
@@ -141,42 +146,51 @@ export function createEngine(deps: EngineDeps) {
     await discord(lines.join("\n"));
   }
 
-  /** Publie les suggestions en file (issue GitHub), dans la limite du plafond du jour. */
+  /**
+   * Publie la prochaine suggestion en file (issue GitHub), une à la fois : GitHub ne garde qu'un seul run en
+   * attente par groupe de concurrence et annule les autres. Rien ne part tant qu'une branche est publiée ou en
+   * cours, pendant une pause sur la limite du forfait Claude, ni au-delà du plafond du jour.
+   */
   async function publishQueued() {
     if (!deps.github) return;
-    let done = await publishedToday(ctx);
-    while (done < deps.maxBuildsPerDay) {
-      const [claimed] = await deps.db.execute<{ suggestion_id: string }>(sql`
-        update suggestion_automation set build_status = 'published', published_at = ${deps.now().toISOString()}::timestamptz,
-          updated_at = ${deps.now().toISOString()}::timestamptz
-        where suggestion_id = (
-          select suggestion_id from suggestion_automation where build_status = 'queued'
-          order by updated_at, suggestion_id for update skip locked limit 1
-        )
-        returning suggestion_id
-      `);
-      if (!claimed) return;
-      const id = Number(claimed.suggestion_id);
-      const [row] = await deps.db
-        .select({ automation: a, kind: s.kind })
-        .from(a)
-        .innerJoin(s, eq(s.id, a.suggestionId))
+    const now = deps.now();
+    const inFlightSince = new Date(now.getTime() - BUILD_IN_FLIGHT_MS).toISOString();
+    const [busy] = await deps.db.execute<{ n: number }>(sql`
+      select count(*)::int as n from suggestion_automation
+      where (build_status in ('published', 'running') and updated_at > ${inFlightSince}::timestamptz)
+         or (build_status = 'queued' and next_attempt_at > ${now.toISOString()}::timestamptz
+             and error like ${`${USAGE_LIMIT_PREFIX}%`})
+    `);
+    if ((busy?.n ?? 0) > 0) return;
+    if ((await publishedToday(ctx)) >= deps.maxBuildsPerDay) return;
+    const [claimed] = await deps.db.execute<{ suggestion_id: string }>(sql`
+      update suggestion_automation set build_status = 'published', published_at = ${now.toISOString()}::timestamptz,
+        error = null, updated_at = ${now.toISOString()}::timestamptz
+      where suggestion_id = (
+        select suggestion_id from suggestion_automation where build_status = 'queued'
+        order by updated_at, suggestion_id for update skip locked limit 1
+      )
+      returning suggestion_id
+    `);
+    if (!claimed) return;
+    const id = Number(claimed.suggestion_id);
+    const [row] = await deps.db
+      .select({ automation: a, kind: s.kind })
+      .from(a)
+      .innerJoin(s, eq(s.id, a.suggestionId))
+      .where(eq(a.suggestionId, id));
+    if (!row) return;
+    try {
+      const issue = await createIssue(deps.github, issueFor(id, row.kind, row.automation));
+      await deps.db.update(a).set({ issueNumber: issue.number, updatedAt: deps.now() }).where(eq(a.suggestionId, id));
+      await discord(`Branche en préparation pour la suggestion n° ${id} : ${issue.url}`);
+    } catch (err) {
+      deps.log.error({ err, suggestionId: id }, "création de l'issue GitHub");
+      // Remise en file : nouvel essai au prochain passage.
+      await deps.db
+        .update(a)
+        .set({ buildStatus: "queued", publishedAt: null, updatedAt: deps.now() })
         .where(eq(a.suggestionId, id));
-      if (!row) continue;
-      try {
-        const issue = await createIssue(deps.github, issueFor(id, row.kind, row.automation));
-        await deps.db.update(a).set({ issueNumber: issue.number, updatedAt: deps.now() }).where(eq(a.suggestionId, id));
-        await discord(`Branche en préparation pour la suggestion n° ${id} : ${issue.url}`);
-        done++;
-      } catch (err) {
-        deps.log.error({ err, suggestionId: id }, "création de l'issue GitHub");
-        // Remise en file : nouvel essai au prochain passage.
-        await deps.db
-          .update(a)
-          .set({ buildStatus: "queued", publishedAt: null, updatedAt: deps.now() })
-          .where(eq(a.suggestionId, id));
-        return;
-      }
     }
   }
 
@@ -207,7 +221,7 @@ export function createEngine(deps: EngineDeps) {
 
 /** Issue publique : cahier des charges reformulé et anonyme, jamais le texte ni le pseudo du joueur. */
 export function issueFor(id: number, kind: string, row: AutomationRow) {
-  const verdict = row.verdict === "non" ? "build" : (row.verdict ?? "build");
+  const verdict = row.verdict === "non" || row.verdict === "prod" ? "build" : (row.verdict ?? "build");
   const questions = row.questions.length
     ? `\n\n### Questions à trancher\n\nClaude prend l'option recommandée en attendant la réponse de Palawi dans la pull request.\n\n${row.questions
         .map(
