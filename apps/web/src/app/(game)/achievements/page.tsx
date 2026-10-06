@@ -1,7 +1,8 @@
 "use client";
 
 import { TIER_NAMES } from "@palacards/game";
-import { Lock, Sparkles } from "lucide-react";
+import { Check, Lock, Sparkles, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { ErrorBox } from "@/components/ui";
 import { useSeenFeature } from "@/lib/features";
@@ -88,14 +89,14 @@ const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
  * Médaille d'un palier : son numéro (I, II, III…) se lit sans la couleur ; débloquée, elle est pleine
  * (bronze, argent, or, platine, diamant), à débloquer elle reste en pointillés.
  */
-function Medal({ a, step }: { a: Achievement; step: number }) {
+function Medal({ a, step, large = false }: { a: Achievement; step: number; large?: boolean }) {
   const done = !!a.unlockedAt;
   const color = MEDALS[Math.min(a.tier, MEDALS.length - 1)];
   return (
     <span
-      className={`grid h-5 min-w-5 shrink-0 place-items-center rounded-full border-2 px-0.5 font-display text-[0.7rem] leading-none ${
-        done ? "" : "border-dashed border-line-strong text-faint"
-      }`}
+      className={`grid shrink-0 place-items-center rounded-full border-2 font-display leading-none ${
+        large ? "size-9 text-base" : "h-5 min-w-5 px-0.5 text-[0.7rem]"
+      } ${done ? "" : "border-dashed border-line-strong text-faint"}`}
       style={done ? { background: color, borderColor: color, color: "#1d1407" } : undefined}
       title={`${TIER_NAMES[Math.min(a.tier, TIER_NAMES.length - 1)]} · ${a.name} : ${a.description} (${reward(a.reward)})`}
     >
@@ -107,21 +108,48 @@ function Medal({ a, step }: { a: Achievement; step: number }) {
   );
 }
 
-/** Une famille de paliers : médailles en tête, puis le palier en cours avec sa progression. */
-function Family({ name, tiers }: { name: string; tiers: Achievement[] }) {
+/** Barre de progression du palier en cours. */
+function Progress({ a }: { a: Achievement }) {
+  const pct = Math.round((Math.min(a.progress, a.target) / a.target) * 100);
+  return (
+    <div
+      className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2"
+      role="progressbar"
+      aria-valuenow={a.progress}
+      aria-valuemax={a.target}
+      aria-label={`Progression : ${a.name}`}
+    >
+      <div
+        className="h-full origin-left rounded-full bg-accent transition-transform duration-300 ease-(--ease-out)"
+        style={{ transform: `scaleX(${pct / 100})` }}
+      />
+    </div>
+  );
+}
+
+const date = (iso: string) => new Date(iso).toLocaleDateString("fr-FR");
+
+/** Une famille de paliers : médailles en tête (elles ouvrent le détail), puis le palier en cours. */
+function Family({ name, tiers, onOpen }: { name: string; tiers: Achievement[]; onOpen: () => void }) {
   const next = tiers.find((a) => !a.unlockedAt);
   const done = tiers.filter((a) => a.unlockedAt).length;
   const shown = next ?? tiers.at(-1)!;
-  const pct = Math.round((Math.min(shown.progress, shown.target) / shown.target) * 100);
   return (
     <li className={`flex flex-col gap-3 rounded-[14px] border bg-panel p-4 ${next ? "border-line" : "border-warn/50"}`}>
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-display text-xl uppercase leading-tight">{name}</h3>
-        <span className="flex max-w-[55%] flex-wrap justify-end gap-0.5">
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-haspopup="dialog"
+          aria-label={`Voir les ${tiers.length} paliers de la famille ${name}`}
+          title="Voir le détail des paliers"
+          className="-m-1.5 flex max-w-[55%] flex-wrap justify-end gap-0.5 rounded-full p-1.5 transition-[background-color,transform] duration-150 ease-(--ease-out) hover:bg-panel-2 active:scale-[0.97]"
+        >
           {tiers.map((a, i) => (
             <Medal key={a.key} a={a} step={i} />
           ))}
-        </span>
+        </button>
       </div>
       <div>
         <p className="font-semibold leading-snug">
@@ -131,18 +159,7 @@ function Family({ name, tiers }: { name: string; tiers: Achievement[] }) {
         <p className="text-sm text-muted">{shown.description}</p>
         {next ? (
           <>
-            <div
-              className="mt-2 h-1.5 overflow-hidden rounded-full bg-panel-2"
-              role="progressbar"
-              aria-valuenow={shown.progress}
-              aria-valuemax={shown.target}
-              aria-label={`Progression : ${shown.name}`}
-            >
-              <div
-                className="h-full origin-left rounded-full bg-accent transition-transform duration-300 ease-(--ease-out)"
-                style={{ transform: `scaleX(${pct / 100})` }}
-              />
-            </div>
+            <Progress a={shown} />
             <p className="tnum mt-1 flex justify-between gap-3 text-xs text-faint">
               <span>
                 {fmt(Math.min(shown.progress, shown.target))} / {fmt(shown.target)}
@@ -152,7 +169,7 @@ function Family({ name, tiers }: { name: string; tiers: Achievement[] }) {
           </>
         ) : (
           <p className="tnum mt-1 text-xs text-warn">
-            {done} palier{done > 1 ? "s" : ""} · dernier le {new Date(shown.unlockedAt!).toLocaleDateString("fr-FR")}
+            {done} palier{done > 1 ? "s" : ""} · dernier le {date(shown.unlockedAt!)}
           </p>
         )}
       </div>
@@ -160,9 +177,98 @@ function Family({ name, tiers }: { name: string; tiers: Achievement[] }) {
   );
 }
 
+/** Un palier dans le détail : obtenu (coche, date), en cours (progression) ou à venir (objectif). */
+function TierRow({ a, step, current }: { a: Achievement; step: number; current: boolean }) {
+  const done = !!a.unlockedAt;
+  return (
+    <li
+      aria-current={current ? "step" : undefined}
+      className={`flex gap-3 rounded-xl border p-3 ${
+        current ? "border-accent shadow-lift" : done ? "border-warn/40" : "border-dashed border-line"
+      }`}
+    >
+      <Medal a={a} step={step} large />
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <span className={`font-semibold leading-snug ${done || current ? "" : "text-muted"}`}>{a.name}</span>
+          <span className={`tnum text-xs font-semibold ${done ? "text-warn" : "text-muted"}`}>{reward(a.reward)}</span>
+        </p>
+        <p className="text-sm text-muted">{a.description}</p>
+        {done ? (
+          <p className="tnum mt-1 flex items-center gap-1 text-xs font-semibold text-warn">
+            <Check aria-hidden className="size-3.5" strokeWidth={3} /> Obtenu le {date(a.unlockedAt!)}
+          </p>
+        ) : current ? (
+          <>
+            <Progress a={a} />
+            <p className="tnum mt-1 text-xs text-faint">
+              En cours · {fmt(Math.min(a.progress, a.target))} / {fmt(a.target)}
+            </p>
+          </>
+        ) : (
+          <p className="tnum mt-1 text-xs text-faint">À venir · objectif {fmt(a.target)}</p>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** Détail des paliers d'une famille : objectif, récompense réellement versée et état de chacun. */
+function TiersDialog({ name, tiers, onClose }: { name: string | null; tiers: Achievement[]; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const open = !!name && tiers.length > 0;
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal();
+    if (!open && d.open) d.close();
+  }, [open]);
+  const next = tiers.find((a) => !a.unlockedAt);
+  const done = tiers.filter((a) => a.unlockedAt).length;
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      // Un clic sur le fond (hors de la boîte) ferme aussi.
+      onClick={(e) => e.target === e.currentTarget && e.currentTarget.close()}
+      aria-labelledby="tiers-title"
+      className="pc-picker m-auto max-h-[min(42rem,calc(100dvh-2rem))] w-[min(30rem,calc(100vw-1.5rem))] flex-col rounded-2xl border border-line-strong bg-panel p-0 text-text shadow-pop backdrop:bg-black/60 open:flex"
+    >
+      {open && (
+        <>
+          <header className="flex items-start gap-3 border-b-2 border-dashed border-line px-5 py-4">
+            <div className="min-w-0 flex-1">
+              <h2 id="tiers-title" className="font-display text-2xl uppercase leading-tight">
+                {name}
+              </h2>
+              <p className="tnum text-sm text-muted">
+                {done} palier{done > 1 ? "s" : ""} obtenu{done > 1 ? "s" : ""} sur {tiers.length}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost px-2"
+              onClick={() => ref.current?.close()}
+              aria-label="Fermer"
+            >
+              <X aria-hidden className="size-5" />
+            </button>
+          </header>
+          <ol className="flex flex-col gap-2 overflow-y-auto p-4 sm:p-5">
+            {tiers.map((a, i) => (
+              <TierRow key={a.key} a={a} step={i} current={a === next} />
+            ))}
+          </ol>
+        </>
+      )}
+    </dialog>
+  );
+}
+
 export default function AchievementsPage() {
   useSeenFeature("achievements-v2");
   const { data, error, mutate } = useSWR<Achievement[]>("/achievements");
+  const [detail, setDetail] = useState<string | null>(null);
   useSocketEvent("progress:update", () => void mutate());
   useSocketEvent("notification:new", (n) => {
     if (n.type.startsWith("achievement")) void mutate();
@@ -212,11 +318,12 @@ export default function AchievementsPage() {
               </h2>
               <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {g.families.map(([name, tiers]) => (
-                  <Family key={name} name={name} tiers={tiers} />
+                  <Family key={name} name={name} tiers={tiers} onOpen={() => setDetail(name)} />
                 ))}
               </ul>
             </section>
           ))}
+          <TiersDialog name={detail} tiers={(detail && families.get(detail)) || []} onClose={() => setDetail(null)} />
           <section aria-labelledby="secrets-title">
             <h2 id="secrets-title" className="section-title">
               Succès secrets

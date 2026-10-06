@@ -16,6 +16,13 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   await expect(page.getByText(/[1-9]\d* succès débloqués sur \d{3}/)).toBeVisible();
   // Famille « Paquets ouverts » : le premier palier est débloqué.
   await expect(page.getByText("Palier 1, Premier paquet, débloqué")).toBeAttached();
+  // Les médailles ouvrent le détail des paliers : obtenu, en cours, puis fermeture à Échap.
+  await page.getByRole("button", { name: /paliers de la famille Paquets ouverts/ }).click();
+  const tiers = page.getByRole("dialog", { name: "Paquets ouverts" });
+  await expect(tiers.getByRole("listitem").first()).toContainText("Obtenu le");
+  await expect(tiers.getByRole("progressbar")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(tiers).toBeHidden();
 
   // Fusion : deux exemplaires du même article → niveau 2.
   const owned = await apiCall<{ items: { cardId: number }[] }>(page, "GET", "/collection?limit=1");
