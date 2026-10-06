@@ -21,6 +21,7 @@ export type NotificationType =
   | "packs_full"
   | "achievement"
   | "achievement_backfill"
+  | "title_won"
   | "quest_completed"
   | "pass_level"
   | "boss_killed"
@@ -37,7 +38,7 @@ export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {
   social: ["friend_request", "friend_accepted", "guild_objective"],
   battles: ["battle_challenge", "battle_result"],
   packs: ["packs_full", "gift"],
-  achievements: ["achievement", "achievement_backfill"],
+  achievements: ["achievement", "achievement_backfill", "title_won"],
   progress: ["quest_completed", "pass_level"],
   boss: ["boss_killed", "boss_consolation", "boss_mvp"],
 };

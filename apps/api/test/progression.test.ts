@@ -186,6 +186,34 @@ describe("classements et saisons", () => {
     const all = await p.get("/leaderboard?board=elo&period=all");
     expect(all.body.rows.find((r: { me: boolean }) => r.me).value).toBe(1234);
   });
+
+  it("titres de fin de saison : attribués aux premiers, affichés, au choix du joueur", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    await ctx.db.update(schema.players).set({ elo: 9_000, eloPeak: 9_000 }).where(eq(schema.players.userId, a.userId));
+    await ctx.db.update(schema.players).set({ balance: 9e12 }).where(eq(schema.players.userId, b.userId));
+    const season = (await a.get("/me")).body.season;
+    const res = await rolloverSeason(ctx);
+    expect(res?.titles).toBeGreaterThanOrEqual(2);
+
+    // Premier titre : affiché d'office sur le profil, avec une notification.
+    const profile = (await b.get(`/players/${a.username}`)).body;
+    expect(profile.title).toEqual({ board: "elo", rank: 1, season });
+    expect(profile.titles).toContainEqual({ board: "elo", rank: 1, season });
+    const notes = (await a.get("/notifications")).body.items;
+    expect(notes.some((n: { type: string }) => n.type === "title_won")).toBe(true);
+    // Le titre suit le joueur dans les classements.
+    const row = (await a.get("/leaderboard?board=elo&period=all")).body.rows.find((r: { me: boolean }) => r.me);
+    expect(row.title).toEqual({ board: "elo", rank: 1, season });
+
+    // Choix du titre : seulement parmi les siens, ou aucun.
+    expect((await b.put("/settings/title", { title: { season, board: "elo" } })).status).toBe(404);
+    expect((await b.put("/settings/title", { title: null })).body.title).toBeNull();
+    expect((await b.get(`/players/${b.username}`)).body.title).toBeNull();
+    const chosen = await b.put("/settings/title", { title: { season, board: "wealth" } });
+    expect(chosen.body.title).toEqual({ board: "wealth", rank: 1, season });
+    expect((await b.put("/settings/title", { title: { season, board: "nope" } })).status).toBe(400);
+  });
 });
 
 describe("paramètres et admin", () => {
