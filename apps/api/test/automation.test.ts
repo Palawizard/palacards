@@ -33,6 +33,12 @@ beforeEach(() => {
   });
 });
 afterEach(() => vi.restoreAllMocks());
+// Une branche à la fois : ce qu'un test laisse en file ou en cours ne bloque pas le suivant.
+beforeEach(async () => {
+  await ctx.db.execute(sql`
+    update suggestion_automation set build_status = 'closed' where build_status in ('published', 'running', 'queued')
+  `);
+});
 
 const verdict = (over: Partial<TriageResult> = {}): TriageResult => ({
   verdict: "build",
@@ -47,10 +53,10 @@ const verdict = (over: Partial<TriageResult> = {}): TriageResult => ({
   ...over,
 });
 
-function engine(runner: ClaudeRunner, opts: { github?: boolean; max?: number } = {}) {
+function engine(runner: ClaudeRunner, opts: { github?: boolean; max?: number; now?: () => Date } = {}) {
   return createEngine({
     db: ctx.db,
-    now: () => ctx.now(),
+    now: opts.now ?? (() => ctx.now()),
     log: quiet,
     runner,
     model: "sonnet",
@@ -75,10 +81,13 @@ describe("tri automatique des suggestions", () => {
     expect(await rowOf(id)).toMatchObject({ triageStatus: "pending", buildStatus: "none" });
 
     let prompt = "";
-    await engine(async (call) => {
-      prompt = call.prompt;
-      return verdict();
-    }).tick();
+    await engine(
+      async (call) => {
+        prompt = call.prompt;
+        return verdict();
+      },
+      { max: 999 },
+    ).tick();
 
     // Le texte du joueur est encadré comme une donnée.
     expect(prompt).toContain(`n° ${id}`);
@@ -168,6 +177,44 @@ describe("tri automatique des suggestions", () => {
     await ctx.db.delete(a).where(sql`${a.suggestionId} in ${ids}`);
   });
 
+  it("ne lance qu'une branche à la fois : la suivante part quand la première a fini", async () => {
+    const p = await signUp(app);
+    const first = await suggest(p, "Première idée");
+    const second = await suggest(p, "Deuxième idée");
+    const run = engine(async () => verdict(), { max: 999 });
+    await run.tick();
+    const states = async () => [(await rowOf(first)).buildStatus, (await rowOf(second)).buildStatus];
+    expect(await states()).toEqual(["published", "queued"]);
+    await run.tick();
+    expect(await states()).toEqual(["published", "queued"]);
+    // La première rend compte : la seconde part au passage suivant.
+    await ctx.db.update(a).set({ buildStatus: "ready" }).where(eq(a.suggestionId, first));
+    await run.tick();
+    expect(await states()).toEqual(["ready", "published"]);
+  });
+
+  it("« à faire en prod » : pas de branche, Palawi est prévenu", async () => {
+    const p = await signUp(app);
+    const id = await suggest(
+      p,
+      "Booster d'Halloween",
+      "Un booster spécial pour Halloween avec des cartes de monstres.",
+    );
+    await engine(async () =>
+      verdict({
+        verdict: "prod",
+        summary: "Créer un booster spécial Halloween",
+        spec: "Créer depuis la page Admin un booster spécial « Halloween » limité dans le temps.",
+      }),
+    ).tick();
+    expect(await rowOf(id)).toMatchObject({ verdict: "prod", buildStatus: "none", issueNumber: null });
+    expect(calls.some((c) => c.url.startsWith("https://api.github.com/"))).toBe(false);
+    const msg = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(msg).toContain("À faire en prod");
+    expect(msg).toContain("Pas de branche");
+    expect(msg).toContain("booster spécial « Halloween »");
+  });
+
   it("reprend un tri en échec plus tard, puis prévient après le dernier essai", async () => {
     const p = await signUp(app);
     const id = await suggest(p);
@@ -248,6 +295,33 @@ describe("comptes rendus des workflows et actions admin", () => {
     // Rien n'a été envoyé au joueur.
     const mine = (await p.get("/suggestions")).body.find((x: { id: number }) => x.id === id);
     expect(mine).toMatchObject({ status: "new", reply: null });
+  });
+
+  it("limite du forfait : la suggestion revient en file et la file attend une heure", async () => {
+    const p = await signUp(app);
+    const id = await suggest(p);
+    await engine(async () => verdict(), { max: 999 }).tick();
+    expect((await rowOf(id)).buildStatus).toBe("published");
+    calls = [];
+    const res = await report(id, {
+      status: "failed",
+      reason: "usage_limit",
+      runUrl: "https://github.com/x/y/actions/runs/1",
+    });
+    expect(res.statusCode).toBe(200);
+    const row = await rowOf(id);
+    expect(row).toMatchObject({ buildStatus: "queued", issueNumber: null });
+    expect(row.error).toMatch(/^Limite du forfait Claude atteinte : la branche repart vers \d{2} h \d{2}\.$/);
+    const msg = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(msg).toContain("**Pause**");
+
+    // Pendant la pause, rien ne part ; une heure plus tard, la suggestion repart avec une nouvelle issue.
+    calls = [];
+    await engine(async () => verdict(), { max: 999 }).tick();
+    expect((await rowOf(id)).buildStatus).toBe("queued");
+    const later = new Date(ctx.now().getTime() + 61 * 60_000);
+    await engine(async () => verdict(), { max: 999, now: () => later }).tick();
+    expect(await rowOf(id)).toMatchObject({ buildStatus: "published", error: null, issueNumber });
   });
 
   it("l'admin relance le tri, force ou annule une construction", async () => {
