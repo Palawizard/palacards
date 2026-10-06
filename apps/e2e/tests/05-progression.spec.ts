@@ -44,8 +44,9 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
 test("paramètres : volume des sons au clavier, retenu après rechargement", async ({ browser }) => {
   const { page } = await newPlayer(browser, "volume");
   await page.goto("settings");
-  const slider = page.getByRole("slider", { name: "Volume" });
-  const enabled = page.getByRole("checkbox", { name: "Sons du jeu" });
+  const section = page.locator("#sons");
+  const slider = section.getByRole("slider", { name: "Volume" });
+  const enabled = section.getByRole("checkbox", { name: "Sons du jeu" });
   const header = page.getByRole("button", { name: "Sons du jeu" });
   // Par défaut : le volume d'origine du jeu.
   await expect(slider).toHaveValue("100");
@@ -56,7 +57,7 @@ test("paramètres : volume des sons au clavier, retenu après rechargement", asy
   await page.keyboard.press("ArrowLeft");
   await page.keyboard.press("ArrowLeft");
   await expect(slider).toHaveValue("90");
-  await expect(page.getByText("90 %")).toBeVisible();
+  await expect(section.getByText("90 %")).toBeVisible();
   await page.reload();
   await expect(slider).toHaveValue("90");
 
@@ -71,6 +72,31 @@ test("paramètres : volume des sons au clavier, retenu après rechargement", asy
   await enabled.check();
   await expect(slider).toHaveValue("100");
   await expect(header).toHaveAttribute("aria-pressed", "true");
+});
+
+test("en-tête : le survol du bouton de son déplie le curseur de volume", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "survol");
+  await page.goto("pulls");
+  const header = page.getByRole("banner");
+  const button = header.getByRole("button", { name: "Sons du jeu" });
+  const slider = header.getByRole("slider", { name: "Volume" });
+  // Panneau qui porte le fondu : le parent du bloc libellé + curseur.
+  const panel = slider.locator("xpath=../..");
+  await expect(panel).toHaveCSS("opacity", "0");
+
+  await button.hover();
+  await expect(panel).toHaveCSS("opacity", "1");
+  // La souris descend du bouton au curseur sans refermer le panneau.
+  await slider.hover();
+  await slider.focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await expect(slider).toHaveValue("90");
+  await expect(header.getByText("90 %")).toBeVisible();
+
+  // Le réglage est le même que dans les paramètres.
+  await page.goto("settings");
+  await expect(page.locator("#sons").getByRole("slider", { name: "Volume" })).toHaveValue("90");
 });
 
 test("admin : don de PW réservé aux comptes admin", async ({ browser }) => {
