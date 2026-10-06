@@ -29,8 +29,41 @@ if (!str(r.title, 100) || !/^(feat|fix)(\([^)]+\))?: /.test(r.title))
 if (!str(r.summary, 2000)) fail("résumé manquant");
 if (!str(r.playerReply, 1000)) fail("réponse au joueur manquante");
 const list = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).slice(0, 30) : []);
-const decisions = Array.isArray(r.decisions) ? r.decisions.slice(0, 10) : [];
-const questions = list(r.questions);
+const clip = (v, max) =>
+  String(v ?? "")
+    .trim()
+    .slice(0, max);
+
+/**
+ * Points à trancher par Palawi : chaque question, ses options et l'option recommandée, déjà codée.
+ * Format attendu : `choices: [{ question, options, recommended }]`. Les anciens `decisions`
+ * ({ question, choice, alternatives }) et `questions` (texte libre) sont repris dans le même format.
+ */
+function readChoices(res) {
+  const out = [];
+  for (const c of Array.isArray(res.choices) ? res.choices : []) {
+    const options = list(c?.options).map((o) => clip(o, 200));
+    const recommended = clip(c?.recommended, 200);
+    if (!clip(c?.question, 1) || !recommended) continue;
+    out.push({
+      question: clip(c.question, 300),
+      options: options.includes(recommended) ? options : [recommended, ...options],
+      recommended,
+    });
+  }
+  for (const d of Array.isArray(res.decisions) ? res.decisions : []) {
+    const recommended = clip(d?.choice, 200);
+    if (!clip(d?.question, 1) || !recommended) continue;
+    out.push({
+      question: clip(d.question, 300),
+      options: [recommended, ...list(d.alternatives).map((o) => clip(o, 200))],
+      recommended,
+    });
+  }
+  for (const q of list(res.questions)) out.push({ question: clip(q, 300), options: [], recommended: "" });
+  return out.slice(0, 12);
+}
+const choices = readChoices(r);
 
 // Au moins un commit, et rien dans les fichiers d'infrastructure.
 const commits = Number(git("rev-list", "--count", "origin/dev..HEAD"));
@@ -53,24 +86,32 @@ const sections = [
   `Suggestion n° ${suggestion} · issue #${issue} · branche \`${branch}\``,
   `## Résumé\n\n${r.summary.trim()}`,
 ];
+if (choices.length) {
+  // Exemple de réponse : la première autre option disponible.
+  const withAlt = choices.findIndex((c) => c.options.some((o) => o !== c.recommended));
+  const example =
+    withAlt === -1
+      ? "@claude 1 : …"
+      : `@claude ${withAlt + 1} : ${choices[withAlt].options.find((o) => o !== choices[withAlt].recommended)}`;
+  sections.push(
+    [
+      "## À trancher",
+      "",
+      `Chaque point est **déjà codé avec l'option recommandée** (✅). Si elle te va, rien à faire : merge la PR. Pour en changer, réponds en commentaire, par exemple \`${example}\`.`,
+      ...choices.map((c, i) =>
+        [
+          "",
+          `### ${i + 1}. ${c.question}`,
+          "",
+          ...(c.options.length
+            ? c.options.map((o) => (o === c.recommended ? `- ✅ **${o}** (recommandé, déjà codé)` : `- ${o}`))
+            : ["- Question ouverte : réponds en commentaire avec `@claude`."]),
+        ].join("\n"),
+      ),
+    ].join("\n"),
+  );
+}
 if (list(r.changes).length) sections.push(`## Changements\n\n${bullets(list(r.changes))}`);
-if (decisions.length)
-  sections.push(
-    `## Choix provisoires\n\n${decisions
-      .map(
-        (d, i) =>
-          `${i + 1}. **${String(d.question ?? "").slice(0, 300)}**\n   Choix : ${String(d.choice ?? "").slice(0, 300)}${
-            Array.isArray(d.alternatives) && d.alternatives.length
-              ? `\n   Autres options : ${d.alternatives.map(String).join(" · ").slice(0, 400)}`
-              : ""
-          }`,
-      )
-      .join("\n")}`,
-  );
-if (questions.length)
-  sections.push(
-    `## Questions pour Palawi\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nRéponds en commentaire en commençant par \`@claude\` (par exemple « @claude question 1 : option B »).`,
-  );
 if (migrations.length) sections.push(`## Migration\n\n${bullets(migrations.map((m) => `\`${m}\``))}`);
 sections.push(`## Réponse proposée au joueur\n\n${quote(r.playerReply.trim())}`);
 if (str(r.announcement, 500)) sections.push(`## Ligne d'annonce\n\n${quote(r.announcement.trim())}`);
@@ -86,7 +127,7 @@ writeFileSync(
     title: r.title.trim(),
     playerReply: r.playerReply.trim().slice(0, 1000),
     ...(str(r.announcement, 500) ? { announcement: r.announcement.trim() } : {}),
-    openQuestions: questions.length,
+    openQuestions: choices.length,
   }),
 );
 if (process.env.GITHUB_OUTPUT) {
@@ -94,6 +135,8 @@ if (process.env.GITHUB_OUTPUT) {
     process.env.GITHUB_OUTPUT,
     `title=${r.title.trim().replace(/[\r\n]/g, " ")} (suggestion n° ${suggestion})\n`,
   );
-  appendFileSync(process.env.GITHUB_OUTPUT, `questions=${questions.length}\n`);
+  appendFileSync(process.env.GITHUB_OUTPUT, `questions=${choices.length}\n`);
 }
-console.log(`Branche ${branch} : ${commits} commit(s), ${changed.length} fichier(s), ${questions.length} question(s).`);
+console.log(
+  `Branche ${branch} : ${commits} commit(s), ${changed.length} fichier(s), ${choices.length} point(s) à trancher.`,
+);

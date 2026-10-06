@@ -191,7 +191,7 @@ export async function reportBuild(ctx: Ctx, suggestionId: number, report: BuildR
   if (report.status === "ready") {
     const ci = report.ciConclusion === "success" ? "CI verte" : `CI : ${report.ciConclusion ?? "inconnue"}`;
     const questions = report.openQuestions
-      ? `\n${report.openQuestions} question${report.openQuestions > 1 ? "s" : ""} à trancher : réponds dans la PR en commençant par @claude.`
+      ? `\n${report.openQuestions} point${report.openQuestions > 1 ? "s" : ""} à trancher, déjà codé${report.openQuestions > 1 ? "s" : ""} avec l'option recommandée : voir « À trancher » dans la PR (réponds avec @claude pour changer).`
       : "";
     message = `**Branche prête** pour ${name}. ${ci}.${questions}\nPR : ${pr ?? "?"}\nJe la merge ? (Squash and merge vers dev)`;
   } else if (report.status === "failed") {
