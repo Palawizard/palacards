@@ -27,7 +27,7 @@ describe("upgrader", () => {
 
   it("donne une chance au prorata du nombre de cartes, plafonnée à 75 %", () => {
     expect([1, 3, 5, 10].map((n) => upgradeChance("SR", n))).toEqual([818, 2_454, 4_090, 7_500]);
-    expect([1, 5, 10].map((n) => upgradeChance("UR", n))).toEqual([277, 1_388, 2_777]);
+    expect([1, 5, 10].map((n) => upgradeChance("UR", n))).toEqual([416, 2_083, 4_166]);
     expect(upgradeChance("C", 10)).toBe(UPGRADE_MAX_CHANCE);
   });
 
@@ -41,9 +41,9 @@ describe("upgrader", () => {
     }
   });
 
-  it("rend les légendaires deux fois plus dures à obtenir que les autres paliers", () => {
+  it("rend les légendaires un peu plus dures à obtenir que les autres paliers", () => {
     const fair = perPack("L") / perPack("UR");
-    expect(upgradeChancePerCard("UR") / 10_000).toBeCloseTo(fair / 4, 3);
+    expect(upgradeChancePerCard("UR") / 10_000).toBeCloseTo(fair * 0.375, 3);
   });
 
   it("indique à partir de combien de cartes la chance est plafonnée", () => {

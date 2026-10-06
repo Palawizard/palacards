@@ -286,6 +286,10 @@ function ThemeBox({ theme }: { theme: ThemeDTO }) {
           )}
           .
         </p>
+        <p className="flex items-baseline justify-between gap-3 rounded-lg bg-panel-2 px-3 py-2">
+          <span className="text-muted">Tes boosters ouverts</span>
+          <span className="tnum font-display text-xl leading-none">{fmt(theme.opened)}</span>
+        </p>
         {theme.preview.length > 0 && (
           <div>
             <p className="label">À gagner</p>

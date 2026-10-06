@@ -189,13 +189,16 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     return upgrade(ctx, req.user.id, instanceIds);
   });
-  const seriesRarity = z.object({ rarity: z.enum(RARITIES) });
-  api.get("/upgrade/series", auth, async (req) =>
-    upgradeSeriesPreview(ctx, req.user.id, parse(seriesRarity, req.query).rarity),
-  );
-  api.post("/upgrade/series", limited(10), async (req) =>
-    upgradeSeries(ctx, req.user.id, parse(seriesRarity, req.body).rarity),
-  );
+  const seriesQuery = z.object({ rarity: z.enum(RARITIES), singles: z.enum(["0", "1"]).optional() });
+  const seriesBody = z.object({ rarity: z.enum(RARITIES), singles: z.boolean().optional() });
+  api.get("/upgrade/series", auth, async (req) => {
+    const q = parse(seriesQuery, req.query);
+    return upgradeSeriesPreview(ctx, req.user.id, q.rarity, q.singles === "1");
+  });
+  api.post("/upgrade/series", limited(10), async (req) => {
+    const b = parse(seriesBody, req.body);
+    return upgradeSeries(ctx, req.user.id, b.rarity, b.singles ?? false);
+  });
   api.get("/wheel", auth, async (req) => wheelState(ctx, req.user.id));
   api.post("/wheel/spin", limited(10), async (req) => spinWheel(ctx, req.user.id));
   // Limite serrée : pas de devinette de codes à la chaîne.

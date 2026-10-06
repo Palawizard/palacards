@@ -15,7 +15,7 @@ import {
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
 import { MyShowcase } from "@/components/Showcase";
-import { CardSkeletons, Empty, ErrorBox, LoadMore } from "@/components/ui";
+import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 
@@ -35,6 +35,10 @@ interface ProfileDTO {
   relation: "self" | "friends" | "incoming" | "outgoing" | "none";
   online: boolean;
   guild: { id: number; name: string; tag: string; emblem: string; role: string } | null;
+  /** Badge « Créateur » : compte admin du jeu. */
+  creator: boolean;
+  /** Boosters à thème ouverts, par édition (les plus récentes d'abord). */
+  themePacks: { id: number; name: string; opened: number }[];
 }
 
 const since = (iso: string) => new Date(iso).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
@@ -176,9 +180,12 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
       <header className="flex flex-wrap items-end gap-4 border-b-2 border-dashed border-line pb-4">
         <Avatar name={p.displayName} avatar={p.avatar} online={p.isMe ? undefined : p.online} size="lg" />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate font-display text-[clamp(2rem,1.5rem+1.9vw,2.9rem)] uppercase leading-none">
-            {p.displayName}
-          </h1>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="min-w-0 truncate font-display text-[clamp(2rem,1.5rem+1.9vw,2.9rem)] uppercase leading-none">
+              {p.displayName}
+            </h1>
+            {p.creator && <CreatorBadge size="lg" />}
+          </div>
           <p className="text-sm text-muted">
             Joueur depuis {since(p.createdAt)}
             {p.guild && (
@@ -216,6 +223,30 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
           </div>
         ))}
       </dl>
+
+      {p.themePacks.length > 0 && (
+        <section aria-labelledby="themes-title">
+          <h2 id="themes-title" className="section-title mt-0">
+            Boosters spéciaux ouverts
+          </h2>
+          <ul className="flex flex-wrap gap-2">
+            {p.themePacks.map((t) => (
+              <li
+                key={t.id}
+                className="flex items-center gap-2.5 rounded-full border border-line bg-panel py-1 pl-3.5 pr-1.5 text-sm"
+              >
+                <span className="font-semibold">{t.name}</span>
+                <span
+                  className="tnum rounded-full bg-panel-2 px-2 py-0.5 text-xs font-bold text-muted"
+                  aria-label={`${t.opened} ouvert${t.opened > 1 ? "s" : ""}`}
+                >
+                  {fmt(t.opened)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {p.isMe ? (
         <MyShowcase cards={p.showcase} onChanged={() => mutate()} />
