@@ -36,7 +36,7 @@ function buildLine(a: SuggestionAutomationDTO): { state: string; text: string; l
       if (a.error?.startsWith("Limite du forfait")) return { state: "wait", text: a.error };
       return {
         state: "wait",
-        text: "En file : part dès que la branche en cours est finie (une à la fois, plafond du jour).",
+        text: "En file : part quand la PR en cours est mergée ou fermée (une à la fois, plafond du jour).",
       };
     case "published":
       return { state: "wait", text: "Issue ouverte : Claude va commencer la branche.", live: true };
