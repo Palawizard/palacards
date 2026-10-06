@@ -176,6 +176,8 @@ interface CatalogQuery {
   owned?: "yes" | "no";
   /** Articles d'un booster à thème. */
   theme?: number;
+  /** La recherche porte aussi sur le résumé Wikipédia (et la description courte) des articles déjà résumés. */
+  inSummary?: boolean;
   sort: CatalogSort;
   cursor?: string;
   limit: number;
@@ -257,7 +259,18 @@ async function catalogPage(
     where.push(sql`c.id in (select tc.card_id from theme_cards tc where tc.theme_id = ${query.theme})`);
 
   if (q && fuzzy) where.push(sql`lower(f_unaccent(${q})) <% c.search_title`);
-  else if (q)
+  else if (q && query.inSummary) {
+    // Titre (tous les mots) ou résumé (l'expression entière). Les deux ensembles sont calculés à part puis
+    // réunis : un OR dans le WHERE empêcherait l'index trigramme du titre et parcourrait toute la saison.
+    const title = searchWords(q).map((w) => sql`x.search_title like '%' || lower(f_unaccent(${w})) || '%'`);
+    where.push(sql`c.id in (
+      select x.id from cards x where x.season = ${season} and ${sql.join(title, sql` and `)}
+      union
+      select s.page_id from wiki_summaries s
+      where lower(f_unaccent(coalesce(s.description, '') || ' ' || coalesce(s.extract, '')))
+        like '%' || lower(f_unaccent(${q.replace(/[\\%_]/g, "\\$&")})) || '%'
+    )`);
+  } else if (q)
     for (const w of searchWords(q)) where.push(sql`c.search_title like '%' || lower(f_unaccent(${w})) || '%'`);
   // Même tri pour les deux modes : trier des dizaines de milliers de candidats par similarité coûtait trop cher.
   let sortExpr: SQL;

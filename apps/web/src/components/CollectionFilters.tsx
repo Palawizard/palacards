@@ -1,7 +1,7 @@
 // Filtres de collection partagés, importés uniquement par des composants client.
 import type { Rarity } from "@palacards/game";
 import { Search } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { RarityFilter, Select, Toggle } from "@/components/ui";
 import { useDebounced } from "@/lib/use-debounced";
 
@@ -81,6 +81,7 @@ export function useCollectionFilters(init: Partial<CollectionFilterState> = {}) 
 /**
  * Barre de filtres d'une collection : recherche (titre, ou résumé aussi), tri, raretés, brillantes, doublons,
  * booster et édition. Favoris et tags seulement sur sa propre collection (`owner`) : ceux des autres sont privés.
+ * L'upgrader masque les raretés (fixées par l'établi) et les favoris (son propre interrupteur, dans `children`).
  */
 export function CollectionFilterBar({
   value: f,
@@ -89,6 +90,9 @@ export function CollectionFilterBar({
   owner,
   label,
   disabled = false,
+  rarities = true,
+  favorites = owner,
+  children,
   className = "",
 }: {
   value: CollectionFilterState;
@@ -98,6 +102,12 @@ export function CollectionFilterBar({
   /** Préfixe du nom accessible de la recherche quand plusieurs collections sont à l'écran (échanges). */
   label?: string;
   disabled?: boolean;
+  /** Filtre par rareté (masqué quand la page fixe déjà la rareté). */
+  rarities?: boolean;
+  /** Interrupteurs « Favoris » et « Sans favoris ». */
+  favorites?: boolean;
+  /** Interrupteurs propres à la page, à la suite des filtres. */
+  children?: ReactNode;
   className?: string;
 }) {
   const searchLabel = f.inSummary ? "Chercher dans le titre et le résumé" : "Filtrer par titre";
@@ -125,9 +135,13 @@ export function CollectionFilterBar({
         <Select label="Trier" value={f.sort} onChange={(sort) => set({ sort })} options={owner ? SORTS : OTHER_SORTS} />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <RarityFilter value={f.rarity} onChange={(rarity) => set({ rarity })} />
-        <span className="mx-1 hidden h-5 w-px bg-line sm:block" aria-hidden />
-        {owner && (
+        {rarities && (
+          <>
+            <RarityFilter value={f.rarity} onChange={(rarity) => set({ rarity })} />
+            <span className="mx-1 hidden h-5 w-px bg-line sm:block" aria-hidden />
+          </>
+        )}
+        {favorites && (
           <div className="flex gap-1.5" role="group" aria-label="Favoris">
             <Toggle pressed={f.favorites === "only"} onChange={(on) => set({ favorites: on ? "only" : "" })}>
               Favoris
@@ -173,6 +187,7 @@ export function CollectionFilterBar({
             ]}
           />
         )}
+        {children}
       </div>
     </div>
   );

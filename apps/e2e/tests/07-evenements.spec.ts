@@ -43,10 +43,21 @@ test("booster à thème créé par l'admin, code promo, ouverture du booster", a
 
   await player.page.getByRole("tab", { name: new RegExp(themeName) }).click();
   await expect(player.page.getByText("Édition limitée").first()).toBeVisible();
+  const opened = player.page.getByText("Tes boosters ouverts").locator("..");
+  await expect(opened).toContainText("0");
   await player.page.getByRole("button", { name: "Ouvrir le booster" }).click();
   await expect(player.page.getByRole("region", { name: "Ouverture de paquet" }).locator(".pc-card")).toHaveCount(10);
   // Plus de booster en stock : le bouton propose de l'acheter.
   await expect(player.page.getByRole("button", { name: /En racheter un · 250 PW/ })).toBeVisible();
+  await expect(opened).toContainText("1");
+
+  // Le profil liste les boosters spéciaux ouverts ; celui de l'admin porte le badge « Créateur ».
+  await player.page.goto(`u/${player.name.toLowerCase()}`);
+  const themes = player.page.getByRole("region", { name: "Boosters spéciaux ouverts" });
+  await expect(themes.getByRole("listitem").filter({ hasText: themeName })).toContainText("1");
+  await expect(player.page.getByText("Créateur", { exact: true })).toHaveCount(0);
+  await player.page.goto(`u/${admin.name.toLowerCase()}`);
+  await expect(player.page.getByText("Créateur", { exact: true })).toBeVisible();
 
   // Tous les articles du booster se parcourent dans le catalogue.
   await player.page.goto("pulls");
@@ -107,6 +118,12 @@ test("upgrader : favoris masqués par défaut, upgrade en série des doublons", 
   await page.getByRole("button", { name: "Afficher les favoris" }).click();
   await expect(cards).toHaveCount(10);
 
+  // Mêmes filtres que la collection : une recherche sans résultat, puis on retire les filtres.
+  await page.getByRole("searchbox", { name: "Filtrer par titre" }).fill("zzqxw");
+  await expect(page.getByText("Aucune carte ne correspond")).toBeVisible();
+  await page.getByRole("button", { name: "Retirer les filtres" }).click();
+  await expect(cards).toHaveCount(10);
+
   // Le favori et le meilleur exemplaire restent : 8 doublons, deux lots au plafond.
   const series = page.getByRole("region", { name: "Upgrade en série" });
   await expect(series).toContainText("8 doublons → 2 upgrades");
@@ -114,4 +131,12 @@ test("upgrader : favoris masqués par défaut, upgrade en série des doublons", 
   await expect(series).toContainText(/réussites? sur 2/, { timeout: 15_000 });
   await expect(series).toContainText("Aucun doublon de rareté commune à upgrader");
   await expect(cards).toHaveCount(2);
+
+  // Case cochée : le dernier exemplaire part aussi (jamais le favori), avec un avertissement.
+  await series.getByLabel("Inclure le dernier exemplaire de chaque carte").check();
+  await expect(series).toContainText("1 carte va quitter ta collection");
+  await series.getByRole("button", { name: "Lancer 1 upgrade" }).click();
+  await expect(series).toContainText(/réussites? sur 1/, { timeout: 15_000 });
+  // Il ne reste que le favori : plus de doublon.
+  await expect(cards).toHaveCount(0);
 });

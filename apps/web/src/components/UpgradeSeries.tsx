@@ -2,8 +2,8 @@
 
 import { RARITY_LABELS, type Rarity } from "@palacards/game";
 import type { UpgradeSeriesPreviewDTO, UpgradeSeriesResultDTO } from "@palacards/shared";
-import { Layers } from "lucide-react";
-import { motion, useReducedMotion } from "motion/react";
+import { Layers, TriangleAlert } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -22,15 +22,22 @@ const decimal = (n: number) => n.toLocaleString("fr-FR", { maximumFractionDigits
 /**
  * Upgrade en série : tous les doublons d'une rareté partent en lots au rendement maximal, en un clic.
  * Aperçu d'abord (lots, réussites attendues, PW rendus au pire), puis récapitulatif des cartes gagnées.
+ * Case « dernier exemplaire » : décochée à chaque visite et à chaque changement de rareté, avec le nombre de
+ * cartes qui quitteraient la collection.
  */
 export function UpgradeSeries({ rarity, disabled, onDone }: { rarity: Rarity; disabled: boolean; onDone: () => void }) {
   const reduce = useReducedMotion();
   const { mutateMe } = useMe();
-  const preview = useSWR<UpgradeSeriesPreviewDTO>(`/upgrade/series?rarity=${rarity}`);
+  const [singlesFor, setSinglesFor] = useState<Rarity | null>(null);
+  const singles = singlesFor === rarity;
+  const preview = useSWR<UpgradeSeriesPreviewDTO>(`/upgrade/series?rarity=${rarity}${singles ? "&singles=1" : ""}`, {
+    keepPreviousData: true,
+  });
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<UpgradeSeriesResultDTO | null>(null);
   const shown = result?.rarity === rarity ? result : null;
-  const p = preview.data;
+  // Ancien aperçu gardé pendant le rechargement (case cochée) : seulement s'il est de cette rareté.
+  const p = preview.data?.rarity === rarity ? preview.data : undefined;
   const lots = p?.lots ?? [];
 
   async function run() {
@@ -38,7 +45,7 @@ export function UpgradeSeries({ rarity, disabled, onDone }: { rarity: Rarity; di
     setRunning(true);
     play("tear");
     try {
-      const res = await api<UpgradeSeriesResultDTO>("/upgrade/series", { body: { rarity } });
+      const res = await api<UpgradeSeriesResultDTO>("/upgrade/series", { body: { rarity, singles } });
       setResult(res);
       play(res.successes ? "coin" : "wrong");
       void mutateMe((m) => (m ? { ...m, wallet: res.wallet } : m), { revalidate: false });
@@ -65,14 +72,21 @@ export function UpgradeSeries({ rarity, disabled, onDone }: { rarity: Rarity; di
           <div className="h-12 animate-pulse rounded-lg bg-bg" aria-hidden />
         ) : lots.length === 0 ? (
           <p className="text-sm text-muted">
-            Aucun doublon de rareté {RARITY_LABELS[rarity].toLowerCase()} à upgrader. Le meilleur exemplaire de chaque
-            carte, les favoris, les brillantes et les cartes engagées ne partent jamais en série.
+            {singles ? (
+              <>Aucune carte de rareté {RARITY_LABELS[rarity].toLowerCase()} à upgrader.</>
+            ) : (
+              <>
+                Aucun doublon de rareté {RARITY_LABELS[rarity].toLowerCase()} à upgrader. Le meilleur exemplaire de
+                chaque carte, les favoris, les brillantes et les cartes engagées ne partent jamais en série.
+              </>
+            )}
           </p>
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0 text-sm">
               <p className="font-semibold text-text">
-                {plural(p.cards, "doublon", "doublons")} → {plural(lots.length, "upgrade", "upgrades")}{" "}
+                {singles ? plural(p.cards, "carte", "cartes") : plural(p.cards, "doublon", "doublons")} →{" "}
+                {plural(lots.length, "upgrade", "upgrades")}{" "}
                 <span className="font-normal text-muted">
                   ({full} × {lots[0]!.cards} cartes à {chanceText(lots[0]!.chance)}
                   {NBSP}%
@@ -84,10 +98,13 @@ export function UpgradeSeries({ rarity, disabled, onDone }: { rarity: Rarity; di
                 {p.expectedSuccesses >= 2 ? "s" : ""} attendue{p.expectedSuccesses >= 2 ? "s" : ""} · au pire +
                 {fmt(p.refundIfAllFail)}
                 {NBSP}PW
-                {p.available > p.cards && ` · ${fmt(p.available - p.cards)} doublons au prochain lancement`}
+                {p.available > p.cards &&
+                  ` · ${fmt(p.available - p.cards)} ${singles ? "cartes" : "doublons"} au prochain lancement`}
               </p>
               <p className="mt-1 text-xs text-faint">
-                Jamais le meilleur exemplaire d’une carte, ni les favoris, les brillantes ou les cartes engagées.
+                {singles
+                  ? "Jamais les favoris, les brillantes ni les cartes engagées."
+                  : "Jamais le meilleur exemplaire d’une carte, ni les favoris, les brillantes ou les cartes engagées."}
               </p>
             </div>
             <button
@@ -98,6 +115,42 @@ export function UpgradeSeries({ rarity, disabled, onDone }: { rarity: Rarity; di
             >
               {running ? "Upgrades en cours…" : `Lancer ${plural(lots.length, "upgrade", "upgrades")}`}
             </button>
+          </div>
+        )}
+
+        {p && (p.singles > 0 || singles) && (
+          <div className="flex flex-col gap-2">
+            <label className="flex w-fit items-center gap-2 text-sm text-muted">
+              <input
+                type="checkbox"
+                className="size-4 accent-[var(--color-accent)]"
+                checked={singles}
+                disabled={running}
+                onChange={(e) => setSinglesFor(e.target.checked ? rarity : null)}
+              />
+              Inclure le dernier exemplaire de chaque carte
+            </label>
+            <AnimatePresence initial={false}>
+              {singles && p.singlesUsed > 0 && (
+                <motion.p
+                  key="warning"
+                  role="status"
+                  className="flex items-start gap-2 rounded-lg border border-[color-mix(in_oklab,var(--color-warn)_45%,transparent)] bg-[color-mix(in_oklab,var(--color-warn)_10%,transparent)] px-3 py-2 text-sm text-text"
+                  initial={reduce ? { opacity: 0 } : { opacity: 0, transform: "translateY(-4px)" }}
+                  animate={{ opacity: 1, transform: "translateY(0px)" }}
+                  exit={{ opacity: 0, transition: { duration: 0.12 } }}
+                  transition={{ duration: 0.2, ease: EASE_OUT }}
+                >
+                  <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warn" strokeWidth={2.5} />
+                  <span>
+                    <strong>
+                      {p.singlesUsed} carte{p.singlesUsed > 1 ? "s vont" : " va"} quitter ta collection
+                    </strong>
+                    {NBSP}: c’est ton dernier exemplaire{p.singlesUsed > 1 ? " de chacune" : ""}.
+                  </span>
+                </motion.p>
+              )}
+            </AnimatePresence>
           </div>
         )}
 

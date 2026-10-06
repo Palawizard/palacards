@@ -179,8 +179,10 @@ export async function listThemes(ctx: Ctx, userId: string): Promise<ThemeDTO[]> 
     ends_at: Date;
     card_count: number;
     owned: number | null;
+    opened: number | null;
   }>(sql`
-    select t.id, t.name, t.description, t.category, t.price, t.starts_at, t.ends_at, t.card_count, p.count as owned
+    select t.id, t.name, t.description, t.category, t.price, t.starts_at, t.ends_at, t.card_count, p.count as owned,
+      p.opened
     from themes t
     left join player_theme_packs p on p.theme_id = t.id and p.user_id = ${userId}
     where (t.ends_at > ${now.toISOString()}::timestamptz
@@ -221,6 +223,7 @@ export async function listThemes(ctx: Ctx, userId: string): Promise<ThemeDTO[]> 
       onSale: isOnSale({ startsAt, endsAt }, now),
       cardCount: r.card_count,
       owned: r.owned ?? 0,
+      opened: r.opened ?? 0,
       byRarity: await rarityCounts(ctx.db, id, season),
       preview: preview.map((c) => ({
         instanceId: null,

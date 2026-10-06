@@ -63,7 +63,7 @@ export interface OpenedPack {
   usedBonus: boolean;
   pityTriggered: boolean;
   /** Booster à thème : articles du thème (les autres emplacements, sans article du thème à cette rareté, sont tirés dans toute la saison). */
-  theme?: { id: number; name: string; themedCardIds: number[]; owned: number };
+  theme?: { id: number; name: string; themedCardIds: number[]; owned: number; opened: number };
   /** Recyclage automatique (réglage du joueur) : exemplaires recyclés dès l'ouverture et PW gagnés. */
   autoRecycled?: { instanceIds: number[]; gain: number };
 }
@@ -115,6 +115,18 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       } else {
         throw conflict("no_packs", "Plus de paquet : le prochain arrive bientôt.");
       }
+    }
+
+    // Compteur « boosters ouverts » du thème (page Paquets et profil).
+    let themeOpened = 0;
+    if (theme) {
+      const pt = schema.playerThemePacks;
+      const [row] = await tx
+        .insert(pt)
+        .values({ userId, themeId: theme.id, count: 0, opened: 1 })
+        .onConflictDoUpdate({ target: [pt.userId, pt.themeId], set: { opened: sql`${pt.opened} + 1` } })
+        .returning({ opened: pt.opened });
+      themeOpened = row!.opened;
     }
 
     const roll = rollPack(p.pityCounter, ctx.random, theme ? "themed" : "standard");
@@ -241,6 +253,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
             name: theme.name,
             themedCardIds: drawn.filter((d) => d.themed).map((d) => d.id),
             owned: themeOwned,
+            opened: themeOpened,
           }
         : undefined,
     };
