@@ -395,6 +395,34 @@ describe("boosters à thème", () => {
     await expectLedgerConsistent(p);
   });
 
+  it("sans légendaire : articles L écartés du thème, tirage L remplacé par UR", async () => {
+    const admin = await signUpAdmin(app, ctx);
+    const titles = await ctx.db.execute<{ title: string }>(sql`
+      (select title from cards where season = (select id from seasons where status = 'active') and rarity = 'L'
+        order by id limit 2)
+      union all
+      (select title from cards where season = (select id from seasons where status = 'active') and rarity = 'UR'
+        order by id limit 6)
+    `);
+    const created = await makeTheme(admin, { titles: titles.map((t) => t.title), price: 100, noLegendary: true });
+    expect(created.status).toBe(200);
+    expect(created.body).toMatchObject({ noLegendary: true, cardCount: 6, byRarity: { L: 0, UR: 6 } });
+    const inAdmin = (await admin.get("/admin/themes")).body.find((t: { id: number }) => t.id === created.body.id);
+    expect(inAdmin).toMatchObject({ noLegendary: true, price: 100 });
+
+    const p = await signUp(app);
+    const listed = (await p.get("/themes")).body.find((t: { id: number }) => t.id === created.body.id);
+    expect(listed).toMatchObject({ noLegendary: true, price: 100 });
+    await p.post("/test/grant-pw", { amount: 500 });
+    // Tirage le plus bas partout : L sur un booster normal, UR du thème ici.
+    ctx.random = () => 0;
+    const opened = await p.post("/packs/open", { themeId: created.body.id, buy: true });
+    expect(opened.status).toBe(200);
+    expect(opened.body.cards.map((c: { rarity: Rarity }) => c.rarity)).toEqual(Array(10).fill("UR"));
+    expect(opened.body.theme.themedCardIds).toHaveLength(10);
+    await expectLedgerConsistent(p);
+  });
+
   it("refuse l'achat hors période et un thème trop petit", async () => {
     const admin = await signUpAdmin(app, ctx);
     const later = await makeTheme(admin, {

@@ -129,7 +129,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       themeOpened = row!.opened;
     }
 
-    const roll = rollPack(p.pityCounter, ctx.random, theme ? "themed" : "standard");
+    const roll = rollPack(p.pityCounter, ctx.random, theme ? "themed" : "standard", theme?.noLegendary);
     update.pityCounter = roll.pityCounter;
     const drawn: {
       rarity: Rarity;
@@ -197,7 +197,11 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
 
     // Classements « Boosters ouverts » et « Chance » : points tirés face à l'espérance de ce paquet (type et pity).
     const pulled = pulledPackPoints(roll.rarities);
-    const expected = expectedPackPoints(theme ? "themed" : "standard", p.pityCounter >= PITY_THRESHOLD);
+    const expected = expectedPackPoints(
+      theme ? "themed" : "standard",
+      p.pityCounter >= PITY_THRESHOLD,
+      theme?.noLegendary,
+    );
     await tx
       .insert(schema.packStats)
       .values({ userId, season, packs: 1, luckPacks: 1, pulledPoints: pulled, expectedPoints: expected })

@@ -27,6 +27,8 @@ export interface ThemeInput {
   depth: number;
   titles: string[];
   price: number;
+  /** Sans carte légendaire : les articles L de la saison sont écartés du thème et le tirage L devient UR. */
+  noLegendary?: boolean;
   startsAt: Date;
   endsAt: Date;
   /** Essai à blanc : tout est calculé puis annulé (rien n'est créé). */
@@ -80,6 +82,7 @@ async function buildTheme(ctx: Ctx, adminId: string, input: ThemeInput) {
         description: input.description ?? "",
         category: categories.length ? categories.join(CATEGORY_SEP) : null,
         price: input.price,
+        noLegendary: !!input.noLegendary,
         startsAt: input.startsAt,
         endsAt: input.endsAt,
         createdBy: adminId,
@@ -91,6 +94,7 @@ async function buildTheme(ctx: Ctx, adminId: string, input: ThemeInput) {
       insert into theme_cards (theme_id, card_id)
       select ${theme!.id}, id from cards
       where season = ${season}
+        ${input.noLegendary ? sql`and rarity <> 'L'::rarity` : sql``}
         and (id in (select jsonb_array_elements_text(${JSON.stringify([...pageIds])}::jsonb)::bigint)
           or title in (select jsonb_array_elements_text(${JSON.stringify(byTitle)}::jsonb)))
       on conflict do nothing
@@ -175,13 +179,14 @@ export async function listThemes(ctx: Ctx, userId: string): Promise<ThemeDTO[]> 
     description: string;
     category: string | null;
     price: number;
+    no_legendary: boolean;
     starts_at: Date;
     ends_at: Date;
     card_count: number;
     owned: number | null;
     opened: number | null;
   }>(sql`
-    select t.id, t.name, t.description, t.category, t.price, t.starts_at, t.ends_at, t.card_count, p.count as owned,
+    select t.id, t.name, t.description, t.category, t.price, t.no_legendary, t.starts_at, t.ends_at, t.card_count, p.count as owned,
       p.opened
     from themes t
     left join player_theme_packs p on p.theme_id = t.id and p.user_id = ${userId}
@@ -218,6 +223,7 @@ export async function listThemes(ctx: Ctx, userId: string): Promise<ThemeDTO[]> 
       description: r.description,
       categories: splitCategories(r.category),
       price: r.price,
+      noLegendary: r.no_legendary,
       startsAt: startsAt.toISOString(),
       endsAt: endsAt.toISOString(),
       onSale: isOnSale({ startsAt, endsAt }, now),
@@ -250,6 +256,7 @@ export async function adminThemes(ctx: Ctx) {
       name: schema.themes.name,
       category: schema.themes.category,
       price: schema.themes.price,
+      noLegendary: schema.themes.noLegendary,
       startsAt: schema.themes.startsAt,
       endsAt: schema.themes.endsAt,
       cardCount: schema.themes.cardCount,

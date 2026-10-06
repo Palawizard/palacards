@@ -68,6 +68,32 @@ test("booster à thème créé par l'admin, code promo, ouverture du booster", a
   await expect(player.page.locator("article.pc-card")).toHaveCount(40);
 });
 
+test("booster à thème sans légendaire : articles L écartés, mention sur la page Paquets", async ({ browser }) => {
+  const admin = await newPlayer(browser, "admin");
+  await apiCall(admin.page, "POST", "/test/make-admin");
+  // Les articles les plus lus comptent des légendaires.
+  const items = (
+    await apiCall<{ items: { title: string; rarity: string }[] }>(admin.page, "GET", "/cards?sort=views&limit=40")
+  ).items;
+  const kept = items.filter((c) => c.rarity !== "L").length;
+  expect(kept).toBeLessThan(items.length);
+
+  const themeName = `Thème ${newName("s")}`;
+  await admin.page.goto("admin");
+  await admin.page.getByLabel("Nom du booster").fill(themeName);
+  await admin.page.getByLabel("Titres en plus (un par ligne, facultatif)").fill(items.map((t) => t.title).join("\n"));
+  await admin.page.getByLabel(/^Sans légendaire/).check();
+  await admin.page.getByLabel("Prix (PW)").fill("100");
+  await admin.page.getByRole("button", { name: "Créer", exact: true }).click();
+  await expect(admin.page.getByText(`Booster « ${themeName} » créé : ${kept} articles.`)).toBeVisible();
+
+  const { page } = await newPlayer(browser, "sansl");
+  await page.goto("pulls");
+  await page.getByRole("tab", { name: new RegExp(themeName) }).click();
+  await expect(page.getByText("Ce booster ne contient aucune carte légendaire")).toBeVisible();
+  await expect(page.getByRole("link", { name: `Voir les ${kept} articles` })).toBeVisible();
+});
+
 test("roues du jour : la petite tout de suite, la moyenne après 2 h 30", async ({ browser }) => {
   const { page } = await newPlayer(browser, "roue");
   expect((await apiCall<Me>(page, "GET", "/me")).wheelReady).toBe(true);

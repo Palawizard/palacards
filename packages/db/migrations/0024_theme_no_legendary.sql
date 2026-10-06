@@ -1,0 +1,1 @@
+ALTER TABLE "themes" ADD COLUMN "no_legendary" boolean DEFAULT false NOT NULL;

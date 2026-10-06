@@ -169,6 +169,13 @@
       "when": 1791308205297,
       "tag": "0023_suggestion_automation",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791321515041,
+      "tag": "0024_theme_no_legendary",
+      "breakpoints": true
     }
   ]
 }

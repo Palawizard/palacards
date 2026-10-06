@@ -4,7 +4,7 @@
  *   prod : docker compose exec api node dist/cli/theme.js create --name … [--dry-run]
  *
  * Options : --name, --category (répétable), --depth 0|1|2, --title (répétable), --titles-file <fichier>,
- * --description, --price, --days (durée depuis maintenant, 7 par défaut), --starts / --ends (ISO),
+ * --description, --price, --no-legendary (aucune carte légendaire), --days (durée depuis maintenant, 7 par défaut), --starts / --ends (ISO),
  * --by <pseudo admin> (auteur, facultatif), --dry-run (compte les articles par rareté sans rien créer).
  * Lit DATABASE_URL et WIKIMEDIA_USER_AGENT dans l'environnement.
  */
@@ -28,6 +28,7 @@ const { positionals, values: v } = parseArgs({
     "titles-file": { type: "string" },
     description: { type: "string" },
     price: { type: "string", default: String(ECONOMY.themePackPrice) },
+    "no-legendary": { type: "boolean", default: false },
     days: { type: "string", default: "7" },
     starts: { type: "string" },
     ends: { type: "string" },
@@ -87,6 +88,7 @@ try {
     depth: Math.min(2, Math.max(0, Number(v.depth))),
     titles,
     price: Number(v.price),
+    noLegendary: v["no-legendary"],
     startsAt,
     endsAt,
     dryRun: v["dry-run"],

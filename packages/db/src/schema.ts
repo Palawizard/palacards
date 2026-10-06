@@ -483,6 +483,8 @@ export const themes = pgTable(
     /** Catégorie Wikipédia source (sans le préfixe « Catégorie: »), null si liste de titres seule. */
     category: text("category"),
     price: integer("price").notNull(),
+    /** Aucune carte légendaire : le tirage remplace L par UR, et les articles L restent hors du thème. */
+    noLegendary: boolean("no_legendary").notNull().default(false),
     startsAt: tstz("starts_at").notNull(),
     endsAt: tstz("ends_at").notNull(),
     /** Articles du thème présents dans les cartes au moment de la création. */

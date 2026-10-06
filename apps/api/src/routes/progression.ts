@@ -89,6 +89,7 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
           depth: z.number().int().min(0).max(2).default(1),
           titles: z.array(z.string().trim().min(1).max(300)).max(500).default([]),
           price: z.number().int().min(1).max(MAX_PRICE).default(ECONOMY.themePackPrice),
+          noLegendary: z.boolean().default(false),
           startsAt: z.coerce.date(),
           endsAt: z.coerce.date(),
         })

@@ -4,10 +4,9 @@ import {
   CARDS_PER_PACK,
   DROP_TABLE_GUARANTEED,
   DROP_TABLE_STANDARD,
-  DROP_TABLE_THEMED,
-  DROP_TABLE_THEMED_GUARANTEED,
   DROP_TABLE_TOTAL,
   ECONOMY,
+  packTables,
   RARITIES,
   RARITY_LABELS,
   type DropTable,
@@ -204,6 +203,12 @@ function ThemeShowcase({
                     {fmt(t.price)} <span className="text-sm">PW</span>
                   </dd>
                 </div>
+                {t.noLegendary && (
+                  <div>
+                    <dt className="text-xs font-semibold text-cover-ink/65">Légendaires</dt>
+                    <dd className="font-display text-xl leading-none">Aucune</dd>
+                  </div>
+                )}
                 {t.owned > 0 && (
                   <div>
                     <dt className="text-xs font-semibold text-cover-ink/65">À ouvrir</dt>
@@ -247,6 +252,7 @@ function ThemeShowcase({
 function ThemeBox({ theme }: { theme: ThemeDTO }) {
   const now = useNow(30_000);
   const upcoming = new Date(theme.startsAt).getTime() > now;
+  const rates = packTables("themed", theme.noLegendary);
   return (
     <div className="infobox" data-edition="theme">
       <h2 className="infobox-head flex items-center justify-between gap-2">
@@ -306,11 +312,12 @@ function ThemeBox({ theme }: { theme: ThemeDTO }) {
         </Link>
       </div>
       <div className="border-t border-line">
-        <RatesTable table={DROP_TABLE_THEMED} last={DROP_TABLE_THEMED_GUARANTEED} />
+        <RatesTable table={rates.table} last={rates.last} />
       </div>
       <p className="border-t border-line p-3 text-xs leading-relaxed text-faint">
         Chaque carte est tirée parmi les articles du thème de sa rareté (dans toute la saison si le thème n’en a pas).
-        La pity est commune avec les paquets PalaCards.
+        {theme.noLegendary && " Ce booster ne contient aucune carte légendaire : leur chance passe aux ultra rares."} La
+        pity est commune avec les paquets PalaCards.
       </p>
     </div>
   );

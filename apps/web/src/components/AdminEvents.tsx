@@ -15,6 +15,7 @@ interface AdminTheme {
   name: string;
   categories: string[];
   price: number;
+  noLegendary: boolean;
   startsAt: string;
   endsAt: string;
   cardCount: number;
@@ -66,6 +67,7 @@ export function AdminThemes() {
   const [titles, setTitles] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState(String(ECONOMY.themePackPrice));
+  const [noLegendary, setNoLegendary] = useState(false);
   const [startsAt, setStartsAt] = useState(() => localInput(new Date()));
   const [endsAt, setEndsAt] = useState(() => localInput(new Date(Date.now() + 7 * 86_400_000)));
   const [busy, setBusy] = useState(false);
@@ -93,6 +95,7 @@ export function AdminThemes() {
           depth: Number(depth),
           titles: titleList,
           price: Number(price) || ECONOMY.themePackPrice,
+          noLegendary,
           startsAt: new Date(startsAt).toISOString(),
           endsAt: new Date(endsAt).toISOString(),
         },
@@ -170,6 +173,15 @@ export function AdminThemes() {
             maxLength={200}
           />
         </label>
+        <label className="flex w-fit items-center gap-2 text-sm text-muted sm:col-span-6">
+          <input
+            type="checkbox"
+            className="size-4 accent-[var(--color-accent)]"
+            checked={noLegendary}
+            onChange={(e) => setNoLegendary(e.target.checked)}
+          />
+          Sans légendaire (articles légendaires écartés, leur chance passe aux ultra rares)
+        </label>
         <label className="sm:col-span-2">
           <span className="label">Début</span>
           <input
@@ -232,8 +244,10 @@ export function AdminThemes() {
                   <tr key={t.id} className="border-t border-line">
                     <td className="py-1.5 pr-3">
                       <span className="font-semibold">{t.name}</span>
-                      {t.categories.length > 0 && (
-                        <span className="block text-xs text-faint">{t.categories.join(" · ")}</span>
+                      {(t.categories.length > 0 || t.noLegendary) && (
+                        <span className="block text-xs text-faint">
+                          {[...t.categories, ...(t.noLegendary ? ["sans légendaire"] : [])].join(" · ")}
+                        </span>
                       )}
                     </td>
                     <td className="py-1.5 pr-3 text-muted">

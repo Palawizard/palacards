@@ -65,6 +65,25 @@ export const DROP_TABLE_TOTAL = 10_000;
 
 export type PackKind = "standard" | "themed";
 
+/**
+ * Table sans légendaire (booster à thème « sans légendaire ») : le poids de L passe sur UR,
+ * les autres taux ne bougent pas.
+ */
+export const withoutLegendary = (table: DropTable): DropTable => ({ ...table, UR: table.UR + table.L, L: 0 });
+
+/** Tables d'un paquet : cartes 1 à 9, dernière carte (Rare ou mieux) et pity. */
+export function packTables(
+  kind: PackKind,
+  noLegendary = false,
+): { table: DropTable; last: DropTable; pity: DropTable } {
+  const [table, last] =
+    kind === "themed"
+      ? [DROP_TABLE_THEMED, DROP_TABLE_THEMED_GUARANTEED]
+      : [DROP_TABLE_STANDARD, DROP_TABLE_GUARANTEED];
+  if (!noLegendary) return { table, last, pity: DROP_TABLE_PITY };
+  return { table: withoutLegendary(table), last: withoutLegendary(last), pity: withoutLegendary(DROP_TABLE_PITY) };
+}
+
 /** Générateur d'entiers uniformes dans [0, max[. En prod : crypto.randomInt. */
 export type RandomInt = (max: number) => number;
 
@@ -87,19 +106,21 @@ export interface PackRollResult {
 
 /**
  * Tire les raretés d'un paquet (standard ou booster à thème, pity commune). Le choix de l'article dans chaque palier
- * se fait ensuite en base (index `(rarity, rand_key)`).
+ * se fait ensuite en base (index `(rarity, rand_key)`). `noLegendary` : aucune carte L, son poids passe sur UR.
  */
-export function rollPack(pityCounter: number, randomInt: RandomInt, kind: PackKind = "standard"): PackRollResult {
+export function rollPack(
+  pityCounter: number,
+  randomInt: RandomInt,
+  kind: PackKind = "standard",
+  noLegendary = false,
+): PackRollResult {
   const pityTriggered = pityCounter >= PITY_THRESHOLD;
-  const [table, last] =
-    kind === "themed"
-      ? [DROP_TABLE_THEMED, DROP_TABLE_THEMED_GUARANTEED]
-      : [DROP_TABLE_STANDARD, DROP_TABLE_GUARANTEED];
+  const { table, last, pity } = packTables(kind, noLegendary);
   const rarities: Rarity[] = [];
   for (let slot = 0; slot < CARDS_PER_PACK - 1; slot++) {
     rarities.push(rollRarity(table, randomInt));
   }
-  rarities.push(rollRarity(pityTriggered ? DROP_TABLE_PITY : last, randomInt));
+  rarities.push(rollRarity(pityTriggered ? pity : last, randomInt));
 
   const gotUrOrBetter = rarities.some((r) => r === "UR" || r === "L");
   return { rarities, pityCounter: gotUrOrBetter ? 0 : pityCounter + 1 };
@@ -115,14 +136,9 @@ const expectedSlotPoints = (table: DropTable) => RARITIES.reduce((s, r) => s + t
  * Espérance de points de collection d'un paquet (doublons compris), en dix-millièmes de point : base de la
  * « Chance » (points tirés ÷ points attendus). Tient compte du type de paquet et de la pity.
  */
-export function expectedPackPoints(kind: PackKind, pityTriggered = false): number {
-  const [table, guaranteed] =
-    kind === "themed"
-      ? [DROP_TABLE_THEMED, DROP_TABLE_THEMED_GUARANTEED]
-      : [DROP_TABLE_STANDARD, DROP_TABLE_GUARANTEED];
-  return (
-    (CARDS_PER_PACK - 1) * expectedSlotPoints(table) + expectedSlotPoints(pityTriggered ? DROP_TABLE_PITY : guaranteed)
-  );
+export function expectedPackPoints(kind: PackKind, pityTriggered = false, noLegendary = false): number {
+  const { table, last, pity } = packTables(kind, noLegendary);
+  return (CARDS_PER_PACK - 1) * expectedSlotPoints(table) + expectedSlotPoints(pityTriggered ? pity : last);
 }
 
 /** Points de collection tirés (doublons compris), dans la même unité que `expectedPackPoints`. */

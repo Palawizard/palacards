@@ -15,6 +15,7 @@ import {
   consumeFreePack,
   expectedPackPoints,
   msUntilNextPack,
+  packTables,
   pulledPackPoints,
   rollPack,
 } from "./packs.js";
@@ -63,6 +64,28 @@ describe("booster à thème", () => {
     expect(pityCounter).toBe(0);
     const last = rollPack(0, () => 0, "themed").rarities[CARDS_PER_PACK - 1];
     expect(["R", "SR", "UR", "L"]).toContain(last);
+  });
+
+  it("sans légendaire : jamais de L, son poids passe sur UR (pity comprise)", () => {
+    const { table, last, pity } = packTables("themed", true);
+    for (const t of [table, last, pity]) {
+      expect(sum(t)).toBe(DROP_TABLE_TOTAL);
+      expect(t.L).toBe(0);
+    }
+    expect(table.UR).toBe(DROP_TABLE_THEMED.UR + DROP_TABLE_THEMED.L);
+    expect(table.SR).toBe(DROP_TABLE_THEMED.SR);
+    expect(pity.UR).toBe(DROP_TABLE_TOTAL);
+    // Tirage le plus bas : L d'ordinaire, UR ici.
+    expect(rollPack(0, () => 0, "themed").rarities).toContain("L");
+    const low = rollPack(PITY_THRESHOLD, () => 0, "themed", true);
+    expect(low.rarities.every((r) => r === "UR")).toBe(true);
+    expect(low.pityCounter).toBe(0);
+    for (let i = 0; i < 2_000; i++) expect(rollPack(i % 60, randomInt, "themed", true).rarities).not.toContain("L");
+  });
+
+  it("sans légendaire : espérance de points plus basse", () => {
+    expect(expectedPackPoints("themed", false, true)).toBeLessThan(expectedPackPoints("themed"));
+    expect(expectedPackPoints("themed", true, true)).toBeLessThan(expectedPackPoints("themed", true));
   });
 });
 

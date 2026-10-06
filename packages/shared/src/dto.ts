@@ -84,6 +84,8 @@ export interface ThemeDTO {
   /** Catégories Wikipédia du thème (vide : liste de titres seulement). */
   categories: string[];
   price: number;
+  /** Aucune carte légendaire dans ce booster (le tirage L devient UR). */
+  noLegendary: boolean;
   startsAt: string;
   endsAt: string;
   /** En vente maintenant (sinon : à venir, ou terminé avec des boosters encore à ouvrir). */
