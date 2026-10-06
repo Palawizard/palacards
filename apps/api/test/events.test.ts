@@ -160,6 +160,38 @@ describe("upgrade en série", () => {
     expect((await p.get("/upgrade/series?rarity=L")).body.error).toBe("max_rarity");
     await expectLedgerConsistent(p);
   });
+
+  it("avec la case cochée, prend aussi le dernier exemplaire de chaque carte (jamais les favoris)", async () => {
+    const p = await signUp(app);
+    const grant = async (skip: number, count: number) =>
+      (await p.post("/test/grant-card", { cardId: await cardOf("C", skip), count })).body.instanceIds as number[];
+    const a = await grant(0, 2);
+    const b = await grant(1, 1);
+    await grant(2, 1);
+    const [fav] = await grant(3, 1);
+    await p.post(`/collection/${fav}/favorite`, { favorite: true });
+
+    // Sans la case : le seul doublon (un lot d'une carte). Trois articles n'ont plus qu'un exemplaire libre.
+    const plain = (await p.get("/upgrade/series?rarity=C")).body;
+    expect(plain).toMatchObject({ available: 1, duplicates: 1, singles: 3, singlesUsed: 0, cards: 1 });
+
+    const all = (await p.get("/upgrade/series?rarity=C&singles=1")).body;
+    expect(upgradeCardsToCap("C")).toBe(4);
+    expect(all).toMatchObject({ available: 4, duplicates: 1, singles: 3, singlesUsed: 3, cards: 4 });
+    expect(all.lots).toEqual([{ cards: 4, chance: upgradeChance("C", 4) }]);
+
+    ctx.random = () => 0;
+    const run = await p.post("/upgrade/series", { rarity: "C", singles: true });
+    expect(run.status).toBe(200);
+    expect(run.body).toMatchObject({ successes: 1, remaining: 0 });
+    const left = await ctx.db.execute<{ id: number }>(
+      sql`select id::int as id from card_instances where owner_id = ${p.userId} and rarity = 'C'`,
+    );
+    expect(left.map((r) => r.id)).toEqual([fav]);
+    expect(a.concat(b).every((id) => !left.some((r) => r.id === id))).toBe(true);
+    expect((await p.post("/upgrade/series", { rarity: "C", singles: true })).body.error).toBe("no_duplicates");
+    await expectLedgerConsistent(p);
+  });
 });
 
 describe("roues du jour", () => {
@@ -349,6 +381,17 @@ describe("boosters à thème", () => {
     for (const c of listed.body.items) expect(pool.has(c.cardId)).toBe(true);
     expect(opened.body.theme.themedCardIds.length).toBeGreaterThan(0);
     for (const id of opened.body.theme.themedCardIds) expect(pool.has(id)).toBe(true);
+
+    // Boosters ouverts : compteur par édition, sur la page Paquets et sur le profil.
+    expect(opened.body.theme.opened).toBe(1);
+    const again = await p.post("/packs/open", { themeId: created.body.id, buy: true });
+    expect(again.body.theme).toMatchObject({ opened: 2, owned: 0 });
+    const after = (await p.get("/themes")).body.find((t: { id: number }) => t.id === created.body.id);
+    expect(after).toMatchObject({ opened: 2, owned: 0 });
+    const profile = (await p.get(`/players/${p.username}`)).body;
+    expect(profile.themePacks).toEqual([{ id: created.body.id, name: created.body.name, opened: 2 }]);
+    expect(profile.creator).toBe(false);
+    expect((await p.get(`/players/${admin.username}`)).body).toMatchObject({ creator: true, themePacks: [] });
     await expectLedgerConsistent(p);
   });
 

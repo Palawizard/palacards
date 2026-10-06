@@ -511,7 +511,7 @@ export const themeCards = pgTable(
   (t) => [primaryKey({ columns: [t.themeId, t.cardId] }), index("theme_cards_card_idx").on(t.cardId)],
 );
 
-/** Boosters à thème achetés (ou reçus par code) pas encore ouverts. */
+/** Boosters à thème d'un joueur : achetés (ou reçus) pas encore ouverts, et nombre déjà ouverts. */
 export const playerThemePacks = pgTable(
   "player_theme_packs",
   {
@@ -520,11 +520,14 @@ export const playerThemePacks = pgTable(
       .notNull()
       .references(() => themes.id, { onDelete: "cascade" }),
     count: integer("count").notNull().default(0),
+    /** Boosters de ce thème ouverts (en stock ou achetés à l'ouverture). */
+    opened: integer("opened").notNull().default(0),
   },
   (t) => [
     primaryKey({ columns: [t.userId, t.themeId] }),
     index("player_theme_packs_theme_idx").on(t.themeId),
     check("player_theme_packs_count_ok", sql`${t.count} >= 0`),
+    check("player_theme_packs_opened_ok", sql`${t.opened} >= 0`),
   ],
 );
 

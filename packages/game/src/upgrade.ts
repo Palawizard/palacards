@@ -13,8 +13,8 @@ export const UPGRADE_MAX_CHANCE = 7_500;
  * est donc toujours perdant en moyenne : il écoule les doublons sans fabriquer de raretés à la chaîne.
  */
 export const UPGRADE_HOUSE_EDGE = 0.5;
-/** Vers une légendaire, les chances sont encore divisées par deux. */
-export const UPGRADE_LEGENDARY_FACTOR = 0.5;
+/** Vers une légendaire, les chances sont encore réduites d'un quart. */
+export const UPGRADE_LEGENDARY_FACTOR = 0.75;
 /** En cas d'échec, part de la valeur de recyclage des cartes rendue en PW. */
 export const UPGRADE_REFUND_RATE = 0.25;
 
@@ -29,8 +29,8 @@ const perPack = (r: Rarity) => (CARDS_PER_PACK - 1) * DROP_TABLE_STANDARD[r] + D
 /**
  * Chance de réussite (points de base) d'un upgrade de `count` cartes de rareté `from`.
  * Au prorata de la rareté : une SR sort environ 6 fois plus souvent qu'une UR, elle vaut donc 1/6 d'UR.
- * Chaque carte apporte cette part, divisée par la marge (et encore par deux vers une légendaire),
- * le tout plafonné à 75 %. Exemples : 5 SR → 40,9 % d'UR ; 10 UR → 27,7 % de légendaire.
+ * Chaque carte apporte cette part, divisée par la marge (et réduite d'un quart vers une légendaire),
+ * le tout plafonné à 75 %. Exemples : 5 SR → 40,9 % d'UR ; 10 UR → 41,6 % de légendaire.
  */
 export function upgradeChance(from: Rarity, count: number): number {
   const target = nextRarity(from);
