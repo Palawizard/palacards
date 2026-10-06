@@ -330,7 +330,7 @@ export default function SettingsPage() {
             <span className="block">Flouter les arthropodes</span>
             <span className="mt-0.5 block text-xs text-faint">
               Araignées, scorpions, acariens, insectes, mille-pattes : leur image reste floue jusqu’à ce que tu touches
-              « Afficher ». Les crustacés restent visibles.
+              « Afficher ». Les crustacés et les papillons restent visibles.
             </span>
           </span>
           <input

@@ -8,7 +8,7 @@ describe("isArthropod", () => {
       "espèce d’arachnides",
       "famille d'insectes",
       "genre de coléoptères",
-      "espèce de lépidoptères",
+      "espèce de diptères",
       "ordre d'arachnides",
       "espèce de myriapodes",
       "espèce de scorpions",
@@ -61,5 +61,41 @@ describe("isArthropod", () => {
       {},
     ])
       expect(isArthropod(s), s.description ?? "vide").toBe(false);
+  });
+
+  it("ne floute pas les objets qui portent un nom d'insecte (carte à puce, chenille de char…)", () => {
+    for (const s of [
+      {
+        description: "type de carte à puce utilisée en téléphonie mobile",
+        extract:
+          "La carte SIM est une puce contenant un microcontrôleur et de la mémoire. Elle sert à identifier l'abonné.",
+      },
+      { description: "puce électronique", extract: "Une puce RFID est une puce électronique." },
+      { description: "chenille de char", extract: "Une chenille est une bande de roulement articulée." },
+      { description: "petit clou à tête large", extract: "La punaise est une petite pointe à tête plate." },
+      { description: "cloche la plus grave d'une église", extract: "Le bourdon est une cloche." },
+    ])
+      expect(isArthropod(s), s.description).toBe(false);
+  });
+
+  it("ne floute jamais les papillons, papillons de nuit et chenilles", () => {
+    for (const s of [
+      { extract: "Le Machaon est un papillon de la famille des Papilionidae." },
+      { description: "espèce de lépidoptères", extract: "Le Paon-du-jour est une espèce de papillons." },
+      { description: "espèce d'insectes lépidoptères" },
+      { extract: "Le Bombyx du mûrier est une espèce d'insectes lépidoptères (papillons de nuit)." },
+      { extract: "La processionnaire du pin est une chenille urticante." },
+    ])
+      expect(isArthropod(s), s.description ?? s.extract).toBe(false);
+  });
+
+  it("garde les vraies puces, punaises et bourdons", () => {
+    for (const s of [
+      { description: "espèce de puces" },
+      { extract: "Pulex irritans est une espèce de puces de la famille des Pulicidae." },
+      { description: "espèce d'insectes", extract: "La punaise des lits est un insecte hématophage." },
+      { description: "espèce de bourdons" },
+    ])
+      expect(isArthropod(s), s.description ?? s.extract).toBe(true);
   });
 });
