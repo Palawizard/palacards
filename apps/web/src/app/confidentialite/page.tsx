@@ -52,7 +52,8 @@ const DATA: { what: string; detail: string; kept: string }[] = [
   },
   {
     what: "Suggestions",
-    detail: "Idées et bugs que tu envoies à l'admin depuis la page Suggestions, avec leur statut et sa réponse.",
+    detail:
+      "Idées et bugs que tu envoies à l'admin depuis la page Suggestions, avec leur statut, sa réponse et le tri qui aide à les traiter.",
     kept: "Jusqu'à la suppression du compte",
   },
   { what: "Notifications", detail: "Alertes du jeu (enchère dépassée, défi reçu…).", kept: "6 mois" },
@@ -124,7 +125,10 @@ export default function PrivacyPage() {
             légitime à protéger le jeu contre la triche, les abus et les pertes de données (art. 6.1.f).
           </li>
         </ul>
-        <p className="max-w-prose">Aucune décision automatisée ni profilage à des fins commerciales.</p>
+        <p className="max-w-prose">
+          Aucun profilage à des fins commerciales. Le tri des suggestions par une IA aide seulement Palawi : c&apos;est
+          lui qui décide et qui répond.
+        </p>
       </Section>
 
       <Section title="Qui les voit">
@@ -140,6 +144,12 @@ export default function PrivacyPage() {
             <strong>Cloudflare</strong> (Cloudflare, Inc.) achemine le trafic jusqu&apos;au serveur, comme sous-traitant
             technique : il voit passer ton adresse IP. Les transferts hors de l&apos;Union européenne sont encadrés par
             le Data Privacy Framework et les clauses contractuelles types de la Commission européenne.
+          </li>
+          <li>
+            <strong>Anthropic</strong> (Anthropic, PBC) reçoit le titre et le texte de tes suggestions, sans ton pseudo,
+            pour les trier avec son IA Claude. Si une suggestion est retenue pour être codée, une version reformulée et
+            anonyme est publiée sur <strong>GitHub</strong>, où le code du jeu est public. Ces transferts hors de
+            l&apos;Union européenne sont encadrés par les clauses contractuelles types de la Commission européenne.
           </li>
         </ul>
         <p className="max-w-prose">

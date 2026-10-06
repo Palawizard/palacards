@@ -4,6 +4,13 @@ import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import {
+  adminCancelBuild,
+  adminQueueBuild,
+  checkAutomationToken,
+  enqueueTriage,
+  reportBuild,
+} from "../services/automation.js";
+import {
   adminSuggestions,
   createSuggestion,
   deleteSuggestion,
@@ -49,4 +56,42 @@ export function suggestionRoutes(api: FastifyInstance, ctx: Ctx) {
     await deleteSuggestion(ctx, id);
     return { ok: true };
   });
+
+  // --- Automatisation : tri par Claude et branches GitHub ---
+  /** (Re)lance le tri d'une suggestion (même si l'automatisation est coupée : utile pour essayer). */
+  api.post("/admin/suggestions/:id/triage", admin, async (req) => {
+    const { id } = parse(idParams, req.params);
+    await enqueueTriage(ctx, id);
+    return { ok: true };
+  });
+  /** Construit la branche d'une suggestion triée, même si le tri ne la proposait pas. */
+  api.post("/admin/suggestions/:id/build", admin, async (req) => adminQueueBuild(ctx, parse(idParams, req.params).id));
+  api.post("/admin/suggestions/:id/build/cancel", admin, async (req) =>
+    adminCancelBuild(ctx, parse(idParams, req.params).id),
+  );
+
+  /** Comptes rendus des workflows GitHub (jeton partagé, jamais de session). */
+  const report = z.object({
+    status: z.enum(["running", "ready", "failed", "merged", "closed"]),
+    issueNumber: z.number().int().positive().optional(),
+    prNumber: z.number().int().positive().optional(),
+    branch: z
+      .string()
+      .regex(/^(feat|fix)\/suggestion-\d+$/)
+      .optional(),
+    ciConclusion: z.string().max(40).optional(),
+    playerReply: z.string().trim().max(SUGGESTION_LIMITS.reply).optional(),
+    announcement: z.string().trim().max(500).optional(),
+    title: z.string().trim().max(200).optional(),
+    openQuestions: z.number().int().min(0).max(20).optional(),
+    runUrl: z.url().startsWith("https://github.com/").optional(),
+  });
+  api.post(
+    "/automation/suggestions/:id/build",
+    { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } },
+    async (req) => {
+      checkAutomationToken(ctx, req.headers.authorization);
+      return reportBuild(ctx, parse(idParams, req.params).id, parse(report, req.body));
+    },
+  );
 }
