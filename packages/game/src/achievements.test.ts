@@ -116,6 +116,16 @@ describe("succès à paliers", () => {
     expect(run([{ type: "sale", price: 1_001, bidders: 2 }]).get("big_sales")).toBe(1);
   });
 
+  it("débloque le record de vente à 5 000 puis 10 000 PW, sans repayer un palier déjà débloqué", () => {
+    expect(unlockedKeys(run([{ type: "sale", price: 9_999, bidders: 1 }]))).not.toContain("best_sale_20000");
+    const stats = run([{ type: "sale", price: 10_000, bidders: 1 }]);
+    expect(unlockedKeys(stats)).toEqual(expect.arrayContaining(["best_sale_5000", "best_sale_20000"]));
+    expect(unlockedKeys(stats, ["best_sale_5000", "best_sale_20000"])).not.toContain("best_sale_20000");
+    expect(ACHIEVEMENTS.find((a) => a.key === "best_sale_20000")?.description).toMatch(
+      /^Vendre une carte au moins 10\s000 PW\.$/,
+    );
+  });
+
   it("repère les succès secrets d'un paquet", () => {
     const stats = run([
       {
