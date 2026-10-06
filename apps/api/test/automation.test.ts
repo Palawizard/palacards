@@ -17,10 +17,16 @@ const quiet = { info: () => {}, error: () => {} };
 /** Appels réseau sortants (Discord, GitHub) interceptés. */
 let calls: { url: string; body: unknown }[] = [];
 let issueNumber = 1000;
+/** État des pull requests vues par le service de tri (GET /pulls/:n). */
+let pulls: Record<number, { state: string; merged: boolean }> = {};
 beforeEach(() => {
   calls = [];
+  pulls = {};
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const url = String(input);
+    const pull = /\/pulls\/(\d+)$/.exec(url);
+    if (pull)
+      return new Response(JSON.stringify(pulls[Number(pull[1])] ?? { state: "open", merged: false }), { status: 200 });
     calls.push({ url, body: init?.body ? JSON.parse(String(init.body)) : null });
     if (url.startsWith("https://api.github.com/"))
       return new Response(
@@ -36,7 +42,7 @@ afterEach(() => vi.restoreAllMocks());
 // Une branche à la fois : ce qu'un test laisse en file ou en cours ne bloque pas le suivant.
 beforeEach(async () => {
   await ctx.db.execute(sql`
-    update suggestion_automation set build_status = 'closed' where build_status in ('published', 'running', 'queued')
+    update suggestion_automation set build_status = 'closed' where build_status in ('published', 'running', 'queued', 'ready')
   `);
 });
 
@@ -177,7 +183,7 @@ describe("tri automatique des suggestions", () => {
     await ctx.db.delete(a).where(sql`${a.suggestionId} in ${ids}`);
   });
 
-  it("ne lance qu'une branche à la fois : la suivante part quand la première a fini", async () => {
+  it("ne lance qu'une branche à la fois : la suivante attend que la PR soit mergée ou fermée", async () => {
     const p = await signUp(app);
     const first = await suggest(p, "Première idée");
     const second = await suggest(p, "Deuxième idée");
@@ -187,10 +193,26 @@ describe("tri automatique des suggestions", () => {
     expect(await states()).toEqual(["published", "queued"]);
     await run.tick();
     expect(await states()).toEqual(["published", "queued"]);
-    // La première rend compte : la seconde part au passage suivant.
-    await ctx.db.update(a).set({ buildStatus: "ready" }).where(eq(a.suggestionId, first));
+    // PR prête : la suivante attend toujours la décision de Palawi.
+    await ctx.db.update(a).set({ buildStatus: "ready", prNumber: 501 }).where(eq(a.suggestionId, first));
     await run.tick();
-    expect(await states()).toEqual(["ready", "published"]);
+    expect(await states()).toEqual(["ready", "queued"]);
+    // PR mergée (sans compte rendu du workflow de fin) : lue sur GitHub, puis la suivante part.
+    pulls[501] = { state: "closed", merged: true };
+    await run.tick();
+    expect(await states()).toEqual(["merged", "published"]);
+  });
+
+  it("une PR fermée sans merge libère aussi la file", async () => {
+    const p = await signUp(app);
+    const first = await suggest(p, "Idée refusée");
+    const second = await suggest(p, "Idée suivante");
+    const run = engine(async () => verdict(), { max: 999 });
+    await run.tick();
+    await ctx.db.update(a).set({ buildStatus: "ready", prNumber: 502 }).where(eq(a.suggestionId, first));
+    pulls[502] = { state: "closed", merged: false };
+    await run.tick();
+    expect([(await rowOf(first)).buildStatus, (await rowOf(second)).buildStatus]).toEqual(["closed", "published"]);
   });
 
   it("« à faire en prod » : pas de branche, Palawi est prévenu", async () => {

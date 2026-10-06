@@ -193,7 +193,7 @@ export async function reportBuild(ctx: Ctx, suggestionId: number, report: BuildR
     const questions = report.openQuestions
       ? `\n${report.openQuestions} point${report.openQuestions > 1 ? "s" : ""} à trancher, déjà codé${report.openQuestions > 1 ? "s" : ""} avec l'option recommandée : voir « À trancher » dans la PR (réponds avec @claude pour changer).`
       : "";
-    message = `**Branche prête** pour ${name}. ${ci}.${questions}\nPR : ${pr ?? "?"}\nJe la merge ? (Squash and merge vers dev)`;
+    message = `**Branche prête** pour ${name}. ${ci}.${questions}\nPR : ${pr ?? "?"}\nJe la merge ? (Squash and merge vers dev). La suggestion suivante partira quand tu l'auras mergée ou fermée.`;
   } else if (report.status === "failed") {
     message = `**Échec** de la branche pour ${name}.${report.runUrl ? `\nJournal : ${report.runUrl}` : ""}${pr ? `\nPR : ${pr}` : ""}\nAdmin : ${admin}`;
   } else if (report.status === "merged") {
