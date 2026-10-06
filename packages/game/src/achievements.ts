@@ -416,7 +416,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   ),
   ...family("Record de vente", "best_sale", (x) => `Vendre une carte au moins ${n(x)} PW.`, [
     ["best_sale_5000", 5_000, "Pièce de collection", 500],
-    ["best_sale_20000", 20_000, "Adjugé, vendu !", 1_500],
+    // Seuil abaissé de 20 000 à 10 000 PW ; la clé reste celle d'origine : ce palier n'est jamais payé deux fois.
+    ["best_sale_20000", 10_000, "Adjugé, vendu !", 1_500],
   ]),
   ...family("Achats", "purchases", (x) => `Remporter ${n(x)} ${plural(x, "enchère", "enchères")} au marché.`, [
     ["buy_1", 1, "Premier achat", 50],
