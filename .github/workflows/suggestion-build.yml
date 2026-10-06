@@ -1,0 +1,182 @@
+# Suggestion à coder : le service de tri de PalaCards ouvre une issue (compte du propriétaire du dépôt, étiquette
+# « suggestion », cahier des charges reformulé et anonyme). Claude code la suggestion sur une branche, la CI la
+# vérifie, puis une pull request vers dev attend la décision de Palawi (Discord). Jamais de merge automatique.
+name: Suggestion (branche)
+
+on:
+  issues:
+    types: [opened]
+
+permissions: {}
+
+# Une branche à la fois (forfait Claude, minutes de calcul) ; les suivantes attendent leur tour.
+concurrency:
+  group: suggestion-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Branche de la suggestion
+    # Dépôt public : seules les issues ouvertes par le propriétaire (le service de tri) déclenchent Claude.
+    if: github.event.issue.user.login == github.repository_owner && contains(github.event.issue.labels.*.name, 'suggestion')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      suggestion: ${{ steps.meta.outputs.suggestion }}
+      branch: ${{ steps.meta.outputs.branch }}
+      pr: ${{ steps.pr.outputs.number }}
+      pushed: ${{ steps.push.outcome }}
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: palacards
+          POSTGRES_PASSWORD: change-me
+          POSTGRES_DB: palacards
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U palacards -d palacards"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Suggestion et branche
+        id: meta
+        run: |
+          id=$(jq -r '.issue.body // ""' "$GITHUB_EVENT_PATH" | grep -oE '<!-- suggestion:[0-9]+ -->' | grep -oE '[0-9]+' | head -n 1 || true)
+          [ -n "$id" ] || { echo "::error::Pas de numéro de suggestion dans l'issue."; exit 1; }
+          prefix=feat
+          jq -e '.issue.labels[] | select(.name == "auto:bug")' "$GITHUB_EVENT_PATH" > /dev/null && prefix=fix
+          echo "suggestion=$id" >> "$GITHUB_OUTPUT"
+          echo "branch=$prefix/suggestion-$id" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Compte rendu (démarrage)
+        uses: ./.github/actions/suggestion-report
+        with:
+          suggestion: ${{ steps.meta.outputs.suggestion }}
+          payload: '{"status":"running","issueNumber":${{ github.event.issue.number }},"branch":"${{ steps.meta.outputs.branch }}"}'
+          api: ${{ vars.AUTOMATION_API_URL }}
+          token: ${{ secrets.AUTOMATION_TOKEN }}
+
+      - uses: ./.github/actions/suggestion-setup
+
+      - name: Branche et cahier des charges
+        env:
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: |
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "::error::La branche $BRANCH existe déjà : supprime-la ou relance depuis la page Admin."
+            exit 1
+          fi
+          git switch -c "$BRANCH"
+          jq -r '.issue.body' "$GITHUB_EVENT_PATH" > .automation/issue.md
+
+      - name: Claude code la suggestion
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: |
+            Lis puis suis à la lettre le skill du dépôt .claude/skills/build-suggestion/SKILL.md (mode « nouvelle branche »).
+            Cahier des charges : .automation/issue.md (issue n° ${{ github.event.issue.number }}, suggestion n° ${{ steps.meta.outputs.suggestion }}).
+            Branche déjà créée et active : ${{ steps.meta.outputs.branch }}. Ne pousse rien : le workflow s'en charge.
+          claude_args: >-
+            --model opus
+            --max-turns 300
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
+            --disallowedTools "Bash(git push:*),Bash(git remote:*),Bash(curl:*),Bash(wget:*),Bash(gh:*),WebFetch,WebSearch"
+
+      - name: Vérification du résultat
+        id: result
+        env:
+          SUGGESTION: ${{ steps.meta.outputs.suggestion }}
+          ISSUE: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: node .github/scripts/suggestion-result.mjs "$SUGGESTION" "$ISSUE" "$BRANCH"
+
+      - name: Pousser la branche
+        id: push
+        env:
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: git push origin "$BRANCH"
+
+      - name: Pull request vers dev
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+          TITLE: ${{ steps.result.outputs.title }}
+        run: |
+          url=$(gh pr create --base dev --head "$BRANCH" --title "$TITLE" --body-file .automation/pr.md)
+          echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
+          gh issue comment "${{ github.event.issue.number }}" --body "Branche prête : $url"
+
+      - name: Compte rendu (fichier)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: suggestion-report
+          path: .automation/report.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  ci:
+    name: CI de la branche
+    needs: build
+    if: needs.build.outputs.pushed == 'success'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.build.outputs.branch }}
+
+  report:
+    name: Compte rendu
+    needs: [build, ci]
+    if: always() && needs.build.outputs.suggestion != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/actions
+      - uses: actions/download-artifact@v7
+        continue-on-error: true
+        with:
+          name: suggestion-report
+          path: .automation
+      - name: Bilan
+        id: payload
+        env:
+          BUILD: ${{ needs.build.result }}
+          CI: ${{ needs.ci.result }}
+          PR: ${{ needs.build.outputs.pr }}
+          BRANCH: ${{ needs.build.outputs.branch }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          base='{}'
+          [ -f .automation/report.json ] && base=$(cat .automation/report.json)
+          if [ "$BUILD" = success ] && [ -n "$PR" ]; then
+            payload=$(jq -c --arg ci "$CI" --argjson pr "$PR" --arg branch "$BRANCH" --arg run "$RUN_URL" \
+              '. + {status: "ready", ciConclusion: $ci, prNumber: $pr, branch: $branch, runUrl: $run}' <<<"$base")
+          else
+            payload=$(jq -cn --arg run "$RUN_URL" '{status: "failed", runUrl: $run}')
+          fi
+          echo "json=$payload" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/suggestion-report
+        with:
+          suggestion: ${{ needs.build.outputs.suggestion }}
+          payload: ${{ steps.payload.outputs.json }}
+          api: ${{ vars.AUTOMATION_API_URL }}
+          token: ${{ secrets.AUTOMATION_TOKEN }}

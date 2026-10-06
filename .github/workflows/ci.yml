@@ -7,12 +7,21 @@ on:
     branches: [dev, main]
   pull_request:
     branches: [dev, main]
+  # Appelée par les workflows des suggestions (branche poussée avec GITHUB_TOKEN, qui ne déclenche pas `push`).
+  workflow_call:
+    inputs:
+      ref:
+        description: Branche à vérifier
+        type: string
+        required: true
 
 permissions:
   contents: read
 
+# Appelée par un autre workflow, `github.ref` est celle de l'appelant (main pour une issue) : le groupe suit
+# la branche vérifiée, pour ne jamais annuler la CI de main.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,6 +46,8 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
 
       # Version lue dans package.json (packageManager: pnpm@10.28.0).
       - uses: pnpm/action-setup@v5
@@ -107,6 +118,8 @@ jobs:
         working-directory: tools/import
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref || '' }}
 
       - uses: actions/setup-python@v6
         with:

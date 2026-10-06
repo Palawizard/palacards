@@ -34,6 +34,10 @@ Un nom de branche, le nom du dépôt ou un message de commit ne suffisent pas. D
 - Avant le premier commit, demande via un widget de question (`AskUserQuestion`) quel nom et quel e-mail utiliser et si l'attribution de l'agent doit apparaître. Applique ensuite la réponse avec `git config user.name` / `git config user.email`.
 - Sans réponse possible (session non interactive), garde l'identité git déjà configurée.
 
+## Branches de suggestion automatisées
+
+Les branches `feat/suggestion-<n>` et `fix/suggestion-<n>` sont construites par GitHub Actions (workflows `suggestion-*.yml`, skill `build-suggestion`) : leurs commits sont signés `github-actions[bot]`, sans aucune mention d'IA dans les messages. Palawi les intègre avec **Squash and merge** vers `dev` : le commit qui arrive dans `dev` est alors à son nom. Ne réécris pas l'historique de ces branches pour changer l'auteur.
+
 ## Réglage partagé
 
 `.claude/settings.json` désactive l'attribution automatique de Claude Code (`attribution.commit` et `attribution.pr` vides) pour tout le monde sur ce projet. Quelqu'un qui veut la garder peut la remettre dans son `.claude/settings.local.json` (non versionné).

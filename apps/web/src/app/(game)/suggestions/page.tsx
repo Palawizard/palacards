@@ -157,7 +157,8 @@ export default function SuggestionsPage() {
         <h1 className="page-title">Suggestions</h1>
         <p className="hatnote mt-2 max-w-[62ch]">
           Un bug, une idée de booster, une règle à revoir ? Écris directement à Palawi. Il lit toutes les suggestions et
-          te répond sur cette page.
+          te répond sur cette page. Claude, l&apos;IA d&apos;Anthropic, l&apos;aide à les trier, sans ton pseudo ; une
+          idée retenue peut être publiée, reformulée et anonyme, sur le GitHub du jeu.
         </p>
       </div>
 

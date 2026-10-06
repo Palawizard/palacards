@@ -162,6 +162,13 @@
       "when": 1791293618857,
       "tag": "0022_theme_packs_opened",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791308205297,
+      "tag": "0023_suggestion_automation",
+      "breakpoints": true
     }
   ]
 }
