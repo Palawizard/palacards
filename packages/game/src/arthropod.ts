@@ -41,8 +41,6 @@ const GROUPS = [
   "scarabees?",
   "charancons?",
   "coccinelles?",
-  "lepidopteres?",
-  "papillons?",
   "dipteres?",
   "mouches?",
   "moustiques?",
@@ -87,10 +85,13 @@ const GROUPS = [
 const GROUP = `(?:${GROUPS.join("|")})`;
 
 /**
- * Noms d'arthropodes qui désignent aussi un objet courant : « carte à puce », « chenille » d'un char, « punaise »
+ * Noms d'arthropodes qui désignent aussi un objet courant : « carte à puce », « punaise »
  * (le clou), « bourdon » (la cloche). Comptés seulement juste après un rang : « espèce de puces ».
  */
-const AMBIGUOUS = `(?:${["puces?", "chenilles?", "punaises?", "bourdons?"].join("|")})`;
+const AMBIGUOUS = `(?:${["puces?", "punaises?", "bourdons?"].join("|")})`;
+
+/** Papillons, papillons de nuit et chenilles : jamais floutés (choix de Palawi, 2026-10-06). */
+const LEPIDOPTERA = /\b(?:lepidopteres?|papillons?|chenilles?)\b/;
 
 /** Rangs taxonomiques qui introduisent un groupe (« espèce de », « famille d' », « genre fossile de »…). */
 const RANK =
@@ -128,9 +129,10 @@ function firstSentence(text: string): string {
  */
 export function isArthropod(summary: { description?: string | null; extract?: string | null }): boolean {
   const description = normalize(summary.description ?? "");
+  const extract = normalize(firstSentence(summary.extract ?? ""));
+  if (LEPIDOPTERA.test(description) || LEPIDOPTERA.test(extract)) return false;
   if (description && !NOT_A_CREATURE.test(description)) {
     if (TAXON.test(description) || STARTS_WITH.test(description) || KIND_OF.test(description)) return true;
   }
-  const extract = normalize(firstSentence(summary.extract ?? ""));
   return !!extract && (TAXON.test(extract) || IS_A.test(extract));
 }
