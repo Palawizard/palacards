@@ -19,12 +19,18 @@ import { animate, AnimatePresence, motion, useMotionValue, useReducedMotion } fr
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import useSWR from "swr";
 import { toast } from "sonner";
 import { mutate as revalidate } from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
 import { CardImage } from "@/components/CardImage";
 import { CardBack, FlipCard } from "@/components/PackOpener";
+import {
+  CollectionFilterBar,
+  useCollectionFilters,
+  type CollectionFilterOptions,
+} from "@/components/CollectionFilters";
 import { CardSkeletons, Empty, ErrorBox, LoadMore, Toggle } from "@/components/ui";
 import { chanceText, UpgradeDial, type DialState } from "@/components/UpgradeDial";
 import { UpgradeSeries } from "@/components/UpgradeSeries";
@@ -97,7 +103,9 @@ function SlotTile({ card }: { card: CardDTO }) {
 export default function UpgradePage() {
   const reduce = useReducedMotion();
   const [rarity, setRarity] = useState<Rarity>("C");
-  const [duplicates, setDuplicates] = useState(true);
+  // Mêmes filtres que la collection (recherche dans le résumé, tags, booster…), sauf la rareté, fixée par l'établi.
+  const { value: f, set: setFilter, params: filters } = useCollectionFilters({ duplicates: true, sort: "date" });
+  const options = useSWR<CollectionFilterOptions>("/collection/summary");
   // Favoris masqués par défaut : on ne les sacrifie pas par mégarde. Le choix est gardé sur l'appareil.
   const [showFavorites, storeShowFavorites] = useStoredFlag(SHOW_FAVORITES_KEY);
   function changeShowFavorites(v: boolean) {
@@ -124,7 +132,9 @@ export default function UpgradePage() {
   const dial: DialState =
     phase === "spinning" ? "spinning" : phase === "done" && result ? (result.success ? "win" : "lose") : "idle";
 
-  const params = `rarity=${rarity}${duplicates ? "&duplicates=true" : ""}${showFavorites ? "" : "&favorites=exclude"}&sort=date&limit=60`;
+  const params = `rarity=${rarity}${filters ? `&${filters}` : ""}${showFavorites ? "" : "&favorites=exclude"}&sort=${f.sort}&limit=60`;
+  /** Un filtre de la barre (hors « Doublons ») réduit la liste. */
+  const narrowed = !!(f.q.trim() || f.shiny || f.tag || f.theme || f.season);
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
     prev && !prev.nextCursor ? null : `/collection?${params}&page=${i}`,
   );
@@ -254,7 +264,7 @@ export default function UpgradePage() {
       if (res.success) setTimeout(() => setRevealed(true), reduce ? 0 : 380);
       else play("wrong");
       void list.mutate();
-      void revalidate(`/upgrade/series?rarity=${rarity}`);
+      void revalidate((key) => typeof key === "string" && key.startsWith(`/upgrade/series?rarity=${rarity}`));
     } catch (err) {
       setPhase("idle");
       setResult(null);
@@ -483,17 +493,19 @@ export default function UpgradePage() {
       />
 
       <section className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="section-title m-0">Tes cartes {RARITY_LABELS[rarity].toLowerCase()}s</h2>
-          <div className="flex flex-wrap gap-2">
-            <Toggle pressed={duplicates} onChange={setDuplicates}>
-              Doublons seulement
-            </Toggle>
-            <Toggle pressed={showFavorites} onChange={changeShowFavorites}>
-              Afficher les favoris
-            </Toggle>
-          </div>
-        </div>
+        <h2 className="section-title m-0">Tes cartes {RARITY_LABELS[rarity].toLowerCase()}s</h2>
+        <CollectionFilterBar
+          value={f}
+          onChange={setFilter}
+          options={options.data}
+          owner
+          rarities={false}
+          favorites={false}
+        >
+          <Toggle pressed={showFavorites} onChange={changeShowFavorites}>
+            Afficher les favoris
+          </Toggle>
+        </CollectionFilterBar>
         {list.error ? (
           <ErrorBox error={list.error} retry={() => list.mutate()} />
         ) : !list.data ? (
@@ -501,15 +513,25 @@ export default function UpgradePage() {
         ) : items.length === 0 ? (
           <Empty
             title={
-              duplicates
-                ? "Aucun doublon de cette rareté"
-                : showFavorites
-                  ? "Aucune carte de cette rareté"
-                  : "Aucune carte de cette rareté hors favoris"
+              narrowed
+                ? "Aucune carte ne correspond"
+                : f.duplicates
+                  ? "Aucun doublon de cette rareté"
+                  : showFavorites
+                    ? "Aucune carte de cette rareté"
+                    : "Aucune carte de cette rareté hors favoris"
             }
           >
-            {duplicates ? (
-              <button type="button" className="article-link" onClick={() => setDuplicates(false)}>
+            {narrowed ? (
+              <button
+                type="button"
+                className="article-link"
+                onClick={() => setFilter({ q: "", shiny: false, tag: "", theme: "", season: "" })}
+              >
+                Retirer les filtres
+              </button>
+            ) : f.duplicates ? (
+              <button type="button" className="article-link" onClick={() => setFilter({ duplicates: false })}>
                 Voir toutes les cartes de cette rareté
               </button>
             ) : (

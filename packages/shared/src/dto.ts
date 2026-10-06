@@ -91,6 +91,8 @@ export interface ThemeDTO {
   cardCount: number;
   /** Boosters de ce thème achetés ou reçus, pas encore ouverts. */
   owned: number;
+  /** Boosters de ce thème déjà ouverts par le joueur. */
+  opened: number;
   byRarity: Record<Rarity, number>;
   /** Cartes phares du thème (les plus rares). */
   preview: CardDTO[];
@@ -146,8 +148,14 @@ export interface WheelSpinDTO {
 export interface UpgradeSeriesPreviewDTO {
   rarity: Rarity;
   target: Rarity;
-  /** Doublons utilisables (le meilleur exemplaire de chaque article est toujours gardé). */
+  /** Cartes utilisables : les doublons, plus le dernier exemplaire de chaque article si demandé. */
   available: number;
+  /** Doublons libres de cette rareté. */
+  duplicates: number;
+  /** Articles dont il ne reste qu'un exemplaire libre (pris seulement si le joueur coche la case). */
+  singles: number;
+  /** Articles qui quitteraient la collection avec ce lancement (0 sans la case). */
+  singlesUsed: number;
   /** Lots du prochain lancement, chance en points de base (sur 10 000). */
   lots: { cards: number; chance: number }[];
   /** Cartes engagées par ce lancement (au plus `maxLots` lots par clic). */
@@ -168,7 +176,7 @@ export interface UpgradeSeriesResultDTO {
   cards: CardDTO[];
   refund: number;
   wallet: Wallet;
-  /** Doublons de cette rareté encore utilisables après ce lancement. */
+  /** Cartes de cette rareté encore utilisables après ce lancement (mêmes règles que le lancement). */
   remaining: number;
 }
 

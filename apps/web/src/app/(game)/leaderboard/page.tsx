@@ -5,7 +5,7 @@ import { useState } from "react";
 import { LUCK_MIN_PACKS } from "@palacards/game";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
-import { ErrorBox } from "@/components/ui";
+import { CreatorBadge, ErrorBox } from "@/components/ui";
 import { fmt } from "@/lib/format";
 
 type Board = "collection" | "packs" | "luck" | "elo" | "wealth" | "guilds" | "pass";
@@ -19,6 +19,8 @@ interface Row {
   extra?: string;
   /** Classement « Chance » : boosters mesurés. */
   packs?: number;
+  /** Badge « Créateur » (compte admin du jeu). */
+  creator?: boolean;
   rank: number;
   me: boolean;
 }
@@ -139,6 +141,11 @@ export default function LeaderboardPage() {
                       ) : (
                         <span className="font-semibold">
                           {r.name} {r.extra && <span className="text-faint">[{r.extra}]</span>}
+                        </span>
+                      )}
+                      {r.creator && (
+                        <span className="ml-2 align-[1px]">
+                          <CreatorBadge />
                         </span>
                       )}
                       {r.me && <span className="ml-2 text-xs text-good">toi</span>}

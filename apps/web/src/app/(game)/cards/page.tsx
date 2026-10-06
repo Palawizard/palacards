@@ -9,7 +9,7 @@ import { Suspense, useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
-import { CardSkeletons, Empty, ErrorBox, LoadMore, RarityFilter, Select } from "@/components/ui";
+import { CardSkeletons, Empty, ErrorBox, LoadMore, RarityFilter, Select, Toggle } from "@/components/ui";
 import { fmt } from "@/lib/format";
 import { useDebounced } from "@/lib/use-debounced";
 
@@ -30,6 +30,8 @@ function Catalog() {
   const search = useSearchParams();
   const [q, setQ] = useState(search.get("q") ?? "");
   const query = useDebounced(q);
+  // Comme dans la collection : la recherche porte aussi sur le résumé de l'article.
+  const [inSummary, setInSummary] = useState(false);
   const [rarity, setRarity] = useState<Rarity[]>([]);
   const [sort, setSort] = useState<(typeof SORTS)[number]["value"]>("views");
   const [owned, setOwned] = useState<(typeof OWNED)[number]["value"]>("");
@@ -49,14 +51,17 @@ function Catalog() {
 
   const params = useMemo(() => {
     const p = new URLSearchParams({ sort, limit: "48" });
-    if (query.trim().length >= 3) p.set("q", query.trim());
+    if (query.trim().length >= 3) {
+      p.set("q", query.trim());
+      if (inSummary) p.set("inSummary", "true");
+    }
     if (rarity.length) p.set("rarity", rarity.join(","));
     if (owned) p.set("owned", owned);
     if (/^\d+$/.test(minAtk)) p.set("minAtk", minAtk);
     if (/^\d+$/.test(minDef)) p.set("minDef", minDef);
     if (/^\d+$/.test(theme)) p.set("theme", theme);
     return p.toString();
-  }, [query, rarity, sort, owned, minAtk, minDef, theme]);
+  }, [query, inSummary, rarity, sort, owned, minAtk, minDef, theme]);
 
   const list = useSWRInfinite<Page<CardDTO> & { approximate?: boolean }>(
     (i, prev) =>
@@ -91,28 +96,39 @@ function Catalog() {
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-3">
-        <form
-          role="search"
-          className="relative"
-          onSubmit={(e) => {
-            e.preventDefault();
-            router.replace(q.trim() ? `/cards?q=${encodeURIComponent(q.trim())}` : "/cards");
-          }}
-        >
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute left-3 top-1/2 size-[1.1rem] -translate-y-1/2 text-faint"
-          />
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Einstein, tour Eiffel, Zidane…"
-            aria-label="Chercher un article"
-            className="field h-11 pl-10 text-base"
-            autoFocus={!!search.get("q")}
-          />
-        </form>
+        <div className="flex flex-wrap items-center gap-2">
+          <form
+            role="search"
+            className="relative min-w-60 flex-1"
+            onSubmit={(e) => {
+              e.preventDefault();
+              router.replace(q.trim() ? `/cards?q=${encodeURIComponent(q.trim())}` : "/cards");
+            }}
+          >
+            <Search
+              aria-hidden
+              className="pointer-events-none absolute left-3 top-1/2 size-[1.1rem] -translate-y-1/2 text-faint"
+            />
+            <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={inSummary ? "Titre ou mot du résumé" : "Einstein, tour Eiffel, Zidane…"}
+              aria-label={inSummary ? "Chercher dans le titre et le résumé" : "Chercher un article"}
+              className="field h-11 pl-10 text-base"
+              autoFocus={!!search.get("q")}
+            />
+          </form>
+          <Toggle pressed={inSummary} onChange={setInSummary}>
+            Résumé aussi
+          </Toggle>
+        </div>
+        {inSummary && (
+          <p className="text-xs text-faint">
+            Le résumé n’est connu que pour les articles déjà ouverts ou vus dans le jeu : les autres se trouvent par
+            leur titre.
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           <RarityFilter value={rarity} onChange={setRarity} />
           <span className="mx-1 hidden h-5 w-px bg-line sm:block" aria-hidden />

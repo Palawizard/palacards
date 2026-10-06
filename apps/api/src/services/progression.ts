@@ -537,6 +537,8 @@ interface Row {
   extra?: string;
   /** Classement « Chance » : paquets mesurés. */
   packs?: number;
+  /** Badge « Créateur » (compte admin du jeu). */
+  creator?: boolean;
 }
 
 /**
@@ -637,6 +639,16 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       group by g.id order by score desc limit 100
     `);
     rows = res.map((r) => ({ id: r.id, name: r.name, username: null, avatar: r.emblem, value: r.score, extra: r.tag }));
+  }
+  if (board !== "guilds" && rows.length) {
+    const admins = await ctx.db.execute<{ id: string }>(sql`
+      select id from "user" where is_admin and id in (${sql.join(
+        rows.map((r) => sql`${r.id}`),
+        sql`, `,
+      )})
+    `);
+    const ids = new Set(admins.map((a) => a.id));
+    for (const r of rows) if (ids.has(r.id)) r.creator = true;
   }
   const myGuild =
     board === "guilds"
