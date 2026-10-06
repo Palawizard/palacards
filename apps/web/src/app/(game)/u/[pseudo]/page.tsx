@@ -105,7 +105,7 @@ function Actions({ p, onChanged }: { p: ProfileDTO; onChanged: () => void }) {
   );
 }
 
-/** Collection d'un autre joueur, avec les filtres de la sienne (sauf favoris et tags, privés). */
+/** Collection d'un autre joueur, avec les filtres de la sienne (sauf favoris, privés ; tags s'il les partage). */
 function TheirCollection({ username }: { username: string }) {
   const source = `/players/${encodeURIComponent(username)}/collection`;
   const { value: f, set, q, params } = useCollectionFilters();
