@@ -421,9 +421,51 @@ export interface SuggestionDTO {
   createdAt: string;
 }
 
-/** Vue admin : avec l'auteur et l'état « déjà ouverte ». */
+/** Verdict du tri automatique : à coder, à trancher par l'admin, refus proposé, bug à corriger. */
+export type TriageVerdict = "build" | "decision" | "non" | "bug";
+export type TriageCategory = "important" | "confort" | "bloat" | "refus" | "troll";
+export type TriageStatus = "pending" | "running" | "done" | "error";
+/**
+ * Construction d'une branche : none (pas prévue), queued (plafond du jour atteint), published (issue créée),
+ * running (Claude code), ready (pull request prête), failed, merged (dans dev), closed (abandonnée).
+ */
+export type BuildStatus = "none" | "queued" | "published" | "running" | "ready" | "failed" | "merged" | "closed";
+
+export interface TriageQuestionDTO {
+  question: string;
+  options: string[];
+  recommended: string;
+}
+
+/** Tri par Claude et branche construite pour une suggestion (vue admin). */
+export interface SuggestionAutomationDTO {
+  triageStatus: TriageStatus;
+  attempts: number;
+  error: string | null;
+  verdict: TriageVerdict | null;
+  category: TriageCategory | null;
+  summary: string | null;
+  reasoning: string | null;
+  spec: string | null;
+  questions: TriageQuestionDTO[];
+  proposedReply: string | null;
+  duplicateOf: number | null;
+  injection: boolean;
+  triagedAt: string | null;
+  buildStatus: BuildStatus;
+  issueUrl: string | null;
+  prUrl: string | null;
+  branch: string | null;
+  ciConclusion: string | null;
+  playerReply: string | null;
+  announcement: string | null;
+  updatedAt: string;
+}
+
+/** Vue admin : avec l'auteur, l'état « déjà ouverte » et l'automatisation (null : jamais triée). */
 export interface AdminSuggestionDTO extends SuggestionDTO {
   author: { id: string; username: string; displayName: string } | null;
   seen: boolean;
   updatedAt: string;
+  automation: SuggestionAutomationDTO | null;
 }

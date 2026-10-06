@@ -1060,6 +1060,78 @@ export const suggestions = pgTable(
   ],
 );
 
+export const TRIAGE_STATUSES = ["pending", "running", "done", "error"] as const;
+export const TRIAGE_VERDICTS = ["build", "decision", "non", "bug"] as const;
+export const TRIAGE_CATEGORIES = ["important", "confort", "bloat", "refus", "troll"] as const;
+export const BUILD_STATUSES = [
+  "none",
+  "queued",
+  "published",
+  "running",
+  "ready",
+  "failed",
+  "merged",
+  "closed",
+] as const;
+
+/** Question ouverte d'une suggestion à trancher par l'admin. */
+export interface TriageQuestion {
+  question: string;
+  options: string[];
+  /** Option recommandée (texte d'une des options). */
+  recommended: string;
+}
+
+/**
+ * Automatisation d'une suggestion : tri par Claude (sans outils, sur le serveur), puis construction d'une branche
+ * par GitHub Actions. Rien n'est envoyé au joueur sans l'admin : la réponse proposée attend dans la page Admin.
+ */
+export const suggestionAutomation = pgTable(
+  "suggestion_automation",
+  {
+    suggestionId: bigint("suggestion_id", { mode: "number" })
+      .primaryKey()
+      .references(() => suggestions.id, { onDelete: "cascade" }),
+    triageStatus: text("triage_status", { enum: TRIAGE_STATUSES }).notNull().default("pending"),
+    attempts: smallint("attempts").notNull().default(0),
+    /** Prochain essai du tri (reprise après une erreur, avec attente croissante). */
+    nextAttemptAt: tstz("next_attempt_at").notNull().defaultNow(),
+    error: text("error"),
+    verdict: text("verdict", { enum: TRIAGE_VERDICTS }),
+    category: text("category", { enum: TRIAGE_CATEGORIES }),
+    /** Une phrase : ce que demande le joueur. */
+    summary: text("summary"),
+    /** Pourquoi ce verdict (pour l'admin). */
+    reasoning: text("reasoning"),
+    /** Demande reformulée, sans donnée personnelle : seul texte publié sur GitHub. */
+    spec: text("spec"),
+    questions: jsonb("questions").$type<TriageQuestion[]>().notNull().default([]),
+    /** Réponse au joueur proposée par le tri (refus, doublon, bug…). */
+    proposedReply: text("proposed_reply"),
+    duplicateOf: bigint("duplicate_of", { mode: "number" }),
+    /** Le texte contenait des instructions adressées à l'IA. */
+    injection: boolean("injection").notNull().default(false),
+    triagedAt: tstz("triaged_at"),
+    buildStatus: text("build_status", { enum: BUILD_STATUSES }).notNull().default("none"),
+    issueNumber: integer("issue_number"),
+    prNumber: integer("pr_number"),
+    branch: text("branch"),
+    /** Résultat de la CI sur la branche (success, failure…). */
+    ciConclusion: text("ci_conclusion"),
+    /** Réponse au joueur rédigée avec la branche, à envoyer depuis Admin une fois en ligne. */
+    playerReply: text("player_reply"),
+    /** Ligne d'annonce proposée pour le prochain message de mise à jour. */
+    announcement: text("announcement"),
+    publishedAt: tstz("published_at"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("suggestion_automation_triage_idx").on(t.triageStatus, t.nextAttemptAt),
+    index("suggestion_automation_build_idx").on(t.buildStatus, t.publishedAt),
+  ],
+);
+
 // ---------------------------------------------------------------------------
 // Relations (requêtes relationnelles Drizzle)
 // ---------------------------------------------------------------------------

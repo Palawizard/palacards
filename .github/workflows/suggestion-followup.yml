@@ -1,0 +1,150 @@
+# Suite d'une branche de suggestion : Palawi répond dans la pull request par un commentaire qui commence par
+# « @claude » (choix d'une option, correction…). Claude reprend la branche, la CI la revérifie, Discord prévient.
+name: Suggestion (suite)
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  followup:
+    name: Claude reprend la branche
+    # Dépôt public : seul le propriétaire du dépôt peut solliciter Claude, et seulement sur une pull request.
+    if: >-
+      github.event.sender.login == github.repository_owner &&
+      (github.event.issue.pull_request || github.event.pull_request) &&
+      contains(github.event.comment.body || github.event.review.body || '', '@claude')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    concurrency:
+      group: suggestion-followup-${{ github.event.issue.number || github.event.pull_request.number }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      suggestion: ${{ steps.meta.outputs.suggestion }}
+      branch: ${{ steps.meta.outputs.branch }}
+      pr: ${{ steps.meta.outputs.pr }}
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_USER: palacards
+          POSTGRES_PASSWORD: change-me
+          POSTGRES_DB: palacards
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U palacards -d palacards"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Pull request de suggestion ?
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          branch=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefName,baseRefName,state \
+            -q 'select(.baseRefName == "dev" and .state == "OPEN") | .headRefName')
+          if [[ ! "$branch" =~ ^(feat|fix)/suggestion-([0-9]+)$ ]]; then
+            echo "::notice::Pas une pull request de suggestion ouverte vers dev : rien à faire."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+          echo "suggestion=${BASH_REMATCH[2]}" >> "$GITHUB_OUTPUT"
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        if: steps.meta.outputs.skip != 'true'
+        with:
+          ref: ${{ steps.meta.outputs.branch }}
+          fetch-depth: 0
+
+      - name: Compte rendu (reprise)
+        if: steps.meta.outputs.skip != 'true'
+        uses: ./.github/actions/suggestion-report
+        with:
+          suggestion: ${{ steps.meta.outputs.suggestion }}
+          payload: '{"status":"running"}'
+          api: ${{ vars.AUTOMATION_API_URL }}
+          token: ${{ secrets.AUTOMATION_TOKEN }}
+
+      - uses: ./.github/actions/suggestion-setup
+        if: steps.meta.outputs.skip != 'true'
+
+      - name: Claude reprend la branche
+        if: steps.meta.outputs.skip != 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: >-
+            --model opus
+            --max-turns 200
+            --append-system-prompt "Tu travailles sur une branche de suggestion de PalaCards : lis puis suis .claude/skills/build-suggestion/SKILL.md (mode « suite dans la pull request »)."
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
+            --disallowedTools "Bash(curl:*),Bash(wget:*),Bash(gh:*),WebFetch,WebSearch"
+
+      - name: Rien hors du périmètre
+        if: steps.meta.outputs.skip != 'true'
+        run: |
+          git fetch -q origin dev
+          bad=$(git diff --name-only origin/dev...HEAD | grep -E '^(\.github/|deploy/|docker/|\.githooks/|docker-compose[^/]*\.ya?ml$|\.env|\.claude/settings)' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::Fichiers interdits modifiés : $bad"
+            exit 1
+          fi
+
+  ci:
+    name: CI de la branche
+    needs: followup
+    if: needs.followup.outputs.branch != ''
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.followup.outputs.branch }}
+
+  report:
+    name: Compte rendu
+    needs: [followup, ci]
+    if: always() && needs.followup.outputs.suggestion != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/actions
+      - name: Bilan
+        id: payload
+        env:
+          FOLLOWUP: ${{ needs.followup.result }}
+          CI: ${{ needs.ci.result }}
+          PR: ${{ needs.followup.outputs.pr }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$FOLLOWUP" = success ]; then
+            payload=$(jq -cn --arg ci "$CI" --argjson pr "$PR" --arg run "$RUN_URL" \
+              '{status: "ready", ciConclusion: $ci, prNumber: $pr, runUrl: $run}')
+          else
+            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" '{status: "failed", prNumber: $pr, runUrl: $run}')
+          fi
+          echo "json=$payload" >> "$GITHUB_OUTPUT"
+      - uses: ./.github/actions/suggestion-report
+        with:
+          suggestion: ${{ needs.followup.outputs.suggestion }}
+          payload: ${{ steps.payload.outputs.json }}
+          api: ${{ vars.AUTOMATION_API_URL }}
+          token: ${{ secrets.AUTOMATION_TOKEN }}

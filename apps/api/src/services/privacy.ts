@@ -75,6 +75,13 @@ export async function exportData(ctx: Ctx, userId: string) {
       .where(or(eq(s.trades.fromId, userId), eq(s.trades.toId, userId))),
     wishlist: await db.select().from(s.wishlist).where(eq(s.wishlist.userId, userId)),
     suggestions: await db.select().from(s.suggestions).where(eq(s.suggestions.userId, userId)),
+    // Tri automatique de ses suggestions (verdict, résumé, réponse proposée, branche).
+    suggestionTriage: await db
+      .select({ automation: s.suggestionAutomation })
+      .from(s.suggestionAutomation)
+      .innerJoin(s.suggestions, eq(s.suggestions.id, s.suggestionAutomation.suggestionId))
+      .where(eq(s.suggestions.userId, userId))
+      .then((rows) => rows.map((r) => r.automation)),
     notifications: await db.select().from(s.notifications).where(eq(s.notifications.userId, userId)),
     themePacks: await db.select().from(s.playerThemePacks).where(eq(s.playerThemePacks.userId, userId)),
     promoRedemptions: await db.select().from(s.promoRedemptions).where(eq(s.promoRedemptions.userId, userId)),

@@ -10,9 +10,10 @@ import {
 } from "@palacards/shared";
 import { Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { AutomationPanel, automationInFlight } from "@/components/SuggestionAutomation";
 import { KindTag, StatusPill } from "@/components/Suggestions";
 import { ConfirmDialog, Empty, ErrorBox, Select } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -34,15 +35,22 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: "all", label: "Toutes" },
 ];
 
+function subscribeHash(onChange: () => void) {
+  window.addEventListener("hashchange", onChange);
+  return () => window.removeEventListener("hashchange", onChange);
+}
+
 function SuggestionRow({
   s,
   fresh,
   onChanged,
+  onReload,
   onDelete,
 }: {
   s: AdminSuggestionDTO;
   fresh: boolean;
   onChanged: (s: AdminSuggestionDTO) => void;
+  onReload: () => void;
   onDelete: () => void;
 }) {
   const [reply, setReply] = useState(s.reply ?? "");
@@ -63,7 +71,7 @@ function SuggestionRow({
   }
 
   return (
-    <li className="rounded-xl border border-line bg-panel p-4">
+    <li id={`suggestion-${s.id}`} className="scroll-mt-24 rounded-xl border border-line bg-panel p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <KindTag kind={s.kind} />
         {fresh && <StatusPill status="new" admin />}
@@ -89,6 +97,15 @@ function SuggestionRow({
       </div>
       <h2 className="mt-1 text-base font-semibold leading-snug">{s.title}</h2>
       <p className="mt-1 max-w-[75ch] whitespace-pre-wrap text-sm leading-relaxed text-muted">{s.body}</p>
+
+      <AutomationPanel
+        s={s}
+        onChanged={onReload}
+        onUseReply={(text) => {
+          setReply(text);
+          document.getElementById(`reply-${s.id}`)?.focus();
+        }}
+      />
 
       <div className="mt-4 flex flex-col gap-3 border-t-2 border-dashed border-line pt-3">
         <div className="flex flex-wrap items-center gap-2">
@@ -143,7 +160,10 @@ function SuggestionRow({
 
 export default function AdminSuggestionsPage() {
   const { me, mutateMe } = useMe();
-  const list = useSWR<AdminList>(me?.isAdmin ? "/admin/suggestions" : null);
+  // Tant qu'une suggestion attend Claude (tri ou branche), la liste se met à jour toute seule.
+  const list = useSWR<AdminList>(me?.isAdmin ? "/admin/suggestions" : null, {
+    refreshInterval: (d) => (d && automationInFlight(d.items) ? 15_000 : 0),
+  });
   const [filter, setFilter] = useState<Filter>("new");
   const [kind, setKind] = useState<"" | SuggestionKind>("");
   const [confirm, setConfirm] = useState<AdminSuggestionDTO | null>(null);
@@ -162,10 +182,24 @@ export default function AdminSuggestionsPage() {
       .catch(() => {});
   }, [unseen, mutateMe]);
 
+  // Lien direct (Discord) vers une suggestion : affichée quel que soit le filtre, puis amenée à l'écran.
+  const hash = useSyncExternalStore(
+    subscribeHash,
+    () => window.location.hash,
+    () => "",
+  );
+  const target = Number(hash.match(/^#suggestion-(\d+)$/)?.[1]) || null;
+  const ready = !!list.data;
+  useEffect(() => {
+    if (!ready || target === null) return;
+    document.getElementById(`suggestion-${target}`)?.scrollIntoView({ block: "start" });
+  }, [ready, target]);
+
   if (me && !me.isAdmin) return <p className="text-muted">Page réservée aux admins.</p>;
 
   const items = (list.data?.items ?? []).filter(
-    (s) => (filter === "all" || s.status === filter || touched.has(s.id)) && (!kind || s.kind === kind),
+    (s) =>
+      (filter === "all" || s.status === filter || touched.has(s.id) || s.id === target) && (!kind || s.kind === kind),
   );
   const total = list.data ? list.data.items.length : 0;
 
@@ -263,6 +297,7 @@ export default function AdminSuggestionsPage() {
               s={s}
               fresh={!!fresh?.has(s.id) && s.status === "new"}
               onChanged={replace}
+              onReload={() => void list.mutate()}
               onDelete={() => setConfirm(s)}
             />
           ))}
