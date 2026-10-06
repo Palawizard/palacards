@@ -209,18 +209,49 @@ describe("collection d'un autre joueur (échanges)", () => {
     expect(ids((await viewer.get(`${url}?shiny=true`)).body)).toEqual([one!.instanceId]);
     expect((await viewer.get(`${url}?sort=views`)).status).toBe(400);
 
-    // Mêmes filtres que sa propre collection : doublons, édition, résumé des menus (sans ses tags).
+    // Mêmes filtres que sa propre collection : doublons, édition, résumé des menus.
     await addCopies(one!.instanceId, 1);
     // Le paquet peut déjà contenir des doublons : on vérifie seulement que les deux copies ajoutées y sont.
     const dups = (await viewer.get(`${url}?duplicates=true&limit=120`)).body.items as { cardId: number }[];
     const oneCard = first.body.items[0].cardId as number;
     expect(dups.filter((c) => c.cardId === oneCard).length).toBeGreaterThanOrEqual(2);
     expect((await viewer.get(`${url}?season=999`)).body.total).toBe(0);
-    await owner.post("/collection/tags", { instanceIds: [one!.instanceId], add: "secret" });
     const summary = await viewer.get(`${url}/summary`);
     expect(summary.status).toBe(200);
-    expect(summary.body).not.toHaveProperty("tags");
     expect(summary.body.seasons.length).toBeGreaterThan(0);
+  });
+
+  it("se filtre par les tags du joueur, sauf s'il les garde pour lui", async () => {
+    const owner = await signUp(app);
+    const cards = await freshCollection(owner);
+    const viewer = await signUp(app);
+    const url = `/players/${owner.username}/collection`;
+    const tagged = cards.slice(0, 2).map((c) => c.instanceId);
+    await owner.post("/collection/tags", { instanceIds: tagged, add: "châteaux" });
+
+    // Privés par défaut : rien dans le menu, et le filtre est ignoré.
+    expect((await owner.get("/me")).body.publicTags).toBe(false);
+    expect((await viewer.get(`${url}/summary`)).body.tags).toEqual([]);
+    expect((await viewer.get(`${url}?tag=${encodeURIComponent("châteaux")}`)).body.total).toBe(cards.length);
+
+    // Partagés : le menu les propose, le filtre se combine aux autres, les cartes restent sans tags.
+    expect((await owner.patch("/me/settings", { publicTags: true })).body.publicTags).toBe(true);
+    expect((await viewer.get(`${url}/summary`)).body.tags).toEqual(["châteaux"]);
+    const byTag = await viewer.get(`${url}?tag=${encodeURIComponent("châteaux")}`);
+    expect(ids(byTag.body)).toEqual([...tagged].sort((a, b) => a - b));
+    expect(byTag.body.items[0]).not.toHaveProperty("tags");
+    const rarity = byTag.body.items[0].rarity as string;
+    const both = await viewer.get(`${url}?tag=${encodeURIComponent("châteaux")}&rarity=${rarity}`);
+    expect(both.body.items.every((c: { rarity: string }) => c.rarity === rarity)).toBe(true);
+    expect(both.body.total).toBeLessThanOrEqual(2);
+
+    // Repris : rien dans le menu, et le filtre est ignoré (on ne devine pas ses tags en essayant).
+    expect((await owner.patch("/me/settings", { publicTags: false })).body.publicTags).toBe(false);
+    expect((await viewer.get(`${url}/summary`)).body.tags).toEqual([]);
+    expect((await viewer.get(`${url}?tag=${encodeURIComponent("châteaux")}`)).body.total).toBe(cards.length);
+    expect((await viewer.get(`${url}?tag=inconnu`)).body.total).toBe(cards.length);
+    // Sa propre collection garde le filtre.
+    expect((await owner.get("/collection/summary")).body.tags).toEqual(["châteaux"]);
   });
 });
 

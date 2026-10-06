@@ -258,6 +258,15 @@ async function themesOwned(db: DbOrTx, ownerId: string) {
   return rows.map((r) => ({ id: Number(r.id), name: r.name, owned: r.owned, cardCount: r.card_count }));
 }
 
+/** Les autres joueurs peuvent filtrer sa collection par ses tags (réglage « Tags visibles », activé par défaut). */
+export async function tagsArePublic(db: DbOrTx, ownerId: string): Promise<boolean> {
+  const [p] = await db
+    .select({ publicTags: schema.players.publicTags })
+    .from(schema.players)
+    .where(eq(schema.players.userId, ownerId));
+  return p?.publicTags ?? false;
+}
+
 /** Tags déjà utilisés par le joueur, les plus fréquents d'abord (suggestions de la fiche carte). */
 export async function tagCounts(ctx: Ctx, ownerId: string) {
   const rows = await ctx.db

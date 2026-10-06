@@ -108,6 +108,7 @@ export async function me(
     avatar: p.avatar,
     animationSpeed: p.animationSpeed,
     hideArthropods: p.hideArthropods,
+    publicTags: p.publicTags,
     autoRecycle: { max: p.autoRecycleMax, keepNew: p.autoRecycleKeepNew },
     wallet: wallet(p),
     packs: packState(p, ctx.now()),
@@ -155,6 +156,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
           autoRecycleMax: z.enum(AUTO_RECYCLE_RARITIES).nullable().optional(),
           autoRecycleKeepNew: z.boolean().optional(),
           hideArthropods: z.boolean().optional(),
+          publicTags: z.boolean().optional(),
         })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
       req.body,
