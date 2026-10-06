@@ -151,11 +151,24 @@ export interface BuildReport {
   title?: string;
   openQuestions?: number;
   runUrl?: string;
+  /** Échec dû à la limite du forfait Claude : la branche repart toute seule plus tard. */
+  reason?: "usage_limit";
 }
+
+/** Pause de la file après une limite du forfait Claude. */
+export const USAGE_LIMIT_PAUSE_MS = 60 * 60_000;
+/** Début du message d'erreur d'une branche mise en pause (lu par le service de tri et la page Admin). */
+export const USAGE_LIMIT_PREFIX = "Limite du forfait";
+/** Au-delà, une branche « publiée » ou « en cours » sans nouvelles ne bloque plus la file (workflow : 150 min max). */
+export const BUILD_IN_FLIGHT_MS = 3 * 60 * 60_000;
+
+const parisTime = (d: Date) =>
+  d.toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" }).replace(":", " h ");
 
 /** Compte rendu d'un workflow : met à jour la suggestion et prévient l'admin sur Discord. */
 export async function reportBuild(ctx: Ctx, suggestionId: number, report: BuildReport) {
   const row = await rowOf(ctx, suggestionId);
+  if (report.status === "failed" && report.reason === "usage_limit") return pauseOnUsageLimit(ctx, row, report);
   const [updated] = await ctx.db
     .update(a)
     .set({
@@ -191,6 +204,30 @@ export async function reportBuild(ctx: Ctx, suggestionId: number, report: BuildR
     await afterCommit(ctx, () => postDiscord(ctx.config.DISCORD_WEBHOOK_URL, text));
   }
   return automationDTO(updated!, repo);
+}
+
+/**
+ * Limite du forfait Claude atteinte pendant une branche : la suggestion revient en file et toute la file attend
+ * une heure (le workflow a fermé l'issue ; une nouvelle sera publiée au prochain essai).
+ */
+async function pauseOnUsageLimit(ctx: Ctx, row: Row, report: BuildReport) {
+  const retryAt = new Date(ctx.now().getTime() + USAGE_LIMIT_PAUSE_MS);
+  const error = `${USAGE_LIMIT_PREFIX} Claude atteinte : la branche repart vers ${parisTime(retryAt)}.`;
+  const [updated] = await ctx.db
+    .update(a)
+    .set({
+      buildStatus: "queued",
+      nextAttemptAt: retryAt,
+      error,
+      issueNumber: null,
+      prNumber: null,
+      updatedAt: ctx.now(),
+    })
+    .where(eq(a.suggestionId, row.suggestionId))
+    .returning();
+  const text = `**Pause** : ${error} (suggestion n° ${row.suggestionId}, file en attente jusque-là).${report.runUrl ? `\nJournal : ${report.runUrl}` : ""}`;
+  await afterCommit(ctx, () => postDiscord(ctx.config.DISCORD_WEBHOOK_URL, text));
+  return automationDTO(updated!, ctx.config.GITHUB_REPOSITORY);
 }
 
 export const adminUrl = (ctx: Ctx, suggestionId: number) =>
