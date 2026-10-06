@@ -53,7 +53,8 @@ export const SUGGESTION_KINDS = ["bug", "feature", "content", "balance", "other"
 export type SuggestionKind = (typeof SUGGESTION_KINDS)[number];
 export const SUGGESTION_STATUSES = ["new", "accepted", "done", "declined"] as const;
 export type SuggestionStatus = (typeof SUGGESTION_STATUSES)[number];
-export const SUGGESTION_LIMITS = { title: 100, body: 2_000, reply: 1_000, perDay: 5 } as const;
+/** Longueurs maximales. Pas de plafond par jour : seul l'anti-spam de la route (10 envois par minute) limite le rythme. */
+export const SUGGESTION_LIMITS = { title: 100, body: 2_000, reply: 1_000 } as const;
 
 export const suggestionInputSchema = z.object({
   kind: z.enum(SUGGESTION_KINDS),

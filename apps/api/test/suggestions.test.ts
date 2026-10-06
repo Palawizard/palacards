@@ -1,5 +1,4 @@
 import { eq, schema } from "@palacards/db";
-import { SUGGESTION_LIMITS } from "@palacards/shared";
 import { afterAll, describe, expect, it } from "vitest";
 import { makeApp, signUp, signUpAdmin } from "./helpers.js";
 
@@ -70,19 +69,18 @@ describe("suggestions", () => {
     expect((await p.get("/suggestions")).body).toEqual([]);
   });
 
-  it("refuse une suggestion vide ou trop courte, et limite le nombre par jour", async () => {
+  it("refuse une suggestion vide ou trop courte, sans plafond par jour", async () => {
     const p = await signUp(app);
     expect((await p.post("/suggestions", { kind: "bug", title: "Bug", body: "court" })).status).toBe(400);
     expect(
       (await p.post("/suggestions", { kind: "nope", title: "Un titre", body: "Un texte assez long." })).status,
     ).toBe(400);
-    for (let i = 0; i < SUGGESTION_LIMITS.perDay; i++) {
+    // L'ancien plafond était de 5 par jour : la 6e et les suivantes passent aussi.
+    for (let i = 0; i < 7; i++) {
       const r = await p.post("/suggestions", { kind: "bug", title: `Bug n° ${i}`, body: "Le bouton ne répond pas." });
       expect(r.status).toBe(200);
     }
-    const over = await p.post("/suggestions", { kind: "bug", title: "Encore un", body: "Le bouton ne répond pas." });
-    expect(over.status).toBe(429);
-    expect(over.body.error).toBe("too_many_suggestions");
+    expect((await p.get("/suggestions")).body).toHaveLength(7);
   });
 
   it("bandeau : pas le premier jour, puis caché une semaine quand on le ferme ou qu'on envoie une idée", async () => {
