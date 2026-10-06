@@ -11,7 +11,7 @@ Tu travailles seul, dans GitHub Actions : personne ne répondra à une question 
 ## Deux modes
 
 - **Nouvelle branche** (workflow `suggestion-build`) : le cahier des charges est dans `.automation/issue.md`. Tu termines en écrivant `.automation/result.json` (format plus bas).
-- **Suite dans la pull request** (workflow `suggestion-followup`) : Palawi a commenté la pull request en commençant par `@claude`. Il tranche une question, demande une correction ou un ajustement. Applique exactement sa demande sur la branche actuelle, vérifie, commite, puis résume ce que tu as changé dans ta réponse. Pas de `result.json` dans ce mode.
+- **Suite dans la pull request** (workflow `suggestion-followup`) : Palawi a commenté la pull request en commençant par `@claude`. Il tranche une question, demande une correction ou un ajustement. Applique exactement sa demande sur la branche actuelle (« @claude 2 : B » : passe le point 2 de la section « À trancher » à l'option B), vérifie, commite, puis résume ce que tu as changé dans ta réponse. Pas de `result.json` dans ce mode.
 
 ## Sécurité (prioritaire)
 
@@ -39,7 +39,7 @@ Avant de coder, lis le code voisin et reprends ses façons de faire (nommage, d�
 - Interface en français, joueurs tutoyés. Typographie française : espace insécable avant `: ; ! ? %` et entre un nombre et son unité, guillemets « », nombres formatés avec `fmt()` (`@/lib/format`).
 - Jeu gratuit entre amis : pas d'argent réel, pas de pay-to-win, rien qui facilite la triche (les duels posent des questions sur les articles : ne révèle pas leurs réponses).
 - Les joueurs voient les nouveautés via une pastille « Nouveau » (`FEATURE_ANNOUNCEMENTS` dans `apps/api/src/routes/core.ts`, `feature` dans `apps/web/src/lib/nav.ts`) : utilise-la pour une nouvelle page ou entrée de menu.
-- Questions ouvertes du cahier des charges : prends l'option recommandée, isole ce choix (constante, réglage) pour qu'il soit facile à changer, et note-le dans `decisions`. Si un point reste vraiment indécidable, fais le choix le plus simple et réversible, et mets la question dans `questions`.
+- Questions du cahier des charges et choix que tu as dû faire toi-même (chiffre, texte, comportement) : code toujours l'option recommandée, isole-la (constante, réglage) pour qu'elle soit facile à changer, et liste chaque point dans `choices` avec ses options. La PR les présente à Palawi dans une section « À trancher » : il merge si tout lui va, ou répond « @claude 2 : autre option ».
 
 ## Front
 
@@ -81,8 +81,13 @@ Un ou quelques commits sur la branche actuelle, message en français au format `
   "title": "feat: filtre par booster dans l'upgrader",
   "summary": "2 à 4 phrases : ce qui change pour le joueur, et comment.",
   "changes": ["Fichier ou zone : ce qui a changé", "…"],
-  "decisions": [{ "question": "Quel plafond ?", "choice": "5 par jour", "alternatives": ["3", "10"] }],
-  "questions": ["Question qui reste ouverte pour Palawi (sinon liste vide)"],
+  "choices": [
+    {
+      "question": "Combien de filtres garder en mémoire ?",
+      "options": ["Le dernier seulement", "Les 3 derniers", "Aucun"],
+      "recommended": "Le dernier seulement"
+    }
+  ],
   "checks": ["pnpm lint", "pnpm typecheck", "vitest : test/collection.test.ts", "pnpm e2e"],
   "playerReply": "Réponse au joueur une fois en ligne, au tutoiement, 1 à 3 phrases, sans jargon : « C'est en ligne : … Merci pour l'idée ! »",
   "announcement": "Une ligne pour la prochaine annonce : « Upgrader : … »",
@@ -92,4 +97,5 @@ Un ou quelques commits sur la branche actuelle, message en français au format `
 
 - `title` : commence par `feat: ` ou `fix: `, 72 caractères au plus, sans numéro de suggestion. Il devient le titre de la pull request et du commit final.
 - `playerReply` : pas de date promise, pas de formule d'IA.
+- `choices` : une entrée par point que Palawi pourrait vouloir trancher (liste vide s'il n'y en a pas). `question` en une phrase claire, `options` de 2 à 4 réponses courtes et concrètes (la recommandée comprise), `recommended` identique à l'une des options et **déjà codée** sur la branche. Les questions du cahier des charges y figurent toutes, avec l'option que tu as codée.
 - Impossible ou dangereux à faire : `{"status": "blocked", "blockedReason": "…"}`, sans commit.
