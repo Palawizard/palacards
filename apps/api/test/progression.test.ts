@@ -105,6 +105,20 @@ describe("classements et saisons", () => {
     expect(res.body.rows.find((r: { me: boolean }) => r.me)?.avatar).toBe("🦉");
   });
 
+  it("affiche le badge « Créateur » à côté des comptes admin", async () => {
+    const admin = await signUpAdmin(app, ctx);
+    const p = await signUp(app);
+    // Tout en haut du classement « Richesse » pour être sûr d'y figurer (base de test partagée).
+    await ctx.db.execute(sql`update players set balance = 2000000000 where user_id = ${admin.userId}`);
+    await ctx.db.execute(sql`update players set balance = 1999999999 where user_id = ${p.userId}`);
+    const rows = (await p.get("/leaderboard?board=wealth&period=season")).body.rows as {
+      username: string;
+      creator?: boolean;
+    }[];
+    expect(rows.find((r) => r.username === admin.username)?.creator).toBe(true);
+    expect(rows.find((r) => r.username === p.username)?.creator).toBeUndefined();
+  });
+
   it("verrouille les joueurs dans le même ordre en SQL (bascule) et en JS (lockPlayers)", async () => {
     // Ids Better Auth à casse mixte : la collation en_US classerait « abc » avant « ABD » et « Zed »,
     // l'ordre JS (unités de code) fait l'inverse. Les deux côtés doivent suivre la collation "C".

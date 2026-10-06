@@ -198,3 +198,17 @@ export function ConfirmDialog({
     </dialog>
   );
 }
+
+/** Badge « Créateur » à côté du pseudo (compte admin du jeu) : classements et profil. */
+export function CreatorBadge({ size = "sm" }: { size?: "sm" | "lg" }) {
+  return (
+    <span
+      title="Créateur de PalaCards"
+      className={`inline-flex shrink-0 items-center rounded-full bg-accent font-sans font-bold uppercase leading-none tracking-[0.04em] text-accent-ink ${
+        size === "lg" ? "px-2.5 py-1 text-[0.78rem]" : "px-1.5 py-[3px] text-[0.66rem]"
+      }`}
+    >
+      Créateur
+    </span>
+  );
+}
