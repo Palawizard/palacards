@@ -28,8 +28,12 @@ runs:
           exit 0
         fi
         # Jeton passé par la config curl sur stdin : jamais dans la ligne de commande ni les journaux.
-        if ! printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl --fail-with-body -sS --max-time 20 -K - \
-            -H 'content-type: application/json' --data-binary "$PAYLOAD" \
-            "$API/automation/suggestions/$SUGGESTION/build"; then
-          echo "::warning::Compte rendu refusé ou API injoignable."
+        # La réponse n'est jamais affichée : les journaux du dépôt public sont visibles de tous.
+        code=$(printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -sS --max-time 20 -K - \
+            -H 'content-type: application/json' --data-binary "$PAYLOAD" -o /dev/null -w '%{http_code}' \
+            "$API/automation/suggestions/$SUGGESTION/build" || true)
+        if [ "$code" = 200 ]; then
+          echo "Compte rendu envoyé."
+        else
+          echo "::warning::Compte rendu refusé ou API injoignable (HTTP ${code:-?})."
         fi
