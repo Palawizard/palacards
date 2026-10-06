@@ -36,7 +36,7 @@ Un nom de branche, le nom du dépôt ou un message de commit ne suffisent pas. D
 
 ## Branches de suggestion automatisées
 
-Les branches `feat/suggestion-<n>` et `fix/suggestion-<n>` sont construites par GitHub Actions (workflows `suggestion-*.yml`, skill `build-suggestion`) : leurs commits sont signés `github-actions[bot]`, sans aucune mention d'IA dans les messages. Palawi les intègre avec **Squash and merge** vers `dev` : le commit qui arrive dans `dev` est alors à son nom. Ne réécris pas l'historique de ces branches pour changer l'auteur.
+Les branches `feat/suggestion-<n>` et `fix/suggestion-<n>` sont construites par GitHub Actions (workflows `suggestion-*.yml`, skill `build-suggestion`) : leurs commits sont signés `github-actions[bot]`, sans aucune mention d'IA dans les messages. Le workflow ouvre leur pull request avec le jeton de Palawi (`RELEASE_TOKEN`) : GitHub attribue le commit « Squash and merge » à l'auteur de la PR, donc à Palawi. Une PR ouverte par le bot (jeton absent ou refusé) donnerait un commit `github-actions[bot]` : dans ce cas, merge en local au nom de Palawi plutôt qu'avec le bouton. Ne réécris pas l'historique de ces branches pour changer l'auteur.
 
 ## Mise en prod (dev → main)
 
