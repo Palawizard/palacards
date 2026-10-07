@@ -1,4 +1,4 @@
-import { and, eq, schema, sql } from "@palacards/db";
+import { and, eq, inArray, schema, sql } from "@palacards/db";
 import {
   AFK_FORFEIT,
   BATTLE_HP,
@@ -9,8 +9,8 @@ import {
   TOTAL_TURNS,
   type Question,
 } from "@palacards/game";
-import type { BattleStateDTO, OpenBattleDTO } from "@palacards/shared";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { BattleQueueDTO, BattleStateDTO } from "@palacards/shared";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { battleEngine, runDue, sweepBattles } from "../src/services/battles.js";
 import { makeApp, signUp, type Client } from "./helpers.js";
 
@@ -337,98 +337,97 @@ describe("duel Attaque / Bouclier", () => {
   });
 });
 
-describe("duels ouverts", () => {
-  const openOf = async (p: Client, id: number) =>
-    ((await p.get("/battles/open")).body as OpenBattleDTO[]).find((o) => o.id === id);
+describe("file de matchmaking", () => {
+  const queueOf = async (p: Client) => (await p.get("/battles/queue")).body as BattleQueueDTO;
+  const queued = async () => (await ctx.db.select().from(schema.battleQueue)).map((r) => r.userId);
+  // La file est commune à tous les joueurs : chaque test part d'une file vide.
+  beforeEach(async () => {
+    await ctx.db.delete(schema.battleQueue);
+  });
 
-  it("créé, visible de tous, accepté une seule fois, puis le duel démarre", async () => {
+  it("le premier attend, le suivant démarre le duel contre lui", async () => {
     const a = await signUp(app);
     const b = await signUp(app);
-    const c = await signUp(app);
-    const created = await a.post("/battles/open", { deck: await deckOf(a) });
-    expect(created.status).toBe(200);
-    const openId: number = created.body.id;
-    // Un seul duel ouvert à la fois.
-    expect((await a.post("/battles/open", { deck: await deckOf(a) })).body.error).toBe("open_battle_exists");
-    expect(await openOf(a, openId)).toMatchObject({ mine: true, creator: { id: a.userId } });
-    expect(await openOf(b, openId)).toMatchObject({ mine: false, creator: { username: a.username } });
-    // Pas son propre duel.
-    expect((await a.post(`/battles/open/${openId}/join`, { deck: await deckOf(a) })).body.error).toBe("self");
+    const first = await a.post("/battles/queue", { deck: await deckOf(a) });
+    expect(first.status).toBe(200);
+    expect(first.body.queued).toBe(true);
+    expect(await queueOf(a)).toMatchObject({ waiting: 0, mine: { expiresAt: first.body.expiresAt } });
+    expect(await queueOf(b)).toEqual({ waiting: 1, mine: null });
+    // Pastille « Bataille » du menu : les autres joueurs qui attendent.
+    expect((await b.get("/me")).body.battleQueue).toBe(1);
+    expect((await a.get("/me")).body.battleQueue).toBe(0);
 
-    const joined = await b.post(`/battles/open/${openId}/join`, { deck: await deckOf(b) });
-    expect(joined.status).toBe(200);
-    // Le second arrivé trouve la place prise.
-    expect((await c.post(`/battles/open/${openId}/join`, { deck: await deckOf(c) })).body.error).toBe(
-      "open_battle_gone",
-    );
-    expect(await openOf(c, openId)).toBeUndefined();
-    const id: number = joined.body.id;
+    const matched = await b.post("/battles/queue", { deck: await deckOf(b) });
+    expect(matched.status).toBe(200);
+    const id: number = matched.body.battleId;
+    expect(id).toBeGreaterThan(0);
+    expect(await queued()).toEqual([]);
     const s = await stateOf(a, id);
     expect(s).toMatchObject({ status: "active", phase: "lobby", isChallenger: true, them: { id: b.userId } });
     expect(s.myHand).toHaveLength(5);
     await battleEngine.join(ctx, a.userId, id);
     await battleEngine.join(ctx, b.userId, id);
     expect((await stateOf(b, id)).phase).toBe("attack");
+    // Duel en cours : pas de nouvelle recherche avant la fin.
+    expect((await a.post("/battles/queue", { deck: await deckOf(a) })).body.error).toBe("in_battle");
   });
 
-  it("deux acceptations simultanées : un seul duel", async () => {
-    const a = await signUp(app);
-    const b = await signUp(app);
-    const c = await signUp(app);
-    const openId = (await a.post("/battles/open", { deck: await deckOf(a) })).body.id as number;
-    const [db, dc] = [await deckOf(b), await deckOf(c)];
-    const res = await Promise.all([
-      b.post(`/battles/open/${openId}/join`, { deck: db }),
-      c.post(`/battles/open/${openId}/join`, { deck: dc }),
-    ]);
-    expect(res.map((r) => r.status).sort()).toEqual([200, 409]);
-    const started = await ctx.db.select().from(schema.battles).where(eq(schema.battles.challengerId, a.userId));
+  it("des arrivées simultanées se trouvent : un seul duel, le troisième attend", async () => {
+    const players = [await signUp(app), await signUp(app), await signUp(app)];
+    const decks = await Promise.all(players.map((p) => deckOf(p)));
+    const res = await Promise.all(players.map((p, i) => p.post("/battles/queue", { deck: decks[i] })));
+    expect(res.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(res.filter((r) => r.body.battleId)).toHaveLength(1);
+    expect(res.filter((r) => r.body.queued)).toHaveLength(2);
+    expect(await queued()).toHaveLength(1);
+    const ids = players.map((p) => p.userId);
+    const started = await ctx.db.select().from(schema.battles).where(inArray(schema.battles.challengerId, ids));
     expect(started).toHaveLength(1);
   });
 
-  it("annulé par son créateur, expiré, ou caduc si une carte du deck est partie", async () => {
+  it("revenir remplace sa place, quitter la file, attente expirée, deck caduc", async () => {
     const a = await signUp(app);
     const b = await signUp(app);
     const deck = await deckOf(a);
-    const first = (await a.post("/battles/open", { deck })).body.id as number;
-    expect((await b.post(`/battles/open/${first}/cancel`)).status).toBe(404);
-    expect((await a.post(`/battles/open/${first}/cancel`)).status).toBe(200);
-    expect(await openOf(b, first)).toBeUndefined();
+    await a.post("/battles/queue", { deck });
+    await a.post("/battles/queue", { deck });
+    expect(await queued()).toEqual([a.userId]);
+    expect((await a.post("/battles/queue/leave")).status).toBe(200);
+    expect(await queueOf(b)).toEqual({ waiting: 0, mine: null });
 
-    // Expiré : invisible, impossible à rejoindre, balayé, et n'empêche pas d'en relancer un.
-    const second = (await a.post("/battles/open", { deck })).body.id as number;
-    await ctx.db
-      .update(schema.openBattles)
-      .set({ expiresAt: new Date(Date.now() - 1_000) })
-      .where(eq(schema.openBattles.id, second));
-    expect(await openOf(b, second)).toBeUndefined();
-    expect((await b.post(`/battles/open/${second}/join`, { deck: await deckOf(b) })).body.error).toBe(
-      "open_battle_gone",
-    );
+    // Expirée : invisible, ne trouve personne, balayée.
+    await a.post("/battles/queue", { deck });
+    await ctx.db.update(schema.battleQueue).set({ expiresAt: new Date(Date.now() - 1_000) });
+    expect((await queueOf(b)).waiting).toBe(0);
+    expect((await b.post("/battles/queue", { deck: await deckOf(b) })).body.queued).toBe(true);
     await sweepBattles(ctx);
-    expect(await ctx.db.select().from(schema.openBattles).where(eq(schema.openBattles.id, second))).toHaveLength(0);
+    expect(await queued()).toEqual([b.userId]);
+    await b.post("/battles/queue/leave");
 
-    // Une carte du deck a quitté la collection du créateur : la demande tombe.
-    const third = (await a.post("/battles/open", { deck })).body.id as number;
+    // Une carte de son deck a quitté sa collection : il sort de la file au lieu d'être choisi.
+    await a.post("/battles/queue", { deck });
     await ctx.db.update(schema.cardInstances).set({ ownerId: b.userId }).where(eq(schema.cardInstances.id, deck[0]!));
-    expect((await b.post(`/battles/open/${third}/join`, { deck: await deckOf(b) })).body.error).toBe(
-      "open_battle_gone",
-    );
-    expect(await openOf(a, third)).toBeUndefined();
+    expect((await b.post("/battles/queue", { deck: await deckOf(b) })).body.queued).toBe(true);
+    expect(await queued()).toEqual([b.userId]);
   });
 
-  it("refusé si le créateur n'est pas connecté ou si un duel est déjà en cours avec lui", async () => {
+  it("ne trouve ni un joueur déconnecté ni un joueur déjà en duel avec lui", async () => {
     const a = await signUp(app);
     const b = await signUp(app);
-    const openId = (await a.post("/battles/open", { deck: await deckOf(a) })).body.id as number;
-    online.mockReturnValueOnce(false);
-    expect((await b.post(`/battles/open/${openId}/join`, { deck: await deckOf(b) })).body.error).toBe(
-      "opponent_offline",
-    );
+    await a.post("/battles/queue", { deck: await deckOf(a) });
+    online.mockImplementation((id: string) => id !== a.userId);
+    try {
+      expect((await b.post("/battles/queue", { deck: await deckOf(b) })).body.queued).toBe(true);
+    } finally {
+      online.mockReturnValue(true);
+    }
+    await b.post("/battles/queue/leave");
+
     const pending = (await b.post("/battles", { opponent: a.username, deck: await deckOf(b) })).body.id as number;
-    expect((await b.post(`/battles/open/${openId}/join`, { deck: await deckOf(b) })).body.error).toBe("battle_exists");
-    // Le défi direct accepté retire le duel ouvert du créateur.
+    expect((await b.post("/battles/queue", { deck: await deckOf(b) })).body.queued).toBe(true);
+    expect((await queued()).sort()).toEqual([a.userId, b.userId].sort());
+    // Le défi direct accepté sort les deux joueurs de la file.
     expect((await a.post(`/battles/${pending}/accept`, { deck: await deckOf(a) })).status).toBe(200);
-    expect(await openOf(b, openId)).toBeUndefined();
+    expect(await queued()).toEqual([]);
   });
 });

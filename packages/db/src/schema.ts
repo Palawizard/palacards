@@ -711,21 +711,16 @@ export const battles = pgTable(
 );
 
 /**
- * Duel ouvert : demande visible de tous sur la page Bataille, le premier joueur qui l'accepte lance le duel
- * (la ligne disparaît alors, comme à l'annulation ou à l'expiration). Un seul par joueur.
+ * File de matchmaking des duels : le joueur y attend avec son deck jusqu'à ce qu'un autre joueur connecté
+ * y entre (le duel démarre alors entre eux deux), qu'il en sorte, se déconnecte ou que l'attente expire.
  */
-export const openBattles = pgTable(
-  "open_battles",
-  {
-    id: id(),
-    creatorId: userRef("creator_id").notNull(),
-    /** Exemplaires du deck choisi, vérifiés à la création et figés à l'acceptation. */
-    deck: bigint("deck", { mode: "number" }).array().notNull(),
-    createdAt: tstz("created_at").notNull().defaultNow(),
-    expiresAt: tstz("expires_at").notNull(),
-  },
-  (t) => [uniqueIndex("open_battles_creator_uq").on(t.creatorId)],
-);
+export const battleQueue = pgTable("battle_queue", {
+  userId: userRef("user_id").primaryKey(),
+  /** Exemplaires du deck choisi, vérifiés à l'entrée et figés au démarrage du duel. */
+  deck: bigint("deck", { mode: "number" }).array().notNull(),
+  createdAt: tstz("created_at").notNull().defaultNow(),
+  expiresAt: tstz("expires_at").notNull(),
+});
 
 /** Deck figé au moment du défi (les stats ne bougent plus même si la carte est vendue ensuite). */
 export const battleDecks = pgTable(

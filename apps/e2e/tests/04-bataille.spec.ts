@@ -76,37 +76,33 @@ test("duel en direct : attaque, bouclier, question, abandon", async ({ browser }
   await expect(bob.page.getByText(new RegExp(`Victoire contre ${alice.name}`))).toBeVisible();
 });
 
-test("duel ouvert : lancé sans adversaire, accepté par le premier venu", async ({ browser }) => {
+test("file de matchmaking : le duel démarre dès que deux joueurs cherchent", async ({ browser }) => {
   test.setTimeout(120_000);
-  const alice = await newPlayer(browser, "open1");
-  const bob = await newPlayer(browser, "open2");
+  const alice = await newPlayer(browser, "queue1");
+  const bob = await newPlayer(browser, "queue2");
   await apiCall(alice.page, "POST", "/packs/open");
   await apiCall(bob.page, "POST", "/packs/open");
 
   await alice.page.goto("battle");
   await buildDeck(alice.page);
-  await alice.page.getByRole("button", { name: "Duel ouvert" }).click();
-  await expect(alice.page.getByText("Ton duel ouvert", { exact: true })).toBeVisible();
-  // Un seul duel ouvert à la fois.
-  await expect(alice.page.getByRole("button", { name: "Duel ouvert" })).toBeDisabled();
+  await alice.page.getByRole("button", { name: "Trouver un adversaire" }).click();
+  await expect(alice.page.getByText("Recherche d’un adversaire…")).toBeVisible();
+  await expect(alice.page.getByRole("button", { name: "Trouver un adversaire" })).toBeDisabled();
 
-  // Bob le voit dans la liste (en temps réel) et l'accepte avec son deck.
+  // Chez Bob, la pastille verte du menu compte les joueurs qui attendent.
+  const battleLink = bob.page.getByRole("link", { name: /Bataille/ }).first();
+  await expect(battleLink.getByTitle("1 joueur en attente d’un duel")).toBeVisible();
+
+  // Bob cherche à son tour : le duel s'ouvre chez les deux, sans autre clic.
   await bob.page.goto("battle");
-  const offer = bob.page.getByRole("listitem").filter({ hasText: `${alice.name} cherche un adversaire` });
-  await expect(offer).toBeVisible();
-  await offer.getByRole("button", { name: "Choisir mon deck" }).click();
+  await expect(bob.page.getByText("1 joueur attend un adversaire", { exact: false })).toBeVisible();
   await buildDeck(bob.page);
-  await bob.page.getByRole("button", { name: "Accepter le duel" }).click();
+  await bob.page.getByRole("button", { name: "Trouver un adversaire" }).click();
   await expect(bob.page).toHaveURL(/\/battle\/\d+$/);
-
-  // Alice est prévenue et rejoint le duel : il démarre.
-  await alice.page.getByRole("button", { name: "Rejoindre" }).click();
   await expect(alice.page).toHaveURL(/\/battle\/\d+$/);
   await expect(alice.page.getByText(/Tour 1\/8/)).toBeVisible({ timeout: 20_000 });
   await expect(bob.page.getByText(/Tour 1\/8/)).toBeVisible();
 
-  // Le duel ouvert a disparu de la liste.
-  await alice.page.goto("battle");
-  await expect(alice.page.getByText("Ton duel ouvert", { exact: true })).toBeHidden();
-  await expect(alice.page.getByRole("button", { name: "Duel ouvert" })).toBeVisible();
+  // La file est vide : plus de pastille.
+  await expect(battleLink.getByTitle(/en attente d’un duel/)).toBeHidden();
 });

@@ -8,18 +8,18 @@ import {
   answerQuestion,
   battleEngine,
   battleState,
-  cancelOpenBattle,
   challenge,
   chooseAttack,
   chooseShield,
-  createOpenBattle,
   forfeit,
   isParticipant,
-  joinOpenBattle,
+  joinQueue,
+  leaveQueue,
   listBattles,
-  listOpenBattles,
+  queueState,
   refuseChallenge,
   serialAction,
+  wireQueuePresence,
 } from "../services/battles.js";
 
 const id = z.coerce.number().int().positive();
@@ -37,18 +37,14 @@ export function battleRoutes(api: FastifyInstance, ctx: Ctx) {
     const body = parse(z.object({ opponent: z.string().trim().min(1).max(30), deck }), req.body);
     return challenge(ctx, req.user.id, body);
   });
-  // Duels ouverts : n'importe quel joueur peut accepter, le premier lance le duel.
-  api.get("/battles/open", auth, async (req) => listOpenBattles(ctx, req.user.id));
-  api.post("/battles/open", limited(10), async (req) => {
+  // File de matchmaking : le duel démarre dès que deux joueurs connectés y sont.
+  api.get("/battles/queue", auth, async (req) => queueState(ctx, req.user.id));
+  api.post("/battles/queue", limited(10), async (req) => {
     const { deck: d } = parse(z.object({ deck }), req.body);
-    return createOpenBattle(ctx, req.user.id, d);
+    return joinQueue(ctx, req.user.id, d);
   });
-  api.post("/battles/open/:id/join", limited(10), async (req) => {
-    const { deck: d } = parse(z.object({ deck }), req.body);
-    return joinOpenBattle(ctx, req.user.id, battleId(req.params), d);
-  });
-  api.post("/battles/open/:id/cancel", auth, async (req) => {
-    await cancelOpenBattle(ctx, req.user.id, battleId(req.params));
+  api.post("/battles/queue/leave", auth, async (req) => {
+    await leaveQueue(ctx, req.user.id);
     return { ok: true };
   });
   api.post("/battles/:id/accept", limited(10), async (req) => {
@@ -96,4 +92,5 @@ export function battleRoutes(api: FastifyInstance, ctx: Ctx) {
         .catch((err: unknown) => ctx.log.warn({ err, battleId: r.data }, "battle:join"));
     });
   });
+  wireQueuePresence(ctx);
 }
