@@ -36,7 +36,7 @@ import { bossSummary } from "../services/boss.js";
 import { emit, ensureBackfill, passState } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
 import { ensureQuests } from "../services/quests.js";
-import { getProfile, searchPlayers } from "../services/profiles.js";
+import { getProfile, searchPlayers, setStatusNote } from "../services/profiles.js";
 import { newSuggestionsCount, showSuggestionBanner } from "../services/suggestions.js";
 import { playerWheelSchedule } from "../services/wheel.js";
 
@@ -79,6 +79,7 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "suggestions", until: "2026-12-01T00:00:00+01:00" },
   { key: "updates", until: "2026-12-01T00:00:00+01:00" },
   { key: "wheels", until: "2026-12-01T00:00:00+01:00" },
+  { key: "battle-decks", until: "2026-12-15T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */
@@ -108,6 +109,7 @@ export async function me(
     avatar: p.avatar,
     animationSpeed: p.animationSpeed,
     hideArthropods: p.hideArthropods,
+    quickUpgrade: p.quickUpgrade,
     publicTags: p.publicTags,
     autoRecycle: { max: p.autoRecycleMax, keepNew: p.autoRecycleKeepNew },
     wallet: wallet(p),
@@ -157,6 +159,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
           autoRecycleMax: z.enum(AUTO_RECYCLE_RARITIES).nullable().optional(),
           autoRecycleKeepNew: z.boolean().optional(),
           hideArthropods: z.boolean().optional(),
+          quickUpgrade: z.boolean().optional(),
           publicTags: z.boolean().optional(),
         })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),
@@ -371,6 +374,11 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       req.query,
     );
     return searchPlayers(ctx, req.user.id, q, { excludeFriends: exclude === "friends" });
+  });
+  // Note de statut : texte brut filtré (balises, liens) ; null ou vide l'efface.
+  api.put("/me/status-note", { ...auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) => {
+    const { note } = parse(z.object({ note: z.string().max(1000).nullable() }), req.body);
+    return setStatusNote(ctx, req.user.id, note);
   });
   api.get("/players/:username", auth, async (req) => {
     const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);

@@ -213,6 +213,8 @@ export const players = pgTable(
     autoRecycleKeepNew: boolean("auto_recycle_keep_new").notNull().default(true),
     /** Images d'arthropodes (araignées, insectes…) floutées jusqu'au clic. */
     hideArthropods: boolean("hide_arthropods").notNull().default(false),
+    /** Upgrader sans tour d'aiguille : le résultat s'affiche dès la réponse du serveur. */
+    quickUpgrade: boolean("quick_upgrade").notNull().default(false),
     /** Ses tags servent de filtre aux autres joueurs sur sa collection (profil, échanges). */
     publicTags: boolean("public_tags").notNull().default(false),
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
@@ -244,6 +246,10 @@ export const players = pgTable(
     /** Titre affiché (profil, classements) : une ligne de `player_titles` (null : aucun). */
     titleSeason: smallint("title_season"),
     titleBoard: text("title_board"),
+    /** Note de statut (profil, liste d'amis), déjà filtrée (null : aucune). */
+    statusNote: text("status_note"),
+    /** Dernière modification de la note (pour une éventuelle durée de vie). */
+    statusNoteAt: tstz("status_note_at"),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -722,6 +728,24 @@ export const battleQueue = pgTable("battle_queue", {
   expiresAt: tstz("expires_at").notNull(),
 });
 
+/**
+ * Decks de bataille enregistrés par un joueur (privés), réutilisables au lancement ou à l'acceptation d'un
+ * duel. Les exemplaires sont gardés même s'ils quittent la collection : le deck est alors marqué à réparer.
+ */
+export const savedDecks = pgTable(
+  "saved_decks",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    name: text("name").notNull(),
+    /** Exemplaires du deck, dans l'ordre (0 à 5). */
+    cards: bigint("cards", { mode: "number" }).array().notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("saved_decks_user_idx").on(t.userId)],
+);
+
 /** Deck figé au moment du défi (les stats ne bougent plus même si la carte est vendue ensuite). */
 export const battleDecks = pgTable(
   "battle_decks",
@@ -1164,6 +1188,21 @@ export const suggestionAutomation = pgTable(
     index("suggestion_automation_build_idx").on(t.buildStatus, t.publishedAt),
   ],
 );
+
+// ---------------------------------------------------------------------------
+// Réglages du jeu (page Admin)
+// ---------------------------------------------------------------------------
+
+/**
+ * Réglages modifiables en production depuis la page Admin (une ligne par clé, valeur JSON).
+ * Sans ligne, le jeu garde la valeur par défaut du code (`@palacards/game`).
+ */
+export const gameSettings = pgTable("game_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: tstz("updated_at").notNull().defaultNow(),
+});
 
 // ---------------------------------------------------------------------------
 // Relations (requêtes relationnelles Drizzle)

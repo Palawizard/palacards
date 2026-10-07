@@ -118,3 +118,35 @@ test("filtre la collection d'un autre joueur par ses tags, sauf s'il les garde p
   await expect(bob.page.getByText("10 cartes")).toBeVisible();
   await expect(bob.page.getByLabel("Tag")).toHaveCount(0);
 });
+
+test("note de statut : écrite sur son profil, vue par un ami, effacée", async ({ browser }) => {
+  const alice = await newPlayer(browser, "alice");
+  const bob = await newPlayer(browser, "bob");
+  await apiCall(alice.page, "POST", "/friends", { username: bob.name });
+  await apiCall(bob.page, "POST", "/friends", { username: alice.name });
+  const note = "Je cherche des cartes de volcans <3";
+
+  // Alice écrit sa note depuis son profil ; un lien est refusé avant l'envoi.
+  await alice.page.goto(`u/${alice.name.toLowerCase()}`);
+  await alice.page.getByRole("button", { name: "Ajouter une note" }).click();
+  const field = alice.page.getByLabel("Ta note de statut");
+  await field.fill("Viens sur www.monsite.fr");
+  await expect(alice.page.getByText("Pas de liens dans ta note.")).toBeVisible();
+  await expect(alice.page.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
+  await field.fill(note);
+  await alice.page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(alice.page.getByText("Note enregistrée.")).toBeVisible();
+
+  // Bob la voit dans sa liste d'amis et sur le profil d'Alice.
+  await bob.page.goto("friends");
+  await expect(bob.page.getByText(note)).toBeVisible();
+  await bob.page.goto(`u/${alice.name.toLowerCase()}`);
+  await expect(bob.page.getByText(note)).toBeVisible();
+
+  // Alice l'efface : elle disparaît chez Bob.
+  await alice.page.getByRole("button", { name: "Effacer", exact: true }).click();
+  await expect(alice.page.getByText("Note effacée.")).toBeVisible();
+  await bob.page.reload();
+  await expect(bob.page.getByText("Joueur depuis")).toBeVisible();
+  await expect(bob.page.getByText(note)).toHaveCount(0);
+});

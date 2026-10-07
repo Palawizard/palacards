@@ -3,6 +3,7 @@ import { dailyLoginReward, ECONOMY, MAX_STORED_PACKS, nextLoginStreak, PACK_REGE
 import type { CardDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { notFound } from "../errors.js";
+import { dailyLoginRates } from "./game-settings.js";
 import { articleUrl } from "./wiki.js";
 import { Effects } from "./notifications.js";
 import { emit } from "./progression.js";
@@ -11,7 +12,8 @@ import { activeSeason, lockPlayer, logMovement, movePw, packState, pushWallet } 
 export const PACKS_FULL_JOB = "packs-full";
 
 /**
- * Bonus de connexion quotidienne (jour calendaire de Paris) : 20 PW, +5 par jour de série, max 50.
+ * Bonus de connexion quotidienne (jour calendaire de Paris) : base, + par jour de série, plafond
+ * (réglables dans la page Admin, 30 PW, +8, max 75 par défaut).
  * Idempotent : un second appel le même jour ne donne rien.
  */
 export async function claimDaily(ctx: Ctx, userId: string) {
@@ -20,7 +22,7 @@ export async function claimDaily(ctx: Ctx, userId: string) {
     const p = await lockPlayer(tx, userId);
     const streak = nextLoginStreak(p.lastLoginDay, today, p.loginStreak);
     if (streak === null) return null;
-    const reward = dailyLoginReward(streak);
+    const reward = dailyLoginReward(streak, await dailyLoginRates(tx));
     await tx
       .update(schema.players)
       .set({ loginStreak: streak, lastLoginDay: today, lastSeenAt: ctx.now() })

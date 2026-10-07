@@ -325,31 +325,58 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Confort">
-        <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-line bg-panel px-3 py-2.5">
-          <span className="min-w-0">
-            <span className="block">Flouter les arthropodes</span>
-            <span className="mt-0.5 block text-xs text-faint">
-              Araignées, scorpions, acariens, insectes, mille-pattes : leur image reste floue jusqu’à ce que tu touches
-              « Afficher ». Les crustacés et les papillons restent visibles.
+        <div className="flex flex-col gap-2">
+          <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-line bg-panel px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block">Flouter les arthropodes</span>
+              <span className="mt-0.5 block text-xs text-faint">
+                Araignées, scorpions, acariens, insectes, mille-pattes : leur image reste floue jusqu’à ce que tu
+                touches « Afficher ». Les crustacés et les papillons restent visibles.
+              </span>
             </span>
-          </span>
-          <input
-            type="checkbox"
-            className="mt-1 size-4 shrink-0 accent-[var(--color-accent)]"
-            checked={me.hideArthropods}
-            onChange={(e) => {
-              const hideArthropods = e.target.checked;
-              void run(
-                () =>
-                  mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { hideArthropods } }), {
-                    optimisticData: (m) => (m ? { ...m, hideArthropods } : m!),
-                    revalidate: false,
-                  }),
-                hideArthropods ? "Les arthropodes seront floutés." : "Images d’arthropodes de nouveau visibles.",
-              );
-            }}
-          />
-        </label>
+            <input
+              type="checkbox"
+              className="mt-1 size-4 shrink-0 accent-[var(--color-accent)]"
+              checked={me.hideArthropods}
+              onChange={(e) => {
+                const hideArthropods = e.target.checked;
+                void run(
+                  () =>
+                    mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { hideArthropods } }), {
+                      optimisticData: (m) => (m ? { ...m, hideArthropods } : m!),
+                      revalidate: false,
+                    }),
+                  hideArthropods ? "Les arthropodes seront floutés." : "Images d’arthropodes de nouveau visibles.",
+                );
+              }}
+            />
+          </label>
+          <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-line bg-panel px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block">Upgrader sans animation</span>
+              <span className="mt-0.5 block text-xs text-faint">
+                L’aiguille s’arrête tout de suite sur le tirage et la carte gagnée s’affiche face visible. Les chances
+                et le résultat ne changent pas.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              className="mt-1 size-4 shrink-0 accent-[var(--color-accent)]"
+              checked={me.quickUpgrade}
+              onChange={(e) => {
+                const quickUpgrade = e.target.checked;
+                void run(
+                  () =>
+                    mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { quickUpgrade } }), {
+                      optimisticData: (m) => (m ? { ...m, quickUpgrade } : m!),
+                      revalidate: false,
+                    }),
+                  quickUpgrade ? "L’Upgrader ira droit au résultat." : "L’aiguille de l’Upgrader tourne de nouveau.",
+                );
+              }}
+            />
+          </label>
+        </div>
       </Section>
 
       <Section title="Confidentialité">

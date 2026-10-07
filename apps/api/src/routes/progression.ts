@@ -6,6 +6,7 @@ import { requireAdmin, requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import { adminOverview, grant, ledgerLog } from "../services/admin.js";
 import { createCode, listCodes, setCodeDisabled } from "../services/codes.js";
+import { adminDailyLogin, dailyLoginRatesSchema, setDailyLogin } from "../services/game-settings.js";
 import { adminThemes, createTheme, endTheme, THEME_MAX_CATEGORIES } from "../services/themes.js";
 import { NOTIFICATION_GROUPS } from "../services/notifications.js";
 import { leaderboard, listAchievements } from "../services/progression.js";
@@ -86,6 +87,11 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     return grant(ctx, req.user.id, body);
   });
+  // Bonus de connexion quotidienne : montants appliqués à la prochaine connexion de chaque joueur.
+  api.get("/admin/daily-login", admin, async () => adminDailyLogin(ctx));
+  api.put("/admin/daily-login", admin, async (req) =>
+    setDailyLogin(ctx, req.user.id, parse(dailyLoginRatesSchema, req.body)),
+  );
   // Boosters à thème : lecture de la catégorie sur Wikipédia (jusqu'à 60 appels), d'où la limite.
   api.get("/admin/themes", admin, async () => adminThemes(ctx));
   api.post("/admin/themes", { ...admin, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req) => {

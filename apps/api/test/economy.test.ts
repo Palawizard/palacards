@@ -1,9 +1,9 @@
 import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, saleTax } from "@palacards/game";
+import { addDays, ECONOMY, parisDay, saleTax } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { closeAuctionIfDue } from "../src/services/market.js";
 import { progressionIdle } from "../src/services/progression.js";
-import { makeApp, progressionPw, signUp, type Client } from "./helpers.js";
+import { makeApp, progressionPw, signUp, signUpAdmin, type Client } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -303,9 +303,45 @@ describe("portefeuille", () => {
   it("donne le bonus de connexion une fois par jour", async () => {
     const p = await signUp(app);
     const first = await p.post("/daily");
-    expect(first.body).toEqual({ claimed: true, reward: 20, streak: 1 });
+    expect(first.body).toEqual({ claimed: true, reward: ECONOMY.dailyLogin.base, streak: 1 });
     expect((await p.post("/daily")).body).toEqual({ claimed: false });
     await expectLedgerConsistent(p);
+  });
+
+  it("applique les montants réglés par l'admin à la prochaine connexion, sans rien rendre rétroactif", async () => {
+    const admin = await signUpAdmin(app, ctx);
+    const p = await signUp(app);
+    const before = await signUp(app);
+    try {
+      expect((await p.get("/admin/daily-login")).status).toBe(403);
+      expect((await admin.get("/admin/daily-login")).body).toMatchObject({
+        rates: ECONOMY.dailyLogin,
+        launch: { base: 20, perStreakDay: 5, max: 50 },
+        updatedAt: null,
+      });
+      expect((await before.post("/daily")).body.reward).toBe(ECONOMY.dailyLogin.base);
+
+      expect((await admin.put("/admin/daily-login", { base: 50, perStreakDay: 10, max: 40 })).status).toBe(400);
+      expect((await admin.put("/admin/daily-login", { base: 0, perStreakDay: 10, max: 40 })).status).toBe(400);
+      const saved = await admin.put("/admin/daily-login", { base: 40, perStreakDay: 10, max: 100 });
+      expect(saved.body.rates).toEqual({ base: 40, perStreakDay: 10, max: 100 });
+      expect(saved.body.updatedAt).not.toBeNull();
+
+      // Série de 3 jours : 40 + 2 × 10.
+      await ctx.db
+        .update(schema.players)
+        .set({ loginStreak: 2, lastLoginDay: addDays(parisDay(ctx.now()), -1) })
+        .where(eq(schema.players.userId, p.userId));
+      expect((await p.post("/daily")).body).toEqual({ claimed: true, reward: 60, streak: 3 });
+      // Le bonus déjà touché avant le réglage ne change pas.
+      const [row] = await ctx.db.execute<{ delta: number }>(
+        sql`select delta from ledger where user_id = ${before.userId} and reason = 'daily_login'`,
+      );
+      expect(Number(row!.delta)).toBe(ECONOMY.dailyLogin.base);
+      await expectLedgerConsistent(p);
+    } finally {
+      await ctx.db.delete(schema.gameSettings);
+    }
   });
 
   it("vend un paquet bonus contre 150 PW", async () => {

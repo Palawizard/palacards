@@ -294,3 +294,15 @@ describe("option « flouter les arthropodes »", () => {
     expect((await p.get("/cards/arthropods?ids=")).status).toBe(400);
   });
 });
+
+describe("option « Upgrader sans animation »", () => {
+  it("est désactivée par défaut et se mémorise pour le joueur", async () => {
+    const p = await signUp(app);
+    expect((await p.get("/me")).body.quickUpgrade).toBe(false);
+    expect((await p.patch("/me/settings", { quickUpgrade: true })).body.quickUpgrade).toBe(true);
+    expect((await p.get("/me")).body.quickUpgrade).toBe(true);
+    expect((await p.patch("/me/settings", { quickUpgrade: "oui" })).status).toBe(400);
+    // Réglage propre à chaque joueur.
+    expect((await (await signUp(app)).get("/me")).body.quickUpgrade).toBe(false);
+  });
+});

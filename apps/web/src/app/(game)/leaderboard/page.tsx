@@ -23,6 +23,8 @@ interface Row {
   creator?: boolean;
   /** Titre affiché par le joueur. */
   title?: TitleRef;
+  /** Note de statut du joueur. */
+  statusNote?: string;
   rank: number;
   me: boolean;
 }
@@ -161,6 +163,13 @@ export default function LeaderboardPage() {
                         <span className="ml-2 text-xs text-faint">
                           {fmt(r.packs)} booster{r.packs > 1 ? "s" : ""}
                         </span>
+                      )}
+                      {r.statusNote && (
+                        // Une ligne au plus, coupée au besoin : la note n'élargit jamais le tableau.
+                        <p className="line-clamp-1 text-xs text-muted wrap-anywhere" title={r.statusNote}>
+                          <span className="sr-only">Note : </span>
+                          {r.statusNote}
+                        </p>
                       )}
                     </div>
                   </div>
