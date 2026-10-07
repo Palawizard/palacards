@@ -31,6 +31,7 @@ import {
   type Player,
 } from "./players.js";
 import { afterCommit, Effects } from "./notifications.js";
+import { bannersOf } from "./banners.js";
 import { battleRewarded, onBattleFinished } from "./battles.js";
 import { collectionScoresSql, statusNoteOf } from "./profiles.js";
 import { ensureQuests, type QuestRow } from "./quests.js";
@@ -548,6 +549,8 @@ interface Row {
   title?: TitleRef;
   /** Note de statut du joueur. */
   statusNote?: string;
+  /** Image de la bannière du joueur (fond de sa ligne) ; absente : pas de bannière ou image pas encore chargée. */
+  banner?: { cardId: number; thumbUrl: string };
 }
 
 /**
@@ -582,7 +585,13 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       )})
     `);
     const noteOf = new Map(notes.map((n) => [n.user_id, statusNoteOf(ctx, n)]));
+    const banners = await bannersOf(
+      ctx.db,
+      rows.map((r) => r.id),
+    );
     for (const r of rows) {
+      const banner = banners.get(r.id);
+      if (banner?.thumbUrl) r.banner = { cardId: banner.cardId, thumbUrl: banner.thumbUrl };
       if (ids.has(r.id)) r.creator = true;
       const title = titles.get(r.id);
       if (title) r.title = title;

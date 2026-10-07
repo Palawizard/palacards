@@ -250,6 +250,8 @@ export const players = pgTable(
     statusNote: text("status_note"),
     /** Dernière modification de la note (pour une éventuelle durée de vie). */
     statusNoteAt: tstz("status_note_at"),
+    /** Bannière du profil et des classements : article (`cards.id`) de sa collection (null : bannière par défaut). */
+    bannerCardId: bigint("banner_card_id", { mode: "number" }),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [

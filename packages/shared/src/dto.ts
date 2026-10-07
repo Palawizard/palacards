@@ -516,3 +516,11 @@ export interface PlayerSuggestionDTO {
   avatar: string | null;
   friend: boolean;
 }
+
+/** Bannière d'un joueur (profil, classements) : image d'un article de sa collection. */
+export interface BannerDTO {
+  cardId: number;
+  title: string;
+  /** Vignette de l'article (null : pas encore chargée, bannière par défaut en attendant). */
+  thumbUrl: string | null;
+}

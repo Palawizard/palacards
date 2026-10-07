@@ -6,6 +6,7 @@ import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
+import { chooseBanner } from "../services/banners.js";
 import { answeringQuestion, queueWaiting } from "../services/battles.js";
 import { arthropodFlags, cardSheet, catalog } from "../services/cards.js";
 import {
@@ -379,6 +380,11 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   api.put("/me/status-note", { ...auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) => {
     const { note } = parse(z.object({ note: z.string().max(1000).nullable() }), req.body);
     return setStatusNote(ctx, req.user.id, note);
+  });
+  // Bannière : un article de sa collection ; null revient à la bannière par défaut.
+  api.put("/me/banner", { ...auth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) => {
+    const { cardId } = parse(z.object({ cardId: z.number().int().positive().nullable() }), req.body);
+    return chooseBanner(ctx, req.user.id, cardId);
   });
   api.get("/players/:username", auth, async (req) => {
     const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
