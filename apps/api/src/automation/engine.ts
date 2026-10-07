@@ -34,6 +34,11 @@ export interface EngineDeps {
 
 const a = schema.suggestionAutomation;
 const s = schema.suggestions;
+/**
+ * États d'une suggestion dont la pull request attend encore la décision de Palawi : prête, reprise en cours
+ * (`@claude`), ou reprise en échec. Tant qu'une telle PR est ouverte, rien d'autre ne part.
+ */
+const PR_PENDING = sql.raw("('ready', 'running', 'failed')");
 
 const VERDICT_LABELS: Record<TriageResult["verdict"], string> = {
   build: "À coder",
@@ -147,16 +152,17 @@ export function createEngine(deps: EngineDeps) {
   }
 
   /**
-   * Une PR « prête » attend la décision de Palawi. Si elle a été mergée ou fermée sans que le workflow de fin ne
-   * rende compte (GitHub ne lance pas les workflows d'une PR en conflit), on lit son état sur GitHub.
+   * Une PR ouverte (prête, reprise en cours ou en échec) attend la décision de Palawi. Si elle a été mergée ou
+   * fermée sans que le workflow de fin ne rende compte (GitHub ne lance pas les workflows d'une PR en conflit, un
+   * run annulé ne rend pas toujours compte), on lit son état sur GitHub.
    */
-  async function settleReadyPulls() {
+  async function settleOpenPulls() {
     if (!deps.github) return;
-    const ready = await deps.db
-      .select({ id: a.suggestionId, pr: a.prNumber })
+    const open = await deps.db
+      .select({ id: a.suggestionId, pr: a.prNumber, status: a.buildStatus })
       .from(a)
-      .where(eq(a.buildStatus, "ready"));
-    for (const row of ready) {
+      .where(sql`${a.prNumber} is not null and ${a.buildStatus} in ${PR_PENDING}`);
+    for (const row of open) {
       if (!row.pr) continue;
       try {
         const state = await pullState(deps.github, row.pr);
@@ -164,7 +170,7 @@ export function createEngine(deps: EngineDeps) {
         await deps.db
           .update(a)
           .set({ buildStatus: state, updatedAt: deps.now() })
-          .where(sql`${a.suggestionId} = ${row.id} and ${a.buildStatus} = 'ready'`);
+          .where(sql`${a.suggestionId} = ${row.id} and ${a.buildStatus} = ${row.status}`);
         deps.log.info({ suggestionId: row.id, pr: row.pr, state }, "PR terminée hors workflow");
       } catch (err) {
         deps.log.error({ err, suggestionId: row.id }, "lecture de l'état de la PR");
@@ -180,13 +186,13 @@ export function createEngine(deps: EngineDeps) {
    */
   async function publishQueued() {
     if (!deps.github) return;
-    await settleReadyPulls();
+    await settleOpenPulls();
     const now = deps.now();
     const inFlightSince = new Date(now.getTime() - BUILD_IN_FLIGHT_MS).toISOString();
     const [busy] = await deps.db.execute<{ n: number }>(sql`
       select count(*)::int as n from suggestion_automation
       where (build_status in ('published', 'running') and updated_at > ${inFlightSince}::timestamptz)
-         or build_status = 'ready'
+         or (pr_number is not null and build_status in ${PR_PENDING})
          or (build_status = 'queued' and next_attempt_at > ${now.toISOString()}::timestamptz
              and error like ${`${USAGE_LIMIT_PREFIX}%`})
     `);
