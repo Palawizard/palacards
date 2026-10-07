@@ -20,7 +20,6 @@ import { StatusNote } from "@/components/StatusNote";
 import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore, TitleBadge } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import { useMe } from "@/lib/game";
 
 interface ProfileDTO {
   id: string;
@@ -259,7 +258,6 @@ function TheirCollection({ username }: { username: string }) {
 export default function ProfilePage({ params }: { params: Promise<{ pseudo: string }> }) {
   const { pseudo } = use(params);
   const { data: p, error, mutate } = useSWR<ProfileDTO>(`/players/${encodeURIComponent(pseudo)}`);
-  const { me } = useMe();
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
   if (!p) return <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />;
@@ -293,13 +291,7 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
               </>
             )}
           </p>
-          <StatusNote
-            username={p.username}
-            note={p.statusNote}
-            isMe={p.isMe}
-            canModerate={!!me?.isAdmin}
-            onChanged={() => mutate()}
-          />
+          <StatusNote note={p.statusNote} isMe={p.isMe} onChanged={() => mutate()} />
         </div>
         <Actions p={p} onChanged={() => mutate()} />
       </header>

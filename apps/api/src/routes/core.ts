@@ -372,7 +372,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     return searchPlayers(ctx, req.user.id, q, { excludeFriends: exclude === "friends" });
   });
-  // Note de statut : texte brut filtré (balises, liens, mots interdits) ; null ou vide l'efface.
+  // Note de statut : texte brut filtré (balises, liens) ; null ou vide l'efface.
   api.put("/me/status-note", { ...auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) => {
     const { note } = parse(z.object({ note: z.string().max(1000).nullable() }), req.body);
     return setStatusNote(ctx, req.user.id, note);

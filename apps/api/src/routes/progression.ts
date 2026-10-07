@@ -8,7 +8,6 @@ import { adminOverview, grant, ledgerLog } from "../services/admin.js";
 import { createCode, listCodes, setCodeDisabled } from "../services/codes.js";
 import { adminThemes, createTheme, endTheme, THEME_MAX_CATEGORIES } from "../services/themes.js";
 import { NOTIFICATION_GROUPS } from "../services/notifications.js";
-import { adminClearStatusNote } from "../services/profiles.js";
 import { leaderboard, listAchievements } from "../services/progression.js";
 import { CARDS_PURGE_JOB, rolloverSeason } from "../services/seasons.js";
 import { changeUsername } from "../services/settings.js";
@@ -86,11 +85,6 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
       req.body,
     );
     return grant(ctx, req.user.id, body);
-  });
-  // Modération : efface la note de statut d'un joueur (bouton sur son profil).
-  api.delete("/admin/players/:username/status-note", admin, async (req) => {
-    const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
-    return adminClearStatusNote(ctx, username);
   });
   // Boosters à thème : lecture de la catégorie sur Wikipédia (jusqu'à 60 appels), d'où la limite.
   api.get("/admin/themes", admin, async () => adminThemes(ctx));

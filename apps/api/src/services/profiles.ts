@@ -11,7 +11,6 @@ import type { CardDTO, PlayerSuggestionDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, notFound } from "../errors.js";
 import { selectInstances, toCardDTO } from "./cards.js";
-import { Effects } from "./notifications.js";
 import type { DbOrTx } from "./players.js";
 import { displayedTitles, listTitles } from "./titles.js";
 
@@ -216,20 +215,4 @@ export async function setStatusNote(ctx: Ctx, userId: string, raw: string | null
     .set({ statusNote: res.note, statusNoteAt: res.note ? ctx.now() : null })
     .where(sql`${schema.players.userId} = ${userId}`);
   return { statusNote: res.note };
-}
-
-/** Modération : l'admin efface la note d'un joueur, qui en est prévenu. */
-export async function adminClearStatusNote(ctx: Ctx, username: string) {
-  const u = await findUserByName(ctx.db, username);
-  const fx = new Effects();
-  await ctx.db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(schema.players)
-      .set({ statusNote: null, statusNoteAt: null })
-      .where(sql`${schema.players.userId} = ${u.id} and ${schema.players.statusNote} is not null`)
-      .returning({ userId: schema.players.userId });
-    if (row) await fx.notify(tx, u.id, "status_note_removed", {});
-  });
-  await fx.flush(ctx);
-  return { statusNote: null };
 }

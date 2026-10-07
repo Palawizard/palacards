@@ -29,8 +29,7 @@ export type NotificationType =
   | "boss_mvp"
   | "guild_objective"
   | "gift"
-  | "suggestion_update"
-  | "status_note_removed";
+  | "suggestion_update";
 
 /** Catégories réglables dans les paramètres (une notification désactivée n'est ni stockée ni envoyée). */
 export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {

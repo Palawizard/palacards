@@ -33,15 +33,6 @@ describe("note de statut", () => {
     expect(checkStatusNote("Fini. Me voilà de retour").ok).toBe(true);
   });
 
-  it("refuse les mots interdits, même déguisés, sans bloquer les mots qui les contiennent", () => {
-    for (const note of ["Quel CONNARD", "bande de connards", "s4lope", "enculés !", "Pédé"]) {
-      expect(checkStatusNote(note)).toEqual({ ok: false, error: "banned" });
-    }
-    for (const note of ["Grosse dispute au boulot", "Technique secrète", "Computer", "Je suis à Puteaux"]) {
-      expect(checkStatusNote(note).ok).toBe(true);
-    }
-  });
-
   it("reste visible tant qu'aucune durée de vie n'est réglée", () => {
     const now = new Date("2026-10-07T12:00:00Z");
     expect(visibleStatusNote("Coucou", new Date("2020-01-01T00:00:00Z"), now)).toBe("Coucou");
