@@ -1,5 +1,6 @@
 # Suite d'une branche de suggestion : Palawi répond dans la pull request par un commentaire qui commence par
-# « @claude » (choix d'une option, correction…). Claude reprend la branche, la CI la revérifie, Discord prévient.
+# « @claude » (choix d'une option, correction…). Claude reprend la branche et commite ; le workflow vérifie le
+# périmètre, pousse la branche (la PR se met à jour), la CI la revérifie et Discord prévient.
 name: Suggestion (suite)
 
 on:
@@ -33,6 +34,7 @@ jobs:
       suggestion: ${{ steps.meta.outputs.suggestion }}
       branch: ${{ steps.meta.outputs.branch }}
       pr: ${{ steps.meta.outputs.pr }}
+      pushed: ${{ steps.push.outputs.pushed }}
     services:
       postgres:
         image: postgres:17.6-alpine
@@ -71,6 +73,11 @@ jobs:
           ref: ${{ steps.meta.outputs.branch }}
           fetch-depth: 0
 
+      - name: Point de départ
+        id: start
+        if: steps.meta.outputs.skip != 'true'
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Compte rendu (reprise)
         if: steps.meta.outputs.skip != 'true'
         uses: ./.github/actions/suggestion-report
@@ -97,7 +104,7 @@ jobs:
             --max-turns 200
             --append-system-prompt "Tu travailles sur une branche de suggestion de PalaCards : lis puis suis .claude/skills/build-suggestion/SKILL.md (mode « suite dans la pull request »)."
             --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
-            --disallowedTools "Bash(curl:*),Bash(wget:*),Bash(gh:*),WebFetch,WebSearch"
+            --disallowedTools "Bash(curl:*),Bash(wget:*),Bash(gh:*),Bash(git push:*),Bash(/home/runner/work/_actions/anthropics/claude-code-action/v1/scripts/git-push.sh:*),WebFetch,WebSearch"
 
       - name: Rien hors du périmètre
         if: steps.meta.outputs.skip != 'true'
@@ -109,10 +116,42 @@ jobs:
             exit 1
           fi
 
+      # Seul chemin vers GitHub : Claude n'a pas le droit de pousser (outils refusés ci-dessus), le workflow pousse
+      # après le contrôle du périmètre. Avec RELEASE_TOKEN, la CI de la pull request se relance sur le nouveau commit
+      # (un push du GITHUB_TOKEN ne déclenche aucun workflow) ; repli sur le GITHUB_TOKEN sinon.
+      - name: Pousser la branche
+        id: push
+        if: steps.meta.outputs.skip != 'true'
+        env:
+          BRANCH: ${{ steps.meta.outputs.branch }}
+          START: ${{ steps.start.outputs.sha }}
+          OWNER_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            git status --short --untracked-files=no
+            echo "::error::Modifications non commitées : elles seraient perdues. Rien n'est poussé."
+            exit 1
+          fi
+          head=$(git rev-parse HEAD)
+          if [ "$head" = "$START" ]; then
+            echo "::notice::Aucun nouveau commit : la branche ne change pas."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git log --oneline "$START..HEAD"
+          if [ -n "$OWNER_TOKEN" ] && git -c http.https://github.com/.extraheader= \
+              push "https://x-access-token:${OWNER_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/$BRANCH"; then
+            :
+          else
+            [ -z "$OWNER_TOKEN" ] || echo "::warning::Push refusé avec RELEASE_TOKEN : push par le bot (la CI de la PR ne se relancera pas)."
+            git push origin "HEAD:refs/heads/$BRANCH"
+          fi
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
   ci:
     name: CI de la branche
     needs: followup
-    if: needs.followup.outputs.branch != ''
+    if: needs.followup.outputs.pushed == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
@@ -135,12 +174,17 @@ jobs:
         env:
           FOLLOWUP: ${{ needs.followup.result }}
           CI: ${{ needs.ci.result }}
+          PUSHED: ${{ needs.followup.outputs.pushed }}
           PR: ${{ needs.followup.outputs.pr }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ "$FOLLOWUP" = success ]; then
+          if [ "$FOLLOWUP" = success ] && [ "$PUSHED" = true ]; then
             payload=$(jq -cn --arg ci "$CI" --argjson pr "$PR" --arg run "$RUN_URL" \
               '{status: "ready", ciConclusion: $ci, prNumber: $pr, runUrl: $run}')
+          elif [ "$FOLLOWUP" = success ] || [ "$FOLLOWUP" = cancelled ]; then
+            # Rien de poussé (Claude n'a rien commité, ou reprise annulée) : la PR reste telle quelle.
+            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" --arg why "$FOLLOWUP" \
+              '{status: "ready", unchanged: (if $why == "cancelled" then "cancelled" else "no_commit" end), prNumber: $pr, runUrl: $run}')
           else
             payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" '{status: "failed", prNumber: $pr, runUrl: $run}')
           fi
