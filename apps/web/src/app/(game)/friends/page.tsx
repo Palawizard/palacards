@@ -6,6 +6,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
+import { PlayerSearch } from "@/components/PlayerSearch";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -80,15 +81,15 @@ export default function FriendsPage() {
         <label className="sr-only" htmlFor="friend-name">
           Pseudo à ajouter
         </label>
-        <input
-          id="friend-name"
-          className="field"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Pseudo d’un joueur"
-          autoCapitalize="none"
-          spellCheck={false}
-        />
+        <div className="min-w-0 flex-1">
+          <PlayerSearch
+            id="friend-name"
+            value={name}
+            onChange={setName}
+            placeholder="Pseudo d’un joueur"
+            excludeFriends
+          />
+        </div>
         <button type="submit" className="btn btn-primary" disabled={busy || !name.trim()}>
           <UserPlus aria-hidden className="size-4" /> Ajouter
         </button>

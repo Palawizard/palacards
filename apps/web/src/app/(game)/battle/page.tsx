@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { AvatarFace } from "@/components/Avatar";
 import { DeckPicker } from "@/components/DeckPicker";
+import { PlayerSearch } from "@/components/PlayerSearch";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { relative } from "@/lib/format";
@@ -98,16 +99,9 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
       <h2 className="infobox-head">Défier un ami</h2>
       <div className="flex flex-col gap-4 p-4">
         <div>
-          <label className="max-w-sm">
+          <label className="block max-w-sm">
             <span className="label">Adversaire</span>
-            <input
-              className="field max-w-sm"
-              value={opponent}
-              onChange={(e) => setOpponent(e.target.value)}
-              placeholder="Pseudo d’un ami"
-              autoCapitalize="none"
-              spellCheck={false}
-            />
+            <PlayerSearch value={opponent} onChange={setOpponent} placeholder="Pseudo d’un ami" />
           </label>
           {online.length > 0 ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
