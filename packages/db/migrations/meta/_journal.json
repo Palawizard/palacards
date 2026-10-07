@@ -211,6 +211,13 @@
       "when": 1791373898923,
       "tag": "0029_quick_upgrade",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791379124266,
+      "tag": "0030_game_settings",
+      "breakpoints": true
     }
   ]
 }

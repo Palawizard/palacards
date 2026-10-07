@@ -1,9 +1,32 @@
 import type { Rarity } from "./rarity.js";
 
+/** Montants du bonus de connexion quotidienne : base au premier jour, + par jour de série, plafond. */
+export interface DailyLoginRates {
+  base: number;
+  perStreakDay: number;
+  max: number;
+}
+
+/** Bonus de connexion du lancement du jeu (20 PW, +5 par jour de série, max 50). */
+export const DAILY_LOGIN_LAUNCH: DailyLoginRates = { base: 20, perStreakDay: 5, max: 50 };
+/** Revalorisation par défaut des montants du lancement (+50 %), appliquée à chaque palier. */
+export const DAILY_LOGIN_BOOST = 1.5;
+/** Plafond de chaque réglage du bonus de connexion dans la page Admin, en PW. */
+export const DAILY_LOGIN_MAX_PW = 1_000;
+/** Nombre de jours de série montrés dans l'aperçu de la page Admin. */
+export const DAILY_LOGIN_PREVIEW_DAYS = 7;
+
+const boosted = (pw: number) => Math.round(pw * DAILY_LOGIN_BOOST);
+
 /** Tous les montants de l'économie, en points wiki (PW). À ajuster ici uniquement. */
 export const ECONOMY = {
   recycleValue: { C: 1, PC: 3, R: 10, SR: 40, UR: 150, L: 1_000 } satisfies Record<Rarity, number>,
-  dailyLogin: { base: 20, perStreakDay: 5, max: 50 },
+  /** Valeurs par défaut, remplacées par le réglage de la page Admin s'il existe. */
+  dailyLogin: {
+    base: boosted(DAILY_LOGIN_LAUNCH.base),
+    perStreakDay: boosted(DAILY_LOGIN_LAUNCH.perStreakDay),
+    max: boosted(DAILY_LOGIN_LAUNCH.max),
+  } satisfies DailyLoginRates,
   battle: { win: 30, loss: 10 },
   startingBalance: 100,
   bonusPackPrice: 150,
@@ -16,9 +39,14 @@ export const ECONOMY = {
   referencePriceSampleSize: 20,
 } as const;
 
-export function dailyLoginReward(streakDays: number): number {
-  const { base, perStreakDay, max } = ECONOMY.dailyLogin;
+export function dailyLoginReward(streakDays: number, rates: DailyLoginRates = ECONOMY.dailyLogin): number {
+  const { base, perStreakDay, max } = rates;
   return Math.min(max, base + perStreakDay * Math.max(0, streakDays - 1));
+}
+
+/** Bonus reçus les premiers jours d'une série (aperçu de la page Admin). */
+export function dailyLoginSchedule(rates: DailyLoginRates, days = DAILY_LOGIN_PREVIEW_DAYS): number[] {
+  return Array.from({ length: days }, (_, i) => dailyLoginReward(i + 1, rates));
 }
 
 /** Montant réellement reçu par le vendeur après la taxe (arrondi en défaveur du vendeur). */

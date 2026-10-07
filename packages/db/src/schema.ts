@@ -1172,6 +1172,21 @@ export const suggestionAutomation = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Réglages du jeu (page Admin)
+// ---------------------------------------------------------------------------
+
+/**
+ * Réglages modifiables en production depuis la page Admin (une ligne par clé, valeur JSON).
+ * Sans ligne, le jeu garde la valeur par défaut du code (`@palacards/game`).
+ */
+export const gameSettings = pgTable("game_settings", {
+  key: text("key").primaryKey(),
+  value: jsonb("value").notNull(),
+  updatedBy: text("updated_by").references(() => user.id, { onDelete: "set null" }),
+  updatedAt: tstz("updated_at").notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Relations (requêtes relationnelles Drizzle)
 // ---------------------------------------------------------------------------
 
