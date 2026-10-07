@@ -111,6 +111,8 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
         .join(" et ");
       return { text: `Cadeau pour tout le monde : ${parts} !${s(p.note) ? ` « ${s(p.note)} »` : ""}`, href: "/pulls" };
     }
+    case "status_note_removed":
+      return { text: "Ta note de statut a été retirée par la modération.", href: "/profile" };
     case "guild_objective":
       return { text: `Objectif de guilde atteint : un paquet bonus pour chacun !`, href: "/guild" };
     case "suggestion_update": {

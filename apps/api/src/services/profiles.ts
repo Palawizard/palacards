@@ -1,9 +1,17 @@
 import { schema, sql, type SQL } from "@palacards/db";
-import { COLLECTION_POINTS, RARITIES, type TitleRef } from "@palacards/game";
+import {
+  checkStatusNote,
+  COLLECTION_POINTS,
+  RARITIES,
+  STATUS_NOTE_ERRORS,
+  visibleStatusNote,
+  type TitleRef,
+} from "@palacards/game";
 import type { CardDTO, PlayerSuggestionDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
-import { notFound } from "../errors.js";
+import { badRequest, notFound } from "../errors.js";
 import { selectInstances, toCardDTO } from "./cards.js";
+import { Effects } from "./notifications.js";
 import type { DbOrTx } from "./players.js";
 import { displayedTitles, listTitles } from "./titles.js";
 
@@ -64,6 +72,8 @@ export interface ProfileDTO {
   title: TitleRef | null;
   /** Titres gagnés en fin de saison, les plus récents d'abord. */
   titles: TitleRef[];
+  /** Note de statut (null : aucune). */
+  statusNote: string | null;
 }
 
 export async function findUserByName(db: DbOrTx, username: string) {
@@ -137,8 +147,16 @@ async function friendRelation(ctx: Ctx, viewerId: string, otherId: string): Prom
 
 export async function getProfile(ctx: Ctx, viewerId: string, username: string): Promise<ProfileDTO> {
   const u = await findUserByName(ctx.db, username);
-  const [p] = await ctx.db.execute<{ avatar: string | null; elo: number; elo_peak: number; total: number }>(sql`
-    select p.avatar, p.elo, p.elo_peak, (select count(*)::int from card_instances where owner_id = p.user_id) as total
+  const [p] = await ctx.db.execute<{
+    avatar: string | null;
+    elo: number;
+    elo_peak: number;
+    total: number;
+    status_note: string | null;
+    status_note_at: Date | string | null;
+  }>(sql`
+    select p.avatar, p.elo, p.elo_peak, (select count(*)::int from card_instances where owner_id = p.user_id) as total,
+           p.status_note, p.status_note_at
     from players p where p.user_id = ${u.id}
   `);
   const score = await collectionScore(ctx.db, u.id);
@@ -176,5 +194,42 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
     themePacks: themePacks.map((t) => ({ id: Number(t.id), name: t.name, opened: t.opened })),
     title: (await displayedTitles(ctx.db, [u.id])).get(u.id) ?? null,
     titles: await listTitles(ctx.db, u.id),
+    statusNote: statusNoteOf(ctx, p ?? null),
   };
+}
+
+/** Note de statut affichable d'une ligne de `players` (null si absente ou expirée). */
+export function statusNoteOf(
+  ctx: Ctx,
+  row: { status_note: string | null; status_note_at: Date | string | null } | null,
+): string | null {
+  if (!row) return null;
+  return visibleStatusNote(row.status_note, row.status_note_at ? new Date(row.status_note_at) : null, ctx.now());
+}
+
+/** Change (ou efface, note vide) sa note de statut, après le filtre de `packages/game`. */
+export async function setStatusNote(ctx: Ctx, userId: string, raw: string | null) {
+  const res = checkStatusNote(raw);
+  if (!res.ok) throw badRequest(`status_note_${res.error}`, STATUS_NOTE_ERRORS[res.error]);
+  await ctx.db
+    .update(schema.players)
+    .set({ statusNote: res.note, statusNoteAt: res.note ? ctx.now() : null })
+    .where(sql`${schema.players.userId} = ${userId}`);
+  return { statusNote: res.note };
+}
+
+/** Modération : l'admin efface la note d'un joueur, qui en est prévenu. */
+export async function adminClearStatusNote(ctx: Ctx, username: string) {
+  const u = await findUserByName(ctx.db, username);
+  const fx = new Effects();
+  await ctx.db.transaction(async (tx) => {
+    const [row] = await tx
+      .update(schema.players)
+      .set({ statusNote: null, statusNoteAt: null })
+      .where(sql`${schema.players.userId} = ${u.id} and ${schema.players.statusNote} is not null`)
+      .returning({ userId: schema.players.userId });
+    if (row) await fx.notify(tx, u.id, "status_note_removed", {});
+  });
+  await fx.flush(ctx);
+  return { statusNote: null };
 }

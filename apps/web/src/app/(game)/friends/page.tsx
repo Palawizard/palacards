@@ -19,6 +19,8 @@ interface Friend {
   avatar: string | null;
   elo: number;
   online: boolean;
+  /** Note de statut (null : aucune). */
+  statusNote: string | null;
 }
 interface FriendsDTO {
   friends: Friend[];
@@ -153,6 +155,12 @@ export default function FriendsPage() {
                         <Link href={`/u/${f.username}`} className="block truncate font-semibold hover:underline">
                           {f.displayName}
                         </Link>
+                        {f.statusNote && (
+                          <p className="truncate text-sm text-muted" title={f.statusNote}>
+                            <span className="sr-only">Note : </span>
+                            {f.statusNote}
+                          </p>
+                        )}
                         <span className="tnum text-xs text-faint">
                           {f.online ? "en ligne" : "hors ligne"} · Elo {fmt(f.elo)}
                         </span>

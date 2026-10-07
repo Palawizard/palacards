@@ -16,9 +16,11 @@ import {
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
 import { MyShowcase } from "@/components/Showcase";
+import { StatusNote } from "@/components/StatusNote";
 import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore, TitleBadge } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
+import { useMe } from "@/lib/game";
 
 interface ProfileDTO {
   id: string;
@@ -44,6 +46,8 @@ interface ProfileDTO {
   title: TitleRef | null;
   /** Titres gagnés en fin de saison, les plus récents d'abord. */
   titles: TitleRef[];
+  /** Note de statut (null : aucune). */
+  statusNote: string | null;
 }
 
 const sameTitle = (a: TitleRef | null, b: TitleRef) => !!a && a.board === b.board && a.season === b.season;
@@ -255,6 +259,7 @@ function TheirCollection({ username }: { username: string }) {
 export default function ProfilePage({ params }: { params: Promise<{ pseudo: string }> }) {
   const { pseudo } = use(params);
   const { data: p, error, mutate } = useSWR<ProfileDTO>(`/players/${encodeURIComponent(pseudo)}`);
+  const { me } = useMe();
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
   if (!p) return <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />;
@@ -288,6 +293,13 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
               </>
             )}
           </p>
+          <StatusNote
+            username={p.username}
+            note={p.statusNote}
+            isMe={p.isMe}
+            canModerate={!!me?.isAdmin}
+            onChanged={() => mutate()}
+          />
         </div>
         <Actions p={p} onChanged={() => mutate()} />
       </header>

@@ -3,7 +3,7 @@ import { GUILD_MAX_MEMBERS } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { checkObjective } from "../src/services/guilds.js";
 import { progressionIdle } from "../src/services/progression.js";
-import { makeApp, signUp, uniqueName } from "./helpers.js";
+import { makeApp, signUp, signUpAdmin, uniqueName } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -28,6 +28,40 @@ describe("amis", () => {
     });
     expect(del.statusCode).toBe(200);
     expect((await a.get("/friends")).body.friends).toHaveLength(0);
+  });
+});
+
+describe("note de statut", () => {
+  it("enregistrée filtrée, visible sur le profil et chez les amis, effacée par son auteur ou l'admin", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    await a.post("/friends", { username: b.username });
+    await b.post("/friends", { username: a.username });
+
+    const set = await a.put("/me/status-note", { note: "  En chasse de  légendaires 🃏\n" });
+    expect(set.status).toBe(200);
+    expect(set.body.statusNote).toBe("En chasse de légendaires 🃏");
+    expect((await b.get(`/players/${a.username}`)).body.statusNote).toBe("En chasse de légendaires 🃏");
+    expect((await b.get("/friends")).body.friends[0].statusNote).toBe("En chasse de légendaires 🃏");
+
+    // Filtre : longueur, balises, liens, mots interdits ; la note précédente reste.
+    expect((await a.put("/me/status-note", { note: "x".repeat(101) })).body.error).toBe("status_note_too_long");
+    expect((await a.put("/me/status-note", { note: "<img src=x>" })).body.error).toBe("status_note_markup");
+    expect((await a.put("/me/status-note", { note: "viens sur discord.gg/abc" })).body.error).toBe("status_note_link");
+    expect((await a.put("/me/status-note", { note: "quel connard" })).body.error).toBe("status_note_banned");
+    expect((await a.get(`/players/${a.username}`)).body.statusNote).toBe("En chasse de légendaires 🃏");
+
+    // L'auteur l'efface.
+    expect((await a.put("/me/status-note", { note: "" })).body.statusNote).toBeNull();
+    expect((await b.get(`/players/${a.username}`)).body.statusNote).toBeNull();
+
+    // L'admin l'efface ; un joueur ne le peut pas sur un autre.
+    await a.put("/me/status-note", { note: "Bientôt un pseudo à pub" });
+    expect((await b.del(`/admin/players/${a.username}/status-note`)).status).toBe(403);
+    const admin = await signUpAdmin(app, ctx);
+    expect((await admin.del(`/admin/players/${a.username}/status-note`)).status).toBe(200);
+    expect((await b.get(`/players/${a.username}`)).body.statusNote).toBeNull();
+    expect((await a.get("/notifications")).body.items[0].type).toBe("status_note_removed");
   });
 });
 
