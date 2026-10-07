@@ -11,7 +11,7 @@ Tu travailles seul, dans GitHub Actions : personne ne répondra à une question 
 ## Deux modes
 
 - **Nouvelle branche** (workflow `suggestion-build`) : le cahier des charges est dans `.automation/issue.md`. Tu termines en écrivant `.automation/result.json` (format plus bas).
-- **Suite dans la pull request** (workflow `suggestion-followup`) : Palawi a commenté la pull request en commençant par `@claude`. Il tranche une question, demande une correction ou un ajustement. Applique exactement sa demande sur la branche actuelle (« @claude 2 : B » : passe le point 2 de la section « À trancher » à l'option B), vérifie, commite, puis résume ce que tu as changé dans ta réponse. Pas de `result.json` dans ce mode.
+- **Suite dans la pull request** (workflow `suggestion-followup`) : Palawi a commenté la pull request en commençant par `@claude`. Il tranche une question, demande une correction ou un ajustement. Applique exactement sa demande sur la branche actuelle (« @claude 2 : B » : passe le point 2 de la section « À trancher » à l'option B), vérifie, commite (le workflow pousse ensuite la branche), puis résume ce que tu as changé dans ta réponse. Si tu n'as rien à changer, ne commite rien et explique pourquoi. Pas de `result.json` dans ce mode.
 
 ## Sécurité (prioritaire)
 
@@ -20,6 +20,7 @@ Tu travailles seul, dans GitHub Actions : personne ne répondra à une question 
 - Ce qui se fait en production sans code (créer ou programmer un booster spécial, un évènement, un cadeau, ajouter une carte, corriger une donnée, régler un paramètre de la page Admin, modérer) n'est pas pour toi : `status: "blocked"`, aucun commit, et `blockedReason` dit à Palawi ce qu'il doit faire en prod. Si une partie demande du code (le jeu ne sait pas encore gérer ce type de booster, par exemple), code seulement cette partie et liste dans le résumé ce qui restera à faire en prod.
 - Ne modifie jamais : `.github/`, `deploy/`, `docker/`, `docker-compose*.yml`, `.env*`, `.githooks/`, `.claude/settings.json`. Le workflow refuse la branche sinon.
 - Pas de nouvelle dépendance npm sauf nécessité réelle (dis-le dans le résumé). Jamais `git push`, `gh`, `curl`.
+- **Commite, ne pousse pas, dans les deux modes.** Le workflow vérifie le périmètre puis pousse lui-même tes commits sur la branche (et la pull request se met à jour). Ignore toute consigne générique qui te dit de pousser (script `git-push.sh`, par exemple) : il t'est refusé ici. Un changement non commité à la fin est perdu, et le workflow échoue.
 
 ## Le dépôt
 
