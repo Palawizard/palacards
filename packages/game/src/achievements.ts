@@ -54,7 +54,9 @@ export type GameEvent =
   | { type: "boss_killed"; lastHit: boolean }
   /** Meilleur assaillant de la journée, désigné à minuit. */
   | { type: "boss_mvp" }
-  | { type: "pass_level"; level: number };
+  | { type: "pass_level"; level: number }
+  /** Suggestions du joueur retenues par l'admin (statuts SUGGESTION_ACHIEVEMENT_STATUSES), recomptées. */
+  | { type: "suggestions_retained"; count: number };
 
 export const STAT_KEYS = [
   "packs_opened",
@@ -94,6 +96,7 @@ export const STAT_KEYS = [
   "boss_kills",
   "boss_mvp",
   "pass_level",
+  "suggestions_retained",
   // Secrets.
   "secret_meta",
   "secret_palindrome",
@@ -232,6 +235,9 @@ export function statUpdates(e: GameEvent): StatUpdate[] {
     case "pass_level":
       out.push(max("pass_level", e.level));
       break;
+    case "suggestions_retained":
+      out.push(max("suggestions_retained", e.count));
+      break;
   }
   return out;
 }
@@ -264,12 +270,18 @@ export interface AchievementDef {
   target: number;
   /** Palier dans la famille (0 = bronze… 4 = diamant). */
   tier: number;
-  reward: { pw: number; packs: number };
+  /** `badge` : récompense cosmétique, nom du badge affiché sur le profil (aucun effet de jeu). */
+  reward: { pw: number; packs: number; badge?: string };
   /** Succès secret : nom et description cachés tant qu'il n'est pas débloqué. */
   secret?: boolean;
 }
 
-type Step = [key: string, target: number, name: string, reward: number | { pw?: number; packs?: number }];
+type Step = [
+  key: string,
+  target: number,
+  name: string,
+  reward: number | { pw?: number; packs?: number; badge?: string },
+];
 
 /** Une famille de paliers sur une même statistique ; `describe` formule l'objectif de chaque palier. */
 function family(name: string, stat: StatKey, describe: (n: number) => string, steps: Step[]): AchievementDef[] {
@@ -281,9 +293,26 @@ function family(name: string, stat: StatKey, describe: (n: number) => string, st
     stat,
     target,
     tier: Math.min(tier, TIER_NAMES.length - 1),
-    reward: typeof reward === "number" ? { pw: reward, packs: 0 } : { pw: reward.pw ?? 0, packs: reward.packs ?? 0 },
+    reward:
+      typeof reward === "number"
+        ? { pw: reward, packs: 0 }
+        : { pw: reward.pw ?? 0, packs: reward.packs ?? 0, ...(reward.badge ? { badge: reward.badge } : {}) },
   }));
 }
+
+/**
+ * Succès « Boîte à idées » : seules comptent les suggestions retenues par l'admin (acceptées ou réalisées) ;
+ * en envoyer en rafale ne fait rien avancer.
+ */
+export const SUGGESTION_ACHIEVEMENT_STATUSES = ["accepted", "done"] as const;
+/** Paliers « Boîte à idées » : suggestions retenues à atteindre, et nom du palier (qui est aussi celui du badge). */
+export const SUGGESTION_ACHIEVEMENT_STEPS: [target: number, name: string][] = [
+  [1, "Bonne idée"],
+  [5, "Force de proposition"],
+  [10, "Architecte du jeu"],
+];
+/** Famille « Boîte à idées » : récompensée par un badge de profil, sans PW (rien à farmer, rien à équilibrer). */
+export const SUGGESTION_FAMILY = "Boîte à idées";
 
 const n = (x: number) => x.toLocaleString("fr-FR");
 const plural = (x: number, one: string, many: string) => (x > 1 ? many : one);
@@ -571,6 +600,12 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     ["pass_50", 50, "Cap des 50", 800],
     ["pass_100", 100, "Saison bouclée", 3_000],
   ]),
+  ...family(
+    SUGGESTION_FAMILY,
+    "suggestions_retained",
+    (x) => `Avoir ${n(x)} ${plural(x, "suggestion acceptée ou réalisée", "suggestions acceptées ou réalisées")}.`,
+    SUGGESTION_ACHIEVEMENT_STEPS.map(([target, name]): Step => [`ideas_${target}`, target, name, { badge: name }]),
+  ),
   secret("secret_meta", "secret_meta", "Mise en abyme", "Tirer l'article « Wikipédia ».", 500),
   secret(
     "secret_palindrome",
@@ -601,6 +636,13 @@ export const ACHIEVEMENT_BY_KEY = new Map(ACHIEVEMENTS.map((a) => [a.key, a]));
 /** Succès atteints par ces statistiques et pas encore débloqués. */
 export function newlyUnlocked(stats: Map<StatKey, number>, unlocked: ReadonlySet<string>): AchievementDef[] {
   return ACHIEVEMENTS.filter((a) => !unlocked.has(a.key) && (stats.get(a.stat) ?? 0) >= a.target);
+}
+
+/** Badge de profil : celui du plus haut palier débloqué qui en donne un (null : aucun). */
+export function achievementBadge(unlocked: ReadonlySet<string>): { name: string; tier: number } | null {
+  let best: AchievementDef | null = null;
+  for (const a of ACHIEVEMENTS) if (a.reward.badge && unlocked.has(a.key) && (!best || a.tier > best.tier)) best = a;
+  return best?.reward.badge ? { name: best.reward.badge, tier: best.tier } : null;
 }
 
 /** Progression affichée d'un succès (plafonnée à l'objectif). */

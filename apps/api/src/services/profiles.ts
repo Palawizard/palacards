@@ -1,5 +1,6 @@
 import { schema, sql, type SQL } from "@palacards/db";
 import {
+  achievementBadge,
   checkStatusNote,
   COLLECTION_POINTS,
   RARITIES,
@@ -71,6 +72,8 @@ export interface ProfileDTO {
   title: TitleRef | null;
   /** Titres gagnés en fin de saison, les plus récents d'abord. */
   titles: TitleRef[];
+  /** Badge gagné par un succès (« Boîte à idées »), son palier (0 = bronze) ; null : aucun. */
+  badge: { name: string; tier: number } | null;
   /** Note de statut (null : aucune). */
   statusNote: string | null;
 }
@@ -170,6 +173,9 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
   const pinned = await selectInstances(ctx.db)
     .where(sql`${schema.cardInstances.ownerId} = ${u.id} and ${schema.cardInstances.pinnedSlot} is not null`)
     .orderBy(schema.cardInstances.pinnedSlot);
+  const unlocked = await ctx.db.execute<{ key: string }>(sql`
+    select achievement_key as key from achievements_progress where user_id = ${u.id} and unlocked_at is not null
+  `);
   return {
     id: u.id,
     username: u.username,
@@ -193,6 +199,7 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
     themePacks: themePacks.map((t) => ({ id: Number(t.id), name: t.name, opened: t.opened })),
     title: (await displayedTitles(ctx.db, [u.id])).get(u.id) ?? null,
     titles: await listTitles(ctx.db, u.id),
+    badge: achievementBadge(new Set(unlocked.map((r) => r.key))),
     statusNote: statusNoteOf(ctx, p ?? null),
   };
 }

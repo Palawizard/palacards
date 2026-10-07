@@ -1,6 +1,7 @@
 import { eq, schema } from "@palacards/db";
 import { afterAll, describe, expect, it } from "vitest";
-import { makeApp, signUp, signUpAdmin } from "./helpers.js";
+import { progressionIdle } from "../src/services/progression.js";
+import { achievementPw, makeApp, signUp, signUpAdmin, type Client } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
 afterAll(() => app.close());
@@ -45,10 +46,12 @@ describe("suggestions", () => {
     });
     expect(answered.body).toMatchObject({ status: "accepted", reply: "Bonne idée, prévu pour novembre !" });
     expect(answered.body.repliedAt).not.toBeNull();
+    // Le succès « Boîte à idées » tombe en arrière-plan (sa propre notification).
+    await progressionIdle();
     const notifs = await p.get("/notifications");
     // Statut et réponse envoyés ensemble : une seule notification.
     expect(notifs.body.items.filter((x: { type: string }) => x.type === "suggestion_update")).toHaveLength(1);
-    expect(notifs.body.items[0]).toMatchObject({
+    expect(notifs.body.items.find((x: { type: string }) => x.type === "suggestion_update")).toMatchObject({
       type: "suggestion_update",
       payload: { suggestionId: sent.body.id, status: "accepted", replied: true },
     });
@@ -63,6 +66,7 @@ describe("suggestions", () => {
 
     // Rien ne change : pas de nouvelle notification.
     await admin.patch(`/admin/suggestions/${sent.body.id}`, { status: "done" });
+    await progressionIdle();
     expect((await p.get("/notifications")).body.items.length).toBe(notifs.body.items.length);
 
     expect((await admin.del(`/admin/suggestions/${sent.body.id}`)).status).toBe(200);
@@ -108,5 +112,63 @@ describe("suggestions", () => {
 
     await p.post("/suggestions", { kind: "feature", title: "Mode sombre auto", body: "Suivre l'heure du coucher." });
     expect((await p.get("/me")).body.suggestionBanner).toBe(false);
+  });
+});
+
+describe("succès « Boîte à idées »", () => {
+  const ideas = async (p: Client) =>
+    ((await p.get("/achievements")).body as { key: string; progress: number; unlockedAt: string | null }[]).filter(
+      (a) => a.key.startsWith("ideas_"),
+    );
+  const send = async (p: Client, i: number) =>
+    (await p.post("/suggestions", { kind: "feature", title: `Idée n° ${i}`, body: "Une idée assez détaillée." })).body
+      .id as number;
+
+  it("ne compte que les suggestions acceptées ou réalisées, donne un badge sans PW, une fois par palier", async () => {
+    const p = await signUp(app);
+    const admin = await signUpAdmin(app, ctx);
+    await p.get("/me");
+    await progressionIdle();
+    const pw = await achievementPw(ctx, p.userId);
+
+    // Envoyer en rafale ne fait rien avancer ; une suggestion refusée non plus.
+    const ids: number[] = [];
+    for (let i = 0; i < 6; i++) ids.push(await send(p, i));
+    await admin.patch(`/admin/suggestions/${ids[0]}`, { status: "declined" });
+    await progressionIdle();
+    expect((await ideas(p)).map((a) => a.progress)).toEqual([0, 0, 0]);
+    expect((await p.get(`/players/${p.username}`)).body.badge).toBeNull();
+
+    // Acceptée puis réalisée : un seul palier, une seule notification.
+    await admin.patch(`/admin/suggestions/${ids[1]}`, { status: "accepted" });
+    await admin.patch(`/admin/suggestions/${ids[1]}`, { status: "done" });
+    await progressionIdle();
+    let list = await ideas(p);
+    expect(list[0]!.unlockedAt).not.toBeNull();
+    expect(list[1]).toMatchObject({ progress: 1, unlockedAt: null });
+    const notes = (await p.get("/notifications")).body.items as { type: string; payload: { key?: string } }[];
+    expect(notes.filter((n) => n.type === "achievement" && n.payload.key === "ideas_1")).toHaveLength(1);
+    expect((await p.get(`/players/${p.username}`)).body.badge).toEqual({ name: "Bonne idée", tier: 0 });
+
+    // Repasser en « refusée » ne retire rien ; cinq retenues : palier suivant et badge argent.
+    await admin.patch(`/admin/suggestions/${ids[1]}`, { status: "declined" });
+    for (const id of ids.slice(1)) await admin.patch(`/admin/suggestions/${id}`, { status: "accepted" });
+    await progressionIdle();
+    list = await ideas(p);
+    expect(list.map((a) => !!a.unlockedAt)).toEqual([true, true, false]);
+    expect(list[2]!.progress).toBe(5);
+    expect((await p.get(`/players/${p.username}`)).body.badge).toEqual({ name: "Force de proposition", tier: 1 });
+    // Récompense cosmétique : aucun PW versé.
+    expect(await achievementPw(ctx, p.userId)).toBe(pw);
+  });
+
+  it("rattrape les suggestions déjà retenues des anciens joueurs", async () => {
+    const p = await signUp(app);
+    const id = await send(p, 1);
+    await ctx.db.update(schema.suggestions).set({ status: "done" }).where(eq(schema.suggestions.id, id));
+    await ctx.db.update(schema.players).set({ statsVersion: 0 }).where(eq(schema.players.userId, p.userId));
+    await p.get("/me");
+    await progressionIdle();
+    expect((await ideas(p))[0]!.unlockedAt).not.toBeNull();
   });
 });

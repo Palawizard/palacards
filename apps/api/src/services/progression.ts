@@ -11,6 +11,7 @@ import {
   questProgress,
   STAT_KEYS,
   statUpdates,
+  SUGGESTION_ACHIEVEMENT_STATUSES,
   xpForEvent,
   type AchievementDef,
   type GameEvent,
@@ -331,6 +332,20 @@ export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameE
   };
 }
 
+/** Suggestions du joueur retenues par l'admin (succès « Boîte à idées ») : envoyées en rafale, elles ne comptent pas. */
+const retainedSuggestionsSql = (userId: string) => sql`
+  (select count(*)::int from suggestions where user_id = ${userId} and status in (${sql.join(
+    SUGGESTION_ACHIEVEMENT_STATUSES.map((st) => sql`${st}`),
+    sql`, `,
+  )}))
+`;
+
+/** Événement « suggestions retenues », recompté depuis la base (après un changement de statut par l'admin). */
+export async function suggestionsEvent(db: DbOrTx, userId: string): Promise<GameEvent> {
+  const [row] = await db.execute<{ n: number }>(sql`select ${retainedSuggestionsSql(userId)} as n`);
+  return { type: "suggestions_retained", count: row?.n ?? 0 };
+}
+
 const rewardedSql = (userId: string) =>
   sql`exists (select 1 from ledger l where l.user_id = ${userId} and l.reason = 'battle' and l.ref_id = ${schema.battles.id}::text)`;
 
@@ -361,7 +376,7 @@ export async function winStreak(db: DbOrTx, userId: string): Promise<number> {
 // ---------------------------------------------------------------------------
 
 /** À augmenter quand le rattrapage sait recalculer une statistique de plus. */
-export const STATS_VERSION = 1;
+export const STATS_VERSION = 2;
 
 /**
  * Statistiques déductibles de l'historique (ledger, enchères, échanges, duels, collection). Les cartes
@@ -395,7 +410,8 @@ async function historicalStats(db: DbOrTx, userId: string): Promise<Map<StatKey,
       (select count(distinct ref_id) from ledger where user_id = ${userId} and reason = 'wheel') as wheel_spins,
       (select coalesce(sum(-delta), 0) from ledger where user_id = ${userId} and kind = 'card' and reason = 'recycle' and delta < 0) as recycled,
       (select count(*) from ledger where user_id = ${userId} and kind = 'card' and reason = 'upgrade' and delta < 0) as upgrades,
-      (select count(*) from ledger where user_id = ${userId} and kind = 'card' and reason = 'upgrade' and delta > 0) as upgrades_won
+      (select count(*) from ledger where user_id = ${userId} and kind = 'card' and reason = 'upgrade' and delta > 0) as upgrades_won,
+      ${retainedSuggestionsSql(userId)} as suggestions_retained
   `);
   const out = new Map<StatKey, number>();
   for (const key of STAT_KEYS) {

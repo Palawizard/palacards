@@ -1,4 +1,5 @@
 import { and, desc, eq, isNull, schema, sql } from "@palacards/db";
+import { SUGGESTION_ACHIEVEMENT_STATUSES } from "@palacards/game";
 import {
   type AdminSuggestionDTO,
   type SuggestionDTO,
@@ -9,8 +10,12 @@ import type { Ctx } from "../context.js";
 import { notFound } from "../errors.js";
 import { automationDTO, onSuggestionCreated } from "./automation.js";
 import { Effects } from "./notifications.js";
+import { emit, suggestionsEvent } from "./progression.js";
 
 const s = schema.suggestions;
+
+const isRetained = (status: SuggestionStatus) =>
+  (SUGGESTION_ACHIEVEMENT_STATUSES as readonly SuggestionStatus[]).includes(status);
 
 /** Le bandeau « Une idée ? » revient une semaine après avoir été fermé (ou après une suggestion). */
 export const SUGGESTION_BANNER_PAUSE_MS = 7 * 86_400_000;
@@ -117,6 +122,7 @@ export async function updateSuggestion(
   patch: { status?: SuggestionStatus; reply?: string | null },
 ): Promise<SuggestionDTO> {
   const fx = new Effects();
+  let retainedBy: string | null = null;
   const updated = await ctx.db.transaction(async (tx) => {
     const [before] = await tx.select().from(s).where(eq(s.id, id)).for("update");
     if (!before) throw notFound("Suggestion introuvable.");
@@ -158,9 +164,12 @@ export async function updateSuggestion(
         replied: (replyChanged && !!reply) || (!!reply && pending?.payload.replied === true),
       });
     }
+    if (statusChanged && isRetained(status)) retainedBy = before.userId;
     return row!;
   });
   await fx.flush(ctx);
+  // Succès « Boîte à idées » : recompte des suggestions retenues de l'auteur (chaque palier n'est donné qu'une fois).
+  if (retainedBy) emit(ctx, retainedBy, await suggestionsEvent(ctx.db, retainedBy));
   return toDTO(updated);
 }
 

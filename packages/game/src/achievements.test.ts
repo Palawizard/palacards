@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACHIEVEMENTS,
+  achievementBadge,
   applyStatUpdates,
   isNumberTitle,
   isPalindromeTitle,
@@ -8,6 +9,8 @@ import {
   newlyUnlocked,
   STAT_KEYS,
   statUpdates,
+  SUGGESTION_ACHIEVEMENT_STATUSES,
+  SUGGESTION_FAMILY,
   type GameEvent,
   type StatKey,
 } from "./achievements.js";
@@ -28,7 +31,7 @@ describe("succès à paliers", () => {
     expect(ACHIEVEMENTS.length).toBeGreaterThanOrEqual(100);
     expect(new Set(ACHIEVEMENTS.map((a) => a.key)).size).toBe(ACHIEVEMENTS.length);
     for (const a of ACHIEVEMENTS) {
-      expect(a.reward.pw + a.reward.packs).toBeGreaterThan(0);
+      expect(a.reward.pw + a.reward.packs > 0 || !!a.reward.badge).toBe(true);
       expect(STAT_KEYS).toContain(a.stat);
     }
   });
@@ -180,5 +183,27 @@ describe("succès à paliers", () => {
       upgrades: 1,
       upgrades_won: 1,
     });
+  });
+
+  it("récompense les suggestions retenues par un badge seul, du plus haut palier débloqué", () => {
+    const ideas = ACHIEVEMENTS.filter((a) => a.family === SUGGESTION_FAMILY);
+    expect(ideas.map((a) => a.target)).toEqual([1, 5, 10]);
+    for (const a of ideas) expect(a.reward).toEqual({ pw: 0, packs: 0, badge: a.name });
+    expect(ideas[0]!.description).toBe("Avoir 1 suggestion acceptée ou réalisée.");
+    expect(ideas[1]!.description).toBe("Avoir 5 suggestions acceptées ou réalisées.");
+
+    // Recompte : un statut retiré ne fait pas reculer le record.
+    const stats = run([
+      { type: "suggestions_retained", count: 5 },
+      { type: "suggestions_retained", count: 4 },
+    ]);
+    expect(stats.get("suggestions_retained")).toBe(5);
+    expect(unlockedKeys(stats)).toEqual(["ideas_1", "ideas_5"]);
+    expect(unlockedKeys(stats, ["ideas_1", "ideas_5"])).toEqual([]);
+
+    expect(achievementBadge(new Set())).toBeNull();
+    expect(achievementBadge(new Set(["first_pack"]))).toBeNull();
+    expect(achievementBadge(new Set(["ideas_1", "ideas_5"]))).toEqual({ name: "Force de proposition", tier: 1 });
+    expect(SUGGESTION_ACHIEVEMENT_STATUSES).toEqual(["accepted", "done"]);
   });
 });
