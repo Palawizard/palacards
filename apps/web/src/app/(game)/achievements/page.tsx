@@ -1,10 +1,10 @@
 "use client";
 
 import { TIER_NAMES } from "@palacards/game";
-import { Check, Lock, Sparkles, X } from "lucide-react";
+import { Check, Lock, Search, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { ErrorBox } from "@/components/ui";
+import { Empty, ErrorBox } from "@/components/ui";
 import { useSeenFeature } from "@/lib/features";
 import { fmt } from "@/lib/format";
 import { useSocketEvent } from "@/lib/game";
@@ -85,6 +85,10 @@ const reward = (r: Achievement["reward"]) =>
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
 
+/** Recherche sans accents ni majuscules : « legendaire » trouve « Légendaires ». */
+const fold = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().trim();
+const matches = (a: Achievement, q: string) => fold(`${a.name} ${a.description}`).includes(q);
+
 /**
  * Médaille d'un palier : son numéro (I, II, III…) se lit sans la couleur ; débloquée, elle est pleine
  * (bronze, argent, or, platine, diamant), à débloquer elle reste en pointillés.
@@ -129,11 +133,15 @@ function Progress({ a }: { a: Achievement }) {
 
 const date = (iso: string) => new Date(iso).toLocaleDateString("fr-FR");
 
-/** Une famille de paliers : médailles en tête (elles ouvrent le détail), puis le palier en cours. */
-function Family({ name, tiers, onOpen }: { name: string; tiers: Achievement[]; onOpen: () => void }) {
+/**
+ * Une famille de paliers : médailles en tête (elles ouvrent le détail), puis le palier en cours.
+ * Pendant une recherche, si le texte n'est trouvé que dans un autre palier, une ligne le montre.
+ */
+function Family({ name, tiers, q, onOpen }: { name: string; tiers: Achievement[]; q: string; onOpen: () => void }) {
   const next = tiers.find((a) => !a.unlockedAt);
   const done = tiers.filter((a) => a.unlockedAt).length;
   const shown = next ?? tiers.at(-1)!;
+  const hit = q && !fold(name).includes(q) && !matches(shown, q) ? tiers.findIndex((a) => matches(a, q)) : -1;
   return (
     <li className={`flex flex-col gap-3 rounded-[14px] border bg-panel p-4 ${next ? "border-line" : "border-warn/50"}`}>
       <div className="flex items-start justify-between gap-3">
@@ -170,6 +178,12 @@ function Family({ name, tiers, onOpen }: { name: string; tiers: Achievement[]; o
         ) : (
           <p className="tnum mt-1 text-xs text-warn">
             {done} palier{done > 1 ? "s" : ""} · dernier le {date(shown.unlockedAt!)}
+          </p>
+        )}
+        {hit >= 0 && (
+          <p className="mt-2 border-t border-dashed border-line pt-2 text-xs text-muted">
+            <span className="font-semibold text-text">Trouvé au palier {ROMAN[hit] ?? hit + 1}&nbsp;:</span>{" "}
+            {tiers[hit]!.name} · {tiers[hit]!.description}
           </p>
         )}
       </div>
@@ -269,6 +283,8 @@ export default function AchievementsPage() {
   useSeenFeature("achievements-v2");
   const { data, error, mutate } = useSWR<Achievement[]>("/achievements");
   const [detail, setDetail] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const q = fold(query);
   useSocketEvent("progress:update", () => void mutate());
   useSocketEvent("notification:new", (n) => {
     if (n.type.startsWith("achievement")) void mutate();
@@ -283,13 +299,20 @@ export default function AchievementsPage() {
     const n = list.find((x) => !x.unlockedAt);
     return n ? n.progress / n.target : -1;
   };
+  // Recherche : une famille reste si son nom ou l'un de ses paliers (nom, description) contient le texte.
+  const found = [...families].filter(
+    ([name, tiers]) => !q || fold(name).includes(q) || tiers.some((a) => matches(a, q)),
+  );
   const grouped = GROUPS.map((g) => ({
     title: g.title,
-    families: [...families].filter(([name]) => g.families.includes(name)).sort(([, a], [, b]) => ratio(b) - ratio(a)),
+    families: found.filter(([name]) => g.families.includes(name)).sort(([, a], [, b]) => ratio(b) - ratio(a)),
   }));
-  const others = [...families].filter(([name]) => !GROUPS.some((g) => g.families.includes(name)));
+  const others = found.filter(([name]) => !GROUPS.some((g) => g.families.includes(name)));
   if (others.length) grouped.push({ title: "Autres", families: others });
-  const secrets = data?.filter((a) => a.secret) ?? [];
+  // Les secrets pas encore débloqués arrivent masqués du serveur : la recherche n'en dévoile rien.
+  const allSecrets = data?.filter((a) => a.secret) ?? [];
+  const secrets = allSecrets.filter((a) => !q || matches(a, q));
+  const results = found.length + secrets.length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -307,51 +330,82 @@ export default function AchievementsPage() {
         <div className="h-72 animate-pulse rounded-xl bg-panel" />
       ) : (
         <>
-          {grouped.map((g, gi) => (
-            <section key={g.title} aria-labelledby={`group-${gi}`}>
-              <h2 id={`group-${gi}`} className={`section-title ${gi === 0 ? "!mt-0" : ""}`}>
-                {g.title}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <form role="search" className="relative min-w-60 flex-1 sm:max-w-md" onSubmit={(e) => e.preventDefault()}>
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute left-3 top-1/2 size-[1.1rem] -translate-y-1/2 text-faint"
+              />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Duels, brillantes, boss…"
+                aria-label="Chercher un succès par son nom ou sa description"
+                className="field h-11 pl-10 text-base"
+              />
+            </form>
+            <p className="tnum text-sm text-muted" aria-live="polite">
+              {q ? `${results} résultat${results > 1 ? "s" : ""}` : ""}
+            </p>
+          </div>
+          {q && results === 0 && (
+            <Empty title="Aucun succès ne correspond">
+              <p>Rien pour «&nbsp;{query.trim()}&nbsp;» dans les noms et les descriptions.</p>
+              <button type="button" className="btn btn-sm btn-ghost mt-3" onClick={() => setQuery("")}>
+                Effacer la recherche
+              </button>
+            </Empty>
+          )}
+          {grouped
+            .filter((g) => g.families.length)
+            .map((g, gi) => (
+              <section key={g.title} aria-labelledby={`group-${gi}`}>
+                <h2 id={`group-${gi}`} className={`section-title ${gi === 0 ? "!mt-0" : ""}`}>
+                  {g.title}
+                  <span className="tnum font-sans text-sm font-semibold normal-case text-muted [font-stretch:100%]">
+                    {g.families.flatMap(([, t]) => t).filter((a) => a.unlockedAt).length}/
+                    {g.families.flatMap(([, t]) => t).length}
+                  </span>
+                </h2>
+                <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {g.families.map(([name, tiers]) => (
+                    <Family key={name} name={name} tiers={tiers} q={q} onOpen={() => setDetail(name)} />
+                  ))}
+                </ul>
+              </section>
+            ))}
+          <TiersDialog name={detail} tiers={(detail && families.get(detail)) || []} onClose={() => setDetail(null)} />
+          {secrets.length > 0 && (
+            <section aria-labelledby="secrets-title">
+              <h2 id="secrets-title" className={`section-title ${found.length ? "" : "!mt-0"}`}>
+                Succès secrets
                 <span className="tnum font-sans text-sm font-semibold normal-case text-muted [font-stretch:100%]">
-                  {g.families.flatMap(([, t]) => t).filter((a) => a.unlockedAt).length}/
-                  {g.families.flatMap(([, t]) => t).length}
+                  {secrets.filter((s) => s.unlockedAt).length}/{secrets.length}
                 </span>
               </h2>
-              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {g.families.map(([name, tiers]) => (
-                  <Family key={name} name={name} tiers={tiers} onOpen={() => setDetail(name)} />
+              <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {secrets.map((s) => (
+                  <li
+                    key={s.key}
+                    className={`flex items-center gap-3 rounded-[14px] border p-3 ${s.unlockedAt ? "border-warn/50 bg-panel" : "slot"}`}
+                  >
+                    <span
+                      className={`grid size-9 shrink-0 place-items-center rounded-full ${s.unlockedAt ? "bg-accent text-accent-ink" : "border border-line-strong text-faint"}`}
+                      aria-hidden
+                    >
+                      {s.unlockedAt ? <Sparkles className="size-4" /> : <Lock className="size-4" />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="font-semibold leading-tight">{s.name}</p>
+                      <p className="text-sm text-muted">{s.description}</p>
+                      {s.unlockedAt && <p className="tnum text-xs text-warn">{reward(s.reward)}</p>}
+                    </div>
+                  </li>
                 ))}
               </ul>
             </section>
-          ))}
-          <TiersDialog name={detail} tiers={(detail && families.get(detail)) || []} onClose={() => setDetail(null)} />
-          <section aria-labelledby="secrets-title">
-            <h2 id="secrets-title" className="section-title">
-              Succès secrets
-              <span className="tnum font-sans text-sm font-semibold normal-case text-muted [font-stretch:100%]">
-                {secrets.filter((s) => s.unlockedAt).length}/{secrets.length}
-              </span>
-            </h2>
-            <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {secrets.map((s) => (
-                <li
-                  key={s.key}
-                  className={`flex items-center gap-3 rounded-[14px] border p-3 ${s.unlockedAt ? "border-warn/50 bg-panel" : "slot"}`}
-                >
-                  <span
-                    className={`grid size-9 shrink-0 place-items-center rounded-full ${s.unlockedAt ? "bg-accent text-accent-ink" : "border border-line-strong text-faint"}`}
-                    aria-hidden
-                  >
-                    {s.unlockedAt ? <Sparkles className="size-4" /> : <Lock className="size-4" />}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-semibold leading-tight">{s.name}</p>
-                    <p className="text-sm text-muted">{s.description}</p>
-                    {s.unlockedAt && <p className="tnum text-xs text-warn">{reward(s.reward)}</p>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
+          )}
         </>
       )}
     </div>
