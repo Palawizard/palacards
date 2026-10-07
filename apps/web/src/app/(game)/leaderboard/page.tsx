@@ -5,6 +5,7 @@ import { useState } from "react";
 import { LUCK_MIN_PACKS, TITLE_MAX_RANK, type TitleBoard, type TitleRef } from "@palacards/game";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
+import { RowBanner } from "@/components/Banner";
 import { CreatorBadge, ErrorBox, TitleBadge } from "@/components/ui";
 import { fmt } from "@/lib/format";
 
@@ -25,6 +26,8 @@ interface Row {
   title?: TitleRef;
   /** Note de statut du joueur. */
   statusNote?: string;
+  /** Bannière du joueur, en fond de sa ligne. */
+  banner?: { cardId: number; thumbUrl: string };
   rank: number;
   me: boolean;
 }
@@ -137,8 +140,9 @@ export default function LeaderboardPage() {
                 >
                   {r.rank}
                 </td>
-                <td className="px-3 py-1.5">
-                  <div className="flex items-center gap-2.5">
+                <td className="relative px-3 py-1.5">
+                  {r.banner && <RowBanner cardId={r.banner.cardId} thumbUrl={r.banner.thumbUrl} />}
+                  <div className="relative flex items-center gap-2.5">
                     {r.username ? (
                       // Doublon du lien du nom, hors tabulation : l'avatar aussi mène au profil.
                       <Link href={`/u/${r.username}`} tabIndex={-1} aria-hidden className="rounded-full">
