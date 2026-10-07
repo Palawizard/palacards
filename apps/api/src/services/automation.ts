@@ -107,6 +107,7 @@ export async function adminQueueBuild(ctx: Ctx, suggestionId: number): Promise<S
       prNumber: null,
       issueNumber: null,
       ciConclusion: null,
+      error: null,
       updatedAt: ctx.now(),
     })
     .where(eq(a.suggestionId, suggestionId))
@@ -155,6 +156,10 @@ export interface BuildReport {
   reason?: "usage_limit";
   /** Reprise dans la PR sans rien de poussé (Claude n'a rien commité, ou run annulé) : la PR n'a pas changé. */
   unchanged?: "no_commit" | "cancelled";
+  /** Raison d'un échec (écrite par le workflow, jamais par le joueur), montrée dans Admin et sur Discord. */
+  error?: string;
+  /** CI rouge : Claude répare la branche tout seul (essai `attempt` sur `max`). */
+  autoFix?: { attempt: number; max: number };
 }
 
 /** Pause de la file après une limite du forfait Claude. */
@@ -181,6 +186,9 @@ export async function reportBuild(ctx: Ctx, suggestionId: number, report: BuildR
       ...(report.ciConclusion !== undefined ? { ciConclusion: report.ciConclusion } : {}),
       ...(report.playerReply ? { playerReply: report.playerReply } : {}),
       ...(report.announcement ? { announcement: report.announcement } : {}),
+      // La raison d'un échec reste affichée jusqu'à la prochaine étape de la branche.
+      error: report.status === "failed" ? (report.error ?? null) : null,
+      ...(report.autoFix ? { ciConclusion: "failure" } : {}),
       updatedAt: ctx.now(),
     })
     .where(eq(a.suggestionId, suggestionId))
@@ -190,7 +198,9 @@ export async function reportBuild(ctx: Ctx, suggestionId: number, report: BuildR
   const admin = adminUrl(ctx, suggestionId);
   const name = `la suggestion n° ${suggestionId}${row.summary ? ` (${row.summary})` : ""}`;
   let message: string | null = null;
-  if (report.status === "ready" && report.unchanged) {
+  if (report.status === "running" && report.autoFix) {
+    message = `**CI rouge** pour ${name} : Claude répare la branche tout seul (essai ${report.autoFix.attempt}/${report.autoFix.max}). La file attend.\nPR : ${pr ?? "?"}${report.runUrl ? `\nJournal : ${report.runUrl}` : ""}`;
+  } else if (report.status === "ready" && report.unchanged) {
     message =
       report.unchanged === "cancelled"
         ? `**Reprise annulée** pour ${name} : la PR n'a pas changé.\nPR : ${pr ?? "?"}`
@@ -202,7 +212,11 @@ export async function reportBuild(ctx: Ctx, suggestionId: number, report: BuildR
       : "";
     message = `**Branche prête** pour ${name}. ${ci}.${questions}\nPR : ${pr ?? "?"}\nJe la merge ? (Squash and merge vers dev). La suggestion suivante partira quand tu l'auras mergée ou fermée.`;
   } else if (report.status === "failed") {
-    message = `**Échec** de la branche pour ${name}.${report.runUrl ? `\nJournal : ${report.runUrl}` : ""}${pr ? `\nPR : ${pr}` : ""}\nAdmin : ${admin}`;
+    const why = report.error ? `\nRaison : ${report.error}` : "";
+    const next = pr
+      ? `À toi : réponds \`@claude …\` dans la PR pour qu'il corrige, ou ferme-la pour abandonner.\nPR : ${pr}`
+      : `À toi, dans Admin : « Reconstruire la branche » ou « Abandonner ».\nAdmin : ${admin}`;
+    message = `**Échec** de la branche pour ${name}.${why}\nLa file attend ta décision : aucune autre suggestion ne part.\n${next}${report.runUrl ? `\nJournal : ${report.runUrl}` : ""}`;
   } else if (report.status === "merged") {
     message = `Suggestion n° ${suggestionId} **mergée dans dev**. Réponse au joueur prête dans Admin, à envoyer après la mise en prod.\n${admin}`;
   }
