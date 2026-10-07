@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, ELO_START, LUCK_MIN_PACKS } from "@palacards/game";
+import { ECONOMY, ELO_START, LUCK_MIN_PACKS, TITLE_BOARDS } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { lockOrder, PLAYER_LOCK_ORDER } from "../src/services/players.js";
 import { collectionEvent, progressionIdle } from "../src/services/progression.js";
@@ -94,7 +94,7 @@ describe("classements et saisons", () => {
   it("classe par collection, Elo et richesse", async () => {
     const p = await signUp(app);
     await p.post("/packs/open");
-    for (const board of ["collection", "packs", "luck", "elo", "wealth", "guilds", "pass"]) {
+    for (const board of TITLE_BOARDS) {
       for (const period of ["season", "all"]) {
         const res = await p.get(`/leaderboard?board=${board}&period=${period}`);
         expect(res.status).toBe(200);
@@ -103,6 +103,51 @@ describe("classements et saisons", () => {
     await p.patch("/me/settings", { avatar: "🦉" });
     const res = await p.get("/leaderboard?board=collection&period=season");
     expect(res.body.rows.find((r: { me: boolean }) => r.me)?.avatar).toBe("🦉");
+  });
+
+  it("classe par légendaires différents, doublons comptés une fois, premier arrivé devant", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const c = await signUp(app);
+    const season = (await a.get("/me")).body.season as number;
+    const cards = await ctx.db.execute<{ id: number }>(
+      sql`select id::int as id from cards where season = ${season} order by id limit 3`,
+    );
+    const ids = cards.map((x) => x.id);
+    // Cartes données puis passées en légendaires (date d'obtention fixée pour le départage).
+    const give = async (p: typeof a, cardId: number, count: number, at: string) => {
+      const { instanceIds } = (await p.post("/test/grant-card", { cardId, count })).body as { instanceIds: number[] };
+      await ctx.db.execute(sql`
+        update card_instances set rarity = 'L', obtained_at = ${at}::timestamptz
+        where id in (${sql.join(
+          instanceIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+      `);
+    };
+    // A : 2 légendaires différentes (dont un doublon), atteintes en 2001 ; B : 2 aussi, atteintes en 2000 ; C : aucune.
+    await give(a, ids[0]!, 3, "2001-01-01");
+    await give(a, ids[1]!, 1, "2001-01-02");
+    await give(b, ids[0]!, 1, "2000-01-01");
+    await give(b, ids[2]!, 1, "2000-01-02");
+    const [common] = await ctx.db.execute<{ id: number }>(
+      sql`select id::int as id from cards where season = ${season} and rarity <> 'L' limit 1`,
+    );
+    await c.post("/test/grant-card", { cardId: common!.id, count: 1 });
+
+    const rows = (await a.get("/leaderboard?board=legendary&period=season")).body.rows as {
+      id: string;
+      value: number;
+      rank: number;
+    }[];
+    const ra = rows.find((r) => r.id === a.userId)!;
+    const rb = rows.find((r) => r.id === b.userId)!;
+    expect(ra.value).toBe(2);
+    expect(rb.value).toBe(2);
+    expect(rb.rank).toBeLessThan(ra.rank);
+    expect(rows.find((r) => r.id === c.userId)).toBeUndefined();
+    // Ordre décroissant.
+    for (let i = 1; i < rows.length; i++) expect(rows[i]!.value).toBeLessThanOrEqual(rows[i - 1]!.value);
   });
 
   it("affiche le badge « Créateur » à côté des comptes admin", async () => {

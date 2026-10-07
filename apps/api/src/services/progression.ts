@@ -2,6 +2,7 @@ import { and, desc, eq, schema, sql } from "@palacards/db";
 import {
   ACHIEVEMENTS,
   achievementProgress,
+  LEGENDARY_BOARD_RARITY,
   LUCK_MIN_PACKS,
   applyStatUpdates,
   newlyUnlocked,
@@ -550,7 +551,7 @@ interface Row {
 }
 
 /**
- * Classements : collection (points des articles uniques), boosters ouverts, chance (points tirés ÷ points attendus,
+ * Classements : collection (points des articles uniques), légendaires (articles L différents), boosters ouverts, chance (points tirés ÷ points attendus,
  * en %, à partir de LUCK_MIN_PACKS paquets mesurés), Elo, richesse (solde), guildes et niveau du passe.
  * « Saison » : édition en cours et Elo remis à 1 000 ; « tout temps » : toutes éditions, meilleur Elo, archives.
  */
@@ -625,6 +626,29 @@ export async function boardRows(db: DbOrTx, board: Board, period: "season" | "al
       order by s.score desc, u.username limit 100
     `);
     rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.score }));
+  } else if (board === "legendary") {
+    // Articles légendaires différents possédés (doublons comptés une fois). Égalité : le premier à avoir atteint
+    // ce nombre (date d'obtention de sa dernière légendaire nouvelle), puis le pseudo.
+    const seasonFilter = period === "season" ? sql`and ci.season = ${season}` : sql``;
+    const res = await db.execute<{
+      owner_id: string;
+      value: number;
+      username: string;
+      name: string;
+      avatar: string | null;
+    }>(sql`
+      select l.owner_id, l.value, u.username, coalesce(u.display_username, u.name) as name, p.avatar
+      from (
+        select owner_id, count(*)::int as value, max(got_at) as reached_at from (
+          select ci.owner_id, ci.card_id, min(ci.obtained_at) as got_at
+          from card_instances ci
+          where ci.rarity = ${LEGENDARY_BOARD_RARITY}::rarity ${seasonFilter}
+          group by ci.owner_id, ci.card_id
+        ) cards group by owner_id
+      ) l join "user" u on u.id = l.owner_id left join players p on p.user_id = l.owner_id
+      order by l.value desc, l.reached_at, u.username limit 100
+    `);
+    rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
   } else if (board === "packs" || board === "luck") {
     const seasonFilter = period === "season" ? sql`where ps.season = ${season}` : sql``;
     const res = await db.execute<{

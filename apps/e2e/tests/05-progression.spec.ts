@@ -50,6 +50,10 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
   await page.getByRole("button", { name: "Elo" }).click();
   await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
+  // Onglet « Légendaires » : articles L différents, expliqué sous le titre.
+  await page.getByRole("button", { name: "Légendaires" }).click();
+  await expect(page.getByRole("button", { name: "Légendaires" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText(/articles légendaires différents/)).toBeVisible();
 
   // Paramètres : avatar et vitesse d'animation enregistrés.
   await page.goto("settings");

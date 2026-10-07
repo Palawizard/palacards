@@ -1,10 +1,11 @@
 import { ELO_START } from "./battle.js";
+import type { Rarity } from "./rarity.js";
 
 /**
  * Titres cosmétiques : à la fin de chaque saison, les premiers de chaque classement de saison gagnent
  * le titre de ce classement, gardé pour toujours et marqué de la saison obtenue. Aucun effet de jeu.
  */
-export const TITLE_BOARDS = ["collection", "packs", "luck", "elo", "wealth", "guilds", "pass"] as const;
+export const TITLE_BOARDS = ["collection", "legendary", "packs", "luck", "elo", "wealth", "guilds", "pass"] as const;
 export type TitleBoard = (typeof TITLE_BOARDS)[number];
 
 /** Rangs récompensés : les TITLE_MAX_RANK premiers de chaque classement. */
@@ -12,6 +13,7 @@ export const TITLE_MAX_RANK = 3;
 
 export const TITLE_NAMES: Record<TitleBoard, string> = {
   collection: "Grand collectionneur",
+  legendary: "Chasseur de légendes",
   packs: "Accro aux boosters",
   luck: "Lucky guy",
   elo: "Maître des duels",
@@ -23,6 +25,7 @@ export const TITLE_NAMES: Record<TitleBoard, string> = {
 /** Nom des classements, pour situer un titre (« n° 1 en Chance »). */
 export const TITLE_BOARD_LABELS: Record<TitleBoard, string> = {
   collection: "Collection",
+  legendary: "Légendaires",
   packs: "Boosters ouverts",
   luck: "Chance",
   elo: "Elo de bataille",
@@ -30,6 +33,9 @@ export const TITLE_BOARD_LABELS: Record<TitleBoard, string> = {
   guilds: "Guildes",
   pass: "Passe de saison",
 };
+
+/** Rareté comptée par le classement « Légendaires » : articles différents, doublons comptés une fois. */
+export const LEGENDARY_BOARD_RARITY: Rarity = "L";
 
 export interface TitleRef {
   board: TitleBoard;
