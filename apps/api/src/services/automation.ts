@@ -153,6 +153,8 @@ export interface BuildReport {
   runUrl?: string;
   /** Échec dû à la limite du forfait Claude : la branche repart toute seule plus tard. */
   reason?: "usage_limit";
+  /** Reprise dans la PR sans rien de poussé (Claude n'a rien commité, ou run annulé) : la PR n'a pas changé. */
+  unchanged?: "no_commit" | "cancelled";
 }
 
 /** Pause de la file après une limite du forfait Claude. */
@@ -188,7 +190,12 @@ export async function reportBuild(ctx: Ctx, suggestionId: number, report: BuildR
   const admin = adminUrl(ctx, suggestionId);
   const name = `la suggestion n° ${suggestionId}${row.summary ? ` (${row.summary})` : ""}`;
   let message: string | null = null;
-  if (report.status === "ready") {
+  if (report.status === "ready" && report.unchanged) {
+    message =
+      report.unchanged === "cancelled"
+        ? `**Reprise annulée** pour ${name} : la PR n'a pas changé.\nPR : ${pr ?? "?"}`
+        : `**Rien de nouveau** sur la PR de ${name} : Claude n'a rien commité (sa réponse est dans la PR).\nPR : ${pr ?? "?"}`;
+  } else if (report.status === "ready") {
     const ci = report.ciConclusion === "success" ? "CI verte" : `CI : ${report.ciConclusion ?? "inconnue"}`;
     const questions = report.openQuestions
       ? `\n${report.openQuestions} point${report.openQuestions > 1 ? "s" : ""} à trancher, déjà codé${report.openQuestions > 1 ? "s" : ""} avec l'option recommandée : voir « À trancher » dans la PR (réponds avec @claude pour changer).`
