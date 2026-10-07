@@ -68,6 +68,30 @@ test("booster à thème créé par l'admin, code promo, ouverture du booster", a
   await expect(player.page.locator("article.pc-card")).toHaveCount(40);
 });
 
+test("bonus de connexion réglé par l'admin, versé à la prochaine connexion", async ({ browser }) => {
+  const admin = await newPlayer(browser, "admin");
+  await apiCall(admin.page, "POST", "/test/make-admin");
+  const { defaults } = await apiCall<{ defaults: Record<string, number> }>(admin.page, "GET", "/admin/daily-login");
+  try {
+    await admin.page.goto("admin");
+    const section = admin.page
+      .locator("section")
+      .filter({ has: admin.page.getByRole("heading", { name: "Bonus de connexion" }) });
+    await section.getByLabel("Premier jour (PW)").fill("40");
+    await section.getByLabel("Par jour de série (PW)").fill("10");
+    await section.getByLabel("Plafond (PW)").fill("100");
+    await expect(section.getByRole("table")).toContainText("plafond atteint au jour 7");
+    await section.getByRole("button", { name: "Enregistrer" }).click();
+    await expect(admin.page.getByText(/Bonus de connexion enregistré/)).toBeVisible();
+
+    // Un nouveau joueur touche le nouveau montant dès sa première connexion du jour.
+    const player = await newPlayer(browser, "joueur");
+    await expect(player.page.getByText(/Bonus du jour.*\+40.PW/)).toBeVisible();
+  } finally {
+    await apiCall(admin.page, "PUT", "/admin/daily-login", defaults);
+  }
+});
+
 test("roues du jour : la petite tout de suite, la moyenne après 2 h 30", async ({ browser }) => {
   const { page } = await newPlayer(browser, "roue");
   expect((await apiCall<Me>(page, "GET", "/me")).wheelReady).toBe(true);
