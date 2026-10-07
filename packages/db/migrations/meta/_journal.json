@@ -204,6 +204,13 @@
       "when": 1791368858771,
       "tag": "0028_player_status_note",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791373898923,
+      "tag": "0029_quick_upgrade",
+      "breakpoints": true
     }
   ]
 }

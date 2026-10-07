@@ -86,6 +86,9 @@ test("tout sélectionner les cartes du filtre pour les recycler", async ({ brows
   for (let i = 0; i < 3; i++) await apiCall(page, "POST", "/packs/open");
   const commons = await apiCall<{ total: number }>(page, "GET", "/collection?rarity=C&limit=1");
   expect(commons.total).toBeGreaterThan(0);
+  // Une commune peut sortir brillante (0,1 % par carte) : sélectionnée, elle n'est pas recyclée.
+  const guarded = (await apiCall<{ protected: number }>(page, "GET", "/collection/selectable?rarity=C")).protected;
+  const recycled = commons.total - guarded;
 
   await page.goto("collection");
   await page.getByRole("button", { name: "Sélectionner", exact: true }).click();
@@ -100,10 +103,10 @@ test("tout sélectionner les cartes du filtre pour les recycler", async ({ brows
   await expect(bar.getByText(`${commons.total} sélectionnée`)).toBeVisible();
   await bar.getByRole("button", { name: /^Recycler \(\+/ }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("heading", { name: `Recycler ${commons.total} carte`, exact: false })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: `Recycler ${recycled} carte`, exact: false })).toBeVisible();
   await dialog.getByRole("button", { name: /Recycler \(\+/ }).click();
-  await expect(page.getByText(`${commons.total} cartes recyclées`, { exact: false })).toBeVisible();
-  expect((await apiCall<{ total: number }>(page, "GET", "/collection?rarity=C&limit=1")).total).toBe(0);
+  await expect(page.getByText(`${recycled} cartes recyclées`, { exact: false })).toBeVisible();
+  expect((await apiCall<{ total: number }>(page, "GET", "/collection?rarity=C&limit=1")).total).toBe(guarded);
 });
 
 test("fusionne les doublons d'un coup, puis met une sélection en favori et la tague", async ({ browser }) => {
