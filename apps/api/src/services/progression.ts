@@ -31,7 +31,7 @@ import {
 } from "./players.js";
 import { afterCommit, Effects } from "./notifications.js";
 import { battleRewarded, onBattleFinished } from "./battles.js";
-import { collectionScoresSql } from "./profiles.js";
+import { collectionScoresSql, statusNoteOf } from "./profiles.js";
 import { ensureQuests, type QuestRow } from "./quests.js";
 import { displayedTitles } from "./titles.js";
 
@@ -545,6 +545,8 @@ interface Row {
   creator?: boolean;
   /** Titre affiché par le joueur. */
   title?: TitleRef;
+  /** Note de statut du joueur. */
+  statusNote?: string;
 }
 
 /**
@@ -567,10 +569,24 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       ctx.db,
       rows.map((r) => r.id),
     );
+    const notes = await ctx.db.execute<{
+      user_id: string;
+      status_note: string | null;
+      status_note_at: Date | string | null;
+    }>(sql`
+      select user_id, status_note, status_note_at from players
+      where status_note is not null and user_id in (${sql.join(
+        rows.map((r) => sql`${r.id}`),
+        sql`, `,
+      )})
+    `);
+    const noteOf = new Map(notes.map((n) => [n.user_id, statusNoteOf(ctx, n)]));
     for (const r of rows) {
       if (ids.has(r.id)) r.creator = true;
       const title = titles.get(r.id);
       if (title) r.title = title;
+      const note = noteOf.get(r.id);
+      if (note) r.statusNote = note;
     }
   }
   const myGuild =

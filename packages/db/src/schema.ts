@@ -244,6 +244,10 @@ export const players = pgTable(
     /** Titre affiché (profil, classements) : une ligne de `player_titles` (null : aucun). */
     titleSeason: smallint("title_season"),
     titleBoard: text("title_board"),
+    /** Note de statut (profil, liste d'amis), déjà filtrée (null : aucune). */
+    statusNote: text("status_note"),
+    /** Dernière modification de la note (pour une éventuelle durée de vie). */
+    statusNoteAt: tstz("status_note_at"),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [

@@ -31,6 +31,39 @@ describe("amis", () => {
   });
 });
 
+describe("note de statut", () => {
+  it("enregistrée filtrée, visible sur le profil, chez les amis et aux classements, effacée par son auteur", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    await a.post("/friends", { username: b.username });
+    await b.post("/friends", { username: a.username });
+
+    const set = await a.put("/me/status-note", { note: "  En chasse de  légendaires 🃏\n" });
+    expect(set.status).toBe(200);
+    expect(set.body.statusNote).toBe("En chasse de légendaires 🃏");
+    expect((await b.get(`/players/${a.username}`)).body.statusNote).toBe("En chasse de légendaires 🃏");
+    expect((await b.get("/friends")).body.friends[0].statusNote).toBe("En chasse de légendaires 🃏");
+
+    // Classements : la note suit le joueur (tout en haut de « Richesse », base de test partagée).
+    await ctx.db.execute(sql`update players set balance = 1999999998 where user_id = ${a.userId}`);
+    const rows = (await b.get("/leaderboard?board=wealth&period=season")).body.rows as {
+      username: string;
+      statusNote?: string;
+    }[];
+    expect(rows.find((r) => r.username === a.username)?.statusNote).toBe("En chasse de légendaires 🃏");
+
+    // Filtre : longueur, balises, liens ; la note précédente reste.
+    expect((await a.put("/me/status-note", { note: "x".repeat(101) })).body.error).toBe("status_note_too_long");
+    expect((await a.put("/me/status-note", { note: "<img src=x>" })).body.error).toBe("status_note_markup");
+    expect((await a.put("/me/status-note", { note: "viens sur discord.gg/abc" })).body.error).toBe("status_note_link");
+    expect((await a.get(`/players/${a.username}`)).body.statusNote).toBe("En chasse de légendaires 🃏");
+
+    // L'auteur l'efface.
+    expect((await a.put("/me/status-note", { note: "" })).body.statusNote).toBeNull();
+    expect((await b.get(`/players/${a.username}`)).body.statusNote).toBeNull();
+  });
+});
+
 describe("suggestions de pseudos", () => {
   it("début du pseudo d'abord, amis ensuite, sans casse ni accents, jamais soi-même", async () => {
     const tag = `s${Date.now().toString(36).slice(-6)}`;

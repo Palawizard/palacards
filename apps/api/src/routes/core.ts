@@ -36,7 +36,7 @@ import { bossSummary } from "../services/boss.js";
 import { emit, ensureBackfill, passState } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
 import { ensureQuests } from "../services/quests.js";
-import { getProfile, searchPlayers } from "../services/profiles.js";
+import { getProfile, searchPlayers, setStatusNote } from "../services/profiles.js";
 import { newSuggestionsCount, showSuggestionBanner } from "../services/suggestions.js";
 import { playerWheelSchedule } from "../services/wheel.js";
 
@@ -371,6 +371,11 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       req.query,
     );
     return searchPlayers(ctx, req.user.id, q, { excludeFriends: exclude === "friends" });
+  });
+  // Note de statut : texte brut filtré (balises, liens) ; null ou vide l'efface.
+  api.put("/me/status-note", { ...auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) => {
+    const { note } = parse(z.object({ note: z.string().max(1000).nullable() }), req.body);
+    return setStatusNote(ctx, req.user.id, note);
   });
   api.get("/players/:username", auth, async (req) => {
     const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
