@@ -1,10 +1,12 @@
 import { and, asc, eq, inArray, schema, sql } from "@palacards/db";
 import {
   canManage,
+  eligibleForObjectiveReward,
   GUILD_MAX_MEMBERS,
-  GUILD_OBJECTIVE_REWARD_PACKS,
+  GUILD_OBJECTIVE_REWARD,
   GUILD_OBJECTIVES,
   guildChannel,
+  minContribution,
   parisDay,
   validateGuildName,
   validateGuildTag,
@@ -17,7 +19,7 @@ import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { Effects } from "./notifications.js";
 import { emit } from "./progression.js";
-import { activeSeason, lockPlayers, logMovement, packState, type DbOrTx } from "./players.js";
+import { activeSeason, lockPlayers, logMovement, movePw, packState, pushWallet, type DbOrTx } from "./players.js";
 import { collectionScoresSql } from "./profiles.js";
 import { syncGuildRoom } from "./social.js";
 
@@ -198,31 +200,48 @@ async function effectiveTarget(db: DbOrTx, guildId: number, obj: { kind: string;
 }
 
 /**
- * Fait avancer l'objectif de la semaine de la guilde du joueur (tirages, paquets, victoires).
- * Compteur persistant : seuls les événements vécus comme membre comptent, et recycler ou
- * vendre une carte ne fait pas reculer la progression.
+ * Fait avancer l'objectif de la semaine de la guilde du joueur (tirages, paquets, victoires) et sa
+ * contribution personnelle. Compteurs persistants : seuls les événements vécus comme membre comptent,
+ * et recycler ou vendre une carte ne fait pas reculer la progression. Une fois l'objectif atteint, la
+ * contribution continue de compter : un membre qui atteint le minimum plus tard dans la semaine est payé.
  */
 export async function bumpObjective(ctx: Ctx, userId: string, amounts: Partial<Record<GuildObjectiveKind, number>>) {
   const me = await membership(ctx.db, userId);
   if (!me) return;
   const obj = await ensureObjective(ctx, me.guildId);
   const amount = amounts[obj.kind as GuildObjectiveKind] ?? 0;
-  if (obj.completedAt || amount <= 0) return;
+  if (amount <= 0) return;
+  const c = schema.guildObjectiveContributions;
+  const [mine] = await ctx.db
+    .insert(c)
+    .values({ objectiveId: obj.id, userId, amount })
+    .onConflictDoUpdate({ target: [c.objectiveId, c.userId], set: { amount: sql`${c.amount} + ${amount}` } })
+    .returning({ amount: c.amount });
+  const min = minContribution(obj.kind);
+  const crossed = (mine?.amount ?? 0) >= min && (mine?.amount ?? 0) - amount < min;
+  if (obj.completedAt) {
+    // Objectif déjà atteint : seul ce membre peut devenir éligible, au moment où il franchit le minimum.
+    if (crossed) await checkObjective(ctx, me.guildId, userId);
+    return;
+  }
   await ctx.db
     .update(schema.guildObjectives)
     .set({ progress: sql`${schema.guildObjectives.progress} + ${amount}` })
     .where(and(eq(schema.guildObjectives.id, obj.id), sql`${schema.guildObjectives.completedAt} is null`));
-  await checkObjective(ctx, me.guildId);
+  // L'objectif a pu être atteint entre-temps par un autre membre : ce membre est alors payé à part.
+  await checkObjective(ctx, me.guildId, crossed ? userId : undefined);
 }
 
 /**
- * Vérifie l'objectif d'une guilde et distribue la récompense une seule fois
- * (ligne d'objectif verrouillée, `completed_at` posé dans la même transaction). Un joueur
- * ne touche qu'une récompense de guilde par semaine, même s'il change de guilde.
+ * Vérifie l'objectif d'une guilde et distribue la récompense (paquet bonus, PW, XP du passe) aux membres
+ * qui ont atteint la contribution minimale. À l'atteinte, `completed_at` est posé sous verrou de la ligne
+ * d'objectif, dans la même transaction que les paiements. Ensuite, seul `lateUserId` (un membre qui vient
+ * de franchir le minimum) peut encore être payé. Un joueur ne touche qu'une récompense de guilde par
+ * semaine, même s'il change de guilde.
  */
-export async function checkObjective(ctx: Ctx, guildId: number) {
+export async function checkObjective(ctx: Ctx, guildId: number, lateUserId?: string) {
   const obj = await ensureObjective(ctx, guildId);
-  if (obj.completedAt || obj.progress < (await effectiveTarget(ctx.db, guildId, obj))) return;
+  if (obj.completedAt ? !lateUserId : obj.progress < (await effectiveTarget(ctx.db, guildId, obj))) return;
   const fx = new Effects();
   const rewarded = await ctx.db.transaction(async (tx) => {
     const [locked] = await tx
@@ -230,61 +249,76 @@ export async function checkObjective(ctx: Ctx, guildId: number) {
       .from(schema.guildObjectives)
       .where(eq(schema.guildObjectives.id, obj.id))
       .for("update");
-    if (!locked || locked.completedAt || locked.progress < (await effectiveTarget(tx, guildId, locked))) return [];
-    await tx
-      .update(schema.guildObjectives)
-      .set({ completedAt: ctx.now() })
-      .where(eq(schema.guildObjectives.id, obj.id));
-    const members = await tx.select({ userId: gm.userId }).from(gm).where(eq(gm.guildId, guildId));
+    if (!locked) return [];
+    let candidates: string[];
+    if (locked.completedAt) {
+      if (!lateUserId) return [];
+      candidates = [lateUserId];
+    } else {
+      if (locked.progress < (await effectiveTarget(tx, guildId, locked))) return [];
+      await tx
+        .update(schema.guildObjectives)
+        .set({ completedAt: ctx.now() })
+        .where(eq(schema.guildObjectives.id, obj.id));
+      const members = await tx.select({ userId: gm.userId }).from(gm).where(eq(gm.guildId, guildId));
+      candidates = members.map((x) => x.userId);
+    }
     // Joueurs verrouillés AVANT de relire le ledger : un joueur passé dans une autre guilde dont
     // l'objectif se valide en même temps attend ici la fin de l'autre transaction, puis la voit.
-    const lockedPlayers = await lockPlayers(
-      tx,
-      members.map((x) => x.userId),
-    );
+    const lockedPlayers = await lockPlayers(tx, candidates);
     const ids = [...lockedPlayers.keys()];
+    if (!ids.length) return [];
     // Relus sous verrou (adhésion et départ verrouillent aussi le joueur) : membres encore présents,
     // et déjà récompensés cette semaine, quelle que soit la guilde.
-    const still = ids.length
-      ? await tx
-          .select({ userId: gm.userId })
-          .from(gm)
-          .where(and(eq(gm.guildId, guildId), inArray(gm.userId, ids)))
-      : [];
-    const already = ids.length
-      ? await tx
-          .selectDistinct({ userId: schema.ledger.userId })
-          .from(schema.ledger)
-          .where(
-            and(
-              inArray(schema.ledger.userId, ids),
-              eq(schema.ledger.reason, "guild_objective"),
-              sql`${schema.ledger.createdAt} >= (${obj.weekStart}::timestamp at time zone 'Europe/Paris')`,
-            ),
-          )
-      : [];
-    const keep = new Set(still.map((r) => r.userId));
+    const still = await tx
+      .select({ userId: gm.userId })
+      .from(gm)
+      .where(and(eq(gm.guildId, guildId), inArray(gm.userId, ids)));
+    const already = await tx
+      .selectDistinct({ userId: schema.ledger.userId })
+      .from(schema.ledger)
+      .where(
+        and(
+          inArray(schema.ledger.userId, ids),
+          eq(schema.ledger.reason, "guild_objective"),
+          sql`${schema.ledger.createdAt} >= (${obj.weekStart}::timestamp at time zone 'Europe/Paris')`,
+        ),
+      );
+    const contributions = await objectiveContributions(tx, obj.id);
+    // Semaine entamée avant le suivi des contributions (mise en production) : pas de minimum exigé.
+    const untracked = [...contributions.values()].reduce((s, n) => s + n, 0) < locked.progress;
+    const keep = new Set(
+      still
+        .map((r) => r.userId)
+        .filter((id) => untracked || eligibleForObjectiveReward(obj.kind, contributions.get(id) ?? 0)),
+    );
     for (const r of already) keep.delete(r.userId);
     const players = [...lockedPlayers.values()].filter((p) => keep.has(p.userId));
+    const reward = GUILD_OBJECTIVE_REWARD;
     for (const p of players) {
-      const bonusPacks = p.bonusPacks + GUILD_OBJECTIVE_REWARD_PACKS;
+      const bonusPacks = p.bonusPacks + reward.packs;
       await tx.update(schema.players).set({ bonusPacks }).where(eq(schema.players.userId, p.userId));
-      await logMovement(
-        tx,
-        p.userId,
-        "bonus_pack",
-        GUILD_OBJECTIVE_REWARD_PACKS,
-        bonusPacks,
-        "guild_objective",
-        obj.id,
-      );
-      await fx.notify(tx, p.userId, "guild_objective", { guildId, kind: obj.kind });
+      await logMovement(tx, p.userId, "bonus_pack", reward.packs, bonusPacks, "guild_objective", obj.id);
+      await movePw(tx, p, reward.pw, "guild_objective", obj.id);
+      await fx.notify(tx, p.userId, "guild_objective", { guildId, kind: obj.kind, reward });
       p.bonusPacks = bonusPacks;
     }
     return players;
   });
-  for (const p of rewarded) ctx.rt.toUser(p.userId, "packs:update", packState(p, ctx.now()));
+  for (const p of rewarded) {
+    pushWallet(ctx, p);
+    ctx.rt.toUser(p.userId, "packs:update", packState(p, ctx.now()));
+    // XP du passe : par la progression (niveaux, succès), une fois le paiement validé.
+    void emit(ctx, p.userId, { type: "guild_objective" });
+  }
   await fx.flush(ctx);
+}
+
+/** Contributions des membres à un objectif, par joueur. */
+async function objectiveContributions(db: DbOrTx, objectiveId: number) {
+  const c = schema.guildObjectiveContributions;
+  const rows = await db.select().from(c).where(eq(c.objectiveId, objectiveId));
+  return new Map(rows.map((r) => [r.userId, r.amount]));
 }
 
 export async function weeklyJob(ctx: Ctx) {
@@ -332,7 +366,8 @@ export async function listGuilds(ctx: Ctx) {
     .sort((a, b) => b.score - a.score);
 }
 
-export async function guildDetail(ctx: Ctx, guildId: number) {
+/** Détail d'une guilde ; `viewerId` (membre qui consulte sa guilde) ajoute les contributions à l'objectif. */
+export async function guildDetail(ctx: Ctx, guildId: number, viewerId?: string) {
   const [guild] = await ctx.db.select().from(g).where(eq(g.id, guildId));
   if (!guild) throw notFound("Cette guilde n'existe pas.");
   const season = await activeSeason(ctx.db);
@@ -354,6 +389,19 @@ export async function guildDetail(ctx: Ctx, guildId: number) {
   const obj = await ensureObjective(ctx, guildId);
   const target = await effectiveTarget(ctx.db, guildId, obj);
   const progress = obj.progress;
+  const contributions = viewerId ? await objectiveContributions(ctx.db, obj.id) : null;
+  const [rewarded] = viewerId
+    ? await ctx.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(schema.ledger)
+        .where(
+          and(
+            eq(schema.ledger.userId, viewerId),
+            eq(schema.ledger.reason, "guild_objective"),
+            sql`${schema.ledger.createdAt} >= (${obj.weekStart}::timestamp at time zone 'Europe/Paris')`,
+          ),
+        )
+    : [];
   const members = rows.map((r) => ({
     id: r.user_id,
     username: r.username,
@@ -364,6 +412,7 @@ export async function guildDetail(ctx: Ctx, guildId: number) {
     elo: r.elo,
     score: scores.get(r.user_id) ?? 0,
     online: ctx.rt.isOnline(r.user_id),
+    ...(contributions ? { contribution: contributions.get(r.user_id) ?? 0 } : {}),
   }));
   return {
     id: guild.id,
@@ -383,6 +432,9 @@ export async function guildDetail(ctx: Ctx, guildId: number) {
       progress: Math.min(progress, target),
       completed: !!obj.completedAt,
       weekStart: obj.weekStart,
+      reward: GUILD_OBJECTIVE_REWARD,
+      minContribution: minContribution(obj.kind),
+      ...(viewerId ? { myContribution: contributions?.get(viewerId) ?? 0, rewarded: (rewarded?.n ?? 0) > 0 } : {}),
     },
   };
 }

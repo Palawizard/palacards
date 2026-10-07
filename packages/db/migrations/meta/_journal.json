@@ -225,6 +225,13 @@
       "when": 1791380337534,
       "tag": "0031_saved_decks",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791402347799,
+      "tag": "0032_guild_objective_contributions",
+      "breakpoints": true
     }
   ]
 }

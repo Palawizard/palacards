@@ -1,7 +1,7 @@
 import { eq, schema, sql } from "@palacards/db";
-import { GUILD_MAX_MEMBERS } from "@palacards/game";
+import { GUILD_MAX_MEMBERS, GUILD_OBJECTIVE_REWARD, GUILD_OBJECTIVES } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
-import { checkObjective } from "../src/services/guilds.js";
+import { bumpObjective, checkObjective } from "../src/services/guilds.js";
 import { progressionIdle } from "../src/services/progression.js";
 import { makeApp, signUp, uniqueName } from "./helpers.js";
 
@@ -180,12 +180,60 @@ describe("guildes", () => {
     expect(obj!.progress).toBe(60);
     expect(obj!.completedAt).not.toBeNull();
     const [p] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
-    expect(p!.bonusPacks).toBe(1);
+    expect(p!.bonusPacks).toBe(GUILD_OBJECTIVE_REWARD.packs);
+    // Un paquet bonus et des PW, une seule fois.
     const [rows] = await ctx.db.execute<{ n: number }>(
       sql`select count(*)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective'`,
     );
-    expect(rows!.n).toBe(1);
+    expect(rows!.n).toBe(2);
     expect(detail.body.objective.target).toBeGreaterThan(0);
+    expect(detail.body.objective.reward).toEqual(GUILD_OBJECTIVE_REWARD);
+  });
+
+  it("ne paie que les membres qui ont assez contribué, et rattrape ceux qui atteignent le minimum ensuite", async () => {
+    const chief = await signUp(app);
+    const late = await signUp(app);
+    const { body } = await chief.post("/guilds", {
+      name: uniqueName("Minimum "),
+      tag: "MN" + String(Date.now()).slice(-3),
+      emblem: "🧪",
+    });
+    expect((await late.post(`/guilds/${body.id}/join`)).status).toBe(200);
+    await ctx.db
+      .update(schema.guildObjectives)
+      .set({ kind: "open_packs", target: 60, progress: 0 })
+      .where(eq(schema.guildObjectives.guildId, body.id));
+    await progressionIdle();
+    const before = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
+    const min = GUILD_OBJECTIVES.open_packs.minContribution;
+    // Le chef fait tout l'objectif ; l'autre membre contribue sous le minimum.
+    await bumpObjective(ctx, late.userId, { open_packs: min - 1 });
+    await bumpObjective(ctx, chief.userId, { open_packs: 60 });
+    await progressionIdle();
+    const ledger = async (userId: string) =>
+      (
+        await ctx.db.execute<{ n: number }>(
+          sql`select count(*)::int as n from ledger where user_id = ${userId} and reason = 'guild_objective'`,
+        )
+      )[0]!.n;
+    expect(await ledger(chief.userId)).toBe(2);
+    expect(await ledger(late.userId)).toBe(0);
+    const [pw] = await ctx.db.execute<{ n: number }>(
+      sql`select coalesce(sum(delta), 0)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective' and kind = 'pw'`,
+    );
+    expect(pw!.n).toBe(GUILD_OBJECTIVE_REWARD.pw);
+    const [c] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
+    expect(c!.seasonXp - before[0]!.seasonXp).toBeGreaterThanOrEqual(GUILD_OBJECTIVE_REWARD.xp);
+    const mine = await late.get("/guilds/mine");
+    expect(mine.body.objective).toMatchObject({ completed: true, myContribution: min - 1, rewarded: false });
+    // Il atteint le minimum après coup : payé une fois, pas deux.
+    await bumpObjective(ctx, late.userId, { open_packs: 1 });
+    await bumpObjective(ctx, late.userId, { open_packs: 1 });
+    await progressionIdle();
+    expect(await ledger(late.userId)).toBe(2);
+    expect((await late.get("/guilds/mine")).body.objective.rewarded).toBe(true);
+    const notif = await late.get("/notifications");
+    expect(notif.body.items.map((n: { type: string }) => n.type)).toContain("guild_objective");
   });
 
   it("relit le ledger sous verrou : pas de double récompense si l'autre guilde du joueur valide en même temps", async () => {
