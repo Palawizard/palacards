@@ -10,6 +10,18 @@ on:
     types: [created]
   pull_request_review:
     types: [submitted]
+  # Réparation automatique après une CI rouge (lancée par le compte rendu d'une construction ou d'une reprise).
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Numéro de la pull request de suggestion
+        required: true
+      attempt:
+        description: Essai de réparation (1 ou 2)
+        required: true
+      source_run:
+        description: Run dont la CI a échoué (journal donné à Claude)
+        required: true
 
 permissions: {}
 
@@ -18,18 +30,20 @@ jobs:
     name: Claude reprend la branche
     # Dépôt public : seul le propriétaire du dépôt peut solliciter Claude, et seulement sur une pull request.
     if: >-
-      github.event.sender.login == github.repository_owner &&
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.sender.login == github.repository_owner &&
       (github.event.issue.pull_request || github.event.pull_request) &&
-      contains(github.event.comment.body || github.event.review.body || '', '@claude')
+      contains(github.event.comment.body || github.event.review.body || '', '@claude'))
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     concurrency:
-      group: suggestion-followup-${{ github.event.issue.number || github.event.pull_request.number }}
+      group: suggestion-followup-${{ inputs.pr || github.event.issue.number || github.event.pull_request.number }}
       cancel-in-progress: false
     permissions:
       contents: write
       issues: write
       pull-requests: write
+      actions: read
     outputs:
       suggestion: ${{ steps.meta.outputs.suggestion }}
       branch: ${{ steps.meta.outputs.branch }}
@@ -54,7 +68,7 @@ jobs:
         id: meta
         env:
           GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.issue.number || github.event.pull_request.number }}
+          PR: ${{ inputs.pr || github.event.issue.number || github.event.pull_request.number }}
         run: |
           branch=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefName,baseRefName,state \
             -q 'select(.baseRefName == "dev" and .state == "OPEN") | .headRefName')
@@ -90,7 +104,20 @@ jobs:
       - uses: ./.github/actions/suggestion-setup
         if: steps.meta.outputs.skip != 'true'
 
+      - name: Journal de la CI en échec
+        if: steps.meta.outputs.skip != 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.source_run }}
+        run: |
+          mkdir -p .automation
+          gh run view "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" --log-failed 2>/dev/null \
+            | sed -E 's/\x1b\[[0-9;]*m//g' | tail -n 400 > .automation/ci-failure.txt || true
+          [ -s .automation/ci-failure.txt ] || echo "Journal indisponible : relance la CI en local pour trouver l'erreur." > .automation/ci-failure.txt
+          wc -l .automation/ci-failure.txt
+
       - name: Claude reprend la branche
+        id: claude
         if: steps.meta.outputs.skip != 'true'
         uses: anthropics/claude-code-action@v1
         with:
@@ -99,12 +126,21 @@ jobs:
           # Commits signés github-actions[bot] (pas d'identité d'IA dans l'historique de la branche).
           bot_name: github-actions[bot]
           bot_id: "41898283"
+          # Réparation automatique : lancée par le GITHUB_TOKEN d'un compte rendu (acteur github-actions[bot]).
+          allowed_bots: github-actions[bot]
+          # Réparation automatique : consigne explicite (mode agent). Commentaire @claude : mode tag, sans consigne.
+          prompt: >-
+            ${{ github.event_name == 'workflow_dispatch' && format('Réparation automatique, essai {0} sur 2. La CI de la branche {1} (pull request {2}) a échoué : la fin de son journal est dans .automation/ci-failure.txt. Lis puis suis le skill .claude/skills/build-suggestion/SKILL.md (mode « réparation », CI en échec). Trouve la cause, corrige-la, relance en local les vérifications qui échouaient, puis commite. Ne pousse rien, le workflow pousse lui-même.', inputs.attempt, steps.meta.outputs.branch, steps.meta.outputs.pr) || '' }}
           claude_args: >-
             --model opus
             --max-turns 200
             --append-system-prompt "Tu travailles sur une branche de suggestion de PalaCards : lis puis suis .claude/skills/build-suggestion/SKILL.md (mode « suite dans la pull request »)."
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(git rm:*),Bash(git mv:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(jq:*),Bash(diff:*),Bash(echo:*),Bash(test:*),Bash(touch:*),Bash(cp:*),Bash(mv:*),Bash(rm:*),Bash(timeout:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
             --disallowedTools "Bash(curl:*),Bash(wget:*),Bash(gh:*),Bash(git push:*),Bash(/home/runner/work/_actions/anthropics/claude-code-action/v1/scripts/git-push.sh:*),WebFetch,WebSearch"
+
+      - name: Journal de Claude
+        if: always() && steps.claude.outcome != 'skipped' && steps.meta.outputs.skip != 'true'
+        run: node .github/scripts/claude-exec.mjs "${{ steps.claude.outputs.execution_file }}"
 
       - name: Rien hors du périmètre
         if: steps.meta.outputs.skip != 'true'
@@ -187,33 +223,77 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: .github/actions
+      # CI rouge après un changement de Claude : jusqu'à deux réparations automatiques à la suite, puis la PR attend
+      # la décision de Palawi (statut « échec » : la file reste bloquée).
       - name: Bilan
         id: payload
         env:
           FOLLOWUP: ${{ needs.followup.result }}
           CI: ${{ needs.ci.result }}
-          PUSHED: ${{ needs.followup.outputs.pushed }}
           PR: ${{ needs.followup.outputs.pr }}
+          PUSHED: ${{ needs.followup.outputs.pushed }}
+          ATTEMPT: ${{ inputs.attempt || '0' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ "$FOLLOWUP" = success ] && [ "$PUSHED" = true ]; then
+          next=$(( ATTEMPT + 1 ))
+          fix=false; ready=false
+          if [ "$FOLLOWUP" = success ] && [ "$PUSHED" = true ] && [ "$CI" = failure ] && [ "$next" -le 2 ]; then
+            fix=true
+            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" --argjson n "$next" \
+              '{status: "running", prNumber: $pr, runUrl: $run, autoFix: {attempt: $n, max: 2}}')
+          elif [ "$FOLLOWUP" = success ] && [ "$PUSHED" = true ] && [ "$CI" = failure ]; then
+            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" \
+              '{status: "failed", ciConclusion: "failure", prNumber: $pr, runUrl: $run,
+                error: "CI toujours en échec après deux réparations automatiques."}')
+          elif [ "$FOLLOWUP" = success ] && [ "$PUSHED" = true ]; then
+            [ "$CI" = success ] && ready=true
             payload=$(jq -cn --arg ci "$CI" --argjson pr "$PR" --arg run "$RUN_URL" \
               '{status: "ready", ciConclusion: $ci, prNumber: $pr, runUrl: $run}')
-          elif [ "$FOLLOWUP" = success ] || [ "$FOLLOWUP" = cancelled ]; then
-            # Rien de poussé (Claude n'a rien commité, ou reprise annulée) : la PR reste telle quelle.
-            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" --arg why "$FOLLOWUP" \
-              '{status: "ready", unchanged: (if $why == "cancelled" then "cancelled" else "no_commit" end), prNumber: $pr, runUrl: $run}')
+          elif [ "$FOLLOWUP" = success ] && [ "$ATTEMPT" != 0 ]; then
+            # Réparation automatique sans aucun changement : la CI est toujours rouge.
+            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" \
+              '{status: "failed", ciConclusion: "failure", prNumber: $pr, runUrl: $run,
+                error: "Claude n'"'"'a rien trouvé à corriger : la CI reste en échec."}')
+          elif [ "$FOLLOWUP" = success ]; then
+            # Rien de poussé (Claude n'a rien commité) : la PR reste telle quelle.
+            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" '{status: "ready", unchanged: "no_commit", prNumber: $pr, runUrl: $run}')
+          elif [ "$FOLLOWUP" = cancelled ]; then
+            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" '{status: "ready", unchanged: "cancelled", prNumber: $pr, runUrl: $run}')
           else
-            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" '{status: "failed", prNumber: $pr, runUrl: $run}')
+            payload=$(jq -cn --argjson pr "$PR" --arg run "$RUN_URL" \
+              '{status: "failed", prNumber: $pr, runUrl: $run, error: "La reprise de Claude a échoué (voir le journal)."}')
           fi
           echo "json=$payload" >> "$GITHUB_OUTPUT"
+          echo "fix=$fix" >> "$GITHUB_OUTPUT"
+          echo "ready=$ready" >> "$GITHUB_OUTPUT"
+          echo "attempt=$next" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/suggestion-report
         with:
           suggestion: ${{ needs.followup.outputs.suggestion }}
           payload: ${{ steps.payload.outputs.json }}
           api: ${{ vars.AUTOMATION_API_URL }}
           token: ${{ secrets.AUTOMATION_TOKEN }}
+      - name: Brouillon de la PR
+        if: steps.payload.outputs.fix == 'true' || steps.payload.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          PR: ${{ needs.followup.outputs.pr }}
+          READY: ${{ steps.payload.outputs.ready }}
+        run: |
+          # CI rouge : brouillon pendant la réparation ; CI verte : la PR redevient prête à merger.
+          if [ "$READY" = true ]; then gh pr ready "$PR" -R "$GITHUB_REPOSITORY" || true
+          else gh pr ready "$PR" --undo -R "$GITHUB_REPOSITORY" || true; fi
+      - name: Réparation automatique de la CI
+        if: steps.payload.outputs.fix == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.followup.outputs.pr }}
+          ATTEMPT: ${{ steps.payload.outputs.attempt }}
+        run: |
+          gh workflow run suggestion-followup.yml -R "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}" \
+            -f pr="$PR" -f attempt="$ATTEMPT" -f source_run="${{ github.run_id }}"
