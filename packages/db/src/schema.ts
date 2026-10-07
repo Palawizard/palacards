@@ -728,6 +728,24 @@ export const battleQueue = pgTable("battle_queue", {
   expiresAt: tstz("expires_at").notNull(),
 });
 
+/**
+ * Decks de bataille enregistrés par un joueur (privés), réutilisables au lancement ou à l'acceptation d'un
+ * duel. Les exemplaires sont gardés même s'ils quittent la collection : le deck est alors marqué à réparer.
+ */
+export const savedDecks = pgTable(
+  "saved_decks",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    name: text("name").notNull(),
+    /** Exemplaires du deck, dans l'ordre (0 à 5). */
+    cards: bigint("cards", { mode: "number" }).array().notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [index("saved_decks_user_idx").on(t.userId)],
+);
+
 /** Deck figé au moment du défi (les stats ne bougent plus même si la carte est vendue ensuite). */
 export const battleDecks = pgTable(
   "battle_decks",

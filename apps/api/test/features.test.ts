@@ -17,6 +17,7 @@ describe("menu : nouveautés et paquets à ouvrir", () => {
       "suggestions",
       "updates",
       "wheels",
+      "battle-decks",
     ];
     expect((await p.get("/me")).body.newFeatures).toEqual(all);
     expect((await p.post("/me/seen-feature", { key: "battle-v2" })).status).toBe(200);

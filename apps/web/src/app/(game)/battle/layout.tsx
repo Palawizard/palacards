@@ -1,19 +1,11 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
-import { api } from "@/lib/api";
-import { useMe } from "@/lib/game";
+import type { ReactNode } from "react";
+import { useSeenFeature } from "@/lib/features";
 
-/** Première visite du nouveau mode bataille : la pastille « Nouveau » du menu disparaît (tous appareils). */
+/** Première visite du mode bataille et des decks enregistrés : la pastille « Nouveau » du menu disparaît. */
 export default function BattleLayout({ children }: { children: ReactNode }) {
-  const { me, mutateMe } = useMe();
-  const unseen = !!me?.newFeatures.includes("battle-v2");
-  useEffect(() => {
-    if (!unseen) return;
-    void mutateMe((m) => (m ? { ...m, newFeatures: m.newFeatures.filter((f) => f !== "battle-v2") } : m), {
-      revalidate: false,
-    });
-    void api("/me/seen-feature", { body: { key: "battle-v2" } }).catch(() => {});
-  }, [unseen, mutateMe]);
+  useSeenFeature("battle-v2");
+  useSeenFeature("battle-decks");
   return children;
 }

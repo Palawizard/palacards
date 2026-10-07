@@ -55,7 +55,7 @@ export const NAV: NavGroup[] = [
       { href: "/collection", label: "Collection", icon: Layers },
       { href: "/upgrade", label: "Upgrader", icon: ArrowBigUpDash },
       { href: "/cards", label: "Toutes les cartes", icon: LibraryBig },
-      { href: "/battle", label: "Bataille", icon: Swords, badge: "battle", feature: "battle-v2" },
+      { href: "/battle", label: "Bataille", icon: Swords, badge: "battle", feature: "battle-decks" },
     ],
   },
   {
