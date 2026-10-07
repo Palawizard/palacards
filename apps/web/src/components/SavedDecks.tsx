@@ -155,8 +155,8 @@ export function SavedDecks({ deck, onLoad }: { deck: CardDTO[]; onLoad: (d: Card
       )}
 
       {problem && (
-        <p className="flex items-start gap-1.5 text-sm text-warn" role="status">
-          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" strokeWidth={2.5} />
+        <p className="flex items-start gap-1.5 text-sm" role="status">
+          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warn" strokeWidth={2.5} />
           <span>
             <strong className="font-semibold">« {loaded!.name} »</strong> : {problem}
           </span>
