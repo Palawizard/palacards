@@ -115,7 +115,7 @@ test("upgrader : « Passer » saute le tour d'aiguille, ou le réglage le suppri
   // Le tour dure plus de 4 s : « Passer » affiche le résultat tout de suite.
   await page.getByRole("button", { name: "Remplir" }).click();
   await page.getByRole("button", { name: /^Tenter l’upgrade/ }).click();
-  await page.getByRole("button", { name: "Passer" }).click();
+  await page.getByRole("button", { name: "Passer", exact: true }).click();
   await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible({ timeout: 1_500 });
   await expect(page.getByRole("button", { name: "Nouvel essai" })).toBeVisible();
   await page.getByRole("button", { name: "Nouvel essai" }).click();
@@ -131,7 +131,7 @@ test("upgrader : « Passer » saute le tour d'aiguille, ou le réglage le suppri
   await page.getByRole("button", { name: "Remplir" }).click();
   await page.getByRole("button", { name: /^Tenter l’upgrade/ }).click();
   await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible({ timeout: 1_500 });
-  await expect(page.getByRole("button", { name: "Passer" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Passer", exact: true })).toHaveCount(0);
   await expect(cards).toHaveCount(0);
 });
 
