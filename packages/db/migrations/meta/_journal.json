@@ -197,6 +197,13 @@
       "when": 1791363760242,
       "tag": "0027_battle_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791368858771,
+      "tag": "0028_player_status_note",
+      "breakpoints": true
     }
   ]
 }
