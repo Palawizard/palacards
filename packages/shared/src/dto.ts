@@ -56,6 +56,8 @@ export interface MeDTO {
   unreadMessages: number;
   season: number;
   elo: number;
+  /** Autres joueurs dans la file de matchmaking des duels (pastille « Bataille » du menu). */
+  battleQueue: number;
   /** Une roue du jour est prête à tourner maintenant. */
   wheelReady: boolean;
   /** Boosters à thème en vente en ce moment. */
@@ -376,6 +378,14 @@ export interface BossLiveDTO {
   killedAt: string | null;
   /** Dernier coup porté (affiché en direct). */
   last: { name: string; damage: number; hit: "miss" | "hit" | "crit" } | null;
+}
+
+/** File de matchmaking des duels, vue par un joueur. */
+export interface BattleQueueDTO {
+  /** Autres joueurs qui attendent un adversaire (toi exclu). */
+  waiting: number;
+  /** Ta place dans la file : entrée et fin de l'attente ; null si tu n'y es pas. */
+  mine: { since: string; expiresAt: string } | null;
 }
 
 export interface FeedItemDTO {

@@ -77,6 +77,8 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                         : item.badge === "suggestions"
                           ? (me?.newSuggestions ?? 0)
                           : 0;
+                // Joueurs dans la file de matchmaking : pastille verte, distincte des compteurs jaunes.
+                const queue = item.badge === "battle" ? (me?.battleQueue ?? 0) : 0;
                 const isNew = !!item.feature && !!me?.newFeatures.includes(item.feature);
                 // La pastille « Nouveau » suffit : le point d'activité attend la première visite.
                 const dot =
@@ -106,7 +108,16 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                         strokeWidth={2}
                       />
                       <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                      {isNew && (
+                      {queue > 0 && (
+                        <span
+                          className="tnum rounded-full bg-[#4ade80] px-1.5 text-[0.72rem] font-bold text-[#052e16]"
+                          title={`${queue} joueur${queue > 1 ? "s" : ""} en attente d’un duel`}
+                        >
+                          {queue}
+                          <span className="sr-only"> en attente d’un duel</span>
+                        </span>
+                      )}
+                      {isNew && queue === 0 && (
                         <span className="pc-new rounded-full px-1.5 py-px text-[0.68rem] font-bold uppercase tracking-[0.04em]">
                           Nouveau
                         </span>
