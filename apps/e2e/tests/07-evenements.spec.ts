@@ -104,6 +104,37 @@ test("upgrader : des cartes communes pour tenter une peu commune, sur le cadran"
   await expect(cards).toHaveCount(0);
 });
 
+test("upgrader : « Passer » saute le tour d'aiguille, ou le réglage le supprime", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "passer");
+  const common = await apiCall<{ items: { cardId: number }[] }>(page, "GET", "/cards?rarity=C&limit=1");
+  await apiCall(page, "POST", "/test/grant-card", { cardId: common.items[0]!.cardId, count: 6 });
+  await page.goto("upgrade");
+  const cards = page.locator("button[aria-pressed]:has(article)");
+  await expect(cards).toHaveCount(6);
+
+  // Le tour dure plus de 4 s : « Passer » affiche le résultat tout de suite.
+  await page.getByRole("button", { name: "Remplir" }).click();
+  await page.getByRole("button", { name: /^Tenter l’upgrade/ }).click();
+  await page.getByRole("button", { name: "Passer" }).click();
+  await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible({ timeout: 1_500 });
+  await expect(page.getByRole("button", { name: "Nouvel essai" })).toBeVisible();
+  await page.getByRole("button", { name: "Nouvel essai" }).click();
+
+  // Réglage « Upgrader sans animation » : pas de bouton « Passer », le résultat arrive directement.
+  await page.goto("settings");
+  await page.getByRole("checkbox", { name: /Upgrader sans animation/ }).check();
+  await expect(page.getByText("L’Upgrader ira droit au résultat.")).toBeVisible();
+  expect((await apiCall<{ quickUpgrade: boolean }>(page, "GET", "/me")).quickUpgrade).toBe(true);
+  await page.goto("upgrade");
+  // Remplir a posé 4 cartes (chance au plafond) : il en reste 2.
+  await expect(cards).toHaveCount(2);
+  await page.getByRole("button", { name: "Remplir" }).click();
+  await page.getByRole("button", { name: /^Tenter l’upgrade/ }).click();
+  await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible({ timeout: 1_500 });
+  await expect(page.getByRole("button", { name: "Passer" })).toHaveCount(0);
+  await expect(cards).toHaveCount(0);
+});
+
 test("upgrader : favoris masqués par défaut, upgrade en série des doublons", async ({ browser }) => {
   const { page } = await newPlayer(browser, "serie");
   const common = await apiCall<{ items: { cardId: number }[] }>(page, "GET", "/cards?rarity=C&limit=1&sort=title");

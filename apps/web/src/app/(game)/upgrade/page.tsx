@@ -14,7 +14,7 @@ import {
   type Rarity,
 } from "@palacards/game";
 import type { CardDTO, Page, UpgradeResultDTO } from "@palacards/shared";
-import { ArrowRight, Info, X } from "lucide-react";
+import { ArrowRight, Info, SkipForward, X } from "lucide-react";
 import { animate, AnimatePresence, motion, useMotionValue, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -36,6 +36,7 @@ import { chanceText, UpgradeDial, type DialState } from "@/components/UpgradeDia
 import { UpgradeSeries } from "@/components/UpgradeSeries";
 import { api, ApiError, thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
+import { useMe } from "@/lib/game";
 import { useCardMedia } from "@/lib/media";
 import { play } from "@/lib/sfx";
 import { useStoredFlag } from "@/lib/use-stored-flag";
@@ -102,6 +103,9 @@ function SlotTile({ card }: { card: CardDTO }) {
 
 export default function UpgradePage() {
   const reduce = useReducedMotion();
+  // Réglage « Upgrader sans animation » : pas de tour d'aiguille, le résultat s'affiche dès la réponse du serveur.
+  const { me } = useMe();
+  const quick = !!me?.quickUpgrade;
   const [rarity, setRarity] = useState<Rarity>("C");
   // Mêmes filtres que la collection (recherche dans le résumé, tags, booster…), sauf la rareté, fixée par l'établi.
   const { value: f, set: setFilter, params: filters } = useCollectionFilters({ duplicates: true, sort: "date" });
@@ -117,7 +121,11 @@ export default function UpgradePage() {
   const [phase, setPhase] = useState<Phase>("idle");
   const [result, setResult] = useState<UpgradeResultDTO | null>(null);
   const [revealed, setRevealed] = useState(false);
+  /** Résultat affiché sans animation (réglage ou bouton « Passer ») : carte posée face visible. */
+  const [instant, setInstant] = useState(false);
   const rotation = useMotionValue(0);
+  const spin = useRef<ReturnType<typeof animate> | null>(null);
+  const skipped = useRef(false);
   const lastTick = useRef(0);
   const dialRef = useRef<HTMLDivElement>(null);
 
@@ -229,8 +237,16 @@ export default function UpgradePage() {
     });
   }
 
+  /** « Passer » : l'aiguille saute sur le tirage déjà reçu du serveur. Seule la présentation change. */
+  function skip() {
+    skipped.current = true;
+    spin.current?.complete();
+  }
+
   async function attempt() {
     if (count < UPGRADE_MIN_CARDS || phase !== "idle") return;
+    skipped.current = quick;
+    setInstant(false);
     setPhase("fusing");
     play("tear");
     // Sur téléphone, le bouton est sous les cases : on remonte au cadran pour voir l'aiguille tourner.
@@ -243,11 +259,10 @@ export default function UpgradePage() {
     try {
       const [res] = await Promise.all([
         api<UpgradeResultDTO>("/upgrade", { body: { instanceIds: picked.map((c) => c.instanceId) } }),
-        new Promise((r) => setTimeout(r, reduce ? 150 : 450)),
+        new Promise((r) => setTimeout(r, quick ? 0 : reduce ? 150 : 450)),
       ]);
       setResult(res);
       setPicked([]);
-      setPhase("spinning");
       // L'aiguille fait plusieurs tours puis s'arrête sur le tirage : dans l'arc si c'est gagné.
       // Mouvement réduit : pas de tours, un court glissement jusqu'au tirage.
       const current = rotation.get();
@@ -255,14 +270,24 @@ export default function UpgradePage() {
       const angle = ((res.roll + Math.random()) / 10_000) * 360;
       const base = current - (((current % 360) + 360) % 360);
       const end = base + (reduce ? 0 : 360 * SPIN.turns) + angle;
-      await animate(
-        rotation,
-        end,
-        reduce ? { duration: 0.6, ease: EASE_OUT } : { duration: SPIN.duration, ease: SPIN.ease },
-      );
+      if (skipped.current) rotation.set(end);
+      else {
+        setPhase("spinning");
+        spin.current = animate(
+          rotation,
+          end,
+          reduce ? { duration: 0.6, ease: EASE_OUT } : { duration: SPIN.duration, ease: SPIN.ease },
+        );
+        await spin.current;
+        spin.current = null;
+      }
+      const fast = skipped.current;
+      setInstant(fast);
       setPhase("done");
-      if (res.success) setTimeout(() => setRevealed(true), reduce ? 0 : 380);
-      else play("wrong");
+      if (res.success) {
+        if (fast) setRevealed(true);
+        else setTimeout(() => setRevealed(true), reduce ? 0 : 380);
+      } else play("wrong");
       void list.mutate();
       void revalidate((key) => typeof key === "string" && key.startsWith(`/upgrade/series?rarity=${rarity}`));
     } catch (err) {
@@ -338,13 +363,13 @@ export default function UpgradePage() {
                     revealed={revealed}
                     onReveal={() => setRevealed(true)}
                     index={0}
-                    speed="normal"
+                    speed={instant ? "instant" : "normal"}
                     stagger={false}
                   />
                 ) : (
                   <motion.div
                     animate={
-                      phase === "done" && !reduce
+                      phase === "done" && !reduce && !instant
                         ? { transform: ["translateX(0px)", "translateX(-6px)", "translateX(5px)", "translateX(0px)"] }
                         : { transform: "translateX(0px)" }
                     }
@@ -466,18 +491,27 @@ export default function UpgradePage() {
                   Remplir
                 </button>
               )}
-              <button
-                type="button"
-                className="btn btn-primary min-w-44 max-sm:w-full"
-                disabled={count < UPGRADE_MIN_CARDS || phase !== "idle"}
-                onClick={attempt}
-              >
-                {busy
-                  ? "Upgrade en cours…"
-                  : chance !== null
-                    ? `Tenter l’upgrade · ${chanceText(chance)}${NBSP}%`
-                    : "Choisis des cartes"}
-              </button>
+              {/* Pendant le tour, le même bouton passe l'animation (rien ne bouge sous le doigt ou la souris).
+                  Pas pendant la fusion : un double clic sur « Tenter » ne doit pas sauter le tour par mégarde. */}
+              {phase === "spinning" ? (
+                <button type="button" className="btn btn-primary min-w-44 max-sm:w-full" onClick={skip}>
+                  <SkipForward aria-hidden className="size-4" />
+                  Passer
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary min-w-44 max-sm:w-full"
+                  disabled={count < UPGRADE_MIN_CARDS || phase !== "idle"}
+                  onClick={attempt}
+                >
+                  {busy
+                    ? "Upgrade en cours…"
+                    : chance !== null
+                      ? `Tenter l’upgrade · ${chanceText(chance)}${NBSP}%`
+                      : "Choisis des cartes"}
+                </button>
+              )}
             </>
           )}
         </div>

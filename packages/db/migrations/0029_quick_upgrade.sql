@@ -1,0 +1,1 @@
+ALTER TABLE "players" ADD COLUMN "quick_upgrade" boolean DEFAULT false NOT NULL;
