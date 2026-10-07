@@ -472,3 +472,11 @@ export interface AdminSuggestionDTO extends SuggestionDTO {
   updatedAt: string;
   automation: SuggestionAutomationDTO | null;
 }
+
+/** Pseudo proposé pendant la saisie (échanges, duels, amis) : rien de plus que ce qu'affiche le profil public. */
+export interface PlayerSuggestionDTO {
+  username: string;
+  displayName: string;
+  avatar: string | null;
+  friend: boolean;
+}

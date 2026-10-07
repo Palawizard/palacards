@@ -31,6 +31,38 @@ describe("amis", () => {
   });
 });
 
+describe("suggestions de pseudos", () => {
+  it("début du pseudo d'abord, amis ensuite, sans casse ni accents, jamais soi-même", async () => {
+    const tag = `s${Date.now().toString(36).slice(-6)}`;
+    const me = await signUp(app, `${tag}palme`);
+    const other = await signUp(app, `${tag}pala`);
+    const friend = await signUp(app, `${tag}palb`);
+    const inside = await signUp(app, `x${tag}pal`);
+    await signUp(app, `${tag}zzz`);
+    await me.post("/friends", { username: friend.username });
+    await friend.post("/friends", { username: me.username });
+
+    const res = await me.get(`/players?q=${encodeURIComponent(`${tag.toUpperCase()}PÂL`)}`);
+    expect(res.status).toBe(200);
+    expect(res.body.map((p: { username: string }) => p.username)).toEqual([
+      friend.username,
+      other.username,
+      inside.username,
+    ]);
+    expect(Object.keys(res.body[0]).sort()).toEqual(["avatar", "displayName", "friend", "username"]);
+    expect(res.body[0].friend).toBe(true);
+
+    // Page Amis : ni les amis ni les demandes en cours.
+    await me.post("/friends", { username: other.username });
+    const add = await me.get(`/players?q=${tag}pal&exclude=friends`);
+    expect(add.body.map((p: { username: string }) => p.username)).toEqual([inside.username]);
+
+    // `_` et `%` sont cherchés tels quels, pas comme jokers.
+    expect((await me.get(`/players?q=${tag}_`)).body).toEqual([]);
+    expect((await me.get("/players?q=")).status).toBe(400);
+  });
+});
+
 describe("messages", () => {
   it("MP avec partage de carte et non-lus", async () => {
     const a = await signUp(app);
