@@ -4,6 +4,11 @@ import type { Rarity } from "./rarity.js";
 export const ECONOMY = {
   recycleValue: { C: 1, PC: 3, R: 10, SR: 40, UR: 150, L: 1_000 } satisfies Record<Rarity, number>,
   dailyLogin: { base: 20, perStreakDay: 5, max: 50 },
+  /**
+   * Bonus de retour, versé avec le bonus du jour après une longue absence. Rien n'est pris aux absents.
+   * Toujours inférieur aux bonus du jour manqués pendant l'absence : s'absenter exprès n'y gagne rien.
+   */
+  returnBonus: { minDaysAway: 14, reward: 150 },
   battle: { win: 30, loss: 10 },
   startingBalance: 100,
   bonusPackPrice: 150,
@@ -19,6 +24,17 @@ export const ECONOMY = {
 export function dailyLoginReward(streakDays: number): number {
   const { base, perStreakDay, max } = ECONOMY.dailyLogin;
   return Math.min(max, base + perStreakDay * Math.max(0, streakDays - 1));
+}
+
+/**
+ * Bonus de retour : `reward` PW si la dernière connexion date d'au moins `minDaysAway` jours
+ * (jours calendaires). Rien pour un nouveau compte (pas de connexion précédente).
+ */
+export function returnBonus(lastLoginDay: string | null, today: string): number {
+  if (!lastLoginDay) return 0;
+  const { minDaysAway, reward } = ECONOMY.returnBonus;
+  const away = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${lastLoginDay}T00:00:00Z`)) / 86_400_000;
+  return away >= minDaysAway ? reward : 0;
 }
 
 /** Montant réellement reçu par le vendeur après la taxe (arrondi en défaveur du vendeur). */

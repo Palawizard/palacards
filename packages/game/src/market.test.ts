@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dailyLoginReward, ECONOMY, sellerProceeds } from "./economy.js";
+import { dailyLoginReward, ECONOMY, returnBonus, sellerProceeds } from "./economy.js";
 import {
   addDays,
   antiSnipeEnd,
@@ -72,6 +72,17 @@ describe("connexion quotidienne", () => {
     expect(dailyLoginReward(1)).toBe(20);
     expect(dailyLoginReward(3)).toBe(30);
     expect(dailyLoginReward(30)).toBe(50);
+  });
+  it("donne le bonus de retour après 14 jours d'absence, jamais à un nouveau compte", () => {
+    expect(returnBonus(null, "2026-10-15")).toBe(0);
+    expect(returnBonus("2026-10-14", "2026-10-15")).toBe(0);
+    expect(returnBonus("2026-10-02", "2026-10-15")).toBe(0);
+    expect(returnBonus("2026-10-01", "2026-10-15")).toBe(ECONOMY.returnBonus.reward);
+    expect(returnBonus("2026-03-20", "2026-10-15")).toBe(ECONOMY.returnBonus.reward);
+  });
+  it("ne rend jamais une absence volontaire rentable", () => {
+    const { minDaysAway, reward } = ECONOMY.returnBonus;
+    expect(reward).toBeLessThan(minDaysAway * dailyLoginReward(1));
   });
   it("calcule les jours à l'heure de Paris", () => {
     expect(addDays("2026-12-31", 1)).toBe("2027-01-01");

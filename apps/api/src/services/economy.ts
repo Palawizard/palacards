@@ -1,5 +1,13 @@
 import { and, desc, eq, schema, sql } from "@palacards/db";
-import { dailyLoginReward, ECONOMY, MAX_STORED_PACKS, nextLoginStreak, PACK_REGEN_MS, parisDay } from "@palacards/game";
+import {
+  dailyLoginReward,
+  ECONOMY,
+  MAX_STORED_PACKS,
+  nextLoginStreak,
+  PACK_REGEN_MS,
+  parisDay,
+  returnBonus,
+} from "@palacards/game";
 import type { CardDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { notFound } from "../errors.js";
@@ -12,6 +20,7 @@ export const PACKS_FULL_JOB = "packs-full";
 
 /**
  * Bonus de connexion quotidienne (jour calendaire de Paris) : 20 PW, +5 par jour de série, max 50.
+ * Après une longue absence, s'y ajoute le bonus de retour (ligne de ledger à part).
  * Idempotent : un second appel le même jour ne donne rien.
  */
 export async function claimDaily(ctx: Ctx, userId: string) {
@@ -21,17 +30,24 @@ export async function claimDaily(ctx: Ctx, userId: string) {
     const streak = nextLoginStreak(p.lastLoginDay, today, p.loginStreak);
     if (streak === null) return null;
     const reward = dailyLoginReward(streak);
+    const comeback = returnBonus(p.lastLoginDay, today);
     await tx
       .update(schema.players)
       .set({ loginStreak: streak, lastLoginDay: today, lastSeenAt: ctx.now() })
       .where(eq(schema.players.userId, userId));
     await movePw(tx, p, reward, "daily_login", today);
-    return { reward, streak, player: p };
+    await movePw(tx, p, comeback, "return_bonus", today);
+    return { reward, streak, comeback, player: p };
   });
   if (!res) return { claimed: false as const };
   pushWallet(ctx, res.player);
   void emit(ctx, userId, { type: "daily_login" }, { type: "login_streak", days: res.streak });
-  return { claimed: true as const, reward: res.reward, streak: res.streak };
+  return {
+    claimed: true as const,
+    reward: res.reward,
+    streak: res.streak,
+    ...(res.comeback > 0 && { returnBonus: res.comeback }),
+  };
 }
 
 /** Achat d'un paquet bonus (hors plafond de stock) contre des PW. */

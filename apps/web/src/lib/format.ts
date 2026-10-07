@@ -44,6 +44,7 @@ const REASONS: Record<string, string> = {
   recycle: "Recyclage",
   fusion: "Fusion",
   daily_login: "Bonus du jour",
+  return_bonus: "Bonus de retour",
   battle: "Duel",
   achievement: "Succès",
   bonus_pack: "Paquet bonus",

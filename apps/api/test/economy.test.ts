@@ -1,5 +1,5 @@
-import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, saleTax } from "@palacards/game";
+import { and, eq, schema, sql } from "@palacards/db";
+import { addDays, ECONOMY, parisDay, saleTax } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { closeAuctionIfDue } from "../src/services/market.js";
 import { progressionIdle } from "../src/services/progression.js";
@@ -306,6 +306,34 @@ describe("portefeuille", () => {
     expect(first.body).toEqual({ claimed: true, reward: 20, streak: 1 });
     expect((await p.post("/daily")).body).toEqual({ claimed: false });
     await expectLedgerConsistent(p);
+  });
+
+  it("ajoute le bonus de retour après une longue absence, sur une ligne de ledger à part", async () => {
+    const { minDaysAway, reward } = ECONOMY.returnBonus;
+    const back = await signUp(app);
+    const recent = await signUp(app);
+    const away = (days: number) => addDays(parisDay(ctx.now()), -days);
+    await ctx.db
+      .update(schema.players)
+      .set({ lastLoginDay: away(minDaysAway) })
+      .where(eq(schema.players.userId, back.userId));
+    await ctx.db
+      .update(schema.players)
+      .set({ lastLoginDay: away(minDaysAway - 1) })
+      .where(eq(schema.players.userId, recent.userId));
+
+    const before = (await wallet(back)).balance;
+    expect((await back.post("/daily")).body).toEqual({ claimed: true, reward: 20, streak: 1, returnBonus: reward });
+    expect((await wallet(back)).balance).toBe(before + 20 + reward);
+    const lines = await ctx.db
+      .select()
+      .from(schema.ledger)
+      .where(and(eq(schema.ledger.userId, back.userId), eq(schema.ledger.reason, "return_bonus")));
+    expect(lines.map((l) => l.delta)).toEqual([reward]);
+    expect((await back.post("/daily")).body).toEqual({ claimed: false });
+    await expectLedgerConsistent(back);
+
+    expect((await recent.post("/daily")).body).toEqual({ claimed: true, reward: 20, streak: 1 });
   });
 
   it("vend un paquet bonus contre 150 PW", async () => {

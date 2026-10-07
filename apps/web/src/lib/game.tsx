@@ -8,6 +8,7 @@ import { io, type Socket } from "socket.io-client";
 import useSWR, { SWRConfig, type KeyedMutator } from "swr";
 import { toast } from "sonner";
 import { api, API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
+import { fmt } from "./format";
 import { describe } from "./notifications";
 import { play, unlockAudioOnFirstGesture, type Sfx } from "./sfx";
 import { setArthropodFlag } from "./arthropods";
@@ -160,10 +161,17 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!loggedIn) return;
     const claim = () =>
-      api<{ claimed: boolean; reward?: number; streak?: number }>("/daily", { method: "POST" })
+      api<{ claimed: boolean; reward?: number; streak?: number; returnBonus?: number }>("/daily", { method: "POST" })
         .then((r) => {
           if (!r.claimed) return;
           play("coin");
+          if (r.returnBonus) {
+            // Espaces insécables ( ) : typographie française.
+            toast.success(`Content de te revoir ! Bonus de retour : +${fmt(r.returnBonus)} PW`, {
+              description: `Et ton bonus du jour : +${r.reward} PW.`,
+            });
+            return;
+          }
           toast.success(
             `Bonus du jour : +${r.reward} PW${r.streak && r.streak > 1 ? ` (série de ${r.streak} jours)` : ""}`,
           );

@@ -48,6 +48,7 @@ export type LedgerReason =
   | "signup"
   | "recycle"
   | "daily_login"
+  | "return_bonus"
   | "battle"
   | "achievement"
   | "bonus_pack"
