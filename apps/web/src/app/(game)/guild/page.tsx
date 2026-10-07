@@ -22,6 +22,20 @@ interface Member {
   elo: number;
   score: number;
   online: boolean;
+  /** Contribution à l'objectif de la semaine (sa propre guilde seulement). */
+  contribution?: number;
+}
+interface Objective {
+  kind: string;
+  label: string;
+  target: number;
+  progress: number;
+  completed: boolean;
+  weekStart: string;
+  reward: { packs: number; pw: number; xp: number };
+  minContribution: number;
+  myContribution?: number;
+  rewarded?: boolean;
 }
 interface GuildDetail {
   id: number;
@@ -34,7 +48,7 @@ interface GuildDetail {
   members: Member[];
   maxMembers: number;
   myRole?: Role;
-  objective: { label: string; target: number; progress: number; completed: boolean; weekStart: string };
+  objective: Objective;
 }
 interface GuildSummary {
   id: number;
@@ -47,6 +61,49 @@ interface GuildSummary {
 }
 
 const ROLE_LABEL: Record<Role, string> = { leader: "Chef", officer: "Officier", member: "Membre" };
+
+/** Unité de contribution d'un objectif : « 5 paquets », « 1 victoire ». */
+function contributionUnit(kind: string, n: number): string {
+  const s = n > 1 ? "s" : "";
+  if (kind === "open_packs") return `${fmt(n)} paquet${s}`;
+  if (kind === "win_battles") return `${fmt(n)} victoire${s}`;
+  if (kind === "pull_sr") return `${fmt(n)} carte${s} SR ou mieux`;
+  return fmt(n);
+}
+
+function rewardText(r: Objective["reward"]): string {
+  return [
+    r.packs ? `${r.packs} paquet${r.packs > 1 ? "s" : ""} bonus` : "",
+    r.pw ? `+${fmt(r.pw)} PW` : "",
+    r.xp ? `+${fmt(r.xp)} XP` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** Où en est le joueur : récompense touchée, à portée, ou contribution qui manque. */
+function MyShare({ objective: o }: { objective: Objective }) {
+  if (o.myContribution === undefined) return null;
+  const missing = Math.max(0, o.minContribution - o.myContribution);
+  return (
+    <p className="mt-1 text-sm">
+      {o.rewarded ? (
+        <span className="font-semibold text-highlight">Récompense touchée cette semaine.</span>
+      ) : missing === 0 ? (
+        <span className="text-muted">
+          Ta part est faite ({contributionUnit(o.kind, o.myContribution)})
+          {o.completed ? "." : " : la récompense tombera dès l’objectif atteint."}
+        </span>
+      ) : (
+        <span className="text-muted">
+          Ta contribution&nbsp;: {contributionUnit(o.kind, o.myContribution)}. Encore{" "}
+          <strong className="text-text">{contributionUnit(o.kind, missing)}</strong> pour toucher la récompense
+          {o.completed ? " : il est encore temps cette semaine." : "."}
+        </span>
+      )}
+    </p>
+  );
+}
 const EMBLEMS = ["🦉", "📚", "🗺️", "⚔️", "🌍", "🔭", "🎭", "🧪", "🏛️", "🐉", "🌋", "🎼"];
 
 function run(fn: () => Promise<unknown>, ok: string, after: () => void) {
@@ -221,10 +278,17 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
             </div>
             <p className="tnum mt-1.5 text-sm text-muted">
               {fmt(guild.objective.progress)} / {fmt(guild.objective.target)}
-              {guild.objective.completed
-                ? " · atteint : un paquet bonus pour chacun !"
-                : " · récompense : un paquet bonus par membre"}
+              {guild.objective.completed && " · objectif atteint !"}
             </p>
+            <p className="tnum mt-3 text-sm">
+              <span className="text-muted">Récompense par membre&nbsp;: </span>
+              <span className="font-semibold">{rewardText(guild.objective.reward)}</span>
+            </p>
+            <p className="text-xs text-faint">
+              Pour tout membre qui y contribue d&apos;au moins{" "}
+              {contributionUnit(guild.objective.kind, guild.objective.minContribution)} dans la semaine.
+            </p>
+            <MyShare objective={guild.objective} />
           </div>
         </section>
         <section className="infobox">
@@ -261,6 +325,9 @@ function MyGuild({ guild, onChanged }: { guild: GuildDetail; onChanged: () => vo
                 </span>
                 <span className="tnum block text-xs text-faint">
                   {fmt(m.score)} pts · Elo {fmt(m.elo)}
+                  {m.contribution !== undefined && (
+                    <> · objectif&nbsp;: {contributionUnit(guild.objective.kind, m.contribution)}</>
+                  )}
                 </span>
               </span>
               {m.id !== me?.id && (
@@ -362,7 +429,7 @@ export default function GuildPage() {
         <h1 className="page-title">Guilde</h1>
         <p className="hatnote mt-2">
           Jusqu’à {GUILD_MAX_MEMBERS} membres, un salon commun et un objectif chaque semaine qui rapporte un paquet
-          bonus à tous.
+          bonus, des PW et de l’XP du passe à chaque membre qui y participe.
         </p>
       </div>
       {error ? (

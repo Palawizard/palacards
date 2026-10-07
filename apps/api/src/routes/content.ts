@@ -45,6 +45,7 @@ const XP_TABLE: PassDTO["xpTable"] = [
   { label: "Vente au marché", xp: XP.sale },
   { label: "Quête du jour", xp: 150 },
   { label: "Quête de la semaine", xp: 1_500 },
+  { label: "Objectif de guilde atteint", xp: XP.guildObjective },
 ];
 
 const broadcastBody = z.object({
