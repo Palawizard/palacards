@@ -1,4 +1,4 @@
-import type { AutoRecycleRarity, Rarity, WheelReward, WheelTier } from "@palacards/game";
+import type { AutoRecycleRarity, DailyLoginRates, Rarity, WheelReward, WheelTier } from "@palacards/game";
 import type { PackState, Wallet } from "./events.js";
 import type { SuggestionKind, SuggestionStatus } from "./schemas.js";
 
@@ -483,6 +483,18 @@ export interface AdminSuggestionDTO extends SuggestionDTO {
   seen: boolean;
   updatedAt: string;
   automation: SuggestionAutomationDTO | null;
+}
+
+/** Réglage du bonus de connexion quotidienne (page Admin). */
+export interface AdminDailyLoginDTO {
+  /** Montants appliqués à la prochaine connexion quotidienne. */
+  rates: DailyLoginRates;
+  /** Montants par défaut du code (sans réglage enregistré). */
+  defaults: DailyLoginRates;
+  /** Montants du lancement du jeu, pour comparer. */
+  launch: DailyLoginRates;
+  /** Dernière modification dans la page Admin (null : valeurs par défaut). */
+  updatedAt: string | null;
 }
 
 /** Pseudo proposé pendant la saisie (échanges, duels, amis) : rien de plus que ce qu'affiche le profil public. */

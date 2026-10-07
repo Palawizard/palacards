@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dailyLoginReward, ECONOMY, sellerProceeds } from "./economy.js";
+import { dailyLoginReward, dailyLoginSchedule, ECONOMY, sellerProceeds } from "./economy.js";
 import {
   addDays,
   antiSnipeEnd,
@@ -68,10 +68,18 @@ describe("connexion quotidienne", () => {
     expect(nextLoginStreak("2026-09-30", "2026-10-01", 4)).toBe(5);
     expect(nextLoginStreak("2026-09-28", "2026-10-01", 4)).toBe(1);
   });
-  it("récompense 20 PW +5 par jour de série, plafonnée à 50", () => {
-    expect(dailyLoginReward(1)).toBe(20);
-    expect(dailyLoginReward(3)).toBe(30);
-    expect(dailyLoginReward(30)).toBe(50);
+  it("récompense par défaut 30 PW +8 par jour de série, plafonnée à 75 (lancement +50 %)", () => {
+    expect(ECONOMY.dailyLogin).toEqual({ base: 30, perStreakDay: 8, max: 75 });
+    expect(dailyLoginReward(1)).toBe(30);
+    expect(dailyLoginReward(3)).toBe(46);
+    expect(dailyLoginReward(30)).toBe(75);
+  });
+  it("suit les montants réglés par l'admin", () => {
+    const rates = { base: 40, perStreakDay: 10, max: 100 };
+    expect(dailyLoginReward(1, rates)).toBe(40);
+    expect(dailyLoginReward(9, rates)).toBe(100);
+    expect(dailyLoginSchedule(rates)).toEqual([40, 50, 60, 70, 80, 90, 100]);
+    expect(dailyLoginSchedule({ base: 20, perStreakDay: 0, max: 20 }, 3)).toEqual([20, 20, 20]);
   });
   it("calcule les jours à l'heure de Paris", () => {
     expect(addDays("2026-12-31", 1)).toBe("2027-01-01");

@@ -39,10 +39,10 @@ test("mise en vente → enchère d'un 2e joueur → fin d'enchère → échange"
   await apiCall(seller.page, "POST", "/test/end-auction", { auctionId: auctions[0]!.id });
   await buyer.page.goto("notifications");
   await expect(buyer.page.getByText(/Enchère gagnée/)).toBeVisible();
-  // +20 : bonus du jour ; +50 : succès « Premier achat » (versé en arrière-plan).
+  // +30 : bonus du jour (montant par défaut) ; +50 : succès « Premier achat » (versé en arrière-plan).
   await expect
     .poll(async () => (await apiCall<Me>(buyer.page, "GET", "/me")).wallet)
-    .toMatchObject({ locked: 0, balance: 100 - 25 + 20 + 50 });
+    .toMatchObject({ locked: 0, balance: 100 - 25 + 30 + 50 });
   await buyer.page.goto(`card/${card.cardId}`);
   await expect(buyer.page.getByRole("heading", { name: "Mes exemplaires" })).toBeVisible();
   await expect(buyer.page.getByRole("button", { name: "Vendre" })).toBeVisible();
