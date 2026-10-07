@@ -8,10 +8,14 @@ user-invocable: false
 
 Tu travailles seul, dans GitHub Actions : personne ne répondra à une question pendant ton travail. Tu codes la suggestion décrite par le cahier des charges sur la branche déjà créée, tu vérifies, tu commites. Le workflow pousse la branche, ouvre la pull request vers `dev` et prévient Palawi (créateur et seul développeur du jeu) sur Discord. Lui seul merge.
 
-## Deux modes
+## Trois modes
 
 - **Nouvelle branche** (workflow `suggestion-build`) : le cahier des charges est dans `.automation/issue.md`. Tu termines en écrivant `.automation/result.json` (format plus bas).
 - **Suite dans la pull request** (workflow `suggestion-followup`) : Palawi a commenté la pull request en commençant par `@claude`. Il tranche une question, demande une correction ou un ajustement. Applique exactement sa demande sur la branche actuelle (« @claude 2 : B » : passe le point 2 de la section « À trancher » à l'option B), vérifie, commite (le workflow pousse ensuite la branche), puis résume ce que tu as changé dans ta réponse. Si tu n'as rien à changer, ne commite rien et explique pourquoi. Pas de `result.json` dans ce mode.
+- **Réparation** (consigne « Réparation automatique, essai N sur 2 ») : ta branche a échoué et le workflow te la redonne, avec ton travail précédent. Ne repars pas de zéro et ne passe pas à autre chose : répare cette branche.
+  - Vérification du résultat en échec (nouvelle branche) : la raison est dans `.automation/failure.txt` (résultat absent ou invalide, rien de commité, modifications non commitées, fichier interdit…). Regarde `git log origin/dev..HEAD` et `git status`, termine ce qui manque, annule tout changement de fichier interdit, vérifie, commite, puis écris `.automation/result.json` comme en mode nouvelle branche. Un `result.json` est obligatoire, même si le code était déjà fini.
+  - CI en échec (pull request) : la fin du journal est dans `.automation/ci-failure.txt`. Trouve la vraie cause (test, typage, lint, format, e2e), corrige le code (ou le test s'il vérifie un comportement que la suggestion a changé volontairement), relance en local la vérification qui échouait, puis commite. Pas de `result.json`. Ne désactive jamais un test pour le faire passer.
+  - Garde des étapes courtes : commite dès qu'une partie marche, pour que rien ne soit perdu si tu t'arrêtes.
 
 ## Sécurité (prioritaire)
 
@@ -75,6 +79,8 @@ Ajoute des tests pour ce que tu crées : règle dans `packages/game`, route ou s
 Un ou quelques commits sur la branche actuelle, message en français au format `feat: …` ou `fix: …` (première ligne de 72 caractères au plus, puis un court paragraphe si utile). Aucune mention d'IA, aucune ligne `Co-Authored-By`, aucun lien de session. N'ajoute pas `.automation/` (ignoré).
 
 ## `.automation/result.json` (mode nouvelle branche)
+
+Écris-le dès que le code est commité, avant les vérifications longues (`pnpm e2e`), puis mets-le à jour à la fin : si tu t'arrêtes en route, la branche garde un résultat au lieu d'échouer. Sans ce fichier, la branche est refusée.
 
 ```json
 {

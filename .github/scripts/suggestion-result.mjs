@@ -1,14 +1,17 @@
 // Vérifie le travail de Claude sur une branche de suggestion, puis prépare la pull request et le compte rendu.
 //   node .github/scripts/suggestion-result.mjs <numéro de suggestion> <numéro d'issue> <branche>
 // Écrit .automation/pr.md (description de la PR), .automation/report.json (compte rendu pour l'API)
-// et les sorties `title` et `questions` du step. Code de sortie 1 : branche refusée (rien n'est poussé).
+// et les sorties `title` et `questions` du step. Code de sortie 1 : branche refusée (rien n'est poussé) ; la raison
+// est alors dans .automation/failure.txt et la sortie `repairable` dit si Claude peut la corriger (pas un refus).
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const [suggestion, issue, branch] = process.argv.slice(2);
-const fail = (message) => {
+const fail = (message, repairable = true) => {
   console.error(`::error::${message}`);
-  writeFileSync(".automation/report.json", JSON.stringify({ status: "failed" }));
+  writeFileSync(".automation/failure.txt", `${message}\n`);
+  writeFileSync(".automation/report.json", JSON.stringify({ status: "failed", error: message.slice(0, 300) }));
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `repairable=${repairable}\n`);
   process.exit(1);
 };
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
@@ -22,7 +25,10 @@ try {
   fail(".automation/result.json n'est pas du JSON valide");
 }
 if (r.status === "blocked")
-  fail(`Claude n'a pas construit la branche : ${String(r.blockedReason ?? "raison non précisée").slice(0, 500)}`);
+  fail(
+    `Claude n'a pas construit la branche : ${String(r.blockedReason ?? "raison non précisée").slice(0, 500)}`,
+    false,
+  );
 if (r.status !== "ready") fail(`statut inattendu : ${r.status}`);
 if (!str(r.title, 100) || !/^(feat|fix)(\([^)]+\))?: /.test(r.title))
   fail("titre manquant ou hors convention (feat: …)");
@@ -64,6 +70,25 @@ function readChoices(res) {
   return out.slice(0, 12);
 }
 const choices = readChoices(r);
+
+// claude-code-action remet la configuration de Claude de la branche par défaut (.claude, CLAUDE.md…) dans l'arbre
+// de travail : ce ne sont pas des changements de Claude, on revient à la branche avant de vérifier.
+for (const p of [
+  ".claude",
+  ".mcp.json",
+  ".claude.json",
+  ".gitmodules",
+  ".ripgreprc",
+  "CLAUDE.md",
+  "CLAUDE.local.md",
+  ".husky",
+]) {
+  try {
+    execFileSync("git", ["checkout", "-q", "HEAD", "--", p], { stdio: "ignore" });
+  } catch {
+    // Chemin absent de la branche.
+  }
+}
 
 // Au moins un commit, et rien dans les fichiers d'infrastructure.
 const commits = Number(git("rev-list", "--count", "origin/dev..HEAD"));
