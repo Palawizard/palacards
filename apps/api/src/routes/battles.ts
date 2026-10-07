@@ -13,9 +13,13 @@ import {
   chooseShield,
   forfeit,
   isParticipant,
+  joinQueue,
+  leaveQueue,
   listBattles,
+  queueState,
   refuseChallenge,
   serialAction,
+  wireQueuePresence,
 } from "../services/battles.js";
 
 const id = z.coerce.number().int().positive();
@@ -32,6 +36,16 @@ export function battleRoutes(api: FastifyInstance, ctx: Ctx) {
   api.post("/battles", limited(10), async (req) => {
     const body = parse(z.object({ opponent: z.string().trim().min(1).max(30), deck }), req.body);
     return challenge(ctx, req.user.id, body);
+  });
+  // File de matchmaking : le duel démarre dès que deux joueurs connectés y sont.
+  api.get("/battles/queue", auth, async (req) => queueState(ctx, req.user.id));
+  api.post("/battles/queue", limited(10), async (req) => {
+    const { deck: d } = parse(z.object({ deck }), req.body);
+    return joinQueue(ctx, req.user.id, d);
+  });
+  api.post("/battles/queue/leave", auth, async (req) => {
+    await leaveQueue(ctx, req.user.id);
+    return { ok: true };
   });
   api.post("/battles/:id/accept", limited(10), async (req) => {
     const { deck: d } = parse(z.object({ deck }), req.body);
@@ -78,4 +92,5 @@ export function battleRoutes(api: FastifyInstance, ctx: Ctx) {
         .catch((err: unknown) => ctx.log.warn({ err, battleId: r.data }, "battle:join"));
     });
   });
+  wireQueuePresence(ctx);
 }

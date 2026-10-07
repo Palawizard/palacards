@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
-import { answeringQuestion } from "../services/battles.js";
+import { answeringQuestion, queueWaiting } from "../services/battles.js";
 import { arthropodFlags, cardSheet, catalog } from "../services/cards.js";
 import {
   bulkTag,
@@ -116,6 +116,7 @@ export async function me(
     unreadMessages: await unreadMessages(ctx, user.id),
     season,
     elo: p.elo,
+    battleQueue: await queueWaiting(ctx, user.id),
     wheelReady: playerWheelSchedule(p, ctx.now()).ready,
     themesOnSale: await themesOnSale(ctx),
     themePacks: await unopenedThemePacks(ctx, user.id),
