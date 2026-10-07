@@ -164,6 +164,8 @@ describe("succès « Boîte à idées »", () => {
 
   it("rattrape les suggestions déjà retenues des anciens joueurs", async () => {
     const p = await signUp(app);
+    // Le premier rattrapage (joueur neuf) doit être fini : sinon il réécrirait la version par-dessus la nôtre.
+    await progressionIdle();
     const id = await send(p, 1);
     await ctx.db.update(schema.suggestions).set({ status: "done" }).where(eq(schema.suggestions.id, id));
     await ctx.db.update(schema.players).set({ statsVersion: 0 }).where(eq(schema.players.userId, p.userId));
