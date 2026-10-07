@@ -15,6 +15,7 @@ import {
   useCollectionFilters,
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
+import { PlayerSearch } from "@/components/PlayerSearch";
 import { LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -241,14 +242,7 @@ function Composer() {
       {!counterOf && (
         <label className="max-w-sm">
           <span className="label">Avec qui ?</span>
-          <input
-            className="field"
-            value={to}
-            onChange={(e) => setTo(e.target.value)}
-            placeholder="Pseudo de ton ami"
-            autoCapitalize="none"
-            spellCheck={false}
-          />
+          <PlayerSearch value={to} onChange={setTo} placeholder="Pseudo de ton ami" />
         </label>
       )}
 
