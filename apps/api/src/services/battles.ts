@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, or, schema, sql } from "@palacards/db";
+import { and, asc, desc, eq, gt, inArray, lte, or, schema, sql } from "@palacards/db";
 import {
   AFK_FORFEIT,
   ANSWER_GRACE_MS,
@@ -6,6 +6,7 @@ import {
   attackDamage,
   attackerOfTurn,
   BATTLE_HP,
+  BATTLE_QUEUE_TTL_MS,
   BATTLE_REWARDED_PER_PAIR_PER_DAY,
   battleOver,
   battleRated,
@@ -28,7 +29,7 @@ import {
   type QuestionType,
   type Rarity,
 } from "@palacards/game";
-import type { BattleCardView, BattleStateDTO, BattleTurnView, CardDTO } from "@palacards/shared";
+import type { BattleCardView, BattleQueueDTO, BattleStateDTO, BattleTurnView, CardDTO } from "@palacards/shared";
 import { randomBytes } from "node:crypto";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
@@ -135,25 +136,65 @@ async function displayName(db: DbOrTx, userId: string): Promise<string> {
   return me?.name ?? "?";
 }
 
+/** Un duel est déjà en attente ou en cours entre ces deux joueurs. */
+async function pairBattleExists(tx: Tx, a: string, c: string): Promise<boolean> {
+  const [open] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(b)
+    .where(
+      and(
+        inArray(b.status, ["pending", "active"]),
+        or(and(eq(b.challengerId, a), eq(b.opponentId, c)), and(eq(b.challengerId, c), eq(b.opponentId, a))),
+      ),
+    );
+  return (open?.n ?? 0) > 0;
+}
+
+/** Duel accepté : salle d'attente jusqu'à ce que les deux joueurs ouvrent son écran. */
+function lobbySet(ctx: Ctx, challengerId: string, opponentId: string) {
+  const now = ctx.now();
+  return {
+    status: "active" as const,
+    startedAt: now,
+    phase: "lobby" as const,
+    turn: 0,
+    phaseStartedAt: now,
+    phaseEndsAt: new Date(now.getTime() + LOBBY_TIMEOUT_MS),
+    challengerHp: BATTLE_HP,
+    opponentHp: BATTLE_HP,
+    firstAttackerId: ctx.random(2) === 0 ? challengerId : opponentId,
+  };
+}
+
+/**
+ * Après l'acceptation (ou la rencontre dans la file, `matched`) : les deux joueurs prévenus (le lanceur peut
+ * rejoindre), minuterie du lobby, résumés.
+ */
+async function afterAccept(ctx: Ctx, battle: Battle, matched = false) {
+  const name = await displayName(ctx.db, battle.opponentId);
+  ctx.rt.toUser(battle.challengerId, "battle:update", {
+    battleId: battle.id,
+    started: true,
+    opponent: name,
+    ...(matched && { matched }),
+  });
+  ctx.rt.toUser(battle.opponentId, "battle:update", { battleId: battle.id });
+  engine.schedule(ctx, battle);
+  // Résumés des 10 cartes (questions) : chargés en arrière-plan, sans bloquer la réponse.
+  void loadDeckSummaries(ctx, battle.id).catch((err: unknown) =>
+    ctx.log.warn({ err, battleId: battle.id }, "résumés du duel"),
+  );
+}
+
 export async function challenge(ctx: Ctx, challengerId: string, input: { opponent: string; deck: number[] }) {
   const opponent = await findUserByName(ctx.db, input.opponent);
   if (opponent.id === challengerId) throw badRequest("self", "Tu ne peux pas te défier toi-même.");
   const fx = new Effects();
   const battle = await ctx.db.transaction(async (tx) => {
     await lockPlayers(tx, [challengerId, opponent.id]);
-    const [open] = await tx
-      .select({ n: sql<number>`count(*)::int` })
-      .from(b)
-      .where(
-        and(
-          inArray(b.status, ["pending", "active"]),
-          or(
-            and(eq(b.challengerId, challengerId), eq(b.opponentId, opponent.id)),
-            and(eq(b.challengerId, opponent.id), eq(b.opponentId, challengerId)),
-          ),
-        ),
-      );
-    if ((open?.n ?? 0) > 0) throw conflict("battle_exists", "Un duel est déjà en cours ou en attente avec ce joueur.");
+    if (await pairBattleExists(tx, challengerId, opponent.id)) {
+      throw conflict("battle_exists", "Un duel est déjà en cours ou en attente avec ce joueur.");
+    }
     const [created] = await tx
       .insert(b)
       .values({
@@ -187,31 +228,16 @@ export async function acceptChallenge(ctx: Ctx, userId: string, battleId: number
       throw conflict("opponent_offline", "Ton adversaire n'est pas connecté : réessaie quand il sera en ligne.");
     }
     await snapshotDeck(tx, battleId, userId, deck);
-    const now = ctx.now();
     const [started] = await tx
       .update(b)
-      .set({
-        status: "active",
-        startedAt: now,
-        phase: "lobby",
-        turn: 0,
-        phaseStartedAt: now,
-        phaseEndsAt: new Date(now.getTime() + LOBBY_TIMEOUT_MS),
-        challengerHp: BATTLE_HP,
-        opponentHp: BATTLE_HP,
-        firstAttackerId: ctx.random(2) === 0 ? battle.challengerId : battle.opponentId,
-      })
+      .set(lobbySet(ctx, battle.challengerId, battle.opponentId))
       .where(eq(b.id, battleId))
       .returning();
-    return started!;
+    return { battle: started!, dequeued: await dequeue(tx, [battle.challengerId, userId]) };
   });
   await afterCommit(ctx, async () => {
-    const name = await displayName(ctx.db, userId);
-    ctx.rt.toUser(battle.challengerId, "battle:update", { battleId, started: true, opponent: name });
-    ctx.rt.toUser(battle.opponentId, "battle:update", { battleId });
-    engine.schedule(ctx, battle);
-    // Résumés des 10 cartes (questions) : chargés en arrière-plan, sans bloquer la réponse.
-    void loadDeckSummaries(ctx, battleId).catch((err: unknown) => ctx.log.warn({ err, battleId }, "résumés du duel"));
+    await afterAccept(ctx, battle.battle);
+    if (battle.dequeued) await broadcastQueue(ctx);
   });
   return { id: battleId };
 }
@@ -238,6 +264,140 @@ export async function refuseChallenge(ctx: Ctx, userId: string, battleId: number
   });
   ctx.rt.toUser(battle.challengerId, "battle:update", { battleId });
   ctx.rt.toUser(battle.opponentId, "battle:update", { battleId });
+}
+
+// ---------------------------------------------------------------------------
+// File de matchmaking : le joueur entre avec son deck, le duel démarre dès qu'un autre joueur y est
+// ---------------------------------------------------------------------------
+
+const q = schema.battleQueue;
+/** Verrou consultatif (Postgres) qui sérialise les entrées dans la file. */
+const QUEUE_LOCK = 31_031;
+/** Un rechargement de page coupe la connexion un instant : la place dans la file est gardée ce temps-là. */
+const QUEUE_OFFLINE_GRACE_MS = 30_000;
+
+/** Les exemplaires du deck sont tous (encore) dans la collection du joueur. */
+async function ownsDeck(db: DbOrTx, userId: string, instanceIds: number[]): Promise<boolean> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.cardInstances)
+    .where(and(inArray(schema.cardInstances.id, instanceIds), eq(schema.cardInstances.ownerId, userId)));
+  return (row?.n ?? 0) === instanceIds.length;
+}
+
+/** Sort ces joueurs de la file (ils viennent de lancer un duel) ; vrai si la file a changé. */
+async function dequeue(tx: Tx, userIds: string[]): Promise<boolean> {
+  const gone = await tx.delete(q).where(inArray(q.userId, userIds)).returning({ userId: q.userId });
+  return gone.length > 0;
+}
+
+/** Joueurs qui attendent dans la file (attente pas encore expirée). */
+async function queuedUsers(db: DbOrTx, now: Date): Promise<string[]> {
+  const rows = await db.select({ userId: q.userId }).from(q).where(gt(q.expiresAt, now));
+  return rows.map((r) => r.userId);
+}
+
+/** Prévient tous les joueurs connectés : la file a changé (pastille « Bataille » du menu, page Bataille). */
+async function broadcastQueue(ctx: Ctx) {
+  ctx.rt.toAll("battle:queue", { waiting: await queuedUsers(ctx.db, ctx.now()) });
+}
+
+/** Autres joueurs dans la file (pastille « Bataille » du menu). */
+export async function queueWaiting(ctx: Ctx, userId: string): Promise<number> {
+  return (await queuedUsers(ctx.db, ctx.now())).filter((id) => id !== userId).length;
+}
+
+export async function queueState(ctx: Ctx, userId: string): Promise<BattleQueueDTO> {
+  const now = ctx.now();
+  const rows = await ctx.db.select().from(q).where(gt(q.expiresAt, now));
+  const mine = rows.find((r) => r.userId === userId);
+  return {
+    waiting: rows.filter((r) => r.userId !== userId).length,
+    mine: mine ? { since: mine.createdAt.toISOString(), expiresAt: mine.expiresAt.toISOString() } : null,
+  };
+}
+
+/**
+ * Entrée dans la file avec son deck. Un autre joueur connecté y attend déjà (le plus ancien d'abord) : le duel
+ * démarre aussitôt entre eux deux, et celui qui attendait est prévenu. Sinon, le joueur attend son adversaire.
+ */
+export async function joinQueue(
+  ctx: Ctx,
+  userId: string,
+  deck: number[],
+): Promise<{ battleId: number } | { queued: true; expiresAt: string }> {
+  if (deck.length !== DECK_SIZE || new Set(deck).size !== DECK_SIZE) {
+    throw badRequest("invalid_deck", `Choisis ${DECK_SIZE} cartes différentes.`);
+  }
+  if (!(await ownsDeck(ctx.db, userId, deck))) throw notFound("Une carte du deck n'est plus dans ta collection.");
+  const outcome = await ctx.db.transaction(async (tx) => {
+    // Une entrée à la fois : deux joueurs qui arrivent ensemble se trouvent au lieu d'attendre chacun de son côté.
+    await tx.execute(sql`select pg_advisory_xact_lock(${QUEUE_LOCK})`);
+    const now = ctx.now();
+    // Revenir dans la file remplace le deck et relance l'attente.
+    await tx.delete(q).where(eq(q.userId, userId));
+    const [busy] = await tx
+      .select({ id: b.id })
+      .from(b)
+      .where(and(eq(b.status, "active"), or(eq(b.challengerId, userId), eq(b.opponentId, userId))))
+      .limit(1);
+    if (busy) throw conflict("in_battle", "Termine ton duel en cours avant de chercher un adversaire.");
+    const candidates = await tx
+      .select()
+      .from(q)
+      .where(gt(q.expiresAt, now))
+      .orderBy(asc(q.createdAt))
+      .for("update", { skipLocked: true });
+    for (const other of candidates) {
+      // Le duel se joue en direct, une seule fois à la fois entre deux joueurs.
+      if (!ctx.rt.isOnline(other.userId) || (await pairBattleExists(tx, other.userId, userId))) continue;
+      // Il a vendu ou échangé une carte de son deck depuis : il sort de la file.
+      if (!(await ownsDeck(tx, other.userId, other.deck))) {
+        await tx.delete(q).where(eq(q.userId, other.userId));
+        continue;
+      }
+      await lockPlayers(tx, [other.userId, userId]);
+      const [created] = await tx
+        .insert(b)
+        .values({
+          challengerId: other.userId,
+          opponentId: userId,
+          seed: randomBytes(16).toString("hex"),
+          createdAt: now,
+          ...lobbySet(ctx, other.userId, userId),
+        })
+        .returning();
+      await snapshotDeck(tx, created!.id, other.userId, other.deck);
+      await snapshotDeck(tx, created!.id, userId, deck);
+      await tx.delete(q).where(eq(q.userId, other.userId));
+      return { battle: created! };
+    }
+    const expiresAt = new Date(now.getTime() + BATTLE_QUEUE_TTL_MS);
+    await tx.insert(q).values({ userId, deck, createdAt: now, expiresAt });
+    return { expiresAt };
+  });
+  const { battle, expiresAt } = outcome;
+  await afterCommit(ctx, async () => {
+    if (battle) await afterAccept(ctx, battle, true);
+    await broadcastQueue(ctx);
+  });
+  return battle ? { battleId: battle.id } : { queued: true, expiresAt: expiresAt!.toISOString() };
+}
+
+export async function leaveQueue(ctx: Ctx, userId: string) {
+  const gone = await ctx.db.delete(q).where(eq(q.userId, userId)).returning({ userId: q.userId });
+  if (gone.length) await broadcastQueue(ctx);
+}
+
+/** Déconnecté (au-delà d'un rechargement de page) : le joueur sort de la file, le duel se joue en direct. */
+export function wireQueuePresence(ctx: Ctx) {
+  ctx.rt.onPresence((userId, online) => {
+    if (online) return;
+    setTimeout(() => {
+      if (ctx.rt.isOnline(userId)) return;
+      void leaveQueue(ctx, userId).catch((err: unknown) => ctx.log.warn({ err, userId }, "sortie de la file"));
+    }, QUEUE_OFFLINE_GRACE_MS).unref();
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -824,9 +984,11 @@ export async function forceFinish(ctx: Ctx, battleId: number, forfeitBy?: string
   await commitStep(ctx, fx, step);
 }
 
-/** Rattrapage : défis expirés et échéances de duels manquées (redémarrage, minuterie perdue). */
+/** Rattrapage : défis et attentes dans la file expirés, échéances de duels manquées (redémarrage, minuterie perdue). */
 export async function sweepBattles(ctx: Ctx) {
   const now = ctx.now().getTime();
+  const expired = await ctx.db.delete(q).where(lte(q.expiresAt, ctx.now())).returning({ userId: q.userId });
+  if (expired.length) await broadcastQueue(ctx);
   const rows = await ctx.db
     .select()
     .from(b)

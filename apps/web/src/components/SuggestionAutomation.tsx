@@ -41,14 +41,24 @@ function buildLine(a: SuggestionAutomationDTO): { state: string; text: string; l
     case "published":
       return { state: "wait", text: "Issue ouverte : Claude va commencer la branche.", live: true };
     case "running":
+      if (a.prUrl && a.ciConclusion === "failure")
+        return { state: "wait", text: "CI en échec : Claude répare la branche tout seul…", live: true };
       return { state: "wait", text: "Claude code la branche…", live: true };
     case "ready":
       return {
         state: a.ciConclusion === "success" ? "ok" : "bad",
         text: `Branche prête · ${a.ciConclusion === "success" ? "CI verte" : `CI ${a.ciConclusion === "failure" ? "en échec" : (a.ciConclusion ?? "inconnue")}`}`,
       };
-    case "failed":
-      return { state: "bad", text: "La branche a échoué." };
+    case "failed": {
+      // Un échec bloque la file jusqu'à la décision de Palawi.
+      const why = a.error ? `La branche a échoué : ${a.error}` : "La branche a échoué.";
+      return {
+        state: "bad",
+        text: a.prUrl
+          ? `${why} La file attend : réponds @claude dans la PR pour qu'il corrige, ou ferme-la.`
+          : `${why} La file attend : reconstruis la branche ou abandonne-la.`,
+      };
+    }
     case "merged":
       return { state: "ok", text: "Mergée dans dev : la réponse part après la mise en prod." };
     case "closed":
@@ -247,6 +257,16 @@ export function AutomationPanel({
           >
             <GitPullRequest aria-hidden className="size-3.5" />
             {a.buildStatus === "none" ? "Construire la branche" : "Reconstruire la branche"}
+          </button>
+        )}
+        {a.buildStatus === "failed" && !a.prUrl && (
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost"
+            disabled={busy}
+            onClick={() => void run("/build/cancel", "Branche abandonnée : la file repart.")}
+          >
+            Abandonner
           </button>
         )}
         {a.buildStatus === "queued" && (

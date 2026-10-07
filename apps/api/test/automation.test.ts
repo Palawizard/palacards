@@ -240,6 +240,37 @@ describe("tri automatique des suggestions", () => {
     expect(await states()).toEqual(["merged", "published"]);
   });
 
+  it("une branche en échec sans PR bloque la file jusqu'à la décision de Palawi, puis repart en tête", async () => {
+    const p = await signUp(app);
+    const first = await suggest(p, "Idée en échec");
+    const second = await suggest(p, "Idée suivante");
+    const run = engine(async () => verdict(), { max: 999 });
+    await run.tick();
+    const states = async () => [(await rowOf(first)).buildStatus, (await rowOf(second)).buildStatus];
+    await ctx.db
+      .update(a)
+      .set({ buildStatus: "failed", error: "Claude n'a pas écrit .automation/result.json" })
+      .where(eq(a.suggestionId, first));
+    await run.tick();
+    await run.tick();
+    expect(await states()).toEqual(["failed", "queued"]);
+    // « Reconstruire la branche » : elle repasse avant la suivante, sans l'ancienne raison d'échec.
+    await ctx.db
+      .update(a)
+      .set({ updatedAt: new Date(ctx.now().getTime() - 60 * 60_000) })
+      .where(eq(a.suggestionId, second));
+    const admin = await signUpAdmin(app, ctx);
+    expect((await admin.post(`/admin/suggestions/${first}/build`)).status).toBe(200);
+    expect((await rowOf(first)).error).toBeNull();
+    await run.tick();
+    expect(await states()).toEqual(["published", "queued"]);
+    // Nouvel échec puis « Abandonner » : la file repart avec la suivante.
+    await ctx.db.update(a).set({ buildStatus: "failed" }).where(eq(a.suggestionId, first));
+    expect((await admin.post(`/admin/suggestions/${first}/build/cancel`)).status).toBe(200);
+    await run.tick();
+    expect(await states()).toEqual(["closed", "published"]);
+  });
+
   it("« à faire en prod » : pas de branche, Palawi est prévenu", async () => {
     const p = await signUp(app);
     const id = await suggest(
@@ -363,6 +394,47 @@ describe("comptes rendus des workflows et actions admin", () => {
     const cancelled = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
     expect(cancelled).toContain("**Reprise annulée**");
     expect((await report(id, { status: "ready", unchanged: "autre" })).statusCode).toBe(400);
+  });
+
+  it("CI rouge : réparation automatique annoncée, puis échec avec sa raison et la marche à suivre", async () => {
+    const p = await signUp(app);
+    const id = await suggest(p);
+    await engine(async () => verdict()).tick();
+    calls = [];
+    expect(
+      (await report(id, { status: "running", prNumber: 79, autoFix: { attempt: 1, max: 2 }, title: "feat: x" }))
+        .statusCode,
+    ).toBe(200);
+    expect(await rowOf(id)).toMatchObject({ buildStatus: "running", prNumber: 79, ciConclusion: "failure" });
+    const fixing = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(fixing).toContain("**CI rouge**");
+    expect(fixing).toContain("essai 1/2");
+
+    calls = [];
+    await report(id, {
+      status: "failed",
+      prNumber: 79,
+      error: "CI toujours en échec après deux réparations automatiques.",
+    });
+    expect(await rowOf(id)).toMatchObject({
+      buildStatus: "failed",
+      error: "CI toujours en échec après deux réparations automatiques.",
+    });
+    const failed = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(failed).toContain("Raison : CI toujours en échec");
+    expect(failed).toContain("La file attend ta décision");
+    expect(failed).toContain("@claude");
+
+    // Sans PR : la marche à suivre passe par Admin.
+    calls = [];
+    await report(id, { status: "failed", error: "Claude n'a pas écrit .automation/result.json" });
+    const noPr = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(noPr).toContain("PR : https://github.com/Palawizard/palacards/pull/79");
+
+    // Une étape suivante efface la raison de l'échec.
+    await report(id, { status: "ready", prNumber: 79, ciConclusion: "success" });
+    expect((await rowOf(id)).error).toBeNull();
+    expect((await report(id, { status: "running", autoFix: { attempt: 0, max: 2 } })).statusCode).toBe(400);
   });
 
   it("limite du forfait : la suggestion revient en file et la file attend une heure", async () => {

@@ -16,6 +16,24 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   await expect(page.getByText(/[1-9]\d* succès débloqués sur \d{3}/)).toBeVisible();
   // Famille « Paquets ouverts » : le premier palier est débloqué.
   await expect(page.getByText("Palier 1, Premier paquet, débloqué")).toBeAttached();
+  // Les médailles ouvrent le détail des paliers : obtenu, en cours, puis fermeture à Échap.
+  await page.getByRole("button", { name: /paliers de la famille Paquets ouverts/ }).click();
+  const tiers = page.getByRole("dialog", { name: "Paquets ouverts" });
+  await expect(tiers.getByRole("listitem").first()).toContainText("Obtenu le");
+  await expect(tiers.getByRole("progressbar")).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(tiers).toBeHidden();
+  // Recherche sans accents ni majuscules, dans les noms et descriptions de tous les paliers.
+  const search = page.getByRole("searchbox", { name: /Chercher un succès/ });
+  await search.fill("PREMIER PAQUET");
+  await expect(page.getByRole("heading", { name: "Paquets ouverts" })).toBeVisible();
+  await expect(page.getByText("Trouvé au palier I")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Victoires", exact: true })).toHaveCount(0);
+  await search.fill("zzz introuvable");
+  await expect(page.getByText("Aucun succès ne correspond")).toBeVisible();
+  await page.getByRole("button", { name: "Effacer la recherche" }).click();
+  await expect(search).toHaveValue("");
+  await expect(page.getByRole("heading", { name: "Victoires", exact: true })).toBeVisible();
 
   // Fusion : deux exemplaires du même article → niveau 2.
   const owned = await apiCall<{ items: { cardId: number }[] }>(page, "GET", "/collection?limit=1");
