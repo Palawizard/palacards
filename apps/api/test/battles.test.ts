@@ -1,4 +1,4 @@
-import { and, eq, schema, sql } from "@palacards/db";
+import { and, eq, inArray, schema, sql } from "@palacards/db";
 import {
   AFK_FORFEIT,
   BATTLE_HP,
@@ -9,9 +9,9 @@ import {
   TOTAL_TURNS,
   type Question,
 } from "@palacards/game";
-import type { BattleStateDTO } from "@palacards/shared";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { battleEngine, runDue } from "../src/services/battles.js";
+import type { BattleQueueDTO, BattleStateDTO } from "@palacards/shared";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { battleEngine, runDue, sweepBattles } from "../src/services/battles.js";
 import { makeApp, signUp, type Client } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
@@ -334,5 +334,100 @@ describe("duel Attaque / Bouclier", () => {
     const eloOf = async (p: Client) =>
       (await ctx.db.select().from(schema.players).where(eq(schema.players.userId, p.userId)))[0]!.elo;
     expect((await eloOf(a)) + (await eloOf(b))).toBe(2 * ELO_START);
+  });
+});
+
+describe("file de matchmaking", () => {
+  const queueOf = async (p: Client) => (await p.get("/battles/queue")).body as BattleQueueDTO;
+  const queued = async () => (await ctx.db.select().from(schema.battleQueue)).map((r) => r.userId);
+  // La file est commune à tous les joueurs : chaque test part d'une file vide.
+  beforeEach(async () => {
+    await ctx.db.delete(schema.battleQueue);
+  });
+
+  it("le premier attend, le suivant démarre le duel contre lui", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const first = await a.post("/battles/queue", { deck: await deckOf(a) });
+    expect(first.status).toBe(200);
+    expect(first.body.queued).toBe(true);
+    expect(await queueOf(a)).toMatchObject({ waiting: 0, mine: { expiresAt: first.body.expiresAt } });
+    expect(await queueOf(b)).toEqual({ waiting: 1, mine: null });
+    // Pastille « Bataille » du menu : les autres joueurs qui attendent.
+    expect((await b.get("/me")).body.battleQueue).toBe(1);
+    expect((await a.get("/me")).body.battleQueue).toBe(0);
+
+    const matched = await b.post("/battles/queue", { deck: await deckOf(b) });
+    expect(matched.status).toBe(200);
+    const id: number = matched.body.battleId;
+    expect(id).toBeGreaterThan(0);
+    expect(await queued()).toEqual([]);
+    const s = await stateOf(a, id);
+    expect(s).toMatchObject({ status: "active", phase: "lobby", isChallenger: true, them: { id: b.userId } });
+    expect(s.myHand).toHaveLength(5);
+    await battleEngine.join(ctx, a.userId, id);
+    await battleEngine.join(ctx, b.userId, id);
+    expect((await stateOf(b, id)).phase).toBe("attack");
+    // Duel en cours : pas de nouvelle recherche avant la fin.
+    expect((await a.post("/battles/queue", { deck: await deckOf(a) })).body.error).toBe("in_battle");
+  });
+
+  it("des arrivées simultanées se trouvent : un seul duel, le troisième attend", async () => {
+    const players = [await signUp(app), await signUp(app), await signUp(app)];
+    const decks = await Promise.all(players.map((p) => deckOf(p)));
+    const res = await Promise.all(players.map((p, i) => p.post("/battles/queue", { deck: decks[i] })));
+    expect(res.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect(res.filter((r) => r.body.battleId)).toHaveLength(1);
+    expect(res.filter((r) => r.body.queued)).toHaveLength(2);
+    expect(await queued()).toHaveLength(1);
+    const ids = players.map((p) => p.userId);
+    const started = await ctx.db.select().from(schema.battles).where(inArray(schema.battles.challengerId, ids));
+    expect(started).toHaveLength(1);
+  });
+
+  it("revenir remplace sa place, quitter la file, attente expirée, deck caduc", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const deck = await deckOf(a);
+    await a.post("/battles/queue", { deck });
+    await a.post("/battles/queue", { deck });
+    expect(await queued()).toEqual([a.userId]);
+    expect((await a.post("/battles/queue/leave")).status).toBe(200);
+    expect(await queueOf(b)).toEqual({ waiting: 0, mine: null });
+
+    // Expirée : invisible, ne trouve personne, balayée.
+    await a.post("/battles/queue", { deck });
+    await ctx.db.update(schema.battleQueue).set({ expiresAt: new Date(Date.now() - 1_000) });
+    expect((await queueOf(b)).waiting).toBe(0);
+    expect((await b.post("/battles/queue", { deck: await deckOf(b) })).body.queued).toBe(true);
+    await sweepBattles(ctx);
+    expect(await queued()).toEqual([b.userId]);
+    await b.post("/battles/queue/leave");
+
+    // Une carte de son deck a quitté sa collection : il sort de la file au lieu d'être choisi.
+    await a.post("/battles/queue", { deck });
+    await ctx.db.update(schema.cardInstances).set({ ownerId: b.userId }).where(eq(schema.cardInstances.id, deck[0]!));
+    expect((await b.post("/battles/queue", { deck: await deckOf(b) })).body.queued).toBe(true);
+    expect(await queued()).toEqual([b.userId]);
+  });
+
+  it("ne trouve ni un joueur déconnecté ni un joueur déjà en duel avec lui", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    await a.post("/battles/queue", { deck: await deckOf(a) });
+    online.mockImplementation((id: string) => id !== a.userId);
+    try {
+      expect((await b.post("/battles/queue", { deck: await deckOf(b) })).body.queued).toBe(true);
+    } finally {
+      online.mockReturnValue(true);
+    }
+    await b.post("/battles/queue/leave");
+
+    const pending = (await b.post("/battles", { opponent: a.username, deck: await deckOf(b) })).body.id as number;
+    expect((await b.post("/battles/queue", { deck: await deckOf(b) })).body.queued).toBe(true);
+    expect((await queued()).sort()).toEqual([a.userId, b.userId].sort());
+    // Le défi direct accepté sort les deux joueurs de la file.
+    expect((await a.post(`/battles/${pending}/accept`, { deck: await deckOf(a) })).status).toBe(200);
+    expect(await queued()).toEqual([]);
   });
 });

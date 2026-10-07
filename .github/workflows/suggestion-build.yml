@@ -9,6 +9,10 @@ on:
 
 permissions: {}
 
+env:
+  CLAUDE_ALLOWED_TOOLS: "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(git rm:*),Bash(git mv:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(jq:*),Bash(diff:*),Bash(echo:*),Bash(test:*),Bash(touch:*),Bash(cp:*),Bash(mv:*),Bash(rm:*),Bash(timeout:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
+  CLAUDE_DISALLOWED_TOOLS: "Bash(git push:*),Bash(git remote:*),Bash(curl:*),Bash(wget:*),Bash(gh:*),WebFetch,WebSearch"
+
 # Une branche à la fois (forfait Claude, minutes de calcul) ; les suivantes attendent leur tour.
 concurrency:
   group: suggestion-build
@@ -30,7 +34,10 @@ jobs:
       branch: ${{ steps.meta.outputs.branch }}
       pr: ${{ steps.pr.outputs.number }}
       pushed: ${{ steps.push.outcome }}
-      limit: ${{ steps.limit.outputs.hit }}
+      ok: ${{ steps.final.outputs.ok }}
+      limit: ${{ steps.final.outputs.limit }}
+      repairs: ${{ steps.final.outputs.repairs }}
+      error: ${{ steps.final.outputs.error }}
     services:
       postgres:
         image: postgres:17.6-alpine
@@ -82,8 +89,12 @@ jobs:
           git switch -c "$BRANCH"
           jq -r '.issue.body' "$GITHUB_EVENT_PATH" > .automation/issue.md
 
+      # Claude code la suggestion. Si la vérification échoue (résultat manquant ou invalide, rien de commité, fichier
+      # interdit…), Claude reprend la même branche jusqu'à deux fois dans ce run, avec la raison de l'échec. Un refus
+      # assumé (« blocked ») ou la limite du forfait ne se répare pas.
       - name: Claude code la suggestion
         id: claude
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -98,65 +109,227 @@ jobs:
           claude_args: >-
             --model opus
             --max-turns 300
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
-            --disallowedTools "Bash(git push:*),Bash(git remote:*),Bash(curl:*),Bash(wget:*),Bash(gh:*),WebFetch,WebSearch"
+            --allowedTools "${{ env.CLAUDE_ALLOWED_TOOLS }}"
+            --disallowedTools "${{ env.CLAUDE_DISALLOWED_TOOLS }}"
+
+      - name: Journal de Claude
+        id: log1
+        if: always() && steps.claude.outcome != 'skipped'
+        run: node .github/scripts/claude-exec.mjs "${{ steps.claude.outputs.execution_file }}"
 
       - name: Vérification du résultat
         id: result
+        if: steps.log1.outputs.limit != 'true'
+        continue-on-error: true
         env:
           SUGGESTION: ${{ steps.meta.outputs.suggestion }}
           ISSUE: ${{ github.event.issue.number }}
           BRANCH: ${{ steps.meta.outputs.branch }}
         run: node .github/scripts/suggestion-result.mjs "$SUGGESTION" "$ISSUE" "$BRANCH"
 
+      - name: Claude répare la branche (essai 1/2)
+        id: fix1
+        if: steps.result.outcome == 'failure' && steps.result.outputs.repairable == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Commits signés github-actions[bot] (pas d'identité d'IA dans l'historique de la branche).
+          bot_name: github-actions[bot]
+          bot_id: "41898283"
+          prompt: |
+            Réparation automatique, essai 1 sur 2. La vérification de la branche ${{ steps.meta.outputs.branch }} a échoué : la raison est dans .automation/failure.txt.
+            Lis puis suis le skill du dépôt .claude/skills/build-suggestion/SKILL.md (mode « réparation », dans une nouvelle branche).
+            Cahier des charges : .automation/issue.md (issue n° ${{ github.event.issue.number }}, suggestion n° ${{ steps.meta.outputs.suggestion }}).
+            Ton travail précédent est déjà là : git log origin/dev..HEAD et git status. Termine ou corrige, vérifie, commite, puis écris .automation/result.json. Ne pousse rien : le workflow s'en charge.
+          claude_args: >-
+            --model opus
+            --max-turns 300
+            --allowedTools "${{ env.CLAUDE_ALLOWED_TOOLS }}"
+            --disallowedTools "${{ env.CLAUDE_DISALLOWED_TOOLS }}"
+
+      - name: Journal de Claude (essai 1)
+        id: log2
+        if: always() && steps.fix1.outcome != 'skipped'
+        run: node .github/scripts/claude-exec.mjs "${{ steps.fix1.outputs.execution_file }}"
+
+      - name: Vérification (après l'essai 1)
+        id: result2
+        if: steps.fix1.outcome != 'skipped' && steps.log2.outputs.limit != 'true'
+        continue-on-error: true
+        env:
+          SUGGESTION: ${{ steps.meta.outputs.suggestion }}
+          ISSUE: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: node .github/scripts/suggestion-result.mjs "$SUGGESTION" "$ISSUE" "$BRANCH"
+
+      - name: Claude répare la branche (essai 2/2)
+        id: fix2
+        if: steps.result2.outcome == 'failure' && steps.result2.outputs.repairable == 'true'
+        continue-on-error: true
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # Commits signés github-actions[bot] (pas d'identité d'IA dans l'historique de la branche).
+          bot_name: github-actions[bot]
+          bot_id: "41898283"
+          prompt: |
+            Réparation automatique, essai 2 sur 2. La vérification de la branche ${{ steps.meta.outputs.branch }} a échoué : la raison est dans .automation/failure.txt.
+            Lis puis suis le skill du dépôt .claude/skills/build-suggestion/SKILL.md (mode « réparation », dans une nouvelle branche).
+            Cahier des charges : .automation/issue.md (issue n° ${{ github.event.issue.number }}, suggestion n° ${{ steps.meta.outputs.suggestion }}).
+            Ton travail précédent est déjà là : git log origin/dev..HEAD et git status. Termine ou corrige, vérifie, commite, puis écris .automation/result.json. Ne pousse rien : le workflow s'en charge.
+          claude_args: >-
+            --model opus
+            --max-turns 300
+            --allowedTools "${{ env.CLAUDE_ALLOWED_TOOLS }}"
+            --disallowedTools "${{ env.CLAUDE_DISALLOWED_TOOLS }}"
+
+      - name: Journal de Claude (essai 2)
+        id: log3
+        if: always() && steps.fix2.outcome != 'skipped'
+        run: node .github/scripts/claude-exec.mjs "${{ steps.fix2.outputs.execution_file }}"
+
+      - name: Vérification (après l'essai 2)
+        id: result3
+        if: steps.fix2.outcome != 'skipped' && steps.log3.outputs.limit != 'true'
+        continue-on-error: true
+        env:
+          SUGGESTION: ${{ steps.meta.outputs.suggestion }}
+          ISSUE: ${{ github.event.issue.number }}
+          BRANCH: ${{ steps.meta.outputs.branch }}
+        run: node .github/scripts/suggestion-result.mjs "$SUGGESTION" "$ISSUE" "$BRANCH"
+
+      - name: Bilan de la construction
+        id: final
+        if: always() && steps.meta.outputs.branch != ''
+        env:
+          R1: ${{ steps.result.outcome }}
+          R2: ${{ steps.result2.outcome }}
+          R3: ${{ steps.result3.outcome }}
+          T1: ${{ steps.result.outputs.title }}
+          T2: ${{ steps.result2.outputs.title }}
+          T3: ${{ steps.result3.outputs.title }}
+          F1: ${{ steps.fix1.outcome }}
+          F2: ${{ steps.fix2.outcome }}
+          L1: ${{ steps.log1.outputs.limit }}
+          L2: ${{ steps.log2.outputs.limit }}
+          L3: ${{ steps.log3.outputs.limit }}
+        run: |
+          ok=false; title=""
+          if [ "$R1" = success ]; then ok=true; title=$T1
+          elif [ "$R2" = success ]; then ok=true; title=$T2
+          elif [ "$R3" = success ]; then ok=true; title=$T3; fi
+          repairs=0
+          for f in "$F1" "$F2"; do case "$f" in success|failure) repairs=$((repairs + 1)) ;; esac; done
+          limit=false
+          if [ "$L1" = true ] || [ "$L2" = true ] || [ "$L3" = true ]; then limit=true; fi
+          # Travail à conserver malgré l'échec : au moins un commit et rien d'interdit.
+          pushable=false
+          if [ "$ok" != true ] && [ "$limit" != true ] && [ "$(git rev-list --count origin/dev..HEAD 2>/dev/null || echo 0)" -gt 0 ]; then
+            bad=$(git diff --name-only origin/dev...HEAD | grep -E '^(\.github/|deploy/|docker/|\.githooks/|docker-compose[^/]*\.ya?ml$|\.env|\.claude/settings)' || true)
+            [ -z "$bad" ] && pushable=true
+          fi
+          error=""
+          [ "$ok" = true ] || error=$(head -c 280 .automation/failure.txt 2>/dev/null | tr '\n' ' ' || true)
+          [ "$ok" = true ] || [ -n "$error" ] || error="Claude s'est arrêté sans terminer la branche."
+          {
+            echo "ok=$ok"
+            echo "title=$title"
+            echo "repairs=$repairs"
+            echo "limit=$limit"
+            echo "pushable=$pushable"
+            echo "error=$error"
+          } >> "$GITHUB_OUTPUT"
+          echo "Bilan : ok=$ok, réparations=$repairs, limite=$limit, travail conservé=$pushable. $error"
+
       - name: Pousser la branche
         id: push
+        if: steps.final.outputs.ok == 'true' || steps.final.outputs.pushable == 'true'
         env:
           BRANCH: ${{ steps.meta.outputs.branch }}
         run: git push origin "$BRANCH"
 
       # PR ouverte au nom de Palawi (RELEASE_TOKEN, permission Pull requests) : le commit « Squash and merge »
-      # est alors à son nom. Sans ce jeton, ou s'il est refusé, la PR est ouverte par le bot.
+      # est alors à son nom. Sans ce jeton, ou s'il est refusé, la PR est ouverte par le bot. Branche inachevée
+      # (réparations épuisées) : PR en brouillon qui garde le travail, à reprendre avec @claude ou à fermer.
       - name: Pull request vers dev
         id: pr
+        if: steps.push.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           OWNER_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           BRANCH: ${{ steps.meta.outputs.branch }}
-          TITLE: ${{ steps.result.outputs.title }}
+          OK: ${{ steps.final.outputs.ok }}
+          TITLE: ${{ steps.final.outputs.title }}
+          ERROR: ${{ steps.final.outputs.error }}
+          SUGGESTION: ${{ steps.meta.outputs.suggestion }}
+          ISSUE: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
         run: |
+          draft=""
+          if [ "$OK" != true ]; then
+            draft="--draft"
+            prefix=${BRANCH%%/*}
+            TITLE="$prefix: $(sed -E 's/^Suggestion n° [0-9]+ : //' <<<"$ISSUE_TITLE" | cut -c1-80) (suggestion n° $SUGGESTION)"
+            {
+              echo "Suggestion n° $SUGGESTION · issue #$ISSUE · branche \`$BRANCH\`"
+              echo
+              echo "## ❌ Construction inachevée"
+              echo
+              echo "La vérification automatique a encore échoué après deux réparations par Claude :"
+              echo
+              echo "> $ERROR"
+              echo
+              echo "Le travail de Claude est gardé sur cette branche. **La file des suggestions attend ta décision** :"
+              echo
+              echo "- réponds \`@claude …\` (par exemple \`@claude termine la branche\`) : il reprend la branche telle quelle ;"
+              echo "- ou ferme la PR pour abandonner la suggestion."
+            } > .automation/pr.md
+          fi
           url=""
           if [ -n "$OWNER_TOKEN" ]; then
-            url=$(GH_TOKEN="$OWNER_TOKEN" gh pr create --base dev --head "$BRANCH" --title "$TITLE" --body-file .automation/pr.md) \
+            url=$(GH_TOKEN="$OWNER_TOKEN" gh pr create $draft --base dev --head "$BRANCH" --title "$TITLE" --body-file .automation/pr.md) \
               || echo "::warning::PR non ouverte avec RELEASE_TOKEN (permission Pull requests ?) : ouverture par le bot."
           fi
-          [ -n "$url" ] || url=$(gh pr create --base dev --head "$BRANCH" --title "$TITLE" --body-file .automation/pr.md)
+          [ -n "$url" ] || url=$(gh pr create $draft --base dev --head "$BRANCH" --title "$TITLE" --body-file .automation/pr.md)
           echo "number=${url##*/}" >> "$GITHUB_OUTPUT"
-          gh issue comment "${{ github.event.issue.number }}" --body "Branche prête : $url"
+          if [ "$OK" = true ]; then
+            gh issue comment "$ISSUE" --body "Branche prête : $url"
+          else
+            gh issue comment "$ISSUE" --body "Branche inachevée, en brouillon : $url"
+          fi
 
       # Limite du forfait Claude (ou API saturée) : pas un échec de la suggestion. L'issue est fermée ; le service
       # de tri remet la suggestion en file et met toute la file en pause une heure.
-      - name: Limite du forfait ?
-        id: limit
-        if: failure()
+      - name: Limite du forfait
+        if: always() && steps.final.outputs.limit == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          EXEC: ${{ steps.claude.outputs.execution_file }}
           ISSUE: ${{ github.event.issue.number }}
         run: |
-          hit=false
-          if [ -n "$EXEC" ] && [ -f "$EXEC" ]; then
-            msg=$(jq -r '[.[] | select(.type == "result")] | last | .result // ""' "$EXEC" 2>/dev/null || true)
-            if grep -qiE 'usage limit|hit your (usage )?limit|limit reached|rate.?limit|overloaded' <<<"$msg"; then
-              hit=true
-            fi
-          fi
-          echo "hit=$hit" >> "$GITHUB_OUTPUT"
-          if [ "$hit" = true ]; then
-            echo "::warning::Limite du forfait Claude atteinte : la branche repartira dans une heure."
-            gh issue close "$ISSUE" -R "$GITHUB_REPOSITORY" --reason "not planned" \
-              --comment "Limite du forfait Claude atteinte : la suggestion repartira automatiquement (nouvelle issue)."
-          fi
+          echo "::warning::Limite du forfait Claude atteinte : la branche repartira dans une heure."
+          gh issue close "$ISSUE" -R "$GITHUB_REPOSITORY" --reason "not planned" \
+            --comment "Limite du forfait Claude atteinte : la suggestion repartira automatiquement (nouvelle issue)."
+
+      # Échec sans travail à garder : l'issue est fermée ; la file attend que Palawi reconstruise ou abandonne
+      # depuis la page Admin (une reconstruction ouvre une nouvelle issue).
+      - name: Issue (échec sans branche)
+        if: always() && steps.final.outputs.ok == 'false' && steps.final.outputs.limit != 'true' && steps.pr.outputs.number == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+          ERROR: ${{ steps.final.outputs.error }}
+        run: |
+          gh issue close "$ISSUE" -R "$GITHUB_REPOSITORY" --reason "not planned" \
+            --comment "Échec de la construction : $ERROR La file attend la décision de Palawi (reconstruire ou abandonner)."
+
+      - name: Échec de la construction
+        if: always() && steps.final.outputs.ok != 'true'
+        run: |
+          echo "::error::Branche non construite (voir le bilan plus haut)."
+          exit 1
 
       - name: Compte rendu (fichier)
         if: always()
@@ -170,7 +343,7 @@ jobs:
   ci:
     name: CI de la branche
     needs: build
-    if: needs.build.outputs.pushed == 'success'
+    if: needs.build.outputs.ok == 'true' && needs.build.outputs.pushed == 'success'
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
@@ -184,6 +357,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v5
         with:
@@ -193,30 +367,65 @@ jobs:
         with:
           name: suggestion-report
           path: .automation
+      # CI rouge et réparations restantes (deux au total, celles du run comprises) : Claude répare la PR tout seul
+      # (workflow « Suggestion (suite) » lancé avec le journal de la CI). Sinon la PR attend la décision de Palawi.
       - name: Bilan
         id: payload
         env:
-          BUILD: ${{ needs.build.result }}
+          OK: ${{ needs.build.outputs.ok }}
           CI: ${{ needs.ci.result }}
           PR: ${{ needs.build.outputs.pr }}
           LIMIT: ${{ needs.build.outputs.limit }}
+          REPAIRS: ${{ needs.build.outputs.repairs }}
+          ERROR: ${{ needs.build.outputs.error }}
           BRANCH: ${{ needs.build.outputs.branch }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           base='{}'
-          [ -f .automation/report.json ] && base=$(cat .automation/report.json)
-          if [ "$BUILD" = success ] && [ -n "$PR" ]; then
+          [ -f .automation/report.json ] && base=$(jq -c 'del(.status, .error)' .automation/report.json)
+          next=$(( ${REPAIRS:-0} + 1 ))
+          fix=false
+          if [ "$LIMIT" = true ]; then
+            payload=$(jq -cn --arg run "$RUN_URL" '{status: "failed", reason: "usage_limit", runUrl: $run}')
+          elif [ "$OK" = true ] && [ -n "$PR" ] && [ "$CI" = failure ] && [ "$next" -le 2 ]; then
+            fix=true
+            payload=$(jq -c --argjson pr "$PR" --arg branch "$BRANCH" --arg run "$RUN_URL" --argjson n "$next" \
+              '. + {status: "running", prNumber: $pr, branch: $branch, runUrl: $run, autoFix: {attempt: $n, max: 2}}' <<<"$base")
+          elif [ "$OK" = true ] && [ -n "$PR" ] && [ "$CI" = failure ]; then
+            payload=$(jq -c --argjson pr "$PR" --arg branch "$BRANCH" --arg run "$RUN_URL" \
+              '. + {status: "failed", ciConclusion: "failure", prNumber: $pr, branch: $branch, runUrl: $run,
+                    error: "CI en échec après deux réparations automatiques."}' <<<"$base")
+          elif [ "$OK" = true ] && [ -n "$PR" ]; then
             payload=$(jq -c --arg ci "$CI" --argjson pr "$PR" --arg branch "$BRANCH" --arg run "$RUN_URL" \
               '. + {status: "ready", ciConclusion: $ci, prNumber: $pr, branch: $branch, runUrl: $run}' <<<"$base")
-          elif [ "$LIMIT" = true ]; then
-            payload=$(jq -cn --arg run "$RUN_URL" '{status: "failed", reason: "usage_limit", runUrl: $run}')
+          elif [ -n "$PR" ]; then
+            payload=$(jq -cn --argjson pr "$PR" --arg branch "$BRANCH" --arg run "$RUN_URL" --arg error "$ERROR" \
+              '{status: "failed", prNumber: $pr, branch: $branch, runUrl: $run, error: $error}')
           else
-            payload=$(jq -cn --arg run "$RUN_URL" '{status: "failed", runUrl: $run}')
+            payload=$(jq -cn --arg run "$RUN_URL" --arg error "${ERROR:-La construction a échoué.}" \
+              '{status: "failed", runUrl: $run, error: $error}')
           fi
           echo "json=$payload" >> "$GITHUB_OUTPUT"
+          echo "fix=$fix" >> "$GITHUB_OUTPUT"
+          echo "attempt=$next" >> "$GITHUB_OUTPUT"
       - uses: ./.github/actions/suggestion-report
         with:
           suggestion: ${{ needs.build.outputs.suggestion }}
           payload: ${{ steps.payload.outputs.json }}
           api: ${{ vars.AUTOMATION_API_URL }}
           token: ${{ secrets.AUTOMATION_TOKEN }}
+      - name: PR en brouillon pendant la réparation
+        if: steps.payload.outputs.fix == 'true' || (needs.build.outputs.ok == 'true' && needs.ci.result == 'failure')
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+          PR: ${{ needs.build.outputs.pr }}
+        run: gh pr ready "$PR" --undo -R "$GITHUB_REPOSITORY" || echo "::warning::PR non passée en brouillon."
+      - name: Réparation automatique de la CI
+        if: steps.payload.outputs.fix == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ needs.build.outputs.pr }}
+          ATTEMPT: ${{ steps.payload.outputs.attempt }}
+        run: |
+          gh workflow run suggestion-followup.yml -R "$GITHUB_REPOSITORY" --ref "${{ github.event.repository.default_branch }}" \
+            -f pr="$PR" -f attempt="$ATTEMPT" -f source_run="${{ github.run_id }}"

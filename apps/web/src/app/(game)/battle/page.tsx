@@ -1,8 +1,8 @@
 "use client";
 
-import { ATTACKS_PER_PLAYER, BATTLE_HP, DECK_SIZE, ECONOMY } from "@palacards/game";
-import type { CardDTO } from "@palacards/shared";
-import { Swords } from "lucide-react";
+import { ATTACKS_PER_PLAYER, BATTLE_HP, BATTLE_QUEUE_TTL_MS, DECK_SIZE, ECONOMY } from "@palacards/game";
+import type { BattleQueueDTO, CardDTO } from "@palacards/shared";
+import { Swords, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -10,10 +10,12 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { AvatarFace } from "@/components/Avatar";
 import { DeckPicker } from "@/components/DeckPicker";
+import { PlayerSearch } from "@/components/PlayerSearch";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
-import { relative } from "@/lib/format";
+import { countdown, relative } from "@/lib/format";
 import { useMe, useSocketEvent } from "@/lib/game";
+import { useNow } from "@/lib/use-now";
 
 interface BattleSummary {
   id: number;
@@ -69,7 +71,17 @@ function Rules() {
   );
 }
 
-function ChallengeForm({ onDone }: { onDone: () => void }) {
+const QUEUE_MINUTES = `${BATTLE_QUEUE_TTL_MS / 60_000} min`;
+
+function ChallengeForm({
+  onDone,
+  onQueued,
+  queue,
+}: {
+  onDone: () => void;
+  onQueued: () => void;
+  queue: BattleQueueDTO | undefined;
+}) {
   const params = useSearchParams();
   const router = useRouter();
   const [opponent, setOpponent] = useState(params.get("opponent") ?? "");
@@ -93,21 +105,31 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
       setBusy(false);
     }
   }
+  async function findOpponent() {
+    setBusy(true);
+    try {
+      const res = await api<{ battleId: number } | { queued: true }>("/battles/queue", {
+        body: { deck: deck.map((c) => c.instanceId) },
+      });
+      if ("battleId" in res) {
+        onDone();
+        router.push(`/battle/${res.battleId}`);
+      } else onQueued();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Recherche impossible.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  const waiting = queue?.waiting ?? 0;
   return (
     <section className="infobox">
-      <h2 className="infobox-head">Défier un ami</h2>
+      <h2 className="infobox-head">Lancer un duel</h2>
       <div className="flex flex-col gap-4 p-4">
         <div>
-          <label className="max-w-sm">
+          <label className="block max-w-sm">
             <span className="label">Adversaire</span>
-            <input
-              className="field max-w-sm"
-              value={opponent}
-              onChange={(e) => setOpponent(e.target.value)}
-              placeholder="Pseudo d’un ami"
-              autoCapitalize="none"
-              spellCheck={false}
-            />
+            <PlayerSearch value={opponent} onChange={setOpponent} placeholder="Pseudo d’un ami" />
           </label>
           {online.length > 0 ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -131,12 +153,28 @@ function ChallengeForm({ onDone }: { onDone: () => void }) {
             friends && (
               <p className="mt-2 text-xs text-faint">
                 Aucun ami en ligne pour l’instant : le duel se joue en direct, il pourra accepter dès qu’il se connecte.
+                Ou trouve un adversaire parmi tous les joueurs.
               </p>
             )
           )}
         </div>
         <DeckPicker deck={deck} onChange={setDeck} />
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <p className="mr-auto basis-full text-xs text-faint sm:basis-auto">
+            {queue?.mine
+              ? "Tu es dans la file : le duel démarre dès qu’un autre joueur cherche aussi."
+              : waiting > 0
+                ? `${waiting} joueur${waiting > 1 ? "s attendent" : " attend"} un adversaire : lance la recherche pour l’affronter tout de suite.`
+                : `Sans adversaire choisi : le duel démarre dès qu’un autre joueur cherche aussi (${QUEUE_MINUTES} d’attente au plus).`}
+          </p>
+          <button
+            type="button"
+            className="btn"
+            disabled={busy || deck.length !== DECK_SIZE || !!queue?.mine}
+            onClick={findOpponent}
+          >
+            <Users aria-hidden className="size-4" /> Trouver un adversaire
+          </button>
           <button
             type="button"
             className="btn btn-primary"
@@ -192,11 +230,55 @@ function AcceptPanel({ battle, onDone }: { battle: BattleSummary; onDone: () => 
   );
 }
 
+/** Ta place dans la file : le duel s'ouvre tout seul quand un adversaire arrive. */
+function QueuePanel({ mine, onChange }: { mine: NonNullable<BattleQueueDTO["mine"]>; onChange: () => void }) {
+  const now = useNow(1000);
+  const [busy, setBusy] = useState(false);
+  const left = new Date(mine.expiresAt).getTime() - now;
+  if (left <= 0) return null;
+
+  async function leave() {
+    setBusy(true);
+    try {
+      await api("/battles/queue/leave", { method: "POST" });
+      toast("Recherche annulée.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Action impossible.");
+    } finally {
+      setBusy(false);
+      onChange();
+    }
+  }
+  return (
+    <section
+      aria-live="polite"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/50 bg-panel px-4 py-3 shadow-[var(--shadow-lift)]"
+    >
+      <span className="flex min-w-0 items-center gap-3">
+        <span aria-hidden className="size-2.5 shrink-0 rounded-full bg-good motion-safe:animate-pulse" />
+        <span className="min-w-0">
+          <strong>Recherche d’un adversaire…</strong>
+          <span className="block text-xs text-muted">
+            Le duel s’ouvre dès qu’un autre joueur cherche aussi : garde PalaCards ouvert. Fin de l’attente dans{" "}
+            <span className="tnum">{countdown(left)}</span>.
+          </span>
+        </span>
+      </span>
+      <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={leave}>
+        Quitter la file
+      </button>
+    </section>
+  );
+}
+
 function Battles() {
   const { data, error, mutate } = useSWR<BattleSummary[]>("/battles");
   const { me } = useMe();
   const [accepting, setAccepting] = useState<number | null>(null);
+  // File de matchmaking : relue à chaque changement (temps réel), et de temps en temps en filet de sécurité.
+  const { data: queue, mutate: mutateQueue } = useSWR<BattleQueueDTO>("/battles/queue", { refreshInterval: 30_000 });
   useSocketEvent("battle:update", () => void mutate());
+  useSocketEvent("battle:queue", () => void mutateQueue());
   useSocketEvent("notification:new", (n) => {
     if (n.type.startsWith("battle_")) void mutate();
   });
@@ -210,9 +292,9 @@ function Battles() {
       <div>
         <h1 className="page-title">Bataille</h1>
         <p className="hatnote mt-2">
-          Duels en direct contre un ami : attaque avec tes cartes, défends-toi en répondant sur les siennes. Victoire{" "}
-          {ECONOMY.battle.win} PW, défaite {ECONOMY.battle.loss} PW. Ton Elo :{" "}
-          {me ? <span className="tnum font-semibold text-text">{me.elo ?? "…"}</span> : "…"}.
+          Duels en direct contre un ami, ou contre un adversaire trouvé dans la file : attaque avec tes cartes,
+          défends-toi en répondant sur les siennes. Victoire {ECONOMY.battle.win} PW, défaite {ECONOMY.battle.loss} PW.
+          Ton Elo : {me ? <span className="tnum font-semibold text-text">{me.elo ?? "…"}</span> : "…"}.
         </p>
       </div>
 
@@ -283,7 +365,9 @@ function Battles() {
         </section>
       )}
 
-      <ChallengeForm onDone={() => mutate()} />
+      {queue?.mine && <QueuePanel mine={queue.mine} onChange={() => void mutateQueue()} />}
+
+      <ChallengeForm onDone={() => mutate()} onQueued={() => void mutateQueue()} queue={queue} />
 
       <Rules />
 

@@ -48,6 +48,28 @@ test("ami → message en temps réel → guilde", async ({ browser }) => {
   await expect(bob.page.getByRole("link", { name: alice.name })).toBeVisible();
 });
 
+test("propose les pseudos pendant la saisie, au clavier comme au clic", async ({ browser }) => {
+  const alice = await newPlayer(browser, "alice");
+  const target = await newPlayer(browser, "zephyrin");
+
+  // Échange : début du pseudo en majuscules et avec accent, puis Entrée sur la proposition.
+  await alice.page.goto("trades/new");
+  const to = alice.page.getByRole("combobox", { name: "Avec qui ?" });
+  await to.fill(`ZÉPHYRIN${target.name.slice("zephyrin".length, -1).toUpperCase()}`);
+  await expect(alice.page.getByRole("option", { name: target.name })).toBeVisible();
+  await to.press("Enter");
+  await expect(to).toHaveValue(target.name);
+  await expect(alice.page.getByRole("listbox")).toHaveCount(0);
+  await expect(alice.page.getByRole("list", { name: `Collection de ${target.name}` })).toBeVisible();
+
+  // Duel : un clic (ou un toucher) sur la proposition remplit le champ.
+  await alice.page.goto("battle");
+  const opponent = alice.page.getByRole("combobox", { name: "Adversaire" });
+  await opponent.fill(target.name.slice(2, -1));
+  await alice.page.getByRole("option", { name: target.name }).click();
+  await expect(opponent).toHaveValue(target.name);
+});
+
 test("photo de profil importée depuis les paramètres", async ({ browser }) => {
   const { page, name } = await newPlayer(browser, "photo");
   await page.goto("settings");

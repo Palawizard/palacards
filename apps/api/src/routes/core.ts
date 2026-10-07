@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
-import { answeringQuestion } from "../services/battles.js";
+import { answeringQuestion, queueWaiting } from "../services/battles.js";
 import { arthropodFlags, cardSheet, catalog } from "../services/cards.js";
 import {
   bulkTag,
@@ -36,7 +36,7 @@ import { bossSummary } from "../services/boss.js";
 import { emit, ensureBackfill, passState } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
 import { ensureQuests } from "../services/quests.js";
-import { getProfile } from "../services/profiles.js";
+import { getProfile, searchPlayers } from "../services/profiles.js";
 import { newSuggestionsCount, showSuggestionBanner } from "../services/suggestions.js";
 import { playerWheelSchedule } from "../services/wheel.js";
 
@@ -116,6 +116,7 @@ export async function me(
     unreadMessages: await unreadMessages(ctx, user.id),
     season,
     elo: p.elo,
+    battleQueue: await queueWaiting(ctx, user.id),
     wheelReady: playerWheelSchedule(p, ctx.now()).ready,
     themesOnSale: await themesOnSale(ctx),
     themePacks: await unopenedThemePacks(ctx, user.id),
@@ -363,6 +364,14 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   });
 
   // --- Profils ---
+  // Pseudos proposés pendant la saisie (« Avec qui ? » d'un échange, adversaire d'un duel, ajout d'ami).
+  api.get("/players", { ...auth, config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req) => {
+    const { q, exclude } = parse(
+      z.object({ q: z.string().trim().min(1).max(30), exclude: z.enum(["friends"]).optional() }),
+      req.query,
+    );
+    return searchPlayers(ctx, req.user.id, q, { excludeFriends: exclude === "friends" });
+  });
   api.get("/players/:username", auth, async (req) => {
     const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
     return getProfile(ctx, req.user.id, username);

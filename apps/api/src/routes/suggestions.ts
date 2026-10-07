@@ -87,6 +87,8 @@ export function suggestionRoutes(api: FastifyInstance, ctx: Ctx) {
     runUrl: z.url().startsWith("https://github.com/").optional(),
     reason: z.enum(["usage_limit"]).optional(),
     unchanged: z.enum(["no_commit", "cancelled"]).optional(),
+    error: z.string().trim().max(300).optional(),
+    autoFix: z.object({ attempt: z.number().int().min(1).max(5), max: z.number().int().min(1).max(5) }).optional(),
   });
   api.post(
     "/automation/suggestions/:id/build",

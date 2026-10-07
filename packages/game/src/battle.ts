@@ -48,6 +48,8 @@ export const ELO_K = 32;
 export const ELO_START = 1_000;
 /** Un défi non accepté expire au bout de 48 h. */
 export const CHALLENGE_TTL_MS = 48 * 60 * 60_000;
+/** Attente maximale dans la file de matchmaking : sans adversaire au bout de 5 minutes, le joueur en sort. */
+export const BATTLE_QUEUE_TTL_MS = 5 * 60_000;
 /** Anti-farm : au-delà de ce nombre de duels terminés dans la journée entre deux joueurs, plus de PW ni d'Elo. */
 export const BATTLE_REWARDED_PER_PAIR_PER_DAY = 3;
 

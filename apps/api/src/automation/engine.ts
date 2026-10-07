@@ -180,8 +180,10 @@ export function createEngine(deps: EngineDeps) {
 
   /**
    * Publie la prochaine suggestion en file (issue GitHub), une à la fois : rien ne part tant qu'une branche est
-   * publiée ou en cours, tant qu'une PR attend la décision de Palawi (merge ou fermeture), pendant une pause sur
-   * la limite du forfait Claude, ni au-delà du plafond du jour. GitHub ne garde d'ailleurs qu'un seul run en
+   * publiée ou en cours, tant qu'une PR attend la décision de Palawi (merge ou fermeture), tant qu'une branche en
+   * échec attend la sienne (PR à corriger avec @claude ou à fermer ; sans PR : Reconstruire ou Abandonner dans
+   * Admin), pendant une pause sur la limite du forfait Claude, ni au-delà du plafond du jour. Une suggestion déjà
+   * partie une fois (reconstruite, ou interrompue par la limite du forfait) repasse en tête de file. GitHub ne garde d'ailleurs qu'un seul run en
    * attente par groupe de concurrence et annule les autres.
    */
   async function publishQueued() {
@@ -193,6 +195,7 @@ export function createEngine(deps: EngineDeps) {
       select count(*)::int as n from suggestion_automation
       where (build_status in ('published', 'running') and updated_at > ${inFlightSince}::timestamptz)
          or (pr_number is not null and build_status in ${PR_PENDING})
+         or build_status = 'failed'
          or (build_status = 'queued' and next_attempt_at > ${now.toISOString()}::timestamptz
              and error like ${`${USAGE_LIMIT_PREFIX}%`})
     `);
@@ -203,7 +206,7 @@ export function createEngine(deps: EngineDeps) {
         error = null, updated_at = ${now.toISOString()}::timestamptz
       where suggestion_id = (
         select suggestion_id from suggestion_automation where build_status = 'queued'
-        order by updated_at, suggestion_id for update skip locked limit 1
+        order by published_at nulls last, updated_at, suggestion_id for update skip locked limit 1
       )
       returning suggestion_id
     `);

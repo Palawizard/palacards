@@ -1,6 +1,6 @@
 import { schema, sql, type SQL } from "@palacards/db";
 import { COLLECTION_POINTS, RARITIES, type TitleRef } from "@palacards/game";
-import type { CardDTO } from "@palacards/shared";
+import type { CardDTO, PlayerSuggestionDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { notFound } from "../errors.js";
 import { selectInstances, toCardDTO } from "./cards.js";
@@ -79,6 +79,48 @@ export async function findUserByName(db: DbOrTx, username: string) {
   `);
   if (!u) throw notFound("Ce joueur n'existe pas.");
   return u;
+}
+
+/** Pseudos proposés pendant la saisie, au plus. */
+export const PLAYER_SUGGESTIONS_MAX = 8;
+
+/**
+ * Pseudos proposés pendant la saisie d'un joueur, sans casse ni accents : ceux qui commencent par la saisie,
+ * puis ceux qui la contiennent ; à égalité, les amis d'abord. Le joueur lui-même n'y est jamais ;
+ * `excludeFriends` retire aussi ses amis et ses demandes en cours (page Amis, pour en ajouter un nouveau).
+ */
+export async function searchPlayers(
+  ctx: Ctx,
+  viewerId: string,
+  q: string,
+  { excludeFriends = false }: { excludeFriends?: boolean } = {},
+): Promise<PlayerSuggestionDTO[]> {
+  const needle = sql`lower(f_unaccent(${q.trim().replace(/[\\%_]/g, "\\$&")}))`;
+  const rows = await ctx.db.execute<{
+    username: string;
+    display_name: string;
+    avatar: string | null;
+    status: "pending" | "accepted" | null;
+  }>(sql`
+    select u.username, coalesce(u.display_username, u.name) as display_name, p.avatar, f.status
+    from "user" u
+    join players p on p.user_id = u.id
+    left join friendships f
+      on (f.user_a = ${viewerId} and f.user_b = u.id) or (f.user_b = ${viewerId} and f.user_a = u.id)
+    where u.id <> ${viewerId} and u.username is not null
+      and lower(f_unaccent(u.username)) like '%' || ${needle} || '%'
+      ${excludeFriends ? sql`and f.status is null` : sql``}
+    order by lower(f_unaccent(u.username)) like ${needle} || '%' desc,
+      f.status = 'accepted' desc nulls last,
+      u.username
+    limit ${PLAYER_SUGGESTIONS_MAX}
+  `);
+  return rows.map((r) => ({
+    username: r.username,
+    displayName: r.display_name,
+    avatar: r.avatar,
+    friend: r.status === "accepted",
+  }));
 }
 
 /** Relation d'amitié vue par `viewerId`. */

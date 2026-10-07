@@ -102,12 +102,26 @@ export function GameProvider({ children }: { children: ReactNode }) {
     });
     s.on("message:new", () => void mutateMe());
     // Défi accepté : le duel attend le challenger sur son écran (2 minutes pour le rejoindre).
-    s.on("battle:update", ({ battleId, started, opponent }) => {
+    s.on("battle:update", ({ battleId, started, opponent, matched }) => {
       if (!started || window.location.pathname.endsWith(`/battle/${battleId}`)) return;
       play("deal");
-      toast(`${opponent ?? "Ton adversaire"} a accepté ton duel !`, {
-        duration: 30_000,
-        action: { label: "Rejoindre", onClick: () => router.push(`/battle/${battleId}`) },
+      // Adversaire trouvé dans la file pendant que le joueur attend sur la page Bataille : il y va directement.
+      if (matched && window.location.pathname.endsWith("/battle")) {
+        router.push(`/battle/${battleId}`);
+        return;
+      }
+      toast(
+        matched ? `Adversaire trouvé : ${opponent ?? "?"} !` : `${opponent ?? "Ton adversaire"} a accepté ton duel !`,
+        {
+          duration: 30_000,
+          action: { label: "Rejoindre", onClick: () => router.push(`/battle/${battleId}`) },
+        },
+      );
+    });
+    // File de matchmaking : pastille « Bataille » du menu (les autres joueurs qui attendent).
+    s.on("battle:queue", ({ waiting }) => {
+      void mutateMe((m) => (m ? { ...m, battleQueue: waiting.filter((id) => id !== m.id).length } : m), {
+        revalidate: false,
       });
     });
     s.on("card:media", (m) => {
