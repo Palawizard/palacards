@@ -674,6 +674,19 @@ export const guildObjectives = pgTable(
   (t) => [uniqueIndex("guild_objectives_week_uq").on(t.guildId, t.weekStart)],
 );
 
+/** Contribution de chaque membre à l'objectif de la semaine (minimum requis pour toucher la récompense). */
+export const guildObjectiveContributions = pgTable(
+  "guild_objective_contributions",
+  {
+    objectiveId: bigint("objective_id", { mode: "number" })
+      .notNull()
+      .references(() => guildObjectives.id, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    amount: integer("amount").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.objectiveId, t.userId] })],
+);
+
 // ---------------------------------------------------------------------------
 // Batailles
 // ---------------------------------------------------------------------------

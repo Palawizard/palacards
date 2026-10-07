@@ -5,21 +5,37 @@ export const GUILD_NAME_MIN = 3;
 export const GUILD_NAME_MAX = 30;
 export const GUILD_TAG_MIN = 2;
 export const GUILD_TAG_MAX = 5;
-/** Récompense d'un objectif hebdomadaire atteint : un paquet bonus par membre. */
-export const GUILD_OBJECTIVE_REWARD_PACKS = 1;
+/**
+ * Récompense d'un objectif hebdomadaire atteint, identique pour chaque membre qui a assez contribué :
+ * un paquet bonus, des PW et de l'XP du passe (la quête de la semaine donne 1 500 PW et 1 500 XP).
+ */
+export const GUILD_OBJECTIVE_REWARD = { packs: 1, pw: 300, xp: 750 } as const;
 
 export type GuildRole = "leader" | "officer" | "member";
 export type GuildObjectiveKind = "pull_sr" | "open_packs" | "win_battles";
 
-/** Objectifs hebdomadaires, en rotation : cible par membre (plancher pour les petites guildes). */
+/**
+ * Objectifs hebdomadaires, en rotation : cible par membre (plancher pour les petites guildes), et
+ * contribution minimale d'un membre pour toucher la récompense.
+ */
 export const GUILD_OBJECTIVES: Record<
   GuildObjectiveKind,
-  { label: (target: number) => string; perMember: number; min: number }
+  { label: (target: number) => string; perMember: number; min: number; minContribution: number }
 > = {
-  pull_sr: { label: (n) => `Tirer ${n} cartes Super rare ou mieux`, perMember: 3, min: 10 },
-  open_packs: { label: (n) => `Ouvrir ${n} paquets`, perMember: 25, min: 60 },
-  win_battles: { label: (n) => `Gagner ${n} duels`, perMember: 2, min: 5 },
+  pull_sr: { label: (n) => `Tirer ${n} cartes Super rare ou mieux`, perMember: 3, min: 10, minContribution: 1 },
+  open_packs: { label: (n) => `Ouvrir ${n} paquets`, perMember: 25, min: 60, minContribution: 5 },
+  win_battles: { label: (n) => `Gagner ${n} duels`, perMember: 2, min: 5, minContribution: 1 },
 };
+
+/** Contribution minimale pour toucher la récompense d'un objectif (1 pour un type inconnu). */
+export function minContribution(kind: string): number {
+  return GUILD_OBJECTIVES[kind as GuildObjectiveKind]?.minContribution ?? 1;
+}
+
+/** Un membre touche la récompense s'il a atteint la contribution minimale de l'objectif. */
+export function eligibleForObjectiveReward(kind: string, contribution: number): boolean {
+  return contribution >= minContribution(kind);
+}
 const ROTATION: GuildObjectiveKind[] = ["pull_sr", "open_packs", "win_battles"];
 
 /** Lundi (jour calendaire) de la semaine d'un jour donné. */

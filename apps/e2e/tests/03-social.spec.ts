@@ -39,6 +39,9 @@ test("ami → message en temps réel → guilde", async ({ browser }) => {
   await alice.page.getByLabel("Blason (2 à 5 lettres)").fill(crest);
   await alice.page.getByRole("button", { name: "Fonder" }).click();
   await expect(alice.page.getByText("Objectif de la semaine")).toBeVisible();
+  // La récompense est affichée, avec la part qui reste à faire.
+  await expect(alice.page.getByText(/paquet bonus · \+\d+\s?PW · \+[\d\s]+XP/)).toBeVisible();
+  await expect(alice.page.getByText(/pour toucher la récompense/)).toBeVisible();
   await bob.page.goto("guild");
   await bob.page
     .locator("li", { hasText: `Club ${alice.name}` })
