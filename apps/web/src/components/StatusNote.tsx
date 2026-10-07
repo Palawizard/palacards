@@ -92,7 +92,7 @@ export function StatusNote({
             id={inputId}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            placeholder="Ce que tu fais en ce moment, ce que tu cherches…"
+            placeholder="Ce que tu fais, ce que tu cherches…"
             className="field h-9 min-h-0 min-w-0 flex-1 basis-60 text-sm"
             aria-invalid={!!error}
             aria-describedby={errorId}

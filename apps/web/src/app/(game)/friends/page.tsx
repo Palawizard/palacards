@@ -142,7 +142,7 @@ export default function FriendsPage() {
                 Ajoute tes potes par leur pseudo pour échanger, discuter et vous défier.
               </Empty>
             ) : (
-              <ul className="grid gap-2 sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {[...data.friends]
                   .sort((a, b) => Number(b.online) - Number(a.online))
                   .map((f) => (
