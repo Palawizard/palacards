@@ -1,6 +1,15 @@
 // Composants d'interface partagés, importés uniquement par des composants client.
-import { RARITIES, RARITY_LABELS, TITLE_NAMES, titleDetail, type Rarity, type TitleRef } from "@palacards/game";
-import { Award } from "lucide-react";
+import {
+  RARITIES,
+  RARITY_LABELS,
+  SUGGESTION_FAMILY,
+  TIER_NAMES,
+  TITLE_NAMES,
+  titleDetail,
+  type Rarity,
+  type TitleRef,
+} from "@palacards/game";
+import { Award, Lightbulb } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
 /** Filtre de raretés : les sigles eux-mêmes servent de bascules. Sans sélection, tout est affiché. */
@@ -200,7 +209,6 @@ export function ConfirmDialog({
   );
 }
 
-/** Badge « Créateur » à côté du pseudo (compte admin du jeu) : classements et profil. */
 /** Titre cosmétique gagné en fin de saison (profil, classements) ; le détail (rang, saison) en infobulle. */
 export function TitleBadge({ title, size = "sm" }: { title: TitleRef; size?: "sm" | "lg" }) {
   const detail = titleDetail(title);
@@ -218,6 +226,40 @@ export function TitleBadge({ title, size = "sm" }: { title: TitleRef; size?: "sm
   );
 }
 
+/** Médailles des paliers de succès : bronze, argent, or, platine, diamant (jamais les couleurs de rareté). */
+export const MEDALS = ["#c98a4b", "#c3cad8", "#f2c53d", "#7fd3f5", "#e3c8ff"];
+
+/** Badge gagné par un succès (« Boîte à idées ») : médaille de son palier, puis son nom. */
+export function AchievementBadge({
+  badge,
+  size = "sm",
+}: {
+  badge: { name: string; tier: number };
+  size?: "sm" | "lg";
+}) {
+  const tier = TIER_NAMES[Math.min(badge.tier, TIER_NAMES.length - 1)];
+  const detail = `Succès « ${SUGGESTION_FAMILY} », palier ${tier}`;
+  return (
+    <span
+      title={detail}
+      className={`inline-flex max-w-full shrink-0 items-center gap-1.5 rounded-full border border-line-strong bg-panel-2 font-semibold leading-none text-text ${
+        size === "lg" ? "py-1 pl-1 pr-2.5 text-[0.8rem]" : "py-[2px] pl-[2px] pr-1.5 text-[0.7rem]"
+      }`}
+    >
+      <span
+        aria-hidden
+        className={`grid shrink-0 place-items-center rounded-full ${size === "lg" ? "size-[1.15rem]" : "size-4"}`}
+        style={{ background: MEDALS[Math.min(badge.tier, MEDALS.length - 1)], color: "#1d1407" }}
+      >
+        <Lightbulb className={size === "lg" ? "size-3" : "size-2.5"} strokeWidth={2.5} />
+      </span>
+      <span className="truncate">{badge.name}</span>
+      <span className="sr-only"> ({detail})</span>
+    </span>
+  );
+}
+
+/** Badge « Créateur » à côté du pseudo (compte admin du jeu) : classements et profil. */
 export function CreatorBadge({ size = "sm" }: { size?: "sm" | "lg" }) {
   return (
     <span

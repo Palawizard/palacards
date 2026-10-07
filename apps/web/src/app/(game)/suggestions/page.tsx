@@ -1,5 +1,6 @@
 "use client";
 
+import { SUGGESTION_FAMILY } from "@palacards/game";
 import {
   SUGGESTION_KINDS,
   SUGGESTION_LIMITS,
@@ -8,6 +9,7 @@ import {
   type SuggestionKind,
 } from "@palacards/shared";
 import { Send } from "lucide-react";
+import Link from "next/link";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -159,6 +161,13 @@ export default function SuggestionsPage() {
           Un bug, une idée de booster, une règle à revoir ? Écris directement à Palawi. Il lit toutes les suggestions et
           te répond sur cette page. Claude, l&apos;IA d&apos;Anthropic, l&apos;aide à les trier, sans ton pseudo ; une
           idée retenue peut être publiée, reformulée et anonyme, sur le GitHub du jeu.
+        </p>
+        <p className="mt-2 max-w-[62ch] text-sm text-muted">
+          Chaque suggestion acceptée ou réalisée fait avancer le succès{" "}
+          <Link href="/achievements" className="article-link">
+            «&nbsp;{SUGGESTION_FAMILY}&nbsp;»
+          </Link>{" "}
+          et te donne un badge sur ton profil.
         </p>
       </div>
 

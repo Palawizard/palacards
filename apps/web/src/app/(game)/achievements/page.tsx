@@ -1,10 +1,10 @@
 "use client";
 
-import { TIER_NAMES } from "@palacards/game";
+import { SUGGESTION_FAMILY, TIER_NAMES } from "@palacards/game";
 import { Check, Lock, Search, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
-import { Empty, ErrorBox } from "@/components/ui";
+import { Empty, ErrorBox, MEDALS } from "@/components/ui";
 import { useSeenFeature } from "@/lib/features";
 import { fmt } from "@/lib/format";
 import { useSocketEvent } from "@/lib/game";
@@ -17,13 +17,10 @@ interface Achievement {
   name: string;
   description: string;
   target: number;
-  reward: { pw: number; packs: number };
+  reward: { pw: number; packs: number; badge?: string };
   progress: number;
   unlockedAt: string | null;
 }
-
-/** Médailles des paliers : bronze, argent, or, platine, diamant (jamais les couleurs de rareté). */
-const MEDALS = ["#c98a4b", "#c3cad8", "#f2c53d", "#7fd3f5", "#e3c8ff"];
 
 /** Grands thèmes de la page (chaque famille de paliers appartient à un thème). */
 const GROUPS: { title: string; families: string[] }[] = [
@@ -76,10 +73,15 @@ const GROUPS: { title: string; families: string[] }[] = [
     title: "Commerce et bande",
     families: ["Ventes", "Coups de marteau", "Record de vente", "Achats", "Échanges", "Amis", "Guilde"],
   },
+  { title: "Communauté", families: [SUGGESTION_FAMILY] },
 ];
 
 const reward = (r: Achievement["reward"]) =>
-  [r.pw ? `${fmt(r.pw)} PW` : "", r.packs ? `${r.packs} paquet${r.packs > 1 ? "s" : ""} bonus` : ""]
+  [
+    r.pw ? `${fmt(r.pw)} PW` : "",
+    r.packs ? `${r.packs} paquet${r.packs > 1 ? "s" : ""} bonus` : "",
+    r.badge ? "Badge de profil" : "",
+  ]
     .filter(Boolean)
     .join(" + ");
 

@@ -17,7 +17,7 @@ import {
 } from "@/components/CollectionFilters";
 import { MyShowcase } from "@/components/Showcase";
 import { StatusNote } from "@/components/StatusNote";
-import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore, TitleBadge } from "@/components/ui";
+import { AchievementBadge, CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore, TitleBadge } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
 
@@ -45,6 +45,8 @@ interface ProfileDTO {
   title: TitleRef | null;
   /** Titres gagnés en fin de saison, les plus récents d'abord. */
   titles: TitleRef[];
+  /** Badge gagné par un succès (« Boîte à idées »), son palier (0 = bronze) ; null : aucun. */
+  badge: { name: string; tier: number } | null;
   /** Note de statut (null : aucune). */
   statusNote: string | null;
 }
@@ -273,6 +275,7 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
             </h1>
             {p.creator && <CreatorBadge size="lg" />}
             {p.title && <TitleBadge title={p.title} size="lg" />}
+            {p.badge && <AchievementBadge badge={p.badge} size="lg" />}
           </div>
           <p className="text-sm text-muted">
             Joueur depuis {since(p.createdAt)}

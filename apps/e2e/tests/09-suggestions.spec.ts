@@ -22,3 +22,21 @@ test("suggestion envoyée, puis triée par Claude depuis la page Admin", async (
     "En attente du tri",
   );
 });
+
+test("suggestion acceptée : succès « Boîte à idées » et badge sur le profil", async ({ browser }) => {
+  const player = await newPlayer(browser, "boite");
+  const sent = await apiCall<{ id: number }>(player.page, "POST", "/suggestions", {
+    kind: "content",
+    title: `Idée ${newName("b")}`,
+    body: "Un booster à thème sur les volcans.",
+  });
+  const admin = await newPlayer(browser, "admin");
+  await apiCall(admin.page, "POST", "/test/make-admin");
+  await apiCall(admin.page, "PATCH", `/admin/suggestions/${sent.id}`, { status: "accepted" });
+
+  await expect(player.page.getByText("Succès débloqué : Bonne idée.")).toBeVisible();
+  await player.page.goto(`u/${player.name}`);
+  await expect(player.page.getByText("Bonne idée", { exact: true })).toBeVisible();
+  await player.page.goto("achievements");
+  await expect(player.page.getByRole("heading", { name: "Boîte à idées" })).toBeVisible();
+});
