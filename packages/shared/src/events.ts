@@ -76,6 +76,8 @@ export interface ServerToClientEvents {
   "battle:update": (b: { battleId: number; started?: boolean; opponent?: string }) => void;
   /** État complet d'un duel, poussé à chaque changement de phase (le client ne fait que l'afficher). */
   "battle:state": (s: BattleStateDTO) => void;
+  /** Duels ouverts à relire (créé, annulé, accepté ou expiré), à tous les joueurs connectés. */
+  "battle:open": (o: Record<string, never>) => void;
   /** Quêtes, passe ou succès ont avancé : relire. */
   "progress:update": (p: Record<string, never>) => void;
   /** PV du boss du jour (à tous les joueurs connectés). */

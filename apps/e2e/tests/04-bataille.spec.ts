@@ -75,3 +75,38 @@ test("duel en direct : attaque, bouclier, question, abandon", async ({ browser }
   await expect(bob.page.getByRole("heading", { name: "Historique" })).toBeVisible();
   await expect(bob.page.getByText(new RegExp(`Victoire contre ${alice.name}`))).toBeVisible();
 });
+
+test("duel ouvert : lancé sans adversaire, accepté par le premier venu", async ({ browser }) => {
+  test.setTimeout(120_000);
+  const alice = await newPlayer(browser, "open1");
+  const bob = await newPlayer(browser, "open2");
+  await apiCall(alice.page, "POST", "/packs/open");
+  await apiCall(bob.page, "POST", "/packs/open");
+
+  await alice.page.goto("battle");
+  await buildDeck(alice.page);
+  await alice.page.getByRole("button", { name: "Duel ouvert" }).click();
+  await expect(alice.page.getByText("Ton duel ouvert", { exact: true })).toBeVisible();
+  // Un seul duel ouvert à la fois.
+  await expect(alice.page.getByRole("button", { name: "Duel ouvert" })).toBeDisabled();
+
+  // Bob le voit dans la liste (en temps réel) et l'accepte avec son deck.
+  await bob.page.goto("battle");
+  const offer = bob.page.getByRole("listitem").filter({ hasText: `${alice.name} cherche un adversaire` });
+  await expect(offer).toBeVisible();
+  await offer.getByRole("button", { name: "Choisir mon deck" }).click();
+  await buildDeck(bob.page);
+  await bob.page.getByRole("button", { name: "Accepter le duel" }).click();
+  await expect(bob.page).toHaveURL(/\/battle\/\d+$/);
+
+  // Alice est prévenue et rejoint le duel : il démarre.
+  await alice.page.getByRole("button", { name: "Rejoindre" }).click();
+  await expect(alice.page).toHaveURL(/\/battle\/\d+$/);
+  await expect(alice.page.getByText(/Tour 1\/8/)).toBeVisible({ timeout: 20_000 });
+  await expect(bob.page.getByText(/Tour 1\/8/)).toBeVisible();
+
+  // Le duel ouvert a disparu de la liste.
+  await alice.page.goto("battle");
+  await expect(alice.page.getByText("Ton duel ouvert", { exact: true })).toBeHidden();
+  await expect(alice.page.getByRole("button", { name: "Duel ouvert" })).toBeVisible();
+});

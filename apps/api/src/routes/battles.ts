@@ -8,12 +8,16 @@ import {
   answerQuestion,
   battleEngine,
   battleState,
+  cancelOpenBattle,
   challenge,
   chooseAttack,
   chooseShield,
+  createOpenBattle,
   forfeit,
   isParticipant,
+  joinOpenBattle,
   listBattles,
+  listOpenBattles,
   refuseChallenge,
   serialAction,
 } from "../services/battles.js";
@@ -32,6 +36,20 @@ export function battleRoutes(api: FastifyInstance, ctx: Ctx) {
   api.post("/battles", limited(10), async (req) => {
     const body = parse(z.object({ opponent: z.string().trim().min(1).max(30), deck }), req.body);
     return challenge(ctx, req.user.id, body);
+  });
+  // Duels ouverts : n'importe quel joueur peut accepter, le premier lance le duel.
+  api.get("/battles/open", auth, async (req) => listOpenBattles(ctx, req.user.id));
+  api.post("/battles/open", limited(10), async (req) => {
+    const { deck: d } = parse(z.object({ deck }), req.body);
+    return createOpenBattle(ctx, req.user.id, d);
+  });
+  api.post("/battles/open/:id/join", limited(10), async (req) => {
+    const { deck: d } = parse(z.object({ deck }), req.body);
+    return joinOpenBattle(ctx, req.user.id, battleId(req.params), d);
+  });
+  api.post("/battles/open/:id/cancel", auth, async (req) => {
+    await cancelOpenBattle(ctx, req.user.id, battleId(req.params));
+    return { ok: true };
   });
   api.post("/battles/:id/accept", limited(10), async (req) => {
     const { deck: d } = parse(z.object({ deck }), req.body);

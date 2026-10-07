@@ -9,9 +9,9 @@ import {
   TOTAL_TURNS,
   type Question,
 } from "@palacards/game";
-import type { BattleStateDTO } from "@palacards/shared";
+import type { BattleStateDTO, OpenBattleDTO } from "@palacards/shared";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { battleEngine, runDue } from "../src/services/battles.js";
+import { battleEngine, runDue, sweepBattles } from "../src/services/battles.js";
 import { makeApp, signUp, type Client } from "./helpers.js";
 
 const { app, ctx } = await makeApp();
@@ -334,5 +334,101 @@ describe("duel Attaque / Bouclier", () => {
     const eloOf = async (p: Client) =>
       (await ctx.db.select().from(schema.players).where(eq(schema.players.userId, p.userId)))[0]!.elo;
     expect((await eloOf(a)) + (await eloOf(b))).toBe(2 * ELO_START);
+  });
+});
+
+describe("duels ouverts", () => {
+  const openOf = async (p: Client, id: number) =>
+    ((await p.get("/battles/open")).body as OpenBattleDTO[]).find((o) => o.id === id);
+
+  it("créé, visible de tous, accepté une seule fois, puis le duel démarre", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const c = await signUp(app);
+    const created = await a.post("/battles/open", { deck: await deckOf(a) });
+    expect(created.status).toBe(200);
+    const openId: number = created.body.id;
+    // Un seul duel ouvert à la fois.
+    expect((await a.post("/battles/open", { deck: await deckOf(a) })).body.error).toBe("open_battle_exists");
+    expect(await openOf(a, openId)).toMatchObject({ mine: true, creator: { id: a.userId } });
+    expect(await openOf(b, openId)).toMatchObject({ mine: false, creator: { username: a.username } });
+    // Pas son propre duel.
+    expect((await a.post(`/battles/open/${openId}/join`, { deck: await deckOf(a) })).body.error).toBe("self");
+
+    const joined = await b.post(`/battles/open/${openId}/join`, { deck: await deckOf(b) });
+    expect(joined.status).toBe(200);
+    // Le second arrivé trouve la place prise.
+    expect((await c.post(`/battles/open/${openId}/join`, { deck: await deckOf(c) })).body.error).toBe(
+      "open_battle_gone",
+    );
+    expect(await openOf(c, openId)).toBeUndefined();
+    const id: number = joined.body.id;
+    const s = await stateOf(a, id);
+    expect(s).toMatchObject({ status: "active", phase: "lobby", isChallenger: true, them: { id: b.userId } });
+    expect(s.myHand).toHaveLength(5);
+    await battleEngine.join(ctx, a.userId, id);
+    await battleEngine.join(ctx, b.userId, id);
+    expect((await stateOf(b, id)).phase).toBe("attack");
+  });
+
+  it("deux acceptations simultanées : un seul duel", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const c = await signUp(app);
+    const openId = (await a.post("/battles/open", { deck: await deckOf(a) })).body.id as number;
+    const [db, dc] = [await deckOf(b), await deckOf(c)];
+    const res = await Promise.all([
+      b.post(`/battles/open/${openId}/join`, { deck: db }),
+      c.post(`/battles/open/${openId}/join`, { deck: dc }),
+    ]);
+    expect(res.map((r) => r.status).sort()).toEqual([200, 409]);
+    const started = await ctx.db.select().from(schema.battles).where(eq(schema.battles.challengerId, a.userId));
+    expect(started).toHaveLength(1);
+  });
+
+  it("annulé par son créateur, expiré, ou caduc si une carte du deck est partie", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const deck = await deckOf(a);
+    const first = (await a.post("/battles/open", { deck })).body.id as number;
+    expect((await b.post(`/battles/open/${first}/cancel`)).status).toBe(404);
+    expect((await a.post(`/battles/open/${first}/cancel`)).status).toBe(200);
+    expect(await openOf(b, first)).toBeUndefined();
+
+    // Expiré : invisible, impossible à rejoindre, balayé, et n'empêche pas d'en relancer un.
+    const second = (await a.post("/battles/open", { deck })).body.id as number;
+    await ctx.db
+      .update(schema.openBattles)
+      .set({ expiresAt: new Date(Date.now() - 1_000) })
+      .where(eq(schema.openBattles.id, second));
+    expect(await openOf(b, second)).toBeUndefined();
+    expect((await b.post(`/battles/open/${second}/join`, { deck: await deckOf(b) })).body.error).toBe(
+      "open_battle_gone",
+    );
+    await sweepBattles(ctx);
+    expect(await ctx.db.select().from(schema.openBattles).where(eq(schema.openBattles.id, second))).toHaveLength(0);
+
+    // Une carte du deck a quitté la collection du créateur : la demande tombe.
+    const third = (await a.post("/battles/open", { deck })).body.id as number;
+    await ctx.db.update(schema.cardInstances).set({ ownerId: b.userId }).where(eq(schema.cardInstances.id, deck[0]!));
+    expect((await b.post(`/battles/open/${third}/join`, { deck: await deckOf(b) })).body.error).toBe(
+      "open_battle_gone",
+    );
+    expect(await openOf(a, third)).toBeUndefined();
+  });
+
+  it("refusé si le créateur n'est pas connecté ou si un duel est déjà en cours avec lui", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const openId = (await a.post("/battles/open", { deck: await deckOf(a) })).body.id as number;
+    online.mockReturnValueOnce(false);
+    expect((await b.post(`/battles/open/${openId}/join`, { deck: await deckOf(b) })).body.error).toBe(
+      "opponent_offline",
+    );
+    const pending = (await b.post("/battles", { opponent: a.username, deck: await deckOf(b) })).body.id as number;
+    expect((await b.post(`/battles/open/${openId}/join`, { deck: await deckOf(b) })).body.error).toBe("battle_exists");
+    // Le défi direct accepté retire le duel ouvert du créateur.
+    expect((await a.post(`/battles/${pending}/accept`, { deck: await deckOf(a) })).status).toBe(200);
+    expect(await openOf(b, openId)).toBeUndefined();
   });
 });

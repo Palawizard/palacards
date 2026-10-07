@@ -190,6 +190,13 @@
       "when": 1791321231762,
       "tag": "0026_player_titles",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791362567968,
+      "tag": "0027_open_battles",
+      "breakpoints": true
     }
   ]
 }

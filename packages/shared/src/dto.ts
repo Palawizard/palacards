@@ -378,6 +378,16 @@ export interface BossLiveDTO {
   last: { name: string; damage: number; hit: "miss" | "hit" | "crit" } | null;
 }
 
+/** Duel ouvert de la page Bataille : le premier joueur qui l'accepte lance le duel. */
+export interface OpenBattleDTO {
+  id: number;
+  creator: { id: string; name: string; username: string; avatar: string | null; elo: number; online: boolean };
+  /** Ton propre duel ouvert : tu peux l'annuler, pas l'accepter. */
+  mine: boolean;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export interface FeedItemDTO {
   id: number;
   card: CardDTO;

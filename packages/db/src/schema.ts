@@ -710,6 +710,23 @@ export const battles = pgTable(
   ],
 );
 
+/**
+ * Duel ouvert : demande visible de tous sur la page Bataille, le premier joueur qui l'accepte lance le duel
+ * (la ligne disparaît alors, comme à l'annulation ou à l'expiration). Un seul par joueur.
+ */
+export const openBattles = pgTable(
+  "open_battles",
+  {
+    id: id(),
+    creatorId: userRef("creator_id").notNull(),
+    /** Exemplaires du deck choisi, vérifiés à la création et figés à l'acceptation. */
+    deck: bigint("deck", { mode: "number" }).array().notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    expiresAt: tstz("expires_at").notNull(),
+  },
+  (t) => [uniqueIndex("open_battles_creator_uq").on(t.creatorId)],
+);
+
 /** Deck figé au moment du défi (les stats ne bougent plus même si la carte est vendue ensuite). */
 export const battleDecks = pgTable(
   "battle_decks",
