@@ -390,6 +390,18 @@ export interface BattleQueueDTO {
   mine: { since: string; expiresAt: string } | null;
 }
 
+/** Deck de bataille enregistré (privé). */
+export interface SavedDeckDTO {
+  id: number;
+  name: string;
+  /** Exemplaires du deck dans l'ordre : la carte, ou null si elle n'est plus dans ta collection. */
+  cards: (CardDTO | null)[];
+  /** Cartes qui ne sont plus dans ta collection (à remplacer avant de jouer ce deck). */
+  missing: number;
+  status: "ready" | "incomplete" | "invalid";
+  updatedAt: string;
+}
+
 export interface FeedItemDTO {
   id: number;
   card: CardDTO;
