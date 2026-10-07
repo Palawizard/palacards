@@ -11,6 +11,7 @@ import useSWR from "swr";
 import { AvatarFace } from "@/components/Avatar";
 import { DeckPicker } from "@/components/DeckPicker";
 import { PlayerSearch } from "@/components/PlayerSearch";
+import { SavedDecks } from "@/components/SavedDecks";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { countdown, relative } from "@/lib/format";
@@ -158,6 +159,7 @@ function ChallengeForm({
             )
           )}
         </div>
+        <SavedDecks deck={deck} onLoad={setDeck} />
         <DeckPicker deck={deck} onChange={setDeck} />
         <div className="flex flex-wrap items-center justify-end gap-2">
           <p className="mr-auto basis-full text-xs text-faint sm:basis-auto">
@@ -212,6 +214,7 @@ function AcceptPanel({ battle, onDone }: { battle: BattleSummary; onDone: () => 
   }
   return (
     <div className="flex flex-col gap-3 border-t border-line p-3">
+      <SavedDecks deck={deck} onLoad={setDeck} />
       <DeckPicker deck={deck} onChange={setDeck} />
       <div className="flex justify-end gap-2">
         <button type="button" className="btn btn-sm btn-danger" disabled={busy} onClick={() => act(false)}>

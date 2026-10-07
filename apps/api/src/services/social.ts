@@ -4,7 +4,7 @@ import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { Effects } from "./notifications.js";
 import { emit } from "./progression.js";
-import { findUserByName } from "./profiles.js";
+import { findUserByName, statusNoteOf } from "./profiles.js";
 
 const f = schema.friendships;
 const m = schema.messages;
@@ -101,9 +101,12 @@ export async function listFriends(ctx: Ctx, userId: string) {
     status: "pending" | "accepted";
     requested_by: string;
     elo: number;
+    status_note: string | null;
+    status_note_at: Date | string | null;
   }>(sql`
     select case when f.user_a = ${userId} then f.user_b else f.user_a end as other_id,
-           u.username, coalesce(u.display_username, u.name) as display_name, p.avatar, f.status, f.requested_by, p.elo
+           u.username, coalesce(u.display_username, u.name) as display_name, p.avatar, f.status, f.requested_by, p.elo,
+           p.status_note, p.status_note_at
     from friendships f
     join "user" u on u.id = case when f.user_a = ${userId} then f.user_b else f.user_a end
     join players p on p.user_id = u.id
@@ -117,6 +120,7 @@ export async function listFriends(ctx: Ctx, userId: string) {
     avatar: r.avatar,
     elo: r.elo,
     online: ctx.rt.isOnline(r.other_id),
+    statusNote: statusNoteOf(ctx, r),
   });
   return {
     friends: rows.filter((r) => r.status === "accepted").map(toDTO),

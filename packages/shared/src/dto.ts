@@ -1,4 +1,4 @@
-import type { AutoRecycleRarity, Rarity, WheelReward, WheelTier } from "@palacards/game";
+import type { AutoRecycleRarity, DailyLoginRates, Rarity, WheelReward, WheelTier } from "@palacards/game";
 import type { PackState, Wallet } from "./events.js";
 import type { SuggestionKind, SuggestionStatus } from "./schemas.js";
 
@@ -46,6 +46,8 @@ export interface MeDTO {
   animationSpeed: "normal" | "fast" | "instant";
   /** Images d'arthropodes floutées jusqu'au clic. */
   hideArthropods: boolean;
+  /** Upgrader sans tour d'aiguille : le résultat s'affiche tout de suite. */
+  quickUpgrade: boolean;
   /** Ses tags servent de filtre aux autres joueurs sur sa collection. */
   publicTags: boolean;
   /** Recyclage automatique des cartes tirées (rareté maximale, null : désactivé). */
@@ -388,6 +390,18 @@ export interface BattleQueueDTO {
   mine: { since: string; expiresAt: string } | null;
 }
 
+/** Deck de bataille enregistré (privé). */
+export interface SavedDeckDTO {
+  id: number;
+  name: string;
+  /** Exemplaires du deck dans l'ordre : la carte, ou null si elle n'est plus dans ta collection. */
+  cards: (CardDTO | null)[];
+  /** Cartes qui ne sont plus dans ta collection (à remplacer avant de jouer ce deck). */
+  missing: number;
+  status: "ready" | "incomplete" | "invalid";
+  updatedAt: string;
+}
+
 export interface FeedItemDTO {
   id: number;
   card: CardDTO;
@@ -481,6 +495,18 @@ export interface AdminSuggestionDTO extends SuggestionDTO {
   seen: boolean;
   updatedAt: string;
   automation: SuggestionAutomationDTO | null;
+}
+
+/** Réglage du bonus de connexion quotidienne (page Admin). */
+export interface AdminDailyLoginDTO {
+  /** Montants appliqués à la prochaine connexion quotidienne. */
+  rates: DailyLoginRates;
+  /** Montants par défaut du code (sans réglage enregistré). */
+  defaults: DailyLoginRates;
+  /** Montants du lancement du jeu, pour comparer. */
+  launch: DailyLoginRates;
+  /** Dernière modification dans la page Admin (null : valeurs par défaut). */
+  updatedAt: string | null;
 }
 
 /** Pseudo proposé pendant la saisie (échanges, duels, amis) : rien de plus que ce qu'affiche le profil public. */

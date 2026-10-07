@@ -19,6 +19,8 @@ interface Friend {
   avatar: string | null;
   elo: number;
   online: boolean;
+  /** Note de statut (null : aucune). */
+  statusNote: string | null;
 }
 interface FriendsDTO {
   friends: Friend[];
@@ -140,7 +142,7 @@ export default function FriendsPage() {
                 Ajoute tes potes par leur pseudo pour échanger, discuter et vous défier.
               </Empty>
             ) : (
-              <ul className="grid gap-2 sm:grid-cols-2">
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {[...data.friends]
                   .sort((a, b) => Number(b.online) - Number(a.online))
                   .map((f) => (
@@ -153,6 +155,12 @@ export default function FriendsPage() {
                         <Link href={`/u/${f.username}`} className="block truncate font-semibold hover:underline">
                           {f.displayName}
                         </Link>
+                        {f.statusNote && (
+                          <p className="truncate text-sm text-muted" title={f.statusNote}>
+                            <span className="sr-only">Note : </span>
+                            {f.statusNote}
+                          </p>
+                        )}
                         <span className="tnum text-xs text-faint">
                           {f.online ? "en ligne" : "hors ligne"} · Elo {fmt(f.elo)}
                         </span>

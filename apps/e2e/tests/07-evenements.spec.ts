@@ -32,7 +32,7 @@ test("booster à thème créé par l'admin, code promo, ouverture du booster", a
   const player = await newPlayer(browser, "joueur");
   await instantPacks(player.page);
   await player.page.reload();
-  // Le bonus du jour (+20 PW) est réclamé par la page en arrière-plan : on le réclame aussi (idempotent,
+  // Le bonus du jour est réclamé par la page en arrière-plan : on le réclame aussi (idempotent,
   // joueur verrouillé) pour qu'il soit déjà compté dans `before` et ne tombe pas pendant le code promo.
   await apiCall(player.page, "POST", "/daily");
   const before = (await apiCall<Me>(player.page, "GET", "/me")).wallet.balance;
@@ -68,6 +68,30 @@ test("booster à thème créé par l'admin, code promo, ouverture du booster", a
   await expect(player.page.locator("article.pc-card")).toHaveCount(40);
 });
 
+test("bonus de connexion réglé par l'admin, versé à la prochaine connexion", async ({ browser }) => {
+  const admin = await newPlayer(browser, "admin");
+  await apiCall(admin.page, "POST", "/test/make-admin");
+  const { defaults } = await apiCall<{ defaults: Record<string, number> }>(admin.page, "GET", "/admin/daily-login");
+  try {
+    await admin.page.goto("admin");
+    const section = admin.page
+      .locator("section")
+      .filter({ has: admin.page.getByRole("heading", { name: "Bonus de connexion" }) });
+    await section.getByLabel("Premier jour (PW)").fill("40");
+    await section.getByLabel("Par jour de série (PW)").fill("10");
+    await section.getByLabel("Plafond (PW)").fill("100");
+    await expect(section.getByRole("table")).toContainText("plafond atteint au jour 7");
+    await section.getByRole("button", { name: "Enregistrer" }).click();
+    await expect(admin.page.getByText(/Bonus de connexion enregistré/)).toBeVisible();
+
+    // Un nouveau joueur touche le nouveau montant dès sa première connexion du jour.
+    const player = await newPlayer(browser, "joueur");
+    await expect(player.page.getByText(/Bonus du jour.*\+40.PW/)).toBeVisible();
+  } finally {
+    await apiCall(admin.page, "PUT", "/admin/daily-login", defaults);
+  }
+});
+
 test("roues du jour : la petite tout de suite, la moyenne après 2 h 30", async ({ browser }) => {
   const { page } = await newPlayer(browser, "roue");
   expect((await apiCall<Me>(page, "GET", "/me")).wheelReady).toBe(true);
@@ -101,6 +125,37 @@ test("upgrader : des cartes communes pour tenter une peu commune, sur le cadran"
   await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "Nouvel essai" })).toBeVisible();
   // Les cartes sacrifiées ont quitté la collection.
+  await expect(cards).toHaveCount(0);
+});
+
+test("upgrader : « Passer » saute le tour d'aiguille, ou le réglage le supprime", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "passer");
+  const common = await apiCall<{ items: { cardId: number }[] }>(page, "GET", "/cards?rarity=C&limit=1");
+  await apiCall(page, "POST", "/test/grant-card", { cardId: common.items[0]!.cardId, count: 6 });
+  await page.goto("upgrade");
+  const cards = page.locator("button[aria-pressed]:has(article)");
+  await expect(cards).toHaveCount(6);
+
+  // Le tour dure plus de 4 s : « Passer » affiche le résultat tout de suite.
+  await page.getByRole("button", { name: "Remplir" }).click();
+  await page.getByRole("button", { name: /^Tenter l’upgrade/ }).click();
+  await page.getByRole("button", { name: "Passer", exact: true }).click();
+  await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible({ timeout: 1_500 });
+  await expect(page.getByRole("button", { name: "Nouvel essai" })).toBeVisible();
+  await page.getByRole("button", { name: "Nouvel essai" }).click();
+
+  // Réglage « Upgrader sans animation » : pas de bouton « Passer », le résultat arrive directement.
+  await page.goto("settings");
+  await page.getByRole("checkbox", { name: /Upgrader sans animation/ }).check();
+  await expect(page.getByText("L’Upgrader ira droit au résultat.")).toBeVisible();
+  expect((await apiCall<{ quickUpgrade: boolean }>(page, "GET", "/me")).quickUpgrade).toBe(true);
+  await page.goto("upgrade");
+  // Remplir a posé 4 cartes (chance au plafond) : il en reste 2.
+  await expect(cards).toHaveCount(2);
+  await page.getByRole("button", { name: "Remplir" }).click();
+  await page.getByRole("button", { name: /^Tenter l’upgrade/ }).click();
+  await expect(page.getByText(/^(Réussi !|Raté)$/)).toBeVisible({ timeout: 1_500 });
+  await expect(page.getByRole("button", { name: "Passer", exact: true })).toHaveCount(0);
   await expect(cards).toHaveCount(0);
 });
 

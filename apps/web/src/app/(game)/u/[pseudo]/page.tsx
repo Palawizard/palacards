@@ -16,6 +16,7 @@ import {
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
 import { MyShowcase } from "@/components/Showcase";
+import { StatusNote } from "@/components/StatusNote";
 import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore, TitleBadge } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -44,6 +45,8 @@ interface ProfileDTO {
   title: TitleRef | null;
   /** Titres gagnés en fin de saison, les plus récents d'abord. */
   titles: TitleRef[];
+  /** Note de statut (null : aucune). */
+  statusNote: string | null;
 }
 
 const sameTitle = (a: TitleRef | null, b: TitleRef) => !!a && a.board === b.board && a.season === b.season;
@@ -263,7 +266,7 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-end gap-4 border-b-2 border-dashed border-line pb-4">
         <Avatar name={p.displayName} avatar={p.avatar} online={p.isMe ? undefined : p.online} size="lg" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-56">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
             <h1 className="min-w-0 truncate font-display text-[clamp(2rem,1.5rem+1.9vw,2.9rem)] uppercase leading-none">
               {p.displayName}
@@ -288,6 +291,7 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
               </>
             )}
           </p>
+          <StatusNote note={p.statusNote} isMe={p.isMe} onChanged={() => mutate()} />
         </div>
         <Actions p={p} onChanged={() => mutate()} />
       </header>

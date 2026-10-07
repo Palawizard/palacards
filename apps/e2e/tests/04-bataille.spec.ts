@@ -106,3 +106,38 @@ test("file de matchmaking : le duel démarre dès que deux joueurs cherchent", a
   // La file est vide : plus de pastille.
   await expect(battleLink.getByTitle(/en attente d’un duel/)).toBeHidden();
 });
+
+test("decks enregistrés : enregistrer, recharger, deck à réparer", async ({ browser }) => {
+  const alice = await newPlayer(browser, "deck1");
+  const bob = await newPlayer(browser, "deck2");
+  await apiCall(alice.page, "POST", "/packs/open");
+  const page = alice.page;
+
+  await page.goto(`battle?opponent=${bob.name}`);
+  await expect(page.getByText("Aucun deck enregistré")).toBeVisible();
+  const chip = page
+    .getByRole("group", { name: "Charger un deck enregistré" })
+    .getByRole("button", { name: /Mes rares/ });
+  await buildDeck(page);
+  await page.getByRole("button", { name: "Enregistrer comme nouveau deck" }).click();
+  await page.getByLabel("Nom du deck").fill("Mes rares");
+  await page.getByRole("button", { name: "Enregistrer", exact: true }).click();
+  await expect(chip).toHaveAttribute("aria-pressed", "true");
+
+  // Retour sur la page : le deck se recharge d'un clic, prêt pour le duel.
+  await page.reload();
+  const defy = page.getByRole("button", { name: "Défier" });
+  await expect(defy).toBeDisabled();
+  await chip.click();
+  await expect(page.getByText("(5/5)")).toBeVisible();
+  await expect(defy).toBeEnabled();
+
+  // Une carte du deck recyclée : le deck est marqué à réparer et ne peut pas servir tel quel.
+  const [deck] = await apiCall<{ cards: { instanceId: number }[] }[]>(page, "GET", "/battles/decks");
+  await apiCall(page, "POST", "/collection/recycle", { instanceIds: [deck!.cards[0]!.instanceId] });
+  await page.reload();
+  await chip.click();
+  await expect(page.getByText(/1\scarte n’est plus dans ta collection/)).toBeVisible();
+  await expect(page.getByText("(4/5)")).toBeVisible();
+  await expect(defy).toBeDisabled();
+});

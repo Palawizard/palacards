@@ -197,6 +197,34 @@
       "when": 1791363760242,
       "tag": "0027_battle_queue",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791368858771,
+      "tag": "0028_player_status_note",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791373898923,
+      "tag": "0029_quick_upgrade",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791379124266,
+      "tag": "0030_game_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791380337534,
+      "tag": "0031_saved_decks",
+      "breakpoints": true
     }
   ]
 }
