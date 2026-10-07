@@ -127,6 +127,11 @@ jobs:
           START: ${{ steps.start.outputs.sha }}
           OWNER_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          # claude-code-action remet la configuration de Claude de la branche par défaut (.claude, CLAUDE.md…) dans
+          # l'arbre de travail, par sécurité : ce ne sont pas des changements de Claude, on revient à la branche.
+          for p in .claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md .husky; do
+            git checkout -q HEAD -- "$p" 2>/dev/null || true
+          done
           if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
             git status --short --untracked-files=no
             echo "::error::Modifications non commitées : elles seraient perdues. Rien n'est poussé."
@@ -147,6 +152,23 @@ jobs:
             git push origin "HEAD:refs/heads/$BRANCH"
           fi
           echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # Filet de sécurité : si le push échoue, le travail de Claude reste téléchargeable (patchs) pendant 7 jours.
+      - name: Sauvegarde des commits non poussés
+        if: failure() && steps.start.outputs.sha != ''
+        env:
+          START: ${{ steps.start.outputs.sha }}
+        run: |
+          mkdir -p .automation/patches
+          git format-patch -q -o .automation/patches "$START..HEAD" || true
+          git diff HEAD > .automation/patches/non-commite.diff || true
+      - uses: actions/upload-artifact@v6
+        if: failure() && steps.start.outputs.sha != ''
+        with:
+          name: commits-non-pousses
+          path: .automation/patches
+          retention-days: 7
+          if-no-files-found: ignore
 
   ci:
     name: CI de la branche
