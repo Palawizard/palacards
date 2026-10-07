@@ -213,6 +213,8 @@ export const players = pgTable(
     autoRecycleKeepNew: boolean("auto_recycle_keep_new").notNull().default(true),
     /** Images d'arthropodes (araignées, insectes…) floutées jusqu'au clic. */
     hideArthropods: boolean("hide_arthropods").notNull().default(false),
+    /** Upgrader sans tour d'aiguille : le résultat s'affiche dès la réponse du serveur. */
+    quickUpgrade: boolean("quick_upgrade").notNull().default(false),
     /** Ses tags servent de filtre aux autres joueurs sur sa collection (profil, échanges). */
     publicTags: boolean("public_tags").notNull().default(false),
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
