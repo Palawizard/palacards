@@ -215,6 +215,31 @@ describe("tri automatique des suggestions", () => {
     expect([(await rowOf(first)).buildStatus, (await rowOf(second)).buildStatus]).toEqual(["closed", "published"]);
   });
 
+  it("une reprise @claude en cours ou en échec garde la file bloquée tant que la PR est ouverte", async () => {
+    const p = await signUp(app);
+    const first = await suggest(p, "Idée reprise");
+    const second = await suggest(p, "Idée en attente");
+    const run = engine(async () => verdict(), { max: 999 });
+    await run.tick();
+    const states = async () => [(await rowOf(first)).buildStatus, (await rowOf(second)).buildStatus];
+    // Reprise lancée il y a longtemps (au-delà des 3 h d'une branche en vol) : la PR attend toujours Palawi.
+    const old = new Date(ctx.now().getTime() - 5 * 60 * 60_000);
+    pulls[503] = { state: "open", merged: false };
+    await ctx.db
+      .update(a)
+      .set({ buildStatus: "running", prNumber: 503, updatedAt: old })
+      .where(eq(a.suggestionId, first));
+    await run.tick();
+    expect(await states()).toEqual(["running", "queued"]);
+    await ctx.db.update(a).set({ buildStatus: "failed" }).where(eq(a.suggestionId, first));
+    await run.tick();
+    expect(await states()).toEqual(["failed", "queued"]);
+    // PR mergée : la file repart.
+    pulls[503] = { state: "closed", merged: true };
+    await run.tick();
+    expect(await states()).toEqual(["merged", "published"]);
+  });
+
   it("« à faire en prod » : pas de branche, Palawi est prévenu", async () => {
     const p = await signUp(app);
     const id = await suggest(
@@ -317,6 +342,27 @@ describe("comptes rendus des workflows et actions admin", () => {
     // Rien n'a été envoyé au joueur.
     const mine = (await p.get("/suggestions")).body.find((x: { id: number }) => x.id === id);
     expect(mine).toMatchObject({ status: "new", reply: null });
+  });
+
+  it("reprise sans rien de poussé : la PR et sa CI restent telles quelles, Discord le dit", async () => {
+    const p = await signUp(app);
+    const id = await suggest(p);
+    await engine(async () => verdict()).tick();
+    await report(id, { status: "ready", prNumber: 78, ciConclusion: "success" });
+    await report(id, { status: "running" });
+    calls = [];
+    const res = await report(id, { status: "ready", prNumber: 78, unchanged: "no_commit" });
+    expect(res.statusCode).toBe(200);
+    expect(await rowOf(id)).toMatchObject({ buildStatus: "ready", prNumber: 78, ciConclusion: "success" });
+    const msg = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(msg).toContain("**Rien de nouveau**");
+    expect(msg).not.toContain("Branche prête");
+
+    calls = [];
+    await report(id, { status: "ready", prNumber: 78, unchanged: "cancelled" });
+    const cancelled = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(cancelled).toContain("**Reprise annulée**");
+    expect((await report(id, { status: "ready", unchanged: "autre" })).statusCode).toBe(400);
   });
 
   it("limite du forfait : la suggestion revient en file et la file attend une heure", async () => {
