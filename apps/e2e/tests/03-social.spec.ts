@@ -154,6 +154,44 @@ test("bannière importée sur son profil, vue par un autre joueur, puis retirée
   await expect(banner).toHaveCount(0);
 });
 
+test("carte de sa collection en bannière (mobile), retour à l'image importée", async ({ browser }) => {
+  const alice = await newPlayer(browser, "alice", { viewport: { width: 390, height: 844 } });
+  const bob = await newPlayer(browser, "bob");
+  const { cards } = await apiCall<{ cards: { title: string }[] }>(alice.page, "POST", "/packs/open");
+  const title = cards[0]!.title;
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAALklEQVR4nO3NMQEAMAgAoLk0ZjKxsazg5wMFiM56F/7JKhaLxWKxWCwWi8XilQH91QGGD5y0UgAAAABJRU5ErkJggg==",
+    "base64",
+  );
+
+  // Alice importe une image, puis la remplace par une de ses cartes, cherchée dans le sélecteur.
+  await alice.page.goto(`u/${alice.name.toLowerCase()}`);
+  await alice.page
+    .getByLabel("Importer une bannière")
+    .setInputFiles({ name: "banniere.png", mimeType: "image/png", buffer: png });
+  await expect(alice.page.getByText("Bannière mise à jour.")).toBeVisible();
+  await alice.page.getByRole("button", { name: "Utiliser une de mes cartes" }).click();
+  const picker = alice.page.getByRole("dialog", { name: "Carte en bannière" });
+  await picker.getByLabel("Filtrer par titre").fill(title);
+  await picker.getByRole("button", { name: title }).first().click();
+  await expect(alice.page.getByText(`${title} en bannière.`)).toBeVisible();
+  await expect(picker).toBeHidden();
+
+  // Bob la voit sur le profil d'Alice, et elle tient après rechargement.
+  await bob.page.goto(`u/${alice.name.toLowerCase()}`);
+  const cardBanner = bob.page.getByRole("link", { name: `Bannière : ${title}` });
+  await expect(cardBanner).toBeVisible();
+  await alice.page.reload();
+  await expect(alice.page.getByRole("link", { name: `Bannière : ${title}` })).toBeVisible();
+
+  // Alice revient à son image importée.
+  await alice.page.getByRole("button", { name: "Revenir à mon image importée" }).click();
+  await expect(alice.page.getByText("Image importée rétablie.")).toBeVisible();
+  await bob.page.reload();
+  await expect(bob.page.locator(".pc-banner img")).toHaveAttribute("src", /\/banners\/.+\?v=/);
+  await expect(cardBanner).toHaveCount(0);
+});
+
 test("note de statut : écrite sur son profil, vue par un ami, effacée", async ({ browser }) => {
   const alice = await newPlayer(browser, "alice");
   const bob = await newPlayer(browser, "bob");

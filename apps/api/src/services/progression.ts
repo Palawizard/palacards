@@ -550,7 +550,7 @@ interface Row {
   title?: TitleRef;
   /** Note de statut du joueur. */
   statusNote?: string;
-  /** Bannière importée par le joueur (fond de sa ligne) ; absente : pas de bannière. */
+  /** Bannière du joueur, image importée ou carte (fond de sa ligne) ; absente : pas de bannière. */
   banner?: BannerDTO;
 }
 

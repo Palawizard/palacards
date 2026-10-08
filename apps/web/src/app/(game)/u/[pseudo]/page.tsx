@@ -48,8 +48,10 @@ interface ProfileDTO {
   titles: TitleRef[];
   /** Note de statut (null : aucune). */
   statusNote: string | null;
-  /** Bannière importée (null : bannière par défaut). */
+  /** Bannière : image importée ou carte de sa collection (null : bannière par défaut). */
   banner: BannerDTO | null;
+  /** Son propre profil : une image importée est enregistrée (pour y revenir quand une carte la remplace). */
+  bannerImageSaved: boolean;
 }
 
 const sameTitle = (a: TitleRef | null, b: TitleRef) => !!a && a.board === b.board && a.season === b.season;
@@ -269,7 +271,7 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-end gap-4 border-b-2 border-dashed border-line pb-4">
         <div className="basis-full">
-          <ProfileBanner banner={p.banner} isMe={p.isMe} onChanged={() => mutate()} />
+          <ProfileBanner banner={p.banner} isMe={p.isMe} imageSaved={p.bannerImageSaved} onChanged={() => mutate()} />
         </div>
         <Avatar name={p.displayName} avatar={p.avatar} online={p.isMe ? undefined : p.online} size="lg" />
         <div className="min-w-0 flex-1 basis-56">

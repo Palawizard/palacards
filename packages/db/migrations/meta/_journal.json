@@ -239,6 +239,13 @@
       "when": 1791441752766,
       "tag": "0033_profile_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791451277487,
+      "tag": "0034_profile_banner_card",
+      "breakpoints": true
     }
   ]
 }
