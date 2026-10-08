@@ -80,6 +80,31 @@ describe("filtres de la collection", () => {
     // `%` et `_` sont cherchés tels quels, pas comme des jokers.
     expect((await p.get("/collection?q=%25&inSummary=true")).body.total).toBe(0);
   });
+
+  it("trie les doublons par nombre d'exemplaires, du plus au moins, sur toutes les pages", async () => {
+    const [x, y, z] = cards.slice(5);
+    await addCopies(x!.instanceId, 1);
+    await addCopies(y!.instanceId, 3);
+    await addCopies(z!.instanceId, 2);
+    const seen: { cardId: number; copies: number }[] = [];
+    for (let page = 0; ; page++) {
+      const res = await p.get(`/collection?duplicates=true&sort=copies&limit=4&page=${page}`);
+      expect(res.status).toBe(200);
+      seen.push(...res.body.items);
+      if (!res.body.nextCursor) break;
+    }
+    expect(seen).toHaveLength(9);
+    expect(seen.map((c) => c.copies)).toEqual([4, 4, 4, 4, 3, 3, 3, 2, 2]);
+    expect(seen.map((c) => c.cardId)).toEqual([
+      ...Array(4).fill(y!.cardId),
+      ...Array(3).fill(z!.cardId),
+      ...Array(2).fill(x!.cardId),
+    ]);
+    // Sans le filtre, les articles en un seul exemplaire viennent après.
+    const all = (await p.get("/collection?sort=copies&limit=120")).body.items as { copies: number }[];
+    expect(all.map((c) => c.copies)).toEqual([...all.map((c) => c.copies)].sort((a, b) => b - a));
+    expect(all.at(-1)!.copies).toBe(1);
+  });
 });
 
 describe("actions en masse", () => {

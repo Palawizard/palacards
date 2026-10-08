@@ -144,7 +144,7 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
         theme: z.coerce.number().int().positive().optional(),
         tag: z.string().max(24).optional(),
         // Sans « Vues » : elles donneraient la réponse de « Plus lu » en duel.
-        sort: z.enum(["rarity", "title", "atk", "def", "date"]).default("rarity"),
+        sort: z.enum(["rarity", "title", "atk", "def", "date", "copies"]).default("rarity"),
         page: z.coerce.number().int().min(0).default(0),
         limit: z.coerce.number().int().min(1).max(120).default(60),
       }),
