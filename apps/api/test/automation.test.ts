@@ -293,6 +293,42 @@ describe("tri automatique des suggestions", () => {
     expect(msg).toContain("booster spécial « Halloween »");
   });
 
+  it("« prochaine saison » et « bloat » : pas de branche automatique, Palawi peut la forcer", async () => {
+    const p = await signUp(app);
+    const season = await suggest(
+      p,
+      "États des cartes",
+      "Des états d'usure sur chaque carte, avec un prix selon l'état.",
+    );
+    await engine(async () =>
+      verdict({
+        verdict: "saison",
+        category: "bloat",
+        summary: "Ajouter des états d'usure à chaque carte",
+        spec: "Ajouter un état d'usure tiré à l'obtention de chaque carte, avec une valeur en PW selon l'état.",
+        proposedReply: "Merci ! L'idée est gardée pour une prochaine saison.",
+      }),
+    ).tick();
+    expect(await rowOf(season)).toMatchObject({ verdict: "saison", buildStatus: "none", issueNumber: null });
+    let msg = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(msg).toContain("Prochaine saison");
+    expect(msg).toContain("Pas de branche : refonte à garder pour une prochaine saison");
+
+    calls = [];
+    const bloat = await suggest(p, "Compteur de clics", "Un compteur de clics sur chaque bouton.");
+    await engine(async () => verdict({ verdict: "decision", category: "bloat" })).tick();
+    expect(await rowOf(bloat)).toMatchObject({ verdict: "decision", buildStatus: "none" });
+    msg = (calls.find((c) => c.url === "https://discord.test/hook")!.body as { content: string }).content;
+    expect(msg).toContain("Pas de branche automatique (catégorie « bloat »)");
+    expect(calls.some((c) => c.url.startsWith("https://api.github.com/"))).toBe(false);
+
+    // Construction forcée depuis Admin : une refonte de saison part comme une décision à trancher.
+    const admin = await signUpAdmin(app, ctx);
+    expect((await admin.post(`/admin/suggestions/${season}/build`)).status).toBe(200);
+    expect((await rowOf(season)).buildStatus).toBe("queued");
+    expect(issueFor(season, "feature", await rowOf(season)).labels).toEqual(["suggestion", "auto:decision"]);
+  });
+
   it("reprend un tri en échec plus tard, puis prévient après le dernier essai", async () => {
     const p = await signUp(app);
     const id = await suggest(p);

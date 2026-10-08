@@ -46,6 +46,7 @@ const VERDICT_LABELS: Record<TriageResult["verdict"], string> = {
   bug: "Bug à corriger",
   non: "Refus proposé",
   prod: "À faire en prod",
+  saison: "Prochaine saison",
 };
 const KIND_LABELS: Record<string, string> = {
   bug: "Bug",
@@ -110,8 +111,11 @@ export function createEngine(deps: EngineDeps) {
       return;
     }
 
-    // « non » et « prod » ne lancent pas de branche (prod : Palawi le fait lui-même en production).
-    const wantsBuild = result.verdict !== "non" && result.verdict !== "prod";
+    // Pas de branche pour « non », « prod » (Palawi le fait en production), « saison » (refonte gardée pour une
+    // prochaine saison) ni pour une idée « bloat » : Palawi peut toujours lancer la branche depuis Admin.
+    const noBranchVerdict = ["non", "prod", "saison"].includes(result.verdict);
+    const heldAsBloat = !noBranchVerdict && result.category === "bloat";
+    const wantsBuild = !noBranchVerdict && !heldAsBloat;
     // Une branche déjà lancée (ou mergée) n'est pas relancée par un nouveau tri.
     const canQueue = ["none", "closed", "failed"].includes(row.buildStatus);
     const queue = wantsBuild && canQueue;
@@ -143,7 +147,15 @@ export function createEngine(deps: EngineDeps) {
     if (result.duplicateOf) lines.push(`Doublon de la suggestion n° ${result.duplicateOf}.`);
     if (result.verdict === "non") lines.push("Rien n'est envoyé au joueur : la réponse proposée t'attend dans Admin.");
     if (result.verdict === "prod") lines.push(`Pas de branche : c'est à faire en prod.\n${quote(result.spec, 600)}`);
-    if (result.verdict === "decision")
+    if (result.verdict === "saison")
+      lines.push(
+        "Pas de branche : refonte à garder pour une prochaine saison (« Construire la branche » dans Admin pour la forcer).",
+      );
+    else if (heldAsBloat)
+      lines.push(
+        "Pas de branche automatique (catégorie « bloat ») : « Construire la branche » dans Admin si tu la veux quand même.",
+      );
+    else if (result.verdict === "decision")
       lines.push(
         `${result.questions.length} question${result.questions.length > 1 ? "s" : ""} à trancher : Claude prépare la branche avec ses choix provisoires.`,
       );
@@ -259,7 +271,13 @@ export function createEngine(deps: EngineDeps) {
 
 /** Issue publique : cahier des charges reformulé et anonyme, jamais le texte ni le pseudo du joueur. */
 export function issueFor(id: number, kind: string, row: AutomationRow) {
-  const verdict = row.verdict === "non" || row.verdict === "prod" ? "build" : (row.verdict ?? "build");
+  // Construction forcée depuis Admin : une refonte de saison a forcément des choix à trancher.
+  const verdict =
+    row.verdict === "saison"
+      ? "decision"
+      : row.verdict === "non" || row.verdict === "prod"
+        ? "build"
+        : (row.verdict ?? "build");
   const questions = row.questions.length
     ? `\n\n### Questions à trancher\n\nClaude prend l'option recommandée en attendant la réponse de Palawi dans la pull request.\n\n${row.questions
         .map(
