@@ -2,6 +2,7 @@ import { eq, schema } from "@palacards/db";
 import {
   parisDay,
   rollShiny,
+  rollCondition,
   rollWheel,
   WHEEL_GAP_MS,
   WHEEL_THEME_FALLBACK_PACKS,
@@ -148,6 +149,7 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
       const season = await activeSeason(tx);
       drawn = await drawCard(tx, season, reward.rarity, ctx.random);
       const shiny = rollShiny(ctx.random);
+      const condition = rollCondition(ctx.random);
       const [row] = await tx
         .insert(schema.cardInstances)
         .values({
@@ -158,6 +160,7 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
           atk: drawn.atk,
           def: drawn.def,
           shiny,
+          condition,
           source: "wheel",
           obtainedAt: now,
         })

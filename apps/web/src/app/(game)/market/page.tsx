@@ -6,6 +6,7 @@ import { Plus, Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
+import { CONDITION_OPTIONS } from "@/components/CollectionFilters";
 import { AuctionTile, SellDialog } from "@/components/market";
 import { CardSkeletons, Empty, ErrorBox, RarityFilter, Select } from "@/components/ui";
 import { useConnection, useSocket, useSocketEvent } from "@/lib/game";
@@ -22,6 +23,7 @@ const SORTS = [
   { value: "ending", label: "Finissent bientôt" },
   { value: "recent", label: "Plus récentes" },
   { value: "price", label: "Prix" },
+  { value: "condition", label: "État" },
 ] as const;
 
 function Market() {
@@ -35,6 +37,7 @@ function Market() {
   }, [legacyWishlist, router]);
   const [rarity, setRarity] = useState<Rarity[]>([]);
   const [sort, setSort] = useState<(typeof SORTS)[number]["value"]>("ending");
+  const [condition, setCondition] = useState("");
   const [q, setQ] = useState("");
   const query = useDebounced(q);
   const [changed, setChanged] = useState<Set<number>>(new Set());
@@ -46,9 +49,10 @@ function Market() {
   const key = useMemo(() => {
     const p = new URLSearchParams({ sort, scope: tab });
     if (rarity.length) p.set("rarity", rarity.join(","));
+    if (condition) p.set("condition", condition);
     if (query.trim()) p.set("q", query.trim());
     return `/market?${p}`;
-  }, [tab, sort, rarity, query]);
+  }, [tab, sort, rarity, condition, query]);
   const { data, error, mutate } = useSWR<AuctionDTO[]>(key, { refreshInterval: 30_000 });
 
   // S'abonne en direct aux ventes affichées.
@@ -142,6 +146,7 @@ function Market() {
           />
         </div>
         <RarityFilter value={rarity} onChange={setRarity} />
+        <Select label="État" value={condition} onChange={setCondition} options={CONDITION_OPTIONS} />
         <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />
       </div>
 

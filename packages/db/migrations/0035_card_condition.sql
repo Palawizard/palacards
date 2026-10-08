@@ -1,0 +1,2 @@
+ALTER TABLE "card_instances" ADD COLUMN "condition" smallint DEFAULT 3 NOT NULL;--> statement-breakpoint
+ALTER TABLE "card_instances" ADD CONSTRAINT "card_instances_condition_ok" CHECK ("card_instances"."condition" BETWEEN 1 AND 5);

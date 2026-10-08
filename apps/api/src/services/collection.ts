@@ -31,7 +31,7 @@ export async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promi
   return new Set(rows.map((r) => r.id));
 }
 
-export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title" | "copies";
+export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title" | "copies" | "condition";
 
 export interface CollectionQuery {
   rarity?: Rarity[];
@@ -43,6 +43,8 @@ export interface CollectionQuery {
   favorites?: "only" | "exclude";
   /** Seulement les brillantes. */
   shiny?: boolean;
+  /** Seulement un état de conservation (1 abîmée à 5 parfaite). */
+  condition?: number;
   duplicates?: boolean;
   q?: string;
   /** La recherche porte aussi sur le résumé Wikipédia (et la description courte) de l'article. */
@@ -72,6 +74,7 @@ function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
   if (query.season) where.push(eq(ci.season, query.season));
   if (query.favorites) where.push(eq(ci.favorite, query.favorites === "only"));
   if (query.shiny) where.push(eq(ci.shiny, true));
+  if (query.condition) where.push(eq(ci.condition, query.condition));
   if (query.tag)
     where.push(sql`exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag = ${query.tag})`);
   if (query.theme)
@@ -117,6 +120,8 @@ export async function listCollection(
     title: [sql`${c.title} asc`],
     // Les articles les plus en double d'abord ; à égalité, l'ordre par rareté.
     copies: [sql`${copiesOf(ownerId)} desc`, ...byRarity],
+    // Les mieux conservées d'abord ; à égalité, l'ordre par rareté.
+    condition: [sql`${ci.condition} desc`, ...byRarity],
   }[query.sort];
 
   const rows = await selectInstances(ctx.db)

@@ -455,10 +455,20 @@ export async function referencePrices(ctx: Ctx, cardIds: number[]) {
 export async function listAuctions(
   ctx: Ctx,
   userId: string,
-  q: { rarity?: Rarity[]; sort: "ending" | "recent" | "price"; scope: "all" | "mine" | "bidding"; search?: string },
+  q: {
+    rarity?: Rarity[];
+    /** État de conservation de l'exemplaire en vente (1 abîmée à 5 parfaite). */
+    condition?: number;
+    sort: "ending" | "recent" | "price" | "condition";
+    scope: "all" | "mine" | "bidding";
+    search?: string;
+  },
 ) {
+  // Une vente ouverte garde toujours son exemplaire (verrouillé) : l'état se lit dessus.
+  const condition = sql`(select i.condition from card_instances i where i.id = ${a.instanceId})`;
   const where: SQL[] = [eq(a.status, "open")];
   if (q.rarity?.length) where.push(inArray(a.rarity, q.rarity));
+  if (q.condition) where.push(sql`${condition} = ${q.condition}`);
   if (q.scope === "mine") where.push(eq(a.sellerId, userId));
   if (q.scope === "bidding")
     where.push(sql`exists (select 1 from bids b where b.auction_id = ${a.id} and b.bidder_id = ${userId})`);
@@ -472,7 +482,9 @@ export async function listAuctions(
       ? [a.endsAt]
       : q.sort === "recent"
         ? [desc(a.createdAt)]
-        : [sql`coalesce(${a.currentBid}, ${a.startPrice}) desc`];
+        : q.sort === "condition"
+          ? [sql`${condition} desc`, a.endsAt]
+          : [sql`coalesce(${a.currentBid}, ${a.startPrice}) desc`];
   const rows = await ctx.db
     .select()
     .from(a)

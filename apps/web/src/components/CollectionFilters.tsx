@@ -1,5 +1,5 @@
 // Filtres de collection partagés, importés uniquement par des composants client.
-import type { Rarity } from "@palacards/game";
+import { CONDITION_LABELS, CONDITIONS, type Rarity } from "@palacards/game";
 import { Search } from "lucide-react";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { RarityFilter, Select, Toggle } from "@/components/ui";
@@ -13,12 +13,18 @@ const SORTS = [
   { value: "views", label: "Vues" },
   { value: "title", label: "Titre" },
   { value: "copies", label: "Exemplaires" },
+  { value: "condition", label: "État" },
 ] as const;
 export type CollectionSort = (typeof SORTS)[number]["value"];
 /** Tri pris d'office avec le filtre « Doublons », tant que le joueur (ou la page) n'en a pas choisi un. */
 const DUPLICATES_SORT: CollectionSort = "copies";
 /** Sans « Vues » chez les autres : elles donneraient la réponse de « Plus lu » en duel. */
 const OTHER_SORTS = SORTS.filter((s) => s.value !== "views");
+/** États du meilleur au plus abîmé, comme le tri « État ». */
+export const CONDITION_OPTIONS = [
+  { value: "", label: "Tous" },
+  ...[...CONDITIONS].reverse().map((c) => ({ value: String(c), label: CONDITION_LABELS[c] })),
+];
 
 export interface CollectionFilterState {
   q: string;
@@ -27,6 +33,8 @@ export interface CollectionFilterState {
   rarity: Rarity[];
   favorites: "" | "only" | "exclude";
   shiny: boolean;
+  /** État de conservation (« 1 » à « 5 », vide : tous). */
+  condition: string;
   duplicates: boolean;
   tag: string;
   theme: string;
@@ -50,6 +58,7 @@ const EMPTY: CollectionFilterState = {
   rarity: [],
   favorites: "",
   shiny: false,
+  condition: "",
   duplicates: false,
   tag: "",
   theme: "",
@@ -80,7 +89,7 @@ export function useCollectionFilters(init: Partial<CollectionFilterState> = {}) 
     [baseSort],
   );
   const q = useDebounced(value.q).trim();
-  const { rarity, inSummary, favorites, shiny, duplicates, tag, theme, season } = value;
+  const { rarity, inSummary, favorites, shiny, condition, duplicates, tag, theme, season } = value;
   const params = useMemo(() => {
     const p = new URLSearchParams();
     if (rarity.length) p.set("rarity", rarity.join(","));
@@ -90,12 +99,13 @@ export function useCollectionFilters(init: Partial<CollectionFilterState> = {}) 
     }
     if (favorites) p.set("favorites", favorites);
     if (shiny) p.set("shiny", "true");
+    if (condition) p.set("condition", condition);
     if (duplicates) p.set("duplicates", "true");
     if (tag) p.set("tag", tag);
     if (theme) p.set("theme", theme);
     if (season) p.set("season", season);
     return p.toString();
-  }, [rarity, q, inSummary, favorites, shiny, duplicates, tag, theme, season]);
+  }, [rarity, q, inSummary, favorites, shiny, condition, duplicates, tag, theme, season]);
   return { value, set, q, params };
 }
 
@@ -179,6 +189,12 @@ export function CollectionFilterBar({
         <Toggle pressed={f.duplicates} onChange={(duplicates) => set({ duplicates })}>
           Doublons
         </Toggle>
+        <Select
+          label="État"
+          value={f.condition}
+          onChange={(condition) => set({ condition })}
+          options={CONDITION_OPTIONS}
+        />
         {!!options?.tags?.length && (
           <Select
             label="Tag"

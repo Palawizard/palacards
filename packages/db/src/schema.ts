@@ -308,6 +308,8 @@ export const cardInstances = pgTable(
     level: smallint("level").notNull().default(1),
     /** Version brillante (cosmétique, ~0,1 % des tirages). */
     shiny: boolean("shiny").notNull().default(false),
+    /** État de conservation (1 abîmée à 5 parfaite, cosmétique) : tiré à l'obtention, 3 (correcte) pour les anciennes. */
+    condition: smallint("condition").notNull().default(3),
     favorite: boolean("favorite").notNull().default(false),
     /** Engagée dans une enchère ou un échange : ni recyclage, ni fusion, ni double vente. */
     lockedBy: text("locked_by", { enum: ["auction", "trade"] }),
@@ -326,6 +328,7 @@ export const cardInstances = pgTable(
       .on(t.ownerId, t.pinnedSlot)
       .where(sql`${t.pinnedSlot} IS NOT NULL`),
     check("card_instances_level_ok", sql`${t.level} BETWEEN 1 AND 5`),
+    check("card_instances_condition_ok", sql`${t.condition} BETWEEN 1 AND 5`),
     check("card_instances_pinned_ok", sql`${t.pinnedSlot} IS NULL OR ${t.pinnedSlot} BETWEEN 1 AND 5`),
   ],
 );

@@ -25,6 +25,7 @@ import {
   shieldPercent,
   TOTAL_TURNS,
   type BattlePhase,
+  type CardCondition,
   type Question,
   type QuestionType,
   type Rarity,
@@ -1026,12 +1027,14 @@ type DeckCardRow = {
   thumb_url: string | null;
   page_url: string | null;
   level: number;
+  /** Null si l'exemplaire a quitté la collection depuis (recyclé, vendu…). */
+  condition: number | null;
 };
 
 async function deckCards(db: DbOrTx, battleId: number): Promise<DeckCardRow[]> {
   return db.execute<DeckCardRow>(sql`
     select d.user_id, d.slot, d.instance_id, d.card_id, d.season, d.rarity, d.atk, d.def, c.title,
-           w.thumb_url, w.page_url, coalesce(i.level, 1) as level
+           w.thumb_url, w.page_url, coalesce(i.level, 1) as level, i.condition
     from battle_decks d
     join cards c on c.season = d.season and c.id = d.card_id
     left join wiki_summaries w on w.page_id = d.card_id
@@ -1051,6 +1054,7 @@ function toCard(r: DeckCardRow): CardDTO {
     atk: r.atk,
     def: r.def,
     level: r.level,
+    ...(r.condition !== null && { condition: r.condition as CardCondition }),
     thumbUrl: r.thumb_url,
     pageUrl: r.page_url ?? articleUrl(r.title),
   };

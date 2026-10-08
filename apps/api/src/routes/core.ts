@@ -220,6 +220,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
       .optional()
       .transform((v) => (v === "true" ? "only" : v)),
     shiny: z.stringbool().optional(),
+    condition: intParam.min(1).max(5).optional(),
     duplicates: z.stringbool().optional(),
     q: z.string().max(100).optional(),
     inSummary: z.stringbool().optional(),
@@ -227,7 +228,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/collection", auth, async (req) => {
     const q = parse(
       collectionFilters.extend({
-        sort: z.enum(["date", "atk", "def", "views", "rarity", "title", "copies"]).default("date"),
+        sort: z.enum(["date", "atk", "def", "views", "rarity", "title", "copies", "condition"]).default("date"),
         page: intParam.min(0).default(0),
         limit: intParam.min(1).max(120).default(60),
       }),

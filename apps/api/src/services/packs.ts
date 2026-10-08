@@ -8,6 +8,8 @@ import {
   recycleValue,
   rollPack,
   rollShiny,
+  rollCondition,
+  type CardCondition,
   type Rarity,
 } from "@palacards/game";
 import type { CardDTO, PackState } from "@palacards/shared";
@@ -134,6 +136,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     const drawn: {
       rarity: Rarity;
       shiny: boolean;
+      condition: CardCondition;
       id: number;
       title: string;
       atk: number;
@@ -144,10 +147,11 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     for (const rarity of roll.rarities) {
       // Brillante : tirée carte par carte, indépendamment de la rareté.
       const shiny = rollShiny(ctx.random);
+      const condition = rollCondition(ctx.random);
       drawn.push(
         theme && counts
-          ? { rarity, shiny, ...(await drawThemeCard(tx, season, theme.id, rarity, counts, ctx.random)) }
-          : { rarity, shiny, ...(await drawCard(tx, season, rarity, ctx.random)), themed: false },
+          ? { rarity, shiny, condition, ...(await drawThemeCard(tx, season, theme.id, rarity, counts, ctx.random)) }
+          : { rarity, shiny, condition, ...(await drawCard(tx, season, rarity, ctx.random)), themed: false },
       );
     }
 
@@ -183,6 +187,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
           atk: d.atk,
           def: d.def,
           shiny: d.shiny,
+          condition: d.condition,
           source: "pack" as const,
           obtainedAt: now,
         })),

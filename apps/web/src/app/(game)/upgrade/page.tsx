@@ -142,7 +142,7 @@ export default function UpgradePage() {
 
   const params = `rarity=${rarity}${filters ? `&${filters}` : ""}${showFavorites ? "" : "&favorites=exclude"}&sort=${f.sort}&limit=60`;
   /** Un filtre de la barre (hors « Doublons ») réduit la liste. */
-  const narrowed = !!(f.q.trim() || f.shiny || f.tag || f.theme || f.season);
+  const narrowed = !!(f.q.trim() || f.shiny || f.condition || f.tag || f.theme || f.season);
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
     prev && !prev.nextCursor ? null : `/collection?${params}&page=${i}`,
   );
@@ -560,7 +560,7 @@ export default function UpgradePage() {
               <button
                 type="button"
                 className="article-link"
-                onClick={() => setFilter({ q: "", shiny: false, tag: "", theme: "", season: "" })}
+                onClick={() => setFilter({ q: "", shiny: false, condition: "", tag: "", theme: "", season: "" })}
               >
                 Retirer les filtres
               </button>

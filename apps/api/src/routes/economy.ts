@@ -54,7 +54,8 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
           .optional()
           .transform((v) => (v ? v.split(",") : undefined))
           .pipe(z.array(z.enum(RARITIES)).optional()),
-        sort: z.enum(["ending", "recent", "price"]).default("ending"),
+        sort: z.enum(["ending", "recent", "price", "condition"]).default("ending"),
+        condition: z.coerce.number().int().min(1).max(5).optional(),
         scope: z.enum(["all", "mine", "bidding"]).default("all"),
         q: z.string().max(100).optional(),
       }),
@@ -139,12 +140,13 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
           .transform((v) => (v ? v.split(",") : undefined))
           .pipe(z.array(z.enum(RARITIES)).optional()),
         shiny: z.stringbool().optional(),
+        condition: z.coerce.number().int().min(1).max(5).optional(),
         duplicates: z.stringbool().optional(),
         season: z.coerce.number().int().positive().optional(),
         theme: z.coerce.number().int().positive().optional(),
         tag: z.string().max(24).optional(),
         // Sans « Vues » : elles donneraient la réponse de « Plus lu » en duel.
-        sort: z.enum(["rarity", "title", "atk", "def", "date", "copies"]).default("rarity"),
+        sort: z.enum(["rarity", "title", "atk", "def", "date", "copies", "condition"]).default("rarity"),
         page: z.coerce.number().int().min(0).default(0),
         limit: z.coerce.number().int().min(1).max(120).default(60),
       }),

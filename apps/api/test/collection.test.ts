@@ -46,6 +46,22 @@ describe("filtres de la collection", () => {
     cards = await freshCollection(p);
   });
 
+  it("tire un état à l'ouverture, le montre, filtre et trie par état", async () => {
+    const all = (await p.get("/collection?limit=120")).body.items as { instanceId: number; condition: number }[];
+    expect(all.every((c) => c.condition >= 1 && c.condition <= 5)).toBe(true);
+
+    const [mint, damaged] = cards;
+    await ctx.db.update(ci).set({ condition: 3 }).where(eq(ci.ownerId, p.userId));
+    await ctx.db.update(ci).set({ condition: 5 }).where(eq(ci.id, mint!.instanceId));
+    await ctx.db.update(ci).set({ condition: 1 }).where(eq(ci.id, damaged!.instanceId));
+
+    expect(ids((await p.get("/collection?condition=5")).body)).toEqual([mint!.instanceId]);
+    const sorted = (await p.get("/collection?sort=condition&limit=120")).body.items as { instanceId: number }[];
+    expect(sorted[0]!.instanceId).toBe(mint!.instanceId);
+    expect(sorted.at(-1)!.instanceId).toBe(damaged!.instanceId);
+    expect((await p.get("/collection?condition=0")).status).toBe(400);
+  });
+
   it("filtre les brillantes, les favorites, ou tout sauf les favorites", async () => {
     const [shiny, fav] = cards;
     await ctx.db.update(ci).set({ shiny: true }).where(eq(ci.id, shiny!.instanceId));

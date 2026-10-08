@@ -1,4 +1,11 @@
-import type { AutoRecycleRarity, DailyLoginRates, Rarity, WheelReward, WheelTier } from "@palacards/game";
+import type {
+  AutoRecycleRarity,
+  CardCondition,
+  DailyLoginRates,
+  Rarity,
+  WheelReward,
+  WheelTier,
+} from "@palacards/game";
 import type { PackState, Wallet } from "./events.js";
 import type { SuggestionKind, SuggestionStatus } from "./schemas.js";
 
@@ -16,6 +23,8 @@ export interface CardDTO {
   level: number;
   /** Version brillante (cosmétique). */
   shiny?: boolean;
+  /** État de conservation de l'exemplaire (cosmétique ; absent sur un article du catalogue). */
+  condition?: CardCondition;
   views12m?: number;
   favorite?: boolean;
   locked?: "auction" | "trade" | null;

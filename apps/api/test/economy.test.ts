@@ -160,6 +160,29 @@ describe("marché", () => {
     expect(notif.body.unread).toBe(1);
     expect((await fan.post("/notifications/read", {})).body.unread).toBe(0);
   });
+
+  it("montre l'état des cartes en vente, filtre et trie par état", async () => {
+    const seller = await signUp(app);
+    const opened = (await seller.post("/packs/open")).body.cards as { instanceId: number }[];
+    const [worn, mint] = opened.map((c) => c.instanceId);
+    await ctx.db.update(schema.cardInstances).set({ condition: 2 }).where(eq(schema.cardInstances.id, worn!));
+    await ctx.db.update(schema.cardInstances).set({ condition: 5 }).where(eq(schema.cardInstances.id, mint!));
+    for (const instanceId of [worn!, mint!])
+      await seller.post("/market", { instanceId, startPrice: 5, buyout: null, durationMs: HOUR });
+
+    type Lot = { card: { instanceId: number; condition: number } };
+    const lots = async (query: string) =>
+      ((await seller.get(`/market?scope=mine&${query}`)).body as Lot[]).map((a) => [
+        a.card.instanceId,
+        a.card.condition,
+      ]);
+    expect(await lots("condition=5")).toEqual([[mint, 5]]);
+    expect(await lots("sort=condition")).toEqual([
+      [mint, 5],
+      [worn, 2],
+    ]);
+    expect((await seller.get("/market?condition=6")).status).toBe(400);
+  });
 });
 
 describe("après le marché et pendant un échange", () => {

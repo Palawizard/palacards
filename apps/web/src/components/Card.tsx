@@ -1,6 +1,6 @@
 "use client";
 
-import { RARITY_LABELS, type Rarity } from "@palacards/game";
+import { CONDITION_LABELS, RARITY_LABELS, type Rarity } from "@palacards/game";
 import type { CardDTO } from "@palacards/shared";
 import { Lock, Sparkles, Star } from "lucide-react";
 import Link from "next/link";
@@ -110,7 +110,7 @@ export function Card({
       className={`pc-card group ${selected ? "outline-3 outline-offset-2 outline-accent" : ""} ${className}`}
       data-rarity={card.rarity}
       data-shiny={card.shiny || undefined}
-      aria-label={`${card.title}, ${RARITY_LABELS[card.rarity]}${card.shiny ? " brillante" : ""}, attaque ${card.atk}, défense ${card.def}`}
+      aria-label={`${card.title}, ${RARITY_LABELS[card.rarity]}${card.shiny ? " brillante" : ""}${card.condition ? `, état ${CONDITION_LABELS[card.condition].toLowerCase()}` : ""}, attaque ${card.atk}, défense ${card.def}`}
     >
       {/* Les unités cqi se rapportent à la carte (conteneur) : tout le contenu suit sa largeur. */}
       <div className="pc-frame flex h-full flex-col p-[4cqi] text-[length:max(10px,6cqi)]">
@@ -205,8 +205,13 @@ export function Card({
         </dl>
 
         <footer className="relative z-[2] mt-[2cqi] grid grid-cols-[1fr_auto] items-center gap-[2cqi] text-[0.85em]">
-          <span className="flex items-center gap-[2cqi] font-semibold text-sticker-muted">
+          <span className="flex min-w-0 items-center gap-[2cqi] font-semibold text-sticker-muted">
             <span title={`Édition saison ${card.season}`}>S{card.season}</span>
+            {card.condition && (
+              <span className="truncate font-medium" title={`État : ${CONDITION_LABELS[card.condition].toLowerCase()}`}>
+                {CONDITION_LABELS[card.condition]}
+              </span>
+            )}
             <LevelPips level={card.level} />
           </span>
           {pageUrl && (

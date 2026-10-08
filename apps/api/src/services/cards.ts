@@ -1,5 +1,5 @@
 import { schema } from "@palacards/db";
-import { effectiveStats, isArthropod, RARITIES, type Rarity } from "@palacards/game";
+import { effectiveStats, isArthropod, RARITIES, type CardCondition, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import { and, desc, eq, inArray, sql, type SQL } from "@palacards/db";
 import type { Ctx } from "../context.js";
@@ -22,6 +22,7 @@ export const instanceColumns = {
   baseDef: ci.def,
   level: ci.level,
   shiny: ci.shiny,
+  condition: ci.condition,
   views12m: c.views12m,
   favorite: ci.favorite,
   locked: ci.lockedBy,
@@ -42,6 +43,7 @@ type InstanceRow = {
   baseDef: number;
   level: number;
   shiny: boolean;
+  condition: number;
   views12m: number;
   favorite: boolean;
   locked: "auction" | "trade" | null;
@@ -69,6 +71,7 @@ export function toCardDTO(r: InstanceRow, extra: Partial<CardDTO> = {}, viewerId
     def,
     level: r.level,
     ...(r.shiny ? { shiny: true } : {}),
+    condition: r.condition as CardCondition,
     ...(viewerId !== null && r.ownerId === viewerId ? { views12m: r.views12m } : {}),
     favorite: r.favorite,
     locked: r.locked,

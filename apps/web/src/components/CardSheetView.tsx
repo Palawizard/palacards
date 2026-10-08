@@ -1,6 +1,6 @@
 "use client";
 
-import { isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITY_LABELS, recycleValue } from "@palacards/game";
+import { CONDITION_LABELS, isBetterCopy, LEVEL_BONUS, MAX_LEVEL, RARITY_LABELS, recycleValue } from "@palacards/game";
 import type { CardDTO, ReferencePriceDTO } from "@palacards/shared";
 import { ChevronsUp, ExternalLink, Gavel, Heart, Layers, Pin, Repeat, Star, Tag } from "lucide-react";
 import Link from "next/link";
@@ -80,7 +80,9 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
             )}
           </span>
           <span className="block text-xs text-faint">
-            Édition S{card.season} · niveau {card.level} · obtenue {card.obtainedAt ? relative(card.obtainedAt) : ""}
+            Édition S{card.season}
+            {card.condition && ` · ${CONDITION_LABELS[card.condition].toLowerCase()}`} · niveau {card.level} · obtenue{" "}
+            {card.obtainedAt ? relative(card.obtainedAt) : ""}
             {card.locked && ` · ${card.locked === "auction" ? "en vente" : "dans un échange"}`}
           </span>
           {!editing && !!card.tags?.length && (

@@ -9,6 +9,7 @@ export * from "./achievements.js";
 export * from "./upgrade.js";
 export * from "./wheel.js";
 export * from "./shiny.js";
+export * from "./condition.js";
 export * from "./pass.js";
 export * from "./quests.js";
 export * from "./article.js";
