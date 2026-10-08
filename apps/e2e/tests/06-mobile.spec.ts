@@ -15,8 +15,13 @@ test("téléphone : les cartes du paquet sortent une par une, sans défiler", as
   await expect(pack.locator("article.pc-card")).toHaveCount(1);
   await expect(pack.getByText("1/10")).toBeVisible();
   const primary = pack.getByRole("button", { name: /^(Retourner|Suivante|Voir le paquet)$/ });
-  const box = await primary.boundingBox();
-  expect(box && box.y + box.height).toBeLessThanOrEqual(664);
+  // La page défile en douceur jusqu'à la pile : on attend la fin du défilement avant de juger la position.
+  await expect
+    .poll(async () => {
+      const box = await primary.boundingBox();
+      return box && box.y + box.height;
+    })
+    .toBeLessThanOrEqual(664);
 
   // « Suivante » jusqu'au bout (chaque carte se retourne d'abord), puis le récapitulatif.
   const recap = page.getByRole("heading", { name: "Ce paquet" });
