@@ -109,6 +109,27 @@ test("tout sélectionner les cartes du filtre pour les recycler", async ({ brows
   expect((await apiCall<{ total: number }>(page, "GET", "/collection?rarity=C&limit=1")).total).toBe(guarded);
 });
 
+test("« Doublons » trie par nombre d'exemplaires, sauf tri choisi à la main", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "dups");
+  await instantPacks(page);
+  await apiCall(page, "POST", "/packs/open");
+  await apiCall(page, "POST", "/test/grant-card", { count: 3 });
+
+  await page.goto("collection");
+  const sort = page.getByRole("combobox", { name: "Trier" });
+  await expect(sort).toHaveValue("rarity");
+  const duplicates = page.getByRole("button", { name: "Doublons", exact: true });
+  await duplicates.click();
+  await expect(sort).toHaveValue("copies");
+  await duplicates.click();
+  await expect(sort).toHaveValue("rarity");
+
+  // Un tri choisi à la main reste en place.
+  await sort.selectOption("title");
+  await duplicates.click();
+  await expect(sort).toHaveValue("title");
+});
+
 test("fusionne les doublons d'un coup, puis met une sélection en favori et la tague", async ({ browser }) => {
   const { page } = await newPlayer(browser, "lot");
   await instantPacks(page);
