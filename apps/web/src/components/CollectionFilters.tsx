@@ -1,7 +1,7 @@
 // Filtres de collection partagés, importés uniquement par des composants client.
 import type { Rarity } from "@palacards/game";
 import { Search } from "lucide-react";
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { RarityFilter, Select, Toggle } from "@/components/ui";
 import { useDebounced } from "@/lib/use-debounced";
 
@@ -12,8 +12,11 @@ const SORTS = [
   { value: "def", label: "Défense" },
   { value: "views", label: "Vues" },
   { value: "title", label: "Titre" },
+  { value: "copies", label: "Exemplaires" },
 ] as const;
 export type CollectionSort = (typeof SORTS)[number]["value"];
+/** Tri pris d'office avec le filtre « Doublons », tant que le joueur (ou la page) n'en a pas choisi un. */
+const DUPLICATES_SORT: CollectionSort = "copies";
 /** Sans « Vues » chez les autres : elles donneraient la réponse de « Plus lu » en duel. */
 const OTHER_SORTS = SORTS.filter((s) => s.value !== "views");
 
@@ -57,10 +60,25 @@ const EMPTY: CollectionFilterState = {
 /**
  * Filtres d'une collection (la sienne ou celle d'un autre joueur). `params` : la requête des filtres, sans tri ni
  * pagination (la même sert à la liste, à « Tout sélectionner » et à la fusion) ; `q` : la recherche envoyée.
+ * « Doublons » trie par nombre d'exemplaires (et le retirer rend le tri de départ), sauf si le tri a été choisi
+ * à la main ou fixé par la page (`init.sort`).
  */
 export function useCollectionFilters(init: Partial<CollectionFilterState> = {}) {
-  const [value, setValue] = useState<CollectionFilterState>(() => ({ ...EMPTY, ...init }));
-  const set = useCallback((patch: Partial<CollectionFilterState>) => setValue((v) => ({ ...v, ...patch })), []);
+  const baseSort = init.sort ?? EMPTY.sort;
+  const [value, setValue] = useState<CollectionFilterState>(() => ({
+    ...EMPTY,
+    ...init,
+    sort: init.sort ?? (init.duplicates ? DUPLICATES_SORT : EMPTY.sort),
+  }));
+  const sortChosen = useRef(init.sort !== undefined);
+  const set = useCallback(
+    (patch: Partial<CollectionFilterState>) => {
+      if (patch.sort !== undefined) sortChosen.current = true;
+      const auto = patch.duplicates !== undefined && patch.sort === undefined && !sortChosen.current;
+      setValue((v) => ({ ...v, ...patch, ...(auto && { sort: patch.duplicates ? DUPLICATES_SORT : baseSort }) }));
+    },
+    [baseSort],
+  );
   const q = useDebounced(value.q).trim();
   const { rarity, inSummary, favorites, shiny, duplicates, tag, theme, season } = value;
   const params = useMemo(() => {

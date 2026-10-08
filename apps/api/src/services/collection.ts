@@ -31,7 +31,7 @@ export async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promi
   return new Set(rows.map((r) => r.id));
 }
 
-export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title";
+export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title" | "copies";
 
 export interface CollectionQuery {
   rarity?: Rarity[];
@@ -60,6 +60,11 @@ export function escapeLike(text: string): string {
   return text.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
+/** Exemplaires que le joueur possède de l'article de la ligne, tous filtres confondus (le « ×N » des cartes). */
+function copiesOf(ownerId: string): SQL {
+  return sql`(select count(*) from card_instances d where d.owner_id = ${ownerId} and d.card_id = ${ci.cardId})`;
+}
+
 /** Conditions SQL des filtres de collection (la requête joint `cards` pour la recherche par titre). */
 function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
   const where: SQL[] = [eq(ci.ownerId, ownerId)];
@@ -73,11 +78,7 @@ function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
     where.push(
       sql`exists (select 1 from theme_cards tc where tc.theme_id = ${query.theme} and tc.card_id = ${ci.cardId})`,
     );
-  if (query.duplicates) {
-    where.push(
-      sql`(select count(*) from card_instances d where d.owner_id = ${ownerId} and d.card_id = ${ci.cardId}) > 1`,
-    );
-  }
+  if (query.duplicates) where.push(sql`${copiesOf(ownerId)} > 1`);
   const q = query.q?.trim();
   if (q) {
     const pattern = sql`'%' || lower(f_unaccent(${escapeLike(q)})) || '%'`;
@@ -106,13 +107,16 @@ export async function listCollection(
   const byViews = viewerId === ownerId ? sql`${c.views12m} desc` : sql`${c.title} asc`;
   const where = collectionWhere(ownerId, query);
 
+  const byRarity = [sql`${ci.rarity} desc`, byViews];
   const order: SQL[] = {
     date: [sql`${ci.obtainedAt} desc`],
     atk: [sql`${ci.atk} * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)) desc`],
     def: [sql`${ci.def} * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)) desc`],
     views: [byViews],
-    rarity: [sql`${ci.rarity} desc`, byViews],
+    rarity: byRarity,
     title: [sql`${c.title} asc`],
+    // Les articles les plus en double d'abord ; à égalité, l'ordre par rareté.
+    copies: [sql`${copiesOf(ownerId)} desc`, ...byRarity],
   }[query.sort];
 
   const rows = await selectInstances(ctx.db)

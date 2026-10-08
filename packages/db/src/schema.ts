@@ -277,6 +277,18 @@ export const playerAvatars = pgTable(
   (t) => [check("player_avatars_size_ok", sql`octet_length(${t.image}) <= 150000`)],
 );
 
+/** Bannière importée par le joueur (haut du profil, fond de sa ligne dans les classements) ; absente : bannière par défaut. */
+export const playerBanners = pgTable(
+  "player_banners",
+  {
+    userId: userRef("user_id").primaryKey(),
+    image: bytea("image").notNull(),
+    mime: text("mime", { enum: ["image/webp", "image/jpeg", "image/png"] }).notNull(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("player_banners_size_ok", sql`octet_length(${t.image}) <= 180000`)],
+);
+
 /** Exemplaire possédé : stats figées au tirage (tampon d'édition = `season`). */
 export const cardInstances = pgTable(
   "card_instances",
@@ -672,6 +684,19 @@ export const guildObjectives = pgTable(
     completedAt: tstz("completed_at"),
   },
   (t) => [uniqueIndex("guild_objectives_week_uq").on(t.guildId, t.weekStart)],
+);
+
+/** Contribution de chaque membre à l'objectif de la semaine (minimum requis pour toucher la récompense). */
+export const guildObjectiveContributions = pgTable(
+  "guild_objective_contributions",
+  {
+    objectiveId: bigint("objective_id", { mode: "number" })
+      .notNull()
+      .references(() => guildObjectives.id, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    amount: integer("amount").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.objectiveId, t.userId] })],
 );
 
 // ---------------------------------------------------------------------------

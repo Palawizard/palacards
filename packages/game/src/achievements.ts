@@ -54,6 +54,8 @@ export type GameEvent =
   | { type: "boss_killed"; lastHit: boolean }
   /** Meilleur assaillant de la journée, désigné à minuit. */
   | { type: "boss_mvp" }
+  /** Récompense de l'objectif hebdomadaire de guilde touchée (XP du passe). */
+  | { type: "guild_objective" }
   | { type: "pass_level"; level: number };
 
 export const STAT_KEYS = [

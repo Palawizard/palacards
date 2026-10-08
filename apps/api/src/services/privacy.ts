@@ -31,6 +31,7 @@ export async function exportData(ctx: Ctx, userId: string) {
     .from(s.user)
     .where(eq(s.user.id, userId));
   const [avatar] = await db.select().from(s.playerAvatars).where(eq(s.playerAvatars.userId, userId));
+  const [banner] = await db.select().from(s.playerBanners).where(eq(s.playerBanners.userId, userId));
   const dm = or(
     sql`${s.messages.channel} like ${`dm:${userId}:%`}`,
     sql`${s.messages.channel} like ${`dm:%:${userId}`}`,
@@ -56,6 +57,9 @@ export async function exportData(ctx: Ctx, userId: string) {
     player: (await db.select().from(s.players).where(eq(s.players.userId, userId)))[0] ?? null,
     avatarImage: avatar
       ? { mime: avatar.mime, base64: avatar.image.toString("base64"), updatedAt: avatar.updatedAt }
+      : null,
+    bannerImage: banner
+      ? { mime: banner.mime, base64: banner.image.toString("base64"), updatedAt: banner.updatedAt }
       : null,
     cards: await db.select().from(s.cardInstances).where(eq(s.cardInstances.ownerId, userId)),
     tags: await db

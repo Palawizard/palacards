@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { LUCK_MIN_PACKS, TITLE_MAX_RANK, type TitleRef } from "@palacards/game";
+import { LUCK_MIN_PACKS, TITLE_MAX_RANK, type TitleBoard, type TitleRef } from "@palacards/game";
+import type { BannerDTO } from "@palacards/shared";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
+import { RowBanner } from "@/components/Banner";
 import { CreatorBadge, ErrorBox, TitleBadge } from "@/components/ui";
 import { fmt } from "@/lib/format";
 
-type Board = "collection" | "packs" | "luck" | "elo" | "wealth" | "guilds" | "pass";
+type Board = TitleBoard;
 interface Row {
   id: string;
   name: string;
@@ -25,12 +27,15 @@ interface Row {
   title?: TitleRef;
   /** Note de statut du joueur. */
   statusNote?: string;
+  /** Bannière du joueur, en fond de sa ligne. */
+  banner?: BannerDTO;
   rank: number;
   me: boolean;
 }
 
 const BOARDS: { value: Board; label: string; unit: string }[] = [
   { value: "collection", label: "Collection", unit: "pts" },
+  { value: "legendary", label: "Légendaires", unit: "Légendaires" },
   { value: "packs", label: "Boosters ouverts", unit: "Boosters" },
   { value: "luck", label: "Chance", unit: "Chance" },
   { value: "elo", label: "Elo de bataille", unit: "Elo" },
@@ -67,6 +72,12 @@ export default function LeaderboardPage() {
             faut au moins {LUCK_MIN_PACKS} boosters ouverts pour y figurer.
           </p>
         )}
+        {board === "legendary" && (
+          <p className="hatnote mt-2">
+            Nombre d’articles légendaires différents possédés&nbsp;: un doublon ne compte qu’une fois. À égalité, le
+            premier à avoir atteint ce nombre passe devant.
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Classements" className="flex flex-wrap gap-1.5">
@@ -100,7 +111,9 @@ export default function LeaderboardPage() {
         <p className="text-muted">
           {board === "luck"
             ? `Personne n’a encore ouvert ${LUCK_MIN_PACKS} boosters${period === "season" ? " cette saison" : ""}.`
-            : "Personne au classement pour l’instant."}
+            : board === "legendary"
+              ? `Personne n’a encore de carte légendaire${period === "season" ? " cette saison" : ""}.`
+              : "Personne au classement pour l’instant."}
         </p>
       ) : (
         <table
@@ -128,8 +141,9 @@ export default function LeaderboardPage() {
                 >
                   {r.rank}
                 </td>
-                <td className="px-3 py-1.5">
-                  <div className="flex items-center gap-2.5">
+                <td className="relative px-3 py-1.5">
+                  {r.banner && <RowBanner banner={r.banner} />}
+                  <div className="relative flex items-center gap-2.5">
                     {r.username ? (
                       // Doublon du lien du nom, hors tabulation : l'avatar aussi mène au profil.
                       <Link href={`/u/${r.username}`} tabIndex={-1} aria-hidden className="rounded-full">
