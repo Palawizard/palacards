@@ -250,6 +250,11 @@ export const players = pgTable(
     statusNote: text("status_note"),
     /** Dernière modification de la note (pour une éventuelle durée de vie). */
     statusNoteAt: tstz("status_note_at"),
+    /**
+     * Bannière tirée de sa collection : article (`cards.id`) dont l'image sert de bannière, tant qu'il en possède
+     * un exemplaire (null : image importée de `player_banners`, sinon bannière par défaut).
+     */
+    bannerCardId: bigint("banner_card_id", { mode: "number" }),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [

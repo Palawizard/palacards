@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
-import { deleteBannerImage, getBannerImage, saveBannerImage } from "../services/banners.js";
+import { clearBannerCard, deleteBanner, getBannerImage, saveBannerImage, setBannerCard } from "../services/banners.js";
 import { answeringQuestion, queueWaiting } from "../services/battles.js";
 import { arthropodFlags, cardSheet, catalog } from "../services/cards.js";
 import {
@@ -386,10 +386,18 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     const { image } = parse(z.object({ image: z.base64().min(1).max(245_000) }), req.body);
     return { banner: await saveBannerImage(ctx, req.user.id, image) };
   });
+  // Retire la bannière, carte comme image importée.
   api.delete("/me/banner", auth, async (req) => {
-    await deleteBannerImage(ctx, req.user.id);
+    await deleteBanner(ctx, req.user.id);
     return { banner: null };
   });
+  // Carte de sa collection en bannière (l'image importée reste enregistrée pour y revenir).
+  api.put("/me/banner/card", { ...auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) => {
+    const { cardId } = parse(z.object({ cardId: z.number().int().positive() }), req.body);
+    return { banner: await setBannerCard(ctx, req.user.id, cardId) };
+  });
+  // Quitte la carte : retour à l'image importée, sinon à la bannière par défaut.
+  api.delete("/me/banner/card", auth, async (req) => ({ banner: await clearBannerCard(ctx, req.user.id) }));
   // L'URL porte la version (?v=…) : réponse immuable, remplacée dès que la bannière change.
   api.get("/banners/:userId", auth, async (req, reply) => {
     const { userId } = parse(z.object({ userId: z.string().min(1).max(64) }), req.params);
