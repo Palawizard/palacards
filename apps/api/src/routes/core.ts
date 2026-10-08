@@ -227,7 +227,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/collection", auth, async (req) => {
     const q = parse(
       collectionFilters.extend({
-        sort: z.enum(["date", "atk", "def", "views", "rarity", "title"]).default("date"),
+        sort: z.enum(["date", "atk", "def", "views", "rarity", "title", "copies"]).default("date"),
         page: intParam.min(0).default(0),
         limit: intParam.min(1).max(120).default(60),
       }),
