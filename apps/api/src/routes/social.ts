@@ -76,7 +76,7 @@ export function socialRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/guilds", auth, async () => listGuilds(ctx));
   api.get("/guilds/mine", auth, async (req) => {
     const me = await membership(ctx.db, req.user.id);
-    return me ? { ...(await guildDetail(ctx, me.guildId)), myRole: me.role } : null;
+    return me ? { ...(await guildDetail(ctx, me.guildId, req.user.id)), myRole: me.role } : null;
   });
   api.get("/guilds/:id", auth, async (req) =>
     guildDetail(ctx, parse(z.object({ id: z.coerce.number().int().positive() }), req.params).id),

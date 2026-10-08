@@ -2,12 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   canManage,
   dmChannel,
+  eligibleForObjectiveReward,
+  GUILD_OBJECTIVE_REWARD,
   GUILD_OBJECTIVES,
+  minContribution,
   validateGuildName,
   validateGuildTag,
   weeklyObjective,
   weekStart,
 } from "./guild.js";
+import { xpForEvent } from "./pass.js";
+import { QUEST_REWARDS } from "./quests.js";
 
 describe("guildes", () => {
   it("calcule le lundi de la semaine", () => {
@@ -23,6 +28,22 @@ describe("guildes", () => {
     expect(small.target).toBe(GUILD_OBJECTIVES[small.kind].min);
     const big = weeklyObjective("2026-09-21", 20);
     expect(big.target).toBe(GUILD_OBJECTIVES[big.kind].perMember * 20);
+  });
+
+  it("exige une contribution minimale pour la récompense, bien en dessous de la part de chacun", () => {
+    expect(eligibleForObjectiveReward("open_packs", 4)).toBe(false);
+    expect(eligibleForObjectiveReward("open_packs", 5)).toBe(true);
+    expect(eligibleForObjectiveReward("win_battles", 0)).toBe(false);
+    expect(eligibleForObjectiveReward("win_battles", 1)).toBe(true);
+    expect(minContribution("inconnu")).toBe(1);
+    for (const def of Object.values(GUILD_OBJECTIVES)) expect(def.minContribution).toBeLessThanOrEqual(def.perMember);
+  });
+
+  it("récompense l'objectif de guilde moins que la quête de la semaine", () => {
+    expect(GUILD_OBJECTIVE_REWARD.packs).toBeGreaterThanOrEqual(1);
+    expect(GUILD_OBJECTIVE_REWARD.pw).toBeLessThan(QUEST_REWARDS.weekly.pw);
+    expect(GUILD_OBJECTIVE_REWARD.xp).toBeLessThan(QUEST_REWARDS.weekly.xp);
+    expect(xpForEvent({ type: "guild_objective" })).toBe(GUILD_OBJECTIVE_REWARD.xp);
   });
 
   it("encadre les droits des rôles", () => {

@@ -7,9 +7,10 @@ import {
   visibleStatusNote,
   type TitleRef,
 } from "@palacards/game";
-import type { CardDTO, PlayerSuggestionDTO } from "@palacards/shared";
+import type { BannerDTO, CardDTO, PlayerSuggestionDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, notFound } from "../errors.js";
+import { bannersOf } from "./banners.js";
 import { selectInstances, toCardDTO } from "./cards.js";
 import type { DbOrTx } from "./players.js";
 import { displayedTitles, listTitles } from "./titles.js";
@@ -73,6 +74,8 @@ export interface ProfileDTO {
   titles: TitleRef[];
   /** Note de statut (null : aucune). */
   statusNote: string | null;
+  /** Bannière importée (null : bannière par défaut). */
+  banner: BannerDTO | null;
 }
 
 export async function findUserByName(db: DbOrTx, username: string) {
@@ -194,6 +197,7 @@ export async function getProfile(ctx: Ctx, viewerId: string, username: string): 
     title: (await displayedTitles(ctx.db, [u.id])).get(u.id) ?? null,
     titles: await listTitles(ctx.db, u.id),
     statusNote: statusNoteOf(ctx, p ?? null),
+    banner: (await bannersOf(ctx.db, [u.id])).get(u.id) ?? null,
   };
 }
 

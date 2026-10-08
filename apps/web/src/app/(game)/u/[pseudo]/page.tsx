@@ -1,7 +1,7 @@
 "use client";
 
 import { TITLE_MAX_RANK, TITLE_NAMES, titleDetail, type TitleRef } from "@palacards/game";
-import type { CardDTO, Page } from "@palacards/shared";
+import type { BannerDTO, CardDTO, Page } from "@palacards/shared";
 import { Award, MessageSquare, Repeat, Swords, UserCheck, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useState } from "react";
@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Avatar } from "@/components/Avatar";
+import { ProfileBanner } from "@/components/Banner";
 import { Card, CardGrid } from "@/components/Card";
 import {
   CollectionFilterBar,
@@ -47,6 +48,8 @@ interface ProfileDTO {
   titles: TitleRef[];
   /** Note de statut (null : aucune). */
   statusNote: string | null;
+  /** Bannière importée (null : bannière par défaut). */
+  banner: BannerDTO | null;
 }
 
 const sameTitle = (a: TitleRef | null, b: TitleRef) => !!a && a.board === b.board && a.season === b.season;
@@ -265,6 +268,9 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-wrap items-end gap-4 border-b-2 border-dashed border-line pb-4">
+        <div className="basis-full">
+          <ProfileBanner banner={p.banner} isMe={p.isMe} onChanged={() => mutate()} />
+        </div>
         <Avatar name={p.displayName} avatar={p.avatar} online={p.isMe ? undefined : p.online} size="lg" />
         <div className="min-w-0 flex-1 basis-56">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">

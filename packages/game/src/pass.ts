@@ -1,4 +1,5 @@
 import type { GameEvent } from "./achievements.js";
+import { GUILD_OBJECTIVE_REWARD } from "./guild.js";
 
 // ---------------------------------------------------------------------------
 // Passe de saison gratuit : 100 niveaux par saison mensuelle, tout le monde repart de 0.
@@ -71,6 +72,7 @@ export const XP = {
   upgrade: 10,
   trade: 20,
   sale: 20,
+  guildObjective: GUILD_OBJECTIVE_REWARD.xp,
 } as const;
 
 export function xpForEvent(e: GameEvent): number {
@@ -95,6 +97,8 @@ export function xpForEvent(e: GameEvent): number {
       return XP.trade;
     case "sale":
       return XP.sale;
+    case "guild_objective":
+      return XP.guildObjective;
     default:
       return 0;
   }

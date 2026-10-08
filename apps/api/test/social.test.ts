@@ -1,7 +1,7 @@
 import { eq, schema, sql } from "@palacards/db";
-import { GUILD_MAX_MEMBERS } from "@palacards/game";
+import { GUILD_MAX_MEMBERS, GUILD_OBJECTIVE_REWARD, GUILD_OBJECTIVES } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
-import { checkObjective } from "../src/services/guilds.js";
+import { bumpObjective, checkObjective } from "../src/services/guilds.js";
 import { progressionIdle } from "../src/services/progression.js";
 import { makeApp, signUp, uniqueName } from "./helpers.js";
 
@@ -61,6 +61,62 @@ describe("note de statut", () => {
     // L'auteur l'efface.
     expect((await a.put("/me/status-note", { note: "" })).body.statusNote).toBeNull();
     expect((await b.get(`/players/${a.username}`)).body.statusNote).toBeNull();
+  });
+});
+
+describe("bannière du profil", () => {
+  // Image de 40 × 30 px produite par Pillow (même que test/avatars.test.ts).
+  const PNG =
+    "iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAALklEQVR4nO3NMQEAMAgAoLk0ZjKxsazg5wMFiM56F/7JKhaLxWKxWCwWi8XilQH91QGGD5y0UgAAAABJRU5ErkJggg==";
+
+  it("image importée, servie, visible sur le profil et aux classements, puis retirée", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+
+    // Sans import : bannière par défaut.
+    expect((await b.get(`/players/${a.username}`)).body.banner).toBeNull();
+
+    const set = await a.put("/me/banner", { image: PNG });
+    expect(set.status).toBe(200);
+    expect(set.body.banner).toMatchObject({ userId: a.userId, version: expect.any(String) });
+    expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(set.body.banner);
+
+    // Image servie aux joueurs connectés seulement, avec les mêmes protections que les avatars.
+    const img = await app.inject({
+      url: `/palacards/api/banners/${a.userId}?v=${set.body.banner.version}`,
+      headers: { cookie: b.cookie },
+    });
+    expect(img.statusCode).toBe(200);
+    expect(img.headers["content-type"]).toBe("image/png");
+    expect(img.headers["x-content-type-options"]).toBe("nosniff");
+    expect(img.rawPayload.equals(Buffer.from(PNG, "base64"))).toBe(true);
+    expect((await app.inject({ url: `/palacards/api/banners/${a.userId}` })).statusCode).toBe(401);
+
+    // Classements : l'image sert de fond à sa ligne (tout en haut de « Richesse », base de test partagée).
+    await ctx.db.execute(sql`update players set balance = 1999999997 where user_id = ${a.userId}`);
+    const rowOf = async () =>
+      ((await b.get("/leaderboard?board=wealth&period=season")).body.rows as { id: string; banner?: unknown }[]).find(
+        (r) => r.id === a.userId,
+      );
+    expect((await rowOf())?.banner).toEqual(set.body.banner);
+
+    // Image déguisée refusée, la bannière reste.
+    const svg = Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'></svg>".padEnd(64, " ")).toString("base64");
+    expect((await a.put("/me/banner", { image: svg })).body.error).toBe("banner_format");
+    expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(set.body.banner);
+
+    // Retour au défaut : plus d'image servie ni de fond au classement.
+    const removed = await app.inject({
+      method: "DELETE",
+      url: "/palacards/api/me/banner",
+      headers: { cookie: a.cookie, origin: "http://localhost:3000" },
+    });
+    expect(removed.json().banner).toBeNull();
+    expect((await b.get(`/players/${a.username}`)).body.banner).toBeNull();
+    expect((await rowOf())?.banner).toBeUndefined();
+    expect(
+      (await app.inject({ url: `/palacards/api/banners/${a.userId}`, headers: { cookie: b.cookie } })).statusCode,
+    ).toBe(404);
   });
 });
 
@@ -180,12 +236,60 @@ describe("guildes", () => {
     expect(obj!.progress).toBe(60);
     expect(obj!.completedAt).not.toBeNull();
     const [p] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
-    expect(p!.bonusPacks).toBe(1);
+    expect(p!.bonusPacks).toBe(GUILD_OBJECTIVE_REWARD.packs);
+    // Un paquet bonus et des PW, une seule fois.
     const [rows] = await ctx.db.execute<{ n: number }>(
       sql`select count(*)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective'`,
     );
-    expect(rows!.n).toBe(1);
+    expect(rows!.n).toBe(2);
     expect(detail.body.objective.target).toBeGreaterThan(0);
+    expect(detail.body.objective.reward).toEqual(GUILD_OBJECTIVE_REWARD);
+  });
+
+  it("ne paie que les membres qui ont assez contribué, et rattrape ceux qui atteignent le minimum ensuite", async () => {
+    const chief = await signUp(app);
+    const late = await signUp(app);
+    const { body } = await chief.post("/guilds", {
+      name: uniqueName("Minimum "),
+      tag: "MN" + String(Date.now()).slice(-3),
+      emblem: "🧪",
+    });
+    expect((await late.post(`/guilds/${body.id}/join`)).status).toBe(200);
+    await ctx.db
+      .update(schema.guildObjectives)
+      .set({ kind: "open_packs", target: 60, progress: 0 })
+      .where(eq(schema.guildObjectives.guildId, body.id));
+    await progressionIdle();
+    const before = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
+    const min = GUILD_OBJECTIVES.open_packs.minContribution;
+    // Le chef fait tout l'objectif ; l'autre membre contribue sous le minimum.
+    await bumpObjective(ctx, late.userId, { open_packs: min - 1 });
+    await bumpObjective(ctx, chief.userId, { open_packs: 60 });
+    await progressionIdle();
+    const ledger = async (userId: string) =>
+      (
+        await ctx.db.execute<{ n: number }>(
+          sql`select count(*)::int as n from ledger where user_id = ${userId} and reason = 'guild_objective'`,
+        )
+      )[0]!.n;
+    expect(await ledger(chief.userId)).toBe(2);
+    expect(await ledger(late.userId)).toBe(0);
+    const [pw] = await ctx.db.execute<{ n: number }>(
+      sql`select coalesce(sum(delta), 0)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective' and kind = 'pw'`,
+    );
+    expect(pw!.n).toBe(GUILD_OBJECTIVE_REWARD.pw);
+    const [c] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
+    expect(c!.seasonXp - before[0]!.seasonXp).toBeGreaterThanOrEqual(GUILD_OBJECTIVE_REWARD.xp);
+    const mine = await late.get("/guilds/mine");
+    expect(mine.body.objective).toMatchObject({ completed: true, myContribution: min - 1, rewarded: false });
+    // Il atteint le minimum après coup : payé une fois, pas deux.
+    await bumpObjective(ctx, late.userId, { open_packs: 1 });
+    await bumpObjective(ctx, late.userId, { open_packs: 1 });
+    await progressionIdle();
+    expect(await ledger(late.userId)).toBe(2);
+    expect((await late.get("/guilds/mine")).body.objective.rewarded).toBe(true);
+    const notif = await late.get("/notifications");
+    expect(notif.body.items.map((n: { type: string }) => n.type)).toContain("guild_objective");
   });
 
   it("relit le ledger sous verrou : pas de double récompense si l'autre guilde du joueur valide en même temps", async () => {

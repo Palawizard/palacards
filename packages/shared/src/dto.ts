@@ -516,3 +516,10 @@ export interface PlayerSuggestionDTO {
   avatar: string | null;
   friend: boolean;
 }
+
+/** Bannière importée par un joueur (profil, classements) : l'image est servie par GET /banners/:userId?v=<version>. */
+export interface BannerDTO {
+  userId: string;
+  /** Change à chaque nouvelle image (le navigateur garde l'ancienne en cache sinon). */
+  version: string;
+}

@@ -111,8 +111,15 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
         .join(" et ");
       return { text: `Cadeau pour tout le monde : ${parts} !${s(p.note) ? ` « ${s(p.note)} »` : ""}`, href: "/pulls" };
     }
-    case "guild_objective":
-      return { text: `Objectif de guilde atteint : un paquet bonus pour chacun !`, href: "/guild" };
+    case "guild_objective": {
+      const r = (p.reward ?? null) as { pw?: unknown; packs?: unknown; xp?: unknown } | null;
+      if (!r) return { text: `Objectif de guilde atteint : un paquet bonus pour chacun !`, href: "/guild" };
+      const packs = n(r.packs);
+      return {
+        text: `Objectif de guilde atteint : ${packs} paquet${packs > 1 ? "s" : ""} bonus, +${fmt(n(r.pw))} PW et +${fmt(n(r.xp))} XP pour toi !`,
+        href: "/guild",
+      };
+    }
     case "suggestion_update": {
       const title = `« ${s(p.title)} »`;
       if (p.replied) return { text: `Palawi a répondu à ta suggestion ${title}.`, href: "/suggestions" };
