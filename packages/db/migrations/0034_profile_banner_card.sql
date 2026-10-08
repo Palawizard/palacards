@@ -1,0 +1,1 @@
+ALTER TABLE "players" ADD COLUMN "banner_card_id" bigint;
