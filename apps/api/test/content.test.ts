@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { BOSS_HP_PER_PLAYER, BOSS_MIN_HP, BOSS_REWARDS, passReward, xpForLevel } from "@palacards/game";
+import { BOSS_HP_PER_PLAYER, BOSS_MIN_HP, BOSS_REWARDS, passReward, XP, xpForLevel } from "@palacards/game";
 import type { QuestDTO } from "@palacards/shared";
 import { afterAll, describe, expect, it } from "vitest";
 import { bossOfDay, finalizeBosses } from "../src/services/boss.js";
@@ -80,6 +80,31 @@ describe("passe de saison", () => {
     expect((await p.get("/me")).body.pass.level).toBe(1);
     const board = (await p.get("/leaderboard?board=pass")).body;
     expect(board.rows.find((r: { me: boolean }) => r.me)?.value).toBe(1);
+  });
+
+  it("un upgrade donne l'XP annoncée dans le tableau « Gagner de l'XP »", async () => {
+    const p = await signUp(app);
+    // Quêtes neutralisées : seule l'XP de l'upgrade compte.
+    await p.get("/quests");
+    await ctx.db.execute(sql`update player_quests set kind = 'open_packs', target = 99 where user_id = ${p.userId}`);
+    const [card] = await ctx.db.execute<{ id: number }>(sql`
+      select id::int as id from cards where season = (select id from seasons where status = 'active')
+        and rarity = 'C' order by id limit 1
+    `);
+    const ids = (await p.post("/test/grant-card", { cardId: card!.id, count: 2 })).body.instanceIds;
+    const before = (await p.get("/pass")).body;
+    const row = before.xpTable.find((r: { label: string }) => r.label === "Upgrade tenté");
+    expect(row).toEqual({ label: "Upgrade tenté", xp: XP.upgrade });
+
+    const random = ctx.random;
+    ctx.random = (max) => max - 1; // Raté : pas de nouvelle carte.
+    try {
+      expect((await p.post("/upgrade", { instanceIds: ids })).body.success).toBe(false);
+    } finally {
+      ctx.random = random;
+    }
+    await progressionIdle();
+    expect((await p.get("/pass")).body.xp).toBe(before.xp + row.xp);
   });
 });
 
