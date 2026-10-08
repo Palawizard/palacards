@@ -1,41 +1,55 @@
-import { eq, schema, sql } from "@palacards/db";
-import type { BannerDTO } from "@palacards/shared";
+import { eq, inArray, schema } from "@palacards/db";
+import { BANNER_IMAGE_MAX_BYTES, type BannerDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
-import { notFound } from "../errors.js";
+import { badRequest } from "../errors.js";
+import { sniffImage } from "./avatars.js";
 import type { DbOrTx } from "./players.js";
 
-/**
- * Bannière choisie par chacun de ces joueurs (absent : bannière par défaut). Une bannière ne s'affiche que
- * tant que le joueur possède encore un exemplaire de l'article : vendu, échangé ou recyclé, on revient au défaut.
- * Une seule requête pour tout un classement (clé primaire de `players`, index `card_instances_owner_card_idx`).
- */
+/** Côté maximal accepté : le navigateur envoie 1200 × 300 px, on laisse de la marge sans ouvrir la porte aux bombes. */
+export const BANNER_MAX_SIDE = 2048;
+
+const versionOf = (updatedAt: Date) => updatedAt.getTime().toString(36);
+
+/** Bannière importée par chacun de ces joueurs (absent : bannière par défaut). Une seule requête pour tout un classement. */
 export async function bannersOf(db: DbOrTx, userIds: string[]): Promise<Map<string, BannerDTO>> {
   if (!userIds.length) return new Map();
-  const rows = await db.execute<{ user_id: string; card_id: string; title: string | null; thumb_url: string | null }>(
-    sql`
-      select p.user_id, p.banner_card_id as card_id, w.thumb_url,
-        (select c.title from cards c where c.id = p.banner_card_id order by c.season desc limit 1) as title
-      from players p left join wiki_summaries w on w.page_id = p.banner_card_id
-      where p.banner_card_id is not null and p.user_id in (${sql.join(
-        userIds.map((id) => sql`${id}`),
-        sql`, `,
-      )})
-        and exists (select 1 from card_instances ci where ci.owner_id = p.user_id and ci.card_id = p.banner_card_id)
-    `,
-  );
-  return new Map(
-    rows.map((r) => [r.user_id, { cardId: Number(r.card_id), title: r.title ?? "", thumbUrl: r.thumb_url }]),
-  );
+  const rows = await db
+    .select({ userId: schema.playerBanners.userId, updatedAt: schema.playerBanners.updatedAt })
+    .from(schema.playerBanners)
+    .where(inArray(schema.playerBanners.userId, userIds));
+  return new Map(rows.map((r) => [r.userId, { userId: r.userId, version: versionOf(r.updatedAt) }]));
 }
 
-/** Choisit la bannière (article de sa collection) ou revient à la bannière par défaut (null). */
-export async function chooseBanner(ctx: Ctx, userId: string, cardId: number | null) {
-  if (cardId !== null) {
-    const [owned] = await ctx.db.execute<{ one: number }>(
-      sql`select 1 as one from card_instances where owner_id = ${userId} and card_id = ${cardId} limit 1`,
-    );
-    if (!owned) throw notFound("Cet article n'est pas dans ta collection.");
+/** Enregistre la bannière (remplace la précédente). */
+export async function saveBannerImage(ctx: Ctx, userId: string, base64: string): Promise<BannerDTO> {
+  const buf = Buffer.from(base64, "base64");
+  if (buf.length === 0) throw badRequest("banner_empty", "Image vide.");
+  if (buf.length > BANNER_IMAGE_MAX_BYTES) throw badRequest("banner_too_big", "Image trop lourde (180 ko maximum).");
+  const info = sniffImage(buf);
+  if (!info) throw badRequest("banner_format", "Format non reconnu : envoie une image WebP, JPEG ou PNG.");
+  if (!info.width || !info.height || info.width > BANNER_MAX_SIDE || info.height > BANNER_MAX_SIDE) {
+    throw badRequest("banner_size", `Image trop grande (${BANNER_MAX_SIDE} px de côté maximum).`);
   }
-  await ctx.db.update(schema.players).set({ bannerCardId: cardId }).where(eq(schema.players.userId, userId));
-  return { banner: cardId === null ? null : ((await bannersOf(ctx.db, [userId])).get(userId) ?? null) };
+  const now = ctx.now();
+  await ctx.db
+    .insert(schema.playerBanners)
+    .values({ userId, image: buf, mime: info.mime, updatedAt: now })
+    .onConflictDoUpdate({
+      target: schema.playerBanners.userId,
+      set: { image: buf, mime: info.mime, updatedAt: now },
+    });
+  return { userId, version: versionOf(now) };
+}
+
+/** Retire la bannière (retour à la bannière par défaut). */
+export async function deleteBannerImage(ctx: Ctx, userId: string) {
+  await ctx.db.delete(schema.playerBanners).where(eq(schema.playerBanners.userId, userId));
+}
+
+export async function getBannerImage(ctx: Ctx, userId: string) {
+  const [row] = await ctx.db
+    .select({ image: schema.playerBanners.image, mime: schema.playerBanners.mime })
+    .from(schema.playerBanners)
+    .where(eq(schema.playerBanners.userId, userId));
+  return row ?? null;
 }

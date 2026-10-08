@@ -250,8 +250,6 @@ export const players = pgTable(
     statusNote: text("status_note"),
     /** Dernière modification de la note (pour une éventuelle durée de vie). */
     statusNoteAt: tstz("status_note_at"),
-    /** Bannière du profil et des classements : article (`cards.id`) de sa collection (null : bannière par défaut). */
-    bannerCardId: bigint("banner_card_id", { mode: "number" }),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -277,6 +275,18 @@ export const playerAvatars = pgTable(
     updatedAt: tstz("updated_at").notNull().defaultNow(),
   },
   (t) => [check("player_avatars_size_ok", sql`octet_length(${t.image}) <= 150000`)],
+);
+
+/** Bannière importée par le joueur (haut du profil, fond de sa ligne dans les classements) ; absente : bannière par défaut. */
+export const playerBanners = pgTable(
+  "player_banners",
+  {
+    userId: userRef("user_id").primaryKey(),
+    image: bytea("image").notNull(),
+    mime: text("mime", { enum: ["image/webp", "image/jpeg", "image/png"] }).notNull(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("player_banners_size_ok", sql`octet_length(${t.image}) <= 180000`)],
 );
 
 /** Exemplaire possédé : stats figées au tirage (tampon d'édition = `season`). */

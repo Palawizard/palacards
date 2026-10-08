@@ -48,6 +48,14 @@ export function avatarImage(avatar: string | null | undefined): { userId: string
   return userId && version ? { userId, version } : null;
 }
 
+/**
+ * Bannière importée (haut du profil, fond de sa ligne aux classements) : image recadrée en 4:1 et réduite par le
+ * navigateur, servie par GET /banners/:userId?v=<version>. Le poids reste sous la limite de corps de l'API en base64.
+ */
+export const BANNER_IMAGE_WIDTH = 1200;
+export const BANNER_IMAGE_HEIGHT = 300;
+export const BANNER_IMAGE_MAX_BYTES = 180_000;
+
 /** Suggestions des joueurs (page Suggestions) : même liste que `suggestions.kind` en base. */
 export const SUGGESTION_KINDS = ["bug", "feature", "content", "balance", "other"] as const;
 export type SuggestionKind = (typeof SUGGESTION_KINDS)[number];

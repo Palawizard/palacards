@@ -65,30 +65,32 @@ describe("note de statut", () => {
 });
 
 describe("bannière du profil", () => {
-  it("article de sa collection, visible sur le profil et aux classements, retirée si l'article n'est plus possédé", async () => {
+  // Image de 40 × 30 px produite par Pillow (même que test/avatars.test.ts).
+  const PNG =
+    "iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAALklEQVR4nO3NMQEAMAgAoLk0ZjKxsazg5wMFiM56F/7JKhaLxWKxWCwWi8XilQH91QGGD5y0UgAAAABJRU5ErkJggg==";
+
+  it("image importée, servie, visible sur le profil et aux classements, puis retirée", async () => {
     const a = await signUp(app);
     const b = await signUp(app);
-    const season = (await a.get("/me")).body.season as number;
-    const [card] = await ctx.db.execute<{ id: number; title: string }>(
-      sql`select id::int as id, title from cards where season = ${season} order by id desc limit 1 offset 3`,
-    );
-    const thumb = "https://upload.wikimedia.org/banniere-test.jpg";
-    await ctx.db.execute(sql`
-      insert into wiki_summaries (page_id, thumb_url, status) values (${card!.id}, ${thumb}, 'ok')
-      on conflict (page_id) do update set thumb_url = excluded.thumb_url
-    `);
 
-    // Sans choix : bannière par défaut ; un article qu'on n'a pas est refusé.
+    // Sans import : bannière par défaut.
     expect((await b.get(`/players/${a.username}`)).body.banner).toBeNull();
-    expect((await a.put("/me/banner", { cardId: card!.id })).status).toBe(404);
 
-    const { instanceIds } = (await a.post("/test/grant-card", { cardId: card!.id, count: 1 })).body as {
-      instanceIds: number[];
-    };
-    const set = await a.put("/me/banner", { cardId: card!.id });
+    const set = await a.put("/me/banner", { image: PNG });
     expect(set.status).toBe(200);
-    expect(set.body.banner).toEqual({ cardId: card!.id, title: card!.title, thumbUrl: thumb });
+    expect(set.body.banner).toMatchObject({ userId: a.userId, version: expect.any(String) });
     expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(set.body.banner);
+
+    // Image servie aux joueurs connectés seulement, avec les mêmes protections que les avatars.
+    const img = await app.inject({
+      url: `/palacards/api/banners/${a.userId}?v=${set.body.banner.version}`,
+      headers: { cookie: b.cookie },
+    });
+    expect(img.statusCode).toBe(200);
+    expect(img.headers["content-type"]).toBe("image/png");
+    expect(img.headers["x-content-type-options"]).toBe("nosniff");
+    expect(img.rawPayload.equals(Buffer.from(PNG, "base64"))).toBe(true);
+    expect((await app.inject({ url: `/palacards/api/banners/${a.userId}` })).statusCode).toBe(401);
 
     // Classements : l'image sert de fond à sa ligne (tout en haut de « Richesse », base de test partagée).
     await ctx.db.execute(sql`update players set balance = 1999999997 where user_id = ${a.userId}`);
@@ -96,17 +98,25 @@ describe("bannière du profil", () => {
       ((await b.get("/leaderboard?board=wealth&period=season")).body.rows as { id: string; banner?: unknown }[]).find(
         (r) => r.id === a.userId,
       );
-    expect((await rowOf())?.banner).toEqual({ cardId: card!.id, thumbUrl: thumb });
+    expect((await rowOf())?.banner).toEqual(set.body.banner);
 
-    // Plus aucun exemplaire : retour à la bannière par défaut, sans rien effacer.
-    await ctx.db.execute(sql`delete from card_instances where id = ${instanceIds[0]!}`);
+    // Image déguisée refusée, la bannière reste.
+    const svg = Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'></svg>".padEnd(64, " ")).toString("base64");
+    expect((await a.put("/me/banner", { image: svg })).body.error).toBe("banner_format");
+    expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(set.body.banner);
+
+    // Retour au défaut : plus d'image servie ni de fond au classement.
+    const removed = await app.inject({
+      method: "DELETE",
+      url: "/palacards/api/me/banner",
+      headers: { cookie: a.cookie, origin: "http://localhost:3000" },
+    });
+    expect(removed.json().banner).toBeNull();
     expect((await b.get(`/players/${a.username}`)).body.banner).toBeNull();
     expect((await rowOf())?.banner).toBeUndefined();
-
-    // Retour volontaire au défaut.
-    await a.post("/test/grant-card", { cardId: card!.id, count: 1 });
-    expect((await a.put("/me/banner", { cardId: null })).body.banner).toBeNull();
-    expect((await b.get(`/players/${a.username}`)).body.banner).toBeNull();
+    expect(
+      (await app.inject({ url: `/palacards/api/banners/${a.userId}`, headers: { cookie: b.cookie } })).statusCode,
+    ).toBe(404);
   });
 });
 

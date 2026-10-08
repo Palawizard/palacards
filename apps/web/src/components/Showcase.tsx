@@ -1,6 +1,6 @@
 // Vitrine de son propre profil : ajout, retrait et ordre des cartes (importé uniquement par des composants client).
-import type { CardDTO } from "@palacards/shared";
-import { ChevronLeft, ChevronRight, GripVertical, Plus, X } from "lucide-react";
+import type { CardDTO, Page } from "@palacards/shared";
+import { ChevronLeft, ChevronRight, GripVertical, Plus, Search, X } from "lucide-react";
 import { motion } from "motion/react";
 import {
   useCallback,
@@ -11,9 +11,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { toast } from "sonner";
-import { Card } from "@/components/Card";
-import { CardPicker } from "@/components/CardPicker";
+import useSWRInfinite from "swr/infinite";
+import { Card, CardGrid } from "@/components/Card";
+import { CardSkeletons, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
+import { useDebounced } from "@/lib/use-debounced";
 
 /** Places de la vitrine (SHOWCASE_SIZE côté API). */
 const SIZE = 5;
@@ -319,21 +321,122 @@ export function MyShowcase({ cards, onChanged }: { cards: CardDTO[]; onChanged: 
         {announce}
       </p>
 
-      <CardPicker
+      <ShowcasePicker
         open={picking}
-        title="Ajouter à la vitrine"
-        unavailable={(card) =>
-          order.some((c) => c.instanceId === card.instanceId)
-            ? "Déjà en vitrine"
-            : card.locked === "auction"
-              ? "En vente"
-              : card.locked
-                ? "En échange"
-                : null
-        }
+        pinned={new Set(order.map((c) => c.instanceId!))}
         onPick={add}
         onClose={() => setPicking(false)}
       />
     </section>
+  );
+}
+
+/** Choix d'une carte de sa collection pour la vitrine (les plus rares d'abord). */
+function ShowcasePicker({
+  open,
+  pinned,
+  onPick,
+  onClose,
+}: {
+  open: boolean;
+  pinned: Set<number>;
+  onPick: (card: CardDTO) => void;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [q, setQ] = useState("");
+  const query = useDebounced(q).trim();
+  useEffect(() => {
+    const d = ref.current;
+    if (!d) return;
+    if (open && !d.open) d.showModal();
+    if (!open && d.open) d.close();
+  }, [open]);
+
+  const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
+    !open || (prev && !prev.nextCursor)
+      ? null
+      : `/collection?sort=rarity&limit=60${query ? `&q=${encodeURIComponent(query)}` : ""}&page=${i}`,
+  );
+  const items = list.data?.flatMap((p) => p.items) ?? [];
+  const done = !!list.data && !list.data[list.data.length - 1]?.nextCursor;
+  const loadMore = useCallback(() => {
+    if (!list.isValidating) void list.setSize((s) => s + 1);
+  }, [list]);
+
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      aria-labelledby="vitrine-picker-title"
+      className="pc-picker m-auto max-h-[min(44rem,calc(100dvh-2rem))] w-[min(52rem,calc(100vw-2rem))] flex-col rounded-2xl border border-line-strong bg-panel p-0 text-text shadow-pop backdrop:bg-black/60 open:flex"
+    >
+      {open && (
+        <>
+          <div className="flex items-center gap-3 border-b-2 border-dashed border-line px-5 py-4">
+            <h2 id="vitrine-picker-title" className="flex-1 font-display text-2xl uppercase">
+              Ajouter à la vitrine
+            </h2>
+            <button type="button" className="btn btn-sm btn-ghost px-2" onClick={onClose} aria-label="Fermer">
+              <X aria-hidden className="size-5" />
+            </button>
+          </div>
+          <div className="px-5 pt-4">
+            <div className="relative">
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint"
+              />
+              <input
+                type="search"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Chercher dans ta collection"
+                aria-label="Chercher dans ta collection"
+                className="field h-10 min-h-0 pl-8 text-sm"
+                autoFocus
+              />
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4">
+            {list.error ? (
+              <ErrorBox error={list.error} retry={() => list.mutate()} />
+            ) : !list.data ? (
+              <CardSkeletons count={8} />
+            ) : items.length === 0 ? (
+              <Empty title={query ? "Aucune carte ne correspond" : "Ta collection est vide"}>
+                {query ? "Essaie un autre titre." : "Ouvre un paquet pour tirer tes premières cartes."}
+              </Empty>
+            ) : (
+              <>
+                <CardGrid dense>
+                  {items.map((card) => {
+                    const inShowcase = pinned.has(card.instanceId!);
+                    const unavailable = inShowcase || !!card.locked;
+                    return (
+                      <button
+                        key={card.instanceId}
+                        type="button"
+                        className="pc-pick relative text-left disabled:cursor-not-allowed"
+                        disabled={unavailable}
+                        onClick={() => onPick(card)}
+                      >
+                        <Card card={card} href={null} className={unavailable ? "opacity-40" : ""} />
+                        {unavailable && (
+                          <span className="pc-pick-note">
+                            {inShowcase ? "Déjà en vitrine" : card.locked === "auction" ? "En vente" : "En échange"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </CardGrid>
+                <LoadMore onVisible={loadMore} loading={list.isValidating} done={done} />
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </dialog>
   );
 }

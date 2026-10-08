@@ -6,7 +6,7 @@ import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
-import { chooseBanner } from "../services/banners.js";
+import { deleteBannerImage, getBannerImage, saveBannerImage } from "../services/banners.js";
 import { answeringQuestion, queueWaiting } from "../services/battles.js";
 import { arthropodFlags, cardSheet, catalog } from "../services/cards.js";
 import {
@@ -381,10 +381,27 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     const { note } = parse(z.object({ note: z.string().max(1000).nullable() }), req.body);
     return setStatusNote(ctx, req.user.id, note);
   });
-  // Bannière : un article de sa collection ; null revient à la bannière par défaut.
-  api.put("/me/banner", { ...auth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) => {
-    const { cardId } = parse(z.object({ cardId: z.number().int().positive().nullable() }), req.body);
-    return chooseBanner(ctx, req.user.id, cardId);
+  // Bannière : image recadrée en 4:1 et réduite par le navigateur, envoyée en base64 (sous la limite de corps).
+  api.put("/me/banner", { ...auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req) => {
+    const { image } = parse(z.object({ image: z.base64().min(1).max(245_000) }), req.body);
+    return { banner: await saveBannerImage(ctx, req.user.id, image) };
+  });
+  api.delete("/me/banner", auth, async (req) => {
+    await deleteBannerImage(ctx, req.user.id);
+    return { banner: null };
+  });
+  // L'URL porte la version (?v=…) : réponse immuable, remplacée dès que la bannière change.
+  api.get("/banners/:userId", auth, async (req, reply) => {
+    const { userId } = parse(z.object({ userId: z.string().min(1).max(64) }), req.params);
+    const row = await getBannerImage(ctx, userId);
+    if (!row) throw notFound("Pas de bannière.");
+    return reply
+      .header("content-type", row.mime)
+      .header("cache-control", "private, max-age=31536000, immutable")
+      .header("x-content-type-options", "nosniff")
+      .header("content-security-policy", "default-src 'none'; sandbox")
+      .header("cross-origin-resource-policy", "same-site")
+      .send(row.image);
   });
   api.get("/players/:username", auth, async (req) => {
     const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);

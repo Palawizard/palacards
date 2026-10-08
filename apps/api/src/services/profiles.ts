@@ -74,7 +74,7 @@ export interface ProfileDTO {
   titles: TitleRef[];
   /** Note de statut (null : aucune). */
   statusNote: string | null;
-  /** Bannière choisie (null : bannière par défaut). */
+  /** Bannière importée (null : bannière par défaut). */
   banner: BannerDTO | null;
 }
 

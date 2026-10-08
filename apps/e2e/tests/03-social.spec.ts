@@ -122,35 +122,36 @@ test("filtre la collection d'un autre joueur par ses tags, sauf s'il les garde p
   await expect(bob.page.getByLabel("Tag")).toHaveCount(0);
 });
 
-test("bannière choisie dans sa collection, vue sur son profil par un autre joueur, puis retirée", async ({
-  browser,
-}) => {
+test("bannière importée sur son profil, vue par un autre joueur, puis retirée", async ({ browser }) => {
   const alice = await newPlayer(browser, "alice");
   const bob = await newPlayer(browser, "bob");
-  const pack = await apiCall<{ cards: { title: string }[] }>(alice.page, "POST", "/packs/open");
-  const title = pack.cards[0]!.title;
+  // Image de 40 × 30 px : recadrée en 4:1 et réencodée en 1200 × 300 px par le navigateur avant l'envoi.
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAALklEQVR4nO3NMQEAMAgAoLk0ZjKxsazg5wMFiM56F/7JKhaLxWKxWCwWi8XilQH91QGGD5y0UgAAAABJRU5ErkJggg==",
+    "base64",
+  );
 
-  // Alice choisit un article de sa collection depuis son profil.
+  // Alice importe une image depuis son profil.
   await alice.page.goto(`u/${alice.name.toLowerCase()}`);
-  await alice.page.getByRole("button", { name: "Choisir une bannière" }).click();
-  const picker = alice.page.getByRole("dialog", { name: "Choisir ta bannière" });
-  await picker.getByLabel("Chercher dans ta collection").fill(title);
-  await picker.getByRole("button").filter({ hasText: title }).first().click();
-  await expect(alice.page.getByText(`${title} devient ta bannière.`)).toBeVisible();
-  await expect(alice.page.getByRole("button", { name: "Changer la bannière" })).toBeVisible();
+  await alice.page
+    .getByLabel("Importer une bannière")
+    .setInputFiles({ name: "banniere.png", mimeType: "image/png", buffer: png });
+  await expect(alice.page.getByText("Bannière mise à jour.")).toBeVisible();
+  await expect(alice.page.getByLabel("Changer la bannière")).toBeAttached();
 
   // Bob la voit en haut du profil d'Alice, sans bouton pour la changer.
   await bob.page.goto(`u/${alice.name.toLowerCase()}`);
-  const banner = bob.page.locator(".pc-banner");
-  await expect(banner.getByText(title)).toBeVisible();
-  await expect(bob.page.getByRole("button", { name: "Changer la bannière" })).toHaveCount(0);
+  const banner = bob.page.locator(".pc-banner img");
+  await expect(banner).toHaveAttribute("src", /\/banners\/.+\?v=/);
+  await expect.poll(() => banner.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1200);
+  await expect(bob.page.getByLabel("Changer la bannière")).toHaveCount(0);
 
   // Alice revient à la bannière par défaut.
   await alice.page.getByRole("button", { name: "Revenir à la bannière par défaut" }).click();
   await expect(alice.page.getByText("Bannière par défaut rétablie.")).toBeVisible();
   await bob.page.reload();
   await expect(bob.page.getByText("Joueur depuis")).toBeVisible();
-  await expect(banner.getByText(title)).toHaveCount(0);
+  await expect(banner).toHaveCount(0);
 });
 
 test("note de statut : écrite sur son profil, vue par un ami, effacée", async ({ browser }) => {

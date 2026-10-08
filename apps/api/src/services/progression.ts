@@ -19,6 +19,7 @@ import {
   type TitleBoard,
   type TitleRef,
 } from "@palacards/game";
+import type { BannerDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import {
   activeSeason,
@@ -549,8 +550,8 @@ interface Row {
   title?: TitleRef;
   /** Note de statut du joueur. */
   statusNote?: string;
-  /** Image de la bannière du joueur (fond de sa ligne) ; absente : pas de bannière ou image pas encore chargée. */
-  banner?: { cardId: number; thumbUrl: string };
+  /** Bannière importée par le joueur (fond de sa ligne) ; absente : pas de bannière. */
+  banner?: BannerDTO;
 }
 
 /**
@@ -591,7 +592,7 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
     );
     for (const r of rows) {
       const banner = banners.get(r.id);
-      if (banner?.thumbUrl) r.banner = { cardId: banner.cardId, thumbUrl: banner.thumbUrl };
+      if (banner) r.banner = banner;
       if (ids.has(r.id)) r.creator = true;
       const title = titles.get(r.id);
       if (title) r.title = title;

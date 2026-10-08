@@ -517,10 +517,9 @@ export interface PlayerSuggestionDTO {
   friend: boolean;
 }
 
-/** Bannière d'un joueur (profil, classements) : image d'un article de sa collection. */
+/** Bannière importée par un joueur (profil, classements) : l'image est servie par GET /banners/:userId?v=<version>. */
 export interface BannerDTO {
-  cardId: number;
-  title: string;
-  /** Vignette de l'article (null : pas encore chargée, bannière par défaut en attendant). */
-  thumbUrl: string | null;
+  userId: string;
+  /** Change à chaque nouvelle image (le navigateur garde l'ancienne en cache sinon). */
+  version: string;
 }

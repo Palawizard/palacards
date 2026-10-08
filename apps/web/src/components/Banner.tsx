@@ -1,18 +1,20 @@
 "use client";
 
 import type { BannerDTO } from "@palacards/shared";
-import { ImageIcon, X } from "lucide-react";
+import { ImageUp, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { CardImage } from "@/components/CardImage";
-import { CardPicker } from "@/components/CardPicker";
-import { api, ApiError } from "@/lib/api";
-import { useArthropodVeil } from "@/lib/arthropods";
-import { useMe } from "@/lib/game";
+import { api, API_BASE } from "@/lib/api";
+import { prepareBanner } from "@/lib/avatar-image";
+
+/** URL de la bannière importée d'un joueur (versionnée : le navigateur la garde en cache tant qu'elle ne change pas). */
+export function bannerSrc(banner: BannerDTO): string {
+  return `${API_BASE}/banners/${encodeURIComponent(banner.userId)}?v=${encodeURIComponent(banner.version)}`;
+}
 
 /**
- * Bannière en haut du profil : image d'un article de la collection du joueur, sinon la couverture de l'album
- * (bannière par défaut). Sur son propre profil, boutons pour la changer ou revenir au défaut.
+ * Bannière en haut du profil : image importée par le joueur, sinon la couverture de l'album (bannière par défaut).
+ * Sur son propre profil, boutons pour l'importer, la changer ou revenir au défaut.
  */
 export function ProfileBanner({
   banner,
@@ -23,18 +25,17 @@ export function ProfileBanner({
   isMe: boolean;
   onChanged: () => void;
 }) {
-  const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  async function choose(cardId: number | null, title?: string) {
-    setPicking(false);
+  async function run(action: () => Promise<unknown>, done: string) {
     setBusy(true);
     try {
-      await api("/me/banner", { method: "PUT", body: { cardId } });
+      await action();
       onChanged();
-      toast.success(title ? `${title} devient ta bannière.` : "Bannière par défaut rétablie.");
+      toast.success(done);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "Bannière non enregistrée.");
+      // Erreur de l'API ou de la préparation de l'image (format, poids) : message déjà en français.
+      toast.error(err instanceof Error ? err.message : "Bannière non enregistrée.");
     } finally {
       setBusy(false);
     }
@@ -43,32 +44,45 @@ export function ProfileBanner({
   return (
     <div className="pc-banner relative h-28 overflow-hidden rounded-xl border border-line sm:h-40">
       {banner && (
-        <>
-          {/* Image pas encore chargée : le titre de l'article sur la couverture par défaut. */}
-          {banner.thumbUrl && (
-            <>
-              <CardImage key={banner.cardId} cardId={banner.cardId} src={banner.thumbUrl} loading="eager" />
-              <span aria-hidden className="pc-banner-scrim" />
-            </>
-          )}
-          <p className="absolute bottom-2 left-3 right-3 truncate text-xs font-semibold text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.6)] sm:bottom-3 sm:left-4">
-            <span className="sr-only">Bannière : </span>
-            {banner.title}
-          </p>
-        </>
+        // eslint-disable-next-line @next/next/no-img-element -- image servie par l'API (déjà réduite à 1200 × 300 px)
+        <img
+          key={banner.version}
+          src={bannerSrc(banner)}
+          alt=""
+          decoding="async"
+          className="absolute inset-0 size-full object-cover"
+        />
       )}
       {isMe && (
         <div className="absolute right-2 top-2 flex gap-1.5 sm:right-3 sm:top-3">
-          <button type="button" className="btn btn-sm" disabled={busy} onClick={() => setPicking(true)}>
-            <ImageIcon aria-hidden className="size-4" />
-            {banner ? "Changer la bannière" : "Choisir une bannière"}
-          </button>
+          <label
+            className="btn btn-sm cursor-pointer has-[:disabled]:cursor-default has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent"
+            aria-busy={busy}
+          >
+            <ImageUp aria-hidden className="size-4" />
+            {banner ? "Changer la bannière" : "Importer une bannière"}
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              disabled={busy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                void run(async () => {
+                  const image = await prepareBanner(file);
+                  await api("/me/banner", { method: "PUT", body: { image } });
+                }, "Bannière mise à jour.");
+              }}
+            />
+          </label>
           {banner && (
             <button
               type="button"
               className="btn btn-sm px-2"
               disabled={busy}
-              onClick={() => choose(null)}
+              onClick={() => run(() => api("/me/banner", { method: "DELETE" }), "Bannière par défaut rétablie.")}
               aria-label="Revenir à la bannière par défaut"
               title="Revenir à la bannière par défaut"
             >
@@ -77,28 +91,12 @@ export function ProfileBanner({
           )}
         </div>
       )}
-      {isMe && (
-        <CardPicker
-          open={picking}
-          title="Choisir ta bannière"
-          intro="L’image de l’article choisi s’affiche en haut de ton profil et derrière ta ligne dans les classements."
-          unavailable={(card) => (card.cardId === banner?.cardId ? "Bannière actuelle" : null)}
-          onPick={(card) => choose(card.cardId, card.title)}
-          onClose={() => setPicking(false)}
-        />
-      )}
     </div>
   );
 }
 
-/**
- * Bannière en fond d'une ligne de classement, fondue vers la gauche pour garder le nom lisible.
- * Rien tant que l'option « flouter les arthropodes » n'a pas confirmé que l'image peut s'afficher.
- */
-export function RowBanner({ cardId, thumbUrl }: { cardId: number; thumbUrl: string }) {
-  const { me } = useMe();
-  const veil = useArthropodVeil(cardId, !!me?.hideArthropods);
-  if (veil !== "off" && veil !== "shown") return null;
-  // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API (pas d'optimiseur Next)
-  return <img src={thumbUrl} alt="" loading="lazy" decoding="async" className="pc-row-banner" />;
+/** Bannière en fond d'une ligne de classement, fondue vers la gauche pour garder le nom lisible. */
+export function RowBanner({ banner }: { banner: BannerDTO }) {
+  // eslint-disable-next-line @next/next/no-img-element -- image servie par l'API (déjà réduite)
+  return <img src={bannerSrc(banner)} alt="" loading="lazy" decoding="async" className="pc-row-banner" />;
 }
