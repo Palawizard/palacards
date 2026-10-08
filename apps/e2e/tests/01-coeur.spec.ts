@@ -174,6 +174,18 @@ test("fusionne les doublons d'un coup, puis met une sélection en favori et la t
   const all = (await apiCall<{ total: number }>(page, "GET", "/collection?limit=1")).total;
   await page.getByRole("button", { name: "Sans favoris" }).click();
   await expect(page.getByText(`${all - 2} cartes`, { exact: true })).toBeVisible();
+
+  // État de conservation : visible sur la vignette, et filtre « État ».
+  const [first] = (
+    await apiCall<{ items: { condition: number }[] }>(page, "GET", "/collection?favorites=exclude&limit=1")
+  ).items;
+  const label = ["Abîmée", "Usée", "Correcte", "Bonne", "Parfaite"][first!.condition - 1]!;
+  const same = (
+    await apiCall<{ total: number }>(page, "GET", `/collection?favorites=exclude&condition=${first!.condition}&limit=1`)
+  ).total;
+  await page.getByRole("combobox", { name: "État" }).selectOption({ label });
+  await expect(page.getByText(new RegExp(`^${same} cartes?$`))).toBeVisible();
+  await expect(page.getByTitle(`État : ${label.toLowerCase()}`).first()).toBeVisible();
 });
 
 test("redirige vers la connexion sans session", async ({ page }) => {

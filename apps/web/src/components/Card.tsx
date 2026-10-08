@@ -110,7 +110,7 @@ export function Card({
       className={`pc-card group ${selected ? "outline-3 outline-offset-2 outline-accent" : ""} ${className}`}
       data-rarity={card.rarity}
       data-shiny={card.shiny || undefined}
-      aria-label={`${card.title}, ${RARITY_LABELS[card.rarity]}${card.shiny ? " brillante" : ""}${card.condition ? `, état ${CONDITION_LABELS[card.condition].toLowerCase()}` : ""}, attaque ${card.atk}, défense ${card.def}`}
+      aria-label={`${card.title}, ${RARITY_LABELS[card.rarity]}${card.shiny ? " brillante" : ""}${card.condition ? `, ${CONDITION_LABELS[card.condition].toLowerCase()}` : ""}, attaque ${card.atk}, défense ${card.def}`}
     >
       {/* Les unités cqi se rapportent à la carte (conteneur) : tout le contenu suit sa largeur. */}
       <div className="pc-frame flex h-full flex-col p-[4cqi] text-[length:max(10px,6cqi)]">

@@ -22,7 +22,7 @@ const DUPLICATES_SORT: CollectionSort = "copies";
 const OTHER_SORTS = SORTS.filter((s) => s.value !== "views");
 /** États du meilleur au plus abîmé, comme le tri « État ». */
 export const CONDITION_OPTIONS = [
-  { value: "", label: "Tous" },
+  { value: "", label: "Tous les états" },
   ...[...CONDITIONS].reverse().map((c) => ({ value: String(c), label: CONDITION_LABELS[c] })),
 ];
 
