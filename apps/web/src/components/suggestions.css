@@ -308,6 +308,12 @@
   border-color: color-mix(in oklab, var(--color-accent) 45%, var(--color-line));
   background: color-mix(in oklab, var(--color-accent) 8%, transparent);
 }
+/* Prochaine saison : idée gardée, pas de branche. */
+.pc-verdict[data-verdict="saison"] {
+  color: var(--color-muted);
+  border-color: color-mix(in oklab, var(--color-muted) 45%, var(--color-line));
+  border-style: dashed;
+}
 .pc-verdict[data-verdict="non"] {
   color: var(--color-faint);
 }

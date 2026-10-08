@@ -18,6 +18,7 @@ const VERDICTS: Record<TriageVerdict, string> = {
   bug: "Bug à corriger",
   non: "Refus proposé",
   prod: "À faire en prod",
+  saison: "Prochaine saison",
 };
 const CATEGORIES: Record<string, string> = {
   important: "important",
@@ -194,7 +195,13 @@ export function AutomationPanel({
               )}
               {a.spec && (
                 <details className="pc-auto-more">
-                  <summary>{a.verdict === "prod" ? "À faire en prod" : "Cahier des charges publié"}</summary>
+                  <summary>
+                    {a.verdict === "prod"
+                      ? "À faire en prod"
+                      : a.verdict === "saison"
+                        ? "Refonte pour une prochaine saison"
+                        : "Cahier des charges publié"}
+                  </summary>
                   <p>{a.spec}</p>
                 </details>
               )}
