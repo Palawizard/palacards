@@ -118,6 +118,50 @@ describe("bannière du profil", () => {
       (await app.inject({ url: `/palacards/api/banners/${a.userId}`, headers: { cookie: b.cookie } })).statusCode,
     ).toBe(404);
   });
+
+  it("carte de sa collection en bannière, retour à l'image importée, puis retrait", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const card = (await a.post("/packs/open")).body.cards[0];
+    const image = (await a.put("/me/banner", { image: PNG })).body.banner;
+
+    // Carte qu'il ne possède pas refusée : l'image reste.
+    expect((await a.put("/me/banner/card", { cardId: 999_999_999_999 })).status).toBe(404);
+    expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(image);
+
+    // La carte remplace l'image, en privé comme en public ; l'image reste enregistrée pour y revenir.
+    const set = await a.put("/me/banner/card", { cardId: card.cardId });
+    expect(set.status).toBe(200);
+    expect(set.body.banner).toMatchObject({ kind: "card", cardId: card.cardId, title: card.title });
+    expect((await b.get(`/players/${a.username}`)).body).toMatchObject({
+      banner: set.body.banner,
+      bannerImageSaved: false,
+    });
+    expect((await a.get(`/players/${a.username}`)).body).toMatchObject({
+      banner: set.body.banner,
+      bannerImageSaved: true,
+    });
+
+    // Retour à l'image importée.
+    expect((await a.del("/me/banner/card")).body.banner).toEqual(image);
+    expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(image);
+
+    // Carte cédée : on retombe sur l'image.
+    await a.put("/me/banner/card", { cardId: card.cardId });
+    await ctx.db.execute(
+      sql`update card_instances set owner_id = ${b.userId} where owner_id = ${a.userId} and card_id = ${card.cardId}`,
+    );
+    expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(image);
+
+    // Une nouvelle image importée remplace la carte ; « Retirer » efface tout.
+    await ctx.db.execute(sql`update card_instances set owner_id = ${a.userId} where card_id = ${card.cardId}`);
+    expect((await a.put("/me/banner/card", { cardId: card.cardId })).body.banner.kind).toBe("card");
+    expect((await a.put("/me/banner", { image: PNG })).body.banner.kind).toBe("image");
+    expect((await b.get(`/players/${a.username}`)).body.banner.kind).toBe("image");
+    await a.put("/me/banner/card", { cardId: card.cardId });
+    expect((await a.del("/me/banner")).body.banner).toBeNull();
+    expect((await a.get(`/players/${a.username}`)).body).toMatchObject({ banner: null, bannerImageSaved: false });
+  });
 });
 
 describe("suggestions de pseudos", () => {

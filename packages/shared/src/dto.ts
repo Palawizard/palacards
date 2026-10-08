@@ -517,9 +517,22 @@ export interface PlayerSuggestionDTO {
   friend: boolean;
 }
 
-/** Bannière importée par un joueur (profil, classements) : l'image est servie par GET /banners/:userId?v=<version>. */
-export interface BannerDTO {
-  userId: string;
-  /** Change à chaque nouvelle image (le navigateur garde l'ancienne en cache sinon). */
-  version: string;
-}
+/**
+ * Bannière d'un joueur (profil, classements) : image importée, servie par GET /banners/:userId?v=<version>,
+ * ou carte de sa collection (image de l'article).
+ */
+export type BannerDTO =
+  | {
+      kind: "image";
+      userId: string;
+      /** Change à chaque nouvelle image (le navigateur garde l'ancienne en cache sinon). */
+      version: string;
+    }
+  | {
+      kind: "card";
+      cardId: number;
+      title: string;
+      /** Rareté de son meilleur exemplaire de l'article. */
+      rarity: Rarity;
+      thumbUrl: string | null;
+    };
