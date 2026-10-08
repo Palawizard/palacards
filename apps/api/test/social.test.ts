@@ -64,6 +64,62 @@ describe("note de statut", () => {
   });
 });
 
+describe("bannière du profil", () => {
+  // Image de 40 × 30 px produite par Pillow (même que test/avatars.test.ts).
+  const PNG =
+    "iVBORw0KGgoAAAANSUhEUgAAACgAAAAeCAIAAADRv8uKAAAALklEQVR4nO3NMQEAMAgAoLk0ZjKxsazg5wMFiM56F/7JKhaLxWKxWCwWi8XilQH91QGGD5y0UgAAAABJRU5ErkJggg==";
+
+  it("image importée, servie, visible sur le profil et aux classements, puis retirée", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+
+    // Sans import : bannière par défaut.
+    expect((await b.get(`/players/${a.username}`)).body.banner).toBeNull();
+
+    const set = await a.put("/me/banner", { image: PNG });
+    expect(set.status).toBe(200);
+    expect(set.body.banner).toMatchObject({ userId: a.userId, version: expect.any(String) });
+    expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(set.body.banner);
+
+    // Image servie aux joueurs connectés seulement, avec les mêmes protections que les avatars.
+    const img = await app.inject({
+      url: `/palacards/api/banners/${a.userId}?v=${set.body.banner.version}`,
+      headers: { cookie: b.cookie },
+    });
+    expect(img.statusCode).toBe(200);
+    expect(img.headers["content-type"]).toBe("image/png");
+    expect(img.headers["x-content-type-options"]).toBe("nosniff");
+    expect(img.rawPayload.equals(Buffer.from(PNG, "base64"))).toBe(true);
+    expect((await app.inject({ url: `/palacards/api/banners/${a.userId}` })).statusCode).toBe(401);
+
+    // Classements : l'image sert de fond à sa ligne (tout en haut de « Richesse », base de test partagée).
+    await ctx.db.execute(sql`update players set balance = 1999999997 where user_id = ${a.userId}`);
+    const rowOf = async () =>
+      ((await b.get("/leaderboard?board=wealth&period=season")).body.rows as { id: string; banner?: unknown }[]).find(
+        (r) => r.id === a.userId,
+      );
+    expect((await rowOf())?.banner).toEqual(set.body.banner);
+
+    // Image déguisée refusée, la bannière reste.
+    const svg = Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'></svg>".padEnd(64, " ")).toString("base64");
+    expect((await a.put("/me/banner", { image: svg })).body.error).toBe("banner_format");
+    expect((await b.get(`/players/${a.username}`)).body.banner).toEqual(set.body.banner);
+
+    // Retour au défaut : plus d'image servie ni de fond au classement.
+    const removed = await app.inject({
+      method: "DELETE",
+      url: "/palacards/api/me/banner",
+      headers: { cookie: a.cookie, origin: "http://localhost:3000" },
+    });
+    expect(removed.json().banner).toBeNull();
+    expect((await b.get(`/players/${a.username}`)).body.banner).toBeNull();
+    expect((await rowOf())?.banner).toBeUndefined();
+    expect(
+      (await app.inject({ url: `/palacards/api/banners/${a.userId}`, headers: { cookie: b.cookie } })).statusCode,
+    ).toBe(404);
+  });
+});
+
 describe("suggestions de pseudos", () => {
   it("début du pseudo d'abord, amis ensuite, sans casse ni accents, jamais soi-même", async () => {
     const tag = `s${Date.now().toString(36).slice(-6)}`;

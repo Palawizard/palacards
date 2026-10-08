@@ -277,6 +277,18 @@ export const playerAvatars = pgTable(
   (t) => [check("player_avatars_size_ok", sql`octet_length(${t.image}) <= 150000`)],
 );
 
+/** Bannière importée par le joueur (haut du profil, fond de sa ligne dans les classements) ; absente : bannière par défaut. */
+export const playerBanners = pgTable(
+  "player_banners",
+  {
+    userId: userRef("user_id").primaryKey(),
+    image: bytea("image").notNull(),
+    mime: text("mime", { enum: ["image/webp", "image/jpeg", "image/png"] }).notNull(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("player_banners_size_ok", sql`octet_length(${t.image}) <= 180000`)],
+);
+
 /** Exemplaire possédé : stats figées au tirage (tampon d'édition = `season`). */
 export const cardInstances = pgTable(
   "card_instances",

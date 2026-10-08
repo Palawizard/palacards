@@ -19,6 +19,7 @@ import {
   type TitleBoard,
   type TitleRef,
 } from "@palacards/game";
+import type { BannerDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import {
   activeSeason,
@@ -31,6 +32,7 @@ import {
   type Player,
 } from "./players.js";
 import { afterCommit, Effects } from "./notifications.js";
+import { bannersOf } from "./banners.js";
 import { battleRewarded, onBattleFinished } from "./battles.js";
 import { collectionScoresSql, statusNoteOf } from "./profiles.js";
 import { ensureQuests, type QuestRow } from "./quests.js";
@@ -548,6 +550,8 @@ interface Row {
   title?: TitleRef;
   /** Note de statut du joueur. */
   statusNote?: string;
+  /** Bannière importée par le joueur (fond de sa ligne) ; absente : pas de bannière. */
+  banner?: BannerDTO;
 }
 
 /**
@@ -582,7 +586,13 @@ export async function leaderboard(ctx: Ctx, userId: string, board: Board, period
       )})
     `);
     const noteOf = new Map(notes.map((n) => [n.user_id, statusNoteOf(ctx, n)]));
+    const banners = await bannersOf(
+      ctx.db,
+      rows.map((r) => r.id),
+    );
     for (const r of rows) {
+      const banner = banners.get(r.id);
+      if (banner) r.banner = banner;
       if (ids.has(r.id)) r.creator = true;
       const title = titles.get(r.id);
       if (title) r.title = title;
