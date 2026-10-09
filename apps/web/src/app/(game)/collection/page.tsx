@@ -11,7 +11,7 @@ import useSWR, { useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid, RaritySigil } from "@/components/Card";
 import { CollectionFilterBar, useCollectionFilters } from "@/components/CollectionFilters";
-import { BulkTagDialog, SelectionBar } from "@/components/SelectionBar";
+import { BulkTagDialog, SelectCount, SelectionBar } from "@/components/SelectionBar";
 import { CardSkeletons, ConfirmDialog, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -83,6 +83,18 @@ interface Selectable {
   protected: number;
   truncated: boolean;
 }
+
+/** Sélection prise d'un coup (« Tout sélectionner », « Sélectionner N cartes »). */
+const toSelection = (res: Selectable) =>
+  new Map<number, Picked>(
+    res.items.map((i) => [i.id, { rarity: i.rarity, shiny: i.shiny, favorite: i.favorite, guarded: i.protected }]),
+  );
+
+/** Plafond d'une sélection d'un coup (`SELECT_ALL_MAX` côté serveur). */
+const SELECT_MAX = 5000;
+
+/** « Sélectionner N cartes » laisse les favorites de côté (sauf filtre « Favoris » : on ne voit qu'elles). */
+const SELECT_COUNT_SKIPS_FAVORITES = true;
 
 interface FusionPreview {
   cards: number;
@@ -222,19 +234,40 @@ function Collection() {
     setSelectingAll(true);
     try {
       const res = await api<Selectable>(`/collection/selectable${filters ? `?${filters}` : ""}`);
-      setSelected(
-        new Map(
-          res.items.map((i) => [
-            i.id,
-            { rarity: i.rarity, shiny: i.shiny, favorite: i.favorite, guarded: i.protected },
-          ]),
-        ),
-      );
+      setSelected(toSelection(res));
       setAllFor(res.items.length ? filters : null);
       if (res.items.length === 0) toast("Aucune carte dans ce filtre.");
-      if (res.truncated) toast("Sélection limitée aux 5 000 premières cartes.");
+      if (res.truncated) toast(`Sélection limitée aux ${fmt(SELECT_MAX)} premières cartes.`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Impossible de tout sélectionner.");
+    } finally {
+      setSelectingAll(false);
+    }
+  }
+
+  /**
+   * « Sélectionner N cartes » : les N premières de la liste affichée (filtres et tri en cours), à la place de la
+   * sélection actuelle. Les favorites sont laissées de côté, sauf si le filtre ne montre qu'elles.
+   */
+  async function selectFirst(n: number) {
+    setSelectingAll(true);
+    try {
+      const p = new URLSearchParams(filters);
+      const skipFavorites = SELECT_COUNT_SKIPS_FAVORITES && !p.has("favorites");
+      if (skipFavorites) p.set("favorites", "exclude");
+      p.set("sort", f.sort);
+      p.set("count", String(n));
+      const res = await api<Selectable>(`/collection/selectable?${p}`);
+      setSelected(toSelection(res));
+      setAllFor(null);
+      const skipped = skipFavorites ? ", favorites exclues" : "";
+      if (res.items.length === 0) toast(`Aucune carte à sélectionner${skipped}.`);
+      else if (res.items.length < n)
+        toast(
+          `Seulement ${fmt(res.items.length)} ${plural(res.items.length, "carte disponible", "cartes disponibles")}${skipped} : ${res.items.length > 1 ? "toutes sélectionnées" : "sélectionnée"}.`,
+        );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Impossible de sélectionner ces cartes.");
     } finally {
       setSelectingAll(false);
     }
@@ -442,6 +475,13 @@ function Collection() {
                 Tout sélectionner
               </button>
             )
+          }
+          selectCount={
+            <SelectCount
+              max={SELECT_MAX}
+              onSelect={(n) => void selectFirst(n)}
+              disabled={selectingAll || total === 0}
+            />
           }
           favoriteLabel={allFavorite ? "Retirer des favoris" : "Favori"}
           onFavorite={() => void favoriteSelection()}
