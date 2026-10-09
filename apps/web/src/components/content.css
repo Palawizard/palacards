@@ -744,6 +744,8 @@
 }
 .pc-boss-slots > li {
   display: grid;
+  min-width: 0;
+  overflow: hidden;
   min-height: 4.2rem;
   place-items: center;
   border: 1.5px dashed var(--color-line-strong);
@@ -799,8 +801,14 @@
 }
 .pc-boss-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(6.4rem, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(5.4rem, 1fr));
+  gap: 0.4rem;
+}
+@media (min-width: 640px) {
+  .pc-boss-grid {
+    grid-template-columns: repeat(auto-fill, minmax(6.6rem, 1fr));
+    gap: 0.5rem;
+  }
 }
 .pc-boss-tile {
   display: flex;
