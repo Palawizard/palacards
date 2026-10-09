@@ -224,10 +224,11 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     q: z.string().max(100).optional(),
     inSummary: z.stringbool().optional(),
   });
+  const collectionSort = z.enum(["date", "atk", "def", "views", "rarity", "title", "copies"]);
   api.get("/collection", auth, async (req) => {
     const q = parse(
       collectionFilters.extend({
-        sort: z.enum(["date", "atk", "def", "views", "rarity", "title", "copies"]).default("date"),
+        sort: collectionSort.default("date"),
         page: intParam.min(0).default(0),
         limit: intParam.min(1).max(120).default(60),
       }),
@@ -237,8 +238,19 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     return listCollection(ctx, req.user.id, q, req.user.id);
   });
   // « Tout sélectionner » : les exemplaires recyclables du filtre en cours (paramètres de GET /collection).
+  // « Sélectionner N cartes » : `count` et `sort`, les N premières de la liste affichée.
   api.get("/collection/selectable", auth, async (req) =>
-    selectableIds(ctx, req.user.id, parse(collectionFilters, req.query)),
+    selectableIds(
+      ctx,
+      req.user.id,
+      parse(
+        collectionFilters.extend({
+          sort: collectionSort.optional(),
+          count: intParam.min(1).max(SELECT_ALL_MAX).optional(),
+        }),
+        req.query,
+      ),
+    ),
   );
   // Ses propres exemplaires par id (échange ouvert depuis une fiche carte : la carte proposée d'office).
   api.get("/collection/instances", auth, async (req) => {

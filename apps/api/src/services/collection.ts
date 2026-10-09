@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, schema, sql, type SQL } from "@palacards/db";
+import { and, desc, eq, inArray, isNull, schema, sql, type SQL } from "@palacards/db";
 import {
   effectiveStats,
   isBetterCopy,
@@ -94,19 +94,9 @@ function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
   return where;
 }
 
-/**
- * Collection d'un joueur, filtrée et triée (pagination par page : quelques milliers de cartes au plus).
- * Vue par un autre joueur (`viewerId` ≠ `ownerId`) : ni vues ni tri par vues (« Plus lu » en duel).
- */
-export async function listCollection(
-  ctx: Ctx,
-  ownerId: string,
-  query: CollectionQuery,
-  viewerId: string,
-): Promise<Page<CardDTO>> {
+/** Ordre SQL d'un tri de la collection (la requête joint `cards`), départagé par le plus récent exemplaire. */
+function collectionOrder(ownerId: string, sort: CollectionSort, viewerId: string): SQL[] {
   const byViews = viewerId === ownerId ? sql`${c.views12m} desc` : sql`${c.title} asc`;
-  const where = collectionWhere(ownerId, query);
-
   const byRarity = [sql`${ci.rarity} desc`, byViews];
   const order: SQL[] = {
     date: [sql`${ci.obtainedAt} desc`],
@@ -117,11 +107,24 @@ export async function listCollection(
     title: [sql`${c.title} asc`],
     // Les articles les plus en double d'abord ; à égalité, l'ordre par rareté.
     copies: [sql`${copiesOf(ownerId)} desc`, ...byRarity],
-  }[query.sort];
+  }[sort];
+  return [...order, desc(ci.id)];
+}
 
+/**
+ * Collection d'un joueur, filtrée et triée (pagination par page : quelques milliers de cartes au plus).
+ * Vue par un autre joueur (`viewerId` ≠ `ownerId`) : ni vues ni tri par vues (« Plus lu » en duel).
+ */
+export async function listCollection(
+  ctx: Ctx,
+  ownerId: string,
+  query: CollectionQuery,
+  viewerId: string,
+): Promise<Page<CardDTO>> {
+  const where = collectionWhere(ownerId, query);
   const rows = await selectInstances(ctx.db)
     .where(and(...where))
-    .orderBy(...order, desc(ci.id))
+    .orderBy(...collectionOrder(ownerId, query.sort, viewerId))
     .limit(query.limit + 1)
     .offset(query.page * query.limit);
   const [countRow] = await ctx.db
@@ -483,12 +486,15 @@ export interface SelectableItem {
  * « Tout sélectionner » : tous les exemplaires qui correspondent aux filtres en cours. Ceux qui sont protégés
  * (favoris, brillantes, épinglés, cartes engagées ou demandées dans un échange) restent sélectionnés pour
  * les favoris et les tags, mais le recyclage les laisse de côté ; `protected` les compte pour l'afficher.
+ * Avec `count` (« Sélectionner N cartes ») : les `count` premières dans l'ordre de `sort`, comme la liste,
+ * sans les cartes engagées (grisées dans la grille, on ne peut pas les sélectionner à la main non plus).
  */
 export async function selectableIds(
   ctx: Ctx,
   ownerId: string,
-  query: CollectionFilters,
+  query: CollectionFilters & { sort?: CollectionSort; count?: number },
 ): Promise<{ items: SelectableItem[]; protected: number; truncated: boolean }> {
+  const cap = Math.min(query.count ?? SELECT_ALL_MAX, SELECT_ALL_MAX);
   const rows = await ctx.db
     .select({
       id: ci.id,
@@ -500,11 +506,12 @@ export async function selectableIds(
     })
     .from(ci)
     .innerJoin(c, and(eq(c.season, ci.season), eq(c.id, ci.cardId)))
-    .where(and(...collectionWhere(ownerId, query)))
-    .orderBy(ci.id)
-    .limit(SELECT_ALL_MAX + 1);
-  const truncated = rows.length > SELECT_ALL_MAX;
-  const page = rows.slice(0, SELECT_ALL_MAX);
+    .where(and(...collectionWhere(ownerId, query), query.count ? isNull(ci.lockedBy) : undefined))
+    .orderBy(...(query.sort ? collectionOrder(ownerId, query.sort, ownerId) : [ci.id]))
+    .limit(cap + 1);
+  // Tronquée seulement par le plafond : avec `count`, des cartes au-delà de N sont attendues.
+  const truncated = rows.length > cap && cap === SELECT_ALL_MAX;
+  const page = rows.slice(0, cap);
   const requested = await requestedInPendingTrades(
     ctx.db,
     page.map((r) => r.id),
