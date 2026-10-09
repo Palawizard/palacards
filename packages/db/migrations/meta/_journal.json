@@ -246,6 +246,20 @@
       "when": 1791451277487,
       "tag": "0034_profile_banner_card",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1791531289995,
+      "tag": "0035_boss_phases_article_attrs",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791531302375,
+      "tag": "0036_boss_phases_data",
+      "breakpoints": true
     }
   ]
 }

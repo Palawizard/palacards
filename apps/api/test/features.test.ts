@@ -10,14 +10,14 @@ describe("menu : nouveautés et paquets à ouvrir", () => {
     const all = [
       "battle-v2",
       "quests",
-      "article",
-      "boss",
       "feed",
       "achievements-v2",
       "suggestions",
       "updates",
       "wheels",
       "battle-decks",
+      "boss-v2",
+      "article-v2",
     ];
     expect((await p.get("/me")).body.newFeatures).toEqual(all);
     expect((await p.post("/me/seen-feature", { key: "battle-v2" })).status).toBe(200);

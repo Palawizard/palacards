@@ -85,7 +85,7 @@ export function shuffle<T>(items: T[], rand: () => number): T[] {
   return out;
 }
 
-const pick = <T>(items: T[], rand: () => number): T => items[Math.floor(rand() * items.length)]!;
+export const pick = <T>(items: T[], rand: () => number): T => items[Math.floor(rand() * items.length)]!;
 
 // ---------------------------------------------------------------------------
 // Dégâts
@@ -281,6 +281,24 @@ const capitalize = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 
 const YEAR = /(?<![\d,.])(1[0-9]{3}|20[0-9]{2})(?![\d,])/g;
 
+/** Années exploitables d'un extrait (phrases d'au moins 30 caractères, années passées) : questions « Quelle année ? ». */
+export function yearCandidates(extract: string, maxYear: number): { sentence: string; year: number }[] {
+  const sentences = extract.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ý«])/);
+  const candidates: { sentence: string; year: number }[] = [];
+  for (const sentence of sentences) {
+    for (const m of sentence.matchAll(YEAR)) {
+      const year = Number(m[1]);
+      if (year <= maxYear && sentence.length >= 30) candidates.push({ sentence, year });
+    }
+  }
+  return candidates;
+}
+
+/** La phrase avec cette année masquée (▢▢▢▢), tronquée proprement. */
+export function maskYear(sentence: string, year: number, maxLength = 280): string {
+  return truncate(sentence.replace(new RegExp(`(?<![\\d,.])${year}(?![\\d,])`, "g"), "▢▢▢▢"), maxLength);
+}
+
 /**
  * Phrase à trou : une année de l'extrait est masquée, 4 années proches proposées (petit, moyen et grand écart).
  * Renvoie null s'il n'y a pas d'année exploitable.
@@ -290,17 +308,10 @@ export function yearQuestion(
   rand: () => number,
   maxYear: number,
 ): Omit<Question, "titleHidden"> | null {
-  const sentences = extract.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ý«])/);
-  const candidates: { sentence: string; year: number }[] = [];
-  for (const sentence of sentences) {
-    for (const m of sentence.matchAll(YEAR)) {
-      const year = Number(m[1]);
-      if (year <= maxYear && sentence.length >= 30) candidates.push({ sentence, year });
-    }
-  }
+  const candidates = yearCandidates(extract, maxYear);
   if (candidates.length === 0) return null;
   const { sentence, year } = pick(candidates, rand);
-  const masked = sentence.replace(new RegExp(`(?<![\\d,.])${year}(?![\\d,])`, "g"), "▢▢▢▢");
+  const masked = maskYear(sentence, year);
   const seen = new Set([year, ...[...sentence.matchAll(YEAR)].map((m) => Number(m[1]))]);
   const bands = [
     [1, 2, 3],
@@ -324,7 +335,7 @@ export function yearQuestion(
   const choices = [year, ...decoys].sort((x, y) => x - y);
   return {
     type: "year",
-    prompt: truncate(masked, 280),
+    prompt: masked,
     choices: choices.map(String),
     answer: choices.indexOf(year),
   };

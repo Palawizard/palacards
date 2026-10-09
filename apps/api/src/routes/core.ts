@@ -73,14 +73,14 @@ export async function unreadMessages(ctx: Ctx, userId: string): Promise<number> 
 export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "battle-v2", until: "2026-11-15T00:00:00+01:00" },
   { key: "quests", until: "2026-12-01T00:00:00+01:00" },
-  { key: "article", until: "2026-12-01T00:00:00+01:00" },
-  { key: "boss", until: "2026-12-01T00:00:00+01:00" },
   { key: "feed", until: "2026-12-01T00:00:00+01:00" },
   { key: "achievements-v2", until: "2026-12-01T00:00:00+01:00" },
   { key: "suggestions", until: "2026-12-01T00:00:00+01:00" },
   { key: "updates", until: "2026-12-01T00:00:00+01:00" },
   { key: "wheels", until: "2026-12-01T00:00:00+01:00" },
   { key: "battle-decks", until: "2026-12-15T00:00:00+01:00" },
+  { key: "boss-v2", until: "2026-12-31T00:00:00+01:00" },
+  { key: "article-v2", until: "2026-12-31T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */
