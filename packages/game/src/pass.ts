@@ -68,7 +68,8 @@ export const XP = {
   articleFound: 150,
   articlePlayed: 30,
   bossAssault: 60,
-  bossKill: 300,
+  /** Par phase du boss dont on touche la récompense (deux phases : l'ancienne chute, 300 XP). */
+  bossPhase: 150,
   upgrade: 10,
   trade: 20,
   sale: 20,
@@ -89,8 +90,8 @@ export function xpForEvent(e: GameEvent): number {
       return e.found ? XP.articleFound : XP.articlePlayed;
     case "boss_assault":
       return XP.bossAssault;
-    case "boss_killed":
-      return XP.bossKill;
+    case "boss_phase":
+      return XP.bossPhase;
     case "upgrade":
       return XP.upgrade;
     case "trade_done":

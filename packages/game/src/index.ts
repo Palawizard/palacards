@@ -13,6 +13,7 @@ export * from "./pass.js";
 export * from "./quests.js";
 export * from "./article.js";
 export * from "./boss.js";
+export * from "./category.js";
 export * from "./feed.js";
 export * from "./arthropod.js";
 export * from "./titles.js";

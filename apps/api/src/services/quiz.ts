@@ -1,8 +1,11 @@
 import { sql } from "@palacards/db";
 import {
   descriptionHead,
+  makeBossQuestion,
   makeQuestion,
   seededRandom,
+  type BossQuestion,
+  type BossQuizArticle,
   type Question,
   type QuestionType,
   type QuizArticle,
@@ -155,6 +158,98 @@ export async function quizQuestion(ctx: Ctx, attack: QuizTarget): Promise<Questi
       avoid: attack.avoid ?? [],
       maxYear: parisYear,
       known: attack.known ? known.map((c) => article(Number(c.id), c.title, c.views_12m)) : undefined,
+    },
+  );
+}
+
+const parisYear = (now: Date) =>
+  Number(new Intl.DateTimeFormat("fr-FR", { year: "numeric", timeZone: "Europe/Paris" }).format(now));
+
+export interface BossQuizTarget {
+  /** Graine : joueur, jour, assaut et question (les leurres changent d'un jour et d'un joueur à l'autre). */
+  seed: string;
+  userId: string;
+  cardId: number;
+  season: number;
+  rarity: Rarity;
+  /** Types déjà posés dans cet assaut, évités quand un autre est possible. */
+  avoid: string[];
+  /** Article du boss (duels « le plus ancien », « le plus lu »). */
+  boss: { cardId: number; season: number };
+}
+
+/**
+ * Question du boss sur l'article d'une carte. Leurres du même genre, titres voisins et hasard, jamais les autres
+ * cartes de l'assaut ; dates Wikidata de la cible et du boss pour l'année à taper et les duels ; variantes déjà
+ * posées au joueur sur cet article évitées (historique).
+ */
+export async function bossQuestion(ctx: Ctx, t: BossQuizTarget): Promise<BossQuestion> {
+  const rows = await ctx.db.execute<ArticleRow & { rarity: Rarity; season: number }>(sql`
+    select id, title, views_12m, rarity, season from cards
+    where (season = ${t.season} and id = ${t.cardId}) or (season = ${t.boss.season} and id = ${t.boss.cardId})
+  `);
+  const target = rows.find((r) => Number(r.id) === t.cardId && Number(r.season) === t.season);
+  const bossRow = rows.find((r) => Number(r.id) === t.boss.cardId && Number(r.season) === t.boss.season);
+  const title = target?.title ?? "?";
+  const ids = [t.cardId, t.boss.cardId];
+  await withTimeout(
+    Promise.all([
+      ctx.wiki.load([{ cardId: t.cardId, title }], undefined, { fresh: true }),
+      ctx.wiki.loadAttributes(ids),
+    ]),
+    2_000,
+    null,
+  );
+  const head = descriptionHead((await ctx.wiki.summaries([t.cardId])).get(t.cardId)?.description);
+  const [sameKind, similar, random, history] = await Promise.all([
+    head ? sameKindArticles(ctx.db, t.seed, t.season, t.cardId, head) : Promise.resolve([]),
+    similarArticles(ctx.db, t.season, t.cardId, title),
+    randomArticles(ctx.db, t.seed, t.season, t.rarity, t.cardId),
+    ctx.db.execute<{ type: string; key: string; asked_at: Date | string }>(sql`
+      select type, key, asked_at from boss_question_history where user_id = ${t.userId} and card_id = ${t.cardId}
+    `),
+  ]);
+  const others = [...similar, ...random];
+  const candidates = [...sameKind, ...others].filter(
+    (r, i, all) => Number(r.id) !== t.boss.cardId && all.findIndex((x) => Number(x.id) === Number(r.id)) === i,
+  );
+  await withTimeout(
+    ctx.wiki.load(
+      others.slice(0, 8).map((c) => ({ cardId: Number(c.id), title: c.title })),
+      undefined,
+      { fresh: true },
+    ),
+    QUESTION_PREP_MS - 1_500,
+    [],
+  );
+  const [summaries, attrs] = await Promise.all([
+    ctx.wiki.summaries([...ids, ...candidates.map((c) => Number(c.id))]),
+    ctx.wiki.attributes(ids),
+  ]);
+  const quiz = (id: number, t2: string, views: string | number): QuizArticle => {
+    const s = summaries.get(id);
+    return {
+      cardId: id,
+      title: t2,
+      views12m: Number(views),
+      extract: s?.extract ?? null,
+      description: s?.description ?? null,
+      thumbUrl: s?.thumbUrl ?? null,
+    };
+  };
+  const full = (id: number, t2: string, views: string | number, rarity: Rarity): BossQuizArticle => {
+    const a = attrs.get(id);
+    return { ...quiz(id, t2, views), rarity, year: a?.year ?? null, yearKind: a?.yearKind ?? null };
+  };
+  return makeBossQuestion(
+    t.seed,
+    full(t.cardId, title, target?.views_12m ?? 0, t.rarity),
+    candidates.map((c) => quiz(Number(c.id), c.title, c.views_12m)),
+    {
+      boss: bossRow ? full(t.boss.cardId, bossRow.title, bossRow.views_12m, bossRow.rarity) : null,
+      history: history.map((h) => ({ type: h.type, key: h.key, askedAt: new Date(h.asked_at).getTime() })),
+      avoid: t.avoid,
+      maxYear: parisYear(ctx.now()),
     },
   );
 }

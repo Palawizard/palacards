@@ -25,6 +25,7 @@ export type NotificationType =
   | "quest_completed"
   | "pass_level"
   | "boss_killed"
+  | "boss_phase"
   | "boss_consolation"
   | "boss_mvp"
   | "guild_objective"
@@ -40,7 +41,7 @@ export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {
   packs: ["packs_full", "gift"],
   achievements: ["achievement", "achievement_backfill", "title_won"],
   progress: ["quest_completed", "pass_level"],
-  boss: ["boss_killed", "boss_consolation", "boss_mvp"],
+  boss: ["boss_killed", "boss_phase", "boss_consolation", "boss_mvp"],
 };
 
 const groupOf = (type: NotificationType) =>

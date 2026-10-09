@@ -86,10 +86,7 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                   !isNew &&
                   ((item.badge === "wheel" && !!me?.wheelReady) ||
                     (item.badge === "article" && !!me?.articleReady) ||
-                    (item.badge === "boss" &&
-                      !!me &&
-                      me.boss.assaultsLeft > 0 &&
-                      (me.boss.alive || !me.boss.rewarded)));
+                    (item.badge === "boss" && !!me && me.boss.assaultsLeft > 0));
                 return (
                   <li key={item.href}>
                     <Link

@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
+import { dailyArticle } from "../services/article.js";
 import { closeAuctionIfDue } from "../services/market.js";
 import { setAdminRole } from "../services/roles.js";
 import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet } from "../services/players.js";
@@ -105,5 +106,11 @@ export function testRoutes(api: FastifyInstance, ctx: Ctx) {
   api.post("/test/make-admin", auth, async (req) => {
     await setAdminRole(ctx.db, req.user.username, true);
     return { ok: true };
+  });
+
+  /** Réponse de l'article du jour (parcours E2E : trouver l'article sans deviner). */
+  api.get("/test/article-answer", auth, async () => {
+    const a = await dailyArticle(ctx);
+    return { cardId: a.cardId, title: a.title };
   });
 }

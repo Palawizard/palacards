@@ -48,10 +48,13 @@ export type GameEvent =
   | { type: "recycled"; rarities: Rarity[] }
   | { type: "upgrade"; success: boolean }
   | { type: "quest_completed"; period: "day" | "week" }
-  | { type: "article_played"; found: boolean; /** Essais utilisés (1 à 6). */ guesses: number }
+  | { type: "article_played"; found: boolean; /** Essais utilisés (1 à 8). */ guesses: number }
   | { type: "boss_assault"; damage: number }
-  /** Récompense de chute touchée (à la chute, ou en renfort après). */
-  | { type: "boss_killed"; lastHit: boolean }
+  /**
+   * Récompense d'une phase du boss touchée (à minuit) : `phase` 1 = le boss est tombé une première fois ;
+   * `lastHit` : le joueur a porté le coup qui a fait tomber cette phase.
+   */
+  | { type: "boss_phase"; phase: number; lastHit: boolean }
   /** Meilleur assaillant de la journée, désigné à minuit. */
   | { type: "boss_mvp" }
   /** Récompense de l'objectif hebdomadaire de guilde touchée (XP du passe). */
@@ -94,6 +97,7 @@ export const STAT_KEYS = [
   "boss_assaults",
   "boss_damage",
   "boss_kills",
+  "boss_phases",
   "boss_mvp",
   "pass_level",
   // Secrets.
@@ -224,8 +228,9 @@ export function statUpdates(e: GameEvent): StatUpdate[] {
       out.push(add("boss_assaults"));
       if (e.damage > 0) out.push(add("boss_damage", e.damage));
       break;
-    case "boss_killed":
-      out.push(add("boss_kills"));
+    case "boss_phase":
+      out.push(add("boss_phases"));
+      if (e.phase === 1) out.push(add("boss_kills"));
       if (e.lastHit) out.push(add("boss_last_hit"));
       break;
     case "boss_mvp":
@@ -532,7 +537,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   ...family(
     "Du premier coup",
     "articles_first_try",
-    (x) => `Trouver l'article du jour au premier indice ${n(x)} ${plural(x, "fois", "fois")}.`,
+    (x) => `Trouver l'article du jour au premier essai ${n(x)} ${plural(x, "fois", "fois")}.`,
     [
       ["article_first_1", 1, "Éclair de génie", 200],
       ["article_first_10", 10, "Devin", 1_500],
@@ -548,11 +553,26 @@ export const ACHIEVEMENTS: AchievementDef[] = [
       ["boss_100", 100, "Chevalier", 1_200],
     ],
   ),
-  ...family("Boss vaincus", "boss_kills", (x) => `Participer à la chute de ${n(x)} ${plural(x, "boss", "boss")}.`, [
-    ["boss_kill_1", 1, "Tueur de géant", 200],
-    ["boss_kill_10", 10, "Fléau des légendes", 800],
-    ["boss_kill_30", 30, "Chasseur de mythes", 2_500],
-  ]),
+  ...family(
+    "Boss vaincus",
+    "boss_kills",
+    (x) => `Participer à la chute de ${n(x)} ${plural(x, "boss", "boss")} (au moins sa première phase).`,
+    [
+      ["boss_kill_1", 1, "Tueur de géant", 200],
+      ["boss_kill_10", 10, "Fléau des légendes", 800],
+      ["boss_kill_30", 30, "Chasseur de mythes", 2_500],
+    ],
+  ),
+  ...family(
+    "Phases abattues",
+    "boss_phases",
+    (x) => `Toucher la récompense de ${n(x)} ${plural(x, "phase", "phases")} du boss du jour.`,
+    [
+      ["boss_phases_5", 5, "Briseur de phases", 150],
+      ["boss_phases_25", 25, "Rouleau compresseur", 600],
+      ["boss_phases_100", 100, "Fin des temps", 2_000],
+    ],
+  ),
   ...family("Dégâts aux boss", "boss_damage", (x) => `Infliger ${n(x)} dégâts aux boss.`, [
     ["boss_dmg_1000", 1_000, "Coup de poing", 100],
     ["boss_dmg_10000", 10_000, "Bulldozer", 500],
@@ -593,7 +613,13 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   secret("secret_short", "short_title", "Laconique", "Tirer un article au titre de deux lettres ou moins.", 150),
   secret("secret_long", "long_title", "Verbeux", "Tirer un article au titre d'au moins 80 caractères.", 150),
   secret("secret_shiny_l", "shiny_l", "Mythique", "Tirer une Légendaire brillante.", 10_000),
-  secret("secret_last_hit", "boss_last_hit", "Coup de grâce", "Porter le coup fatal au boss du jour.", 500),
+  secret(
+    "secret_last_hit",
+    "boss_last_hit",
+    "Coup de grâce",
+    "Porter le coup qui fait tomber une phase du boss du jour.",
+    500,
+  ),
   secret("secret_article_fail", "article_failed", "Langue au chat", "Rater l'article du jour.", 50),
   secret("secret_recycle_l", "recycled_l", "Sacrilège", "Recycler une Légendaire.", 100),
 ];
