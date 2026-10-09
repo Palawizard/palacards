@@ -21,6 +21,7 @@ import {
   createBroadcast,
   deleteBroadcast,
   markBroadcastRead,
+  markBroadcastsRead,
   pendingBroadcasts,
   recentBroadcasts,
   sendBroadcast,
@@ -182,6 +183,11 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
   api.post("/broadcasts/:id/read", auth, async (req) => {
     const { id } = parse(idParams, req.params);
     await markBroadcastRead(ctx, req.user.id, id);
+    return { ok: true };
+  });
+  api.post("/broadcasts/read", auth, async (req) => {
+    const { ids } = parse(z.object({ ids: z.array(z.number().int().positive()).max(100) }), req.body);
+    await markBroadcastsRead(ctx, req.user.id, ids);
     return { ok: true };
   });
 

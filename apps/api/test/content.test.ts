@@ -207,6 +207,26 @@ describe("messages serveur", () => {
     ).toBe(400);
   });
 
+  it("« Tout passer » ferme d'un coup les messages vus, pas ceux arrivés après", async () => {
+    const admin = await signUpAdmin(app, ctx);
+    const p = await signUp(app);
+    const sent: number[] = [];
+    for (const title of ["Passer 1", "Passer 2", "Passer 3"]) {
+      sent.push((await admin.post("/admin/broadcasts", { title, body: "…", send: true })).body.id);
+    }
+    const pending = (await p.get("/broadcasts/pending")).body as { id: number }[];
+    const seen = pending.map((m) => m.id);
+    expect(seen).toEqual(expect.arrayContaining(sent));
+    const late = (await admin.post("/admin/broadcasts", { title: "Passer tard", body: "…", send: true })).body.id;
+
+    expect((await p.post("/broadcasts/read", { ids: [...seen, 999_999] })).status).toBe(200);
+    const after = ((await p.get("/broadcasts/pending")).body as { id: number }[]).map((m) => m.id);
+    expect(after).toEqual([late]);
+    // Rejouer la même demande ne change rien.
+    expect((await p.post("/broadcasts/read", { ids: seen })).status).toBe(200);
+    expect((await p.post("/broadcasts/read", { ids: ["x"] })).status).toBe(400);
+  });
+
   it("garde l'historique des messages envoyés pour la page Mises à jour", async () => {
     const admin = await signUpAdmin(app, ctx);
     const p = await signUp(app);
