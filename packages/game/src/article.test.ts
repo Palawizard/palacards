@@ -145,11 +145,10 @@ describe("article du jour : récompense, indices, image, partage", () => {
     expect(articleReward(3, false)).toBe(0);
   });
 
-  it("dévoile les catégories après 2, 3 et 5 essais, la description après 4, la première lettre après 6", () => {
-    expect(articleHints(1, false)).toEqual({ categories: 0, description: false, firstLetter: false });
-    expect(articleHints(2, false)).toEqual({ categories: 1, description: false, firstLetter: false });
-    expect(articleHints(3, false)).toEqual({ categories: 2, description: false, firstLetter: false });
-    expect(articleHints(4, false)).toEqual({ categories: 2, description: true, firstLetter: false });
+  it("montre les catégories dès le départ, la description après 4 essais, la première lettre après 6", () => {
+    expect(articleHints(0, false)).toEqual({ categories: 3, description: false, firstLetter: false });
+    expect(articleHints(3, false)).toEqual({ categories: 3, description: false, firstLetter: false });
+    expect(articleHints(4, false)).toEqual({ categories: 3, description: true, firstLetter: false });
     expect(articleHints(5, false)).toEqual({ categories: 3, description: true, firstLetter: false });
     expect(articleHints(6, false)).toEqual({ categories: 3, description: true, firstLetter: true });
     expect(articleHints(0, true)).toEqual({ categories: 3, description: true, firstLetter: true });

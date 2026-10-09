@@ -7,8 +7,8 @@ import { RARITIES, type Rarity } from "./rarity.js";
 // Chaque essai est un vrai article du jeu (Super rare ou mieux), choisi dans une autocomplétion, et il est
 // comparé à la réponse sur six attributs : catégorie, type, pays, année, rareté, popularité. Vert : identique ;
 // orange : proche ; rouge : différent ; flèches pour les valeurs numériques. L'image de la réponse, pixelisée
-// par le serveur, se précise à chaque essai. Huit essais ; indices de secours après les essais ratés :
-// catégories Wikipédia (2e, 3e, 5e), description (4e), première lettre (6e).
+// par le serveur, se précise à chaque essai. Huit essais ; catégories Wikipédia de la réponse visibles dès le
+// départ, puis indices de secours après les essais ratés : description (4e), première lettre (6e).
 // Gain : 70 PW pour avoir trouvé, plus un bonus de 30 PW qui perd 5 PW par essai (100 au premier, 70 au 7e).
 // ---------------------------------------------------------------------------
 
@@ -16,8 +16,11 @@ export const ARTICLE_MAX_GUESSES = 8;
 export const ARTICLE_BASE_REWARD = 70;
 export const ARTICLE_BONUS_MAX = 30;
 export const ARTICLE_BONUS_STEP = 5;
-/** Catégories Wikipédia de la réponse : une de plus dévoilée après chacun de ces nombres d'essais ratés. */
-export const ARTICLE_HINT_CATEGORIES_AFTER = [2, 3, 5] as const;
+/**
+ * Catégories Wikipédia de la réponse : une de plus dévoilée après chacun de ces nombres d'essais ratés
+ * (0 : visible dès le départ).
+ */
+export const ARTICLE_HINT_CATEGORIES_AFTER = [0, 0, 0] as const;
 /** Description courte masquée dévoilée après ce nombre d'essais ratés. */
 export const ARTICLE_HINT_DESCRIPTION_AFTER = 4;
 /** Première lettre du titre dévoilée après ce nombre d'essais ratés. */

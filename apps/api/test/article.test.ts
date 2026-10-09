@@ -97,21 +97,14 @@ describe("article du jour : essais", () => {
       .set({ description: `tour métallique, symbole de ${a.title}`, categories: ["Monument", "Édifice", "Tour"] })
       .where(eq(schema.dailyArticles.day, a.day));
     const start = (await p.get("/article")).body;
-    expect(start.hints.categories).toEqual([]);
-    expect(start.hintsAfter.categories).toEqual([2, 3, 5]);
-    // Les catégories pas encore dévoilées ne quittent jamais le serveur.
-    expect(JSON.stringify(start)).not.toContain("Monument");
+    // Catégories visibles dès le départ.
+    expect(start.hints.categories).toEqual(["Monument", "Édifice", "Tour"]);
+    expect(start.hintsAfter.categories).toEqual([0, 0, 0]);
     const wrong = await wrongCards(ARTICLE_MAX_GUESSES);
     let last;
     for (let i = 0; i < ARTICLE_MAX_GUESSES; i++) {
       last = (await p.post("/article/guess", { cardId: wrong[i]!.id })).body;
-      if (i === 0) expect(last.hints.categories).toEqual([]);
-      if (i === 1) expect(last.hints.categories).toEqual(["Monument"]);
-      if (i === 2) {
-        expect(last.hints.categories).toEqual(["Monument", "Édifice"]);
-        expect(last.hints.description).toBeNull();
-      }
-      if (i === 4) expect(last.hints.categories).toEqual(["Monument", "Édifice", "Tour"]);
+      if (i === 2) expect(last.hints.description).toBeNull();
       if (i === 3) {
         expect(last.hints.description).toMatch(/^tour métallique/);
         expect(last.hints.description).not.toContain(a.title);
@@ -150,7 +143,7 @@ describe("article du jour : catégories en indice", () => {
       expect(spy).toHaveBeenCalledTimes(1);
       ctx.now = () => new Date("2099-04-04T12:30:00+02:00");
       const q = await signUp(app);
-      expect((await q.get("/article")).body.hintsAfter.categories).toEqual([2, 3]);
+      expect((await q.get("/article")).body.hintsAfter.categories).toEqual([0, 0]);
       const [row] = await ctx.db.select().from(schema.dailyArticles).where(eq(schema.dailyArticles.day, day));
       expect(row!.categories).toEqual(["Monument de Paris", "Monument historique classé en 1964"]);
       await p.get("/article");

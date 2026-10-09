@@ -320,8 +320,8 @@ export interface DailyArticleDTO {
   /** Titre en grille : mots séparés par trois espaces, cases par une espace, `_` pour une lettre cachée. */
   pattern: string;
   /**
-   * Indices de secours : catégories Wikipédia déjà dévoilées (après les 2e, 3e et 5e essais), description
-   * masquée (après le 4e), première lettre (après le 6e).
+   * Indices de secours : catégories Wikipédia de la réponse (visibles dès le départ), description masquée
+   * (après le 4e essai), première lettre (après le 6e).
    */
   hints: { categories: string[]; description: string | null; firstLetter: string | null };
   /** Essais après lesquels chaque indice se dévoile (`categories` : une entrée par catégorie disponible). */

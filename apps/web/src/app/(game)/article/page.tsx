@@ -61,6 +61,8 @@ function TitleGrid({ pattern, state }: { pattern: string; state: "playing" | "fo
 /** Règles, dépliées à la première visite. */
 function Rules({ data }: { data: DailyArticleDTO }) {
   const ref = useRef<HTMLDetailsElement>(null);
+  // Catégories toutes visibles dès le départ (ARTICLE_HINT_CATEGORIES_AFTER à 0) : pas d'essai à citer.
+  const categoriesAtStart = data.hintsAfter.categories.length > 0 && data.hintsAfter.categories.every((n) => n === 0);
   useEffect(() => {
     try {
       if (!localStorage.getItem(RULES_KEY)) {
@@ -88,13 +90,14 @@ function Rules({ data }: { data: DailyArticleDTO }) {
           faux.
         </li>
         <li>L&apos;image de la réponse se précise à chaque essai.</li>
+        {categoriesAtStart && <li>Des catégories Wikipédia de la réponse sont visibles dès le départ.</li>}
         <li>
           {data.maxGuesses} essais. Les essais ratés débloquent des indices{" : "}
-          {data.hintsAfter.categories.length > 0 && (
+          {data.hintsAfter.categories.length > 0 && !categoriesAtStart && (
             <>
               une catégorie Wikipédia après le{" "}
               {data.hintsAfter.categories.map((n, i) => (
-                <span key={n}>
+                <span key={i}>
                   {i > 0 && (i === data.hintsAfter.categories.length - 1 ? " et le " : ", le ")}
                   {n}
                   <sup>e</sup>
@@ -465,11 +468,11 @@ export default function ArticlePage() {
                         {data.hintsAfter.categories.map((n, i) => {
                           const name = data.hints.categories[i];
                           return name ? (
-                            <span key={n} className="pc-hint-cat">
+                            <span key={i} className="pc-hint-cat">
                               {name}
                             </span>
                           ) : (
-                            <span key={n} className="pc-hint-cat text-faint" data-locked>
+                            <span key={i} className="pc-hint-cat text-faint" data-locked>
                               <Lock className="mr-1 inline size-3.5 align-[-0.15rem]" aria-hidden />
                               Après {n} essais
                             </span>
