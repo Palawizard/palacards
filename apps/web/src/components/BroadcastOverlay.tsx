@@ -20,9 +20,12 @@ export function BroadcastOverlay() {
   const connection = useConnection();
   const router = useRouter();
   const [queue, setQueue] = useState<BroadcastDTO[]>([]);
+  // Messages déjà fermés dans la série en cours : le compteur avance (1 / 10, 2 / 10…) à total fixe.
+  const [done, setDone] = useState(0);
   const ref = useRef<HTMLDialogElement>(null);
   const current = queue[0] ?? null;
   const loggedIn = !!me;
+  const total = done + queue.length;
 
   const add = (list: BroadcastDTO[]) => setQueue((q) => [...q, ...list.filter((m) => !q.some((x) => x.id === m.id))]);
 
@@ -53,7 +56,16 @@ export function BroadcastOverlay() {
   function dismiss() {
     if (!current) return;
     void api(`/broadcasts/${current.id}/read`, { method: "POST" }).catch(() => {});
+    setDone(queue.length > 1 ? done + 1 : 0);
     setQueue((q) => q.slice(1));
+  }
+
+  /** « Tout passer » : ferme la série d'un coup ; chaque message reste relisible dans « Mises à jour ». */
+  function dismissAll() {
+    if (!queue.length) return;
+    void api("/broadcasts/read", { body: { ids: queue.map((m) => m.id) } }).catch(() => {});
+    setDone(0);
+    setQueue([]);
   }
 
   const tone = current ? TONE[current.tone] : TONE.info;
@@ -83,8 +95,10 @@ export function BroadcastOverlay() {
             >
               {current.title}
             </h2>
-            {queue.length > 1 && (
-              <span className="tnum mt-1.5 shrink-0 text-sm font-semibold text-white/75">1 / {queue.length}</span>
+            {total > 1 && (
+              <span className="tnum mt-1.5 shrink-0 text-sm font-semibold text-white/75">
+                {done + 1} / {total}
+              </span>
             )}
           </div>
           <div className="px-5 pb-5 pt-4">
@@ -100,6 +114,11 @@ export function BroadcastOverlay() {
               </p>
             )}
             <div className="mt-4 flex flex-wrap justify-end gap-2 border-t-2 border-dashed border-line pt-4">
+              {queue.length > 1 && (
+                <button type="button" className="btn btn-ghost mr-auto text-muted" onClick={dismissAll}>
+                  Tout passer ({queue.length})
+                </button>
+              )}
               {current.linkUrl &&
                 (internal ? (
                   <button
