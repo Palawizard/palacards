@@ -62,6 +62,7 @@ const NOTIFICATION_SFX: Partial<Record<string, Sfx>> = {
   quest_completed: "coin",
   pass_level: "achievement",
   boss_killed: "victory",
+  boss_phase: "victory",
   boss_mvp: "achievement",
   guild_objective: "achievement",
   auction_sold: "coin",
@@ -130,9 +131,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     });
     // Quêtes, passe, succès : les compteurs du menu suivent.
     s.on("progress:update", () => void mutateMe());
-    // Boss tombé : la pastille du menu reste tant qu'un renfort peut encore toucher la récompense.
+    // Boss du jour : la phase en cours suit les coups de toute la bande.
     s.on("boss:update", (b) => {
-      if (b.killedAt) void mutateMe((m) => (m ? { ...m, boss: { ...m.boss, alive: false } } : m));
+      if (b.fell.length)
+        void mutateMe((m) => (m ? { ...m, boss: { ...m.boss, phase: b.phase } } : m), { revalidate: false });
     });
     // Gros tirage d'un pote (Légendaire ou brillante) : on le dit à toute la bande.
     s.on("feed:new", (item) => {

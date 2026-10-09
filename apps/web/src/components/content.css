@@ -186,23 +186,426 @@
   border-color: transparent;
   background: var(--color-good);
 }
-.pc-clue {
-  animation: pc-clue-in 360ms var(--ease-out) both;
+/* Image de la réponse : quelques pixels servis par l'API, agrandis en flou ; plus nette à chaque essai. */
+.pc-article-image {
+  position: relative;
+  width: min(15rem, 70vw);
+  aspect-ratio: 4 / 5;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--color-panel-2);
+  box-shadow:
+    0 0 0 2px var(--color-line-strong),
+    var(--shadow-lift);
+}
+.pc-article-image > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.12);
+  opacity: 0;
+  transition:
+    opacity 240ms var(--ease-out),
+    filter 280ms var(--ease-out);
+}
+.pc-article-image[data-loaded] > img {
+  opacity: 1;
+}
+.pc-article-image-tag {
+  position: absolute;
+  inset: auto 0.5rem 0.5rem auto;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  background: rgb(10 14 40 / 0.72);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* Autocomplétion des essais. */
+.pc-combo {
+  position: relative;
+  width: 100%;
+  max-width: 36rem;
+}
+.pc-combo-icon {
+  position: absolute;
+  top: 0.95rem;
+  left: 0.85rem;
+  color: var(--color-faint);
+  pointer-events: none;
+}
+.pc-combo-list {
+  position: absolute;
+  z-index: 20;
+  inset: calc(100% + 0.35rem) 0 auto;
+  max-height: 20rem;
+  overflow-y: auto;
+  padding: 0.3rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 12px;
+  background: var(--color-panel);
+  box-shadow: 0 12px 28px -12px rgb(0 0 0 / 0.55);
+  transform-origin: top;
+  animation: pc-combo-in 150ms var(--ease-out) both;
+}
+@keyframes pc-combo-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98) translateY(-4px);
+  }
+}
+.pc-combo-option {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.pc-combo-option[aria-selected="true"] {
+  background: color-mix(in oklab, var(--color-accent) 18%, var(--color-panel-2));
+}
+.pc-combo-option[aria-disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* Indices de secours. */
+.pc-hints {
+  display: grid;
+  width: 100%;
+  max-width: 36rem;
+  gap: 0.5rem;
+}
+@media (min-width: 640px) {
+  .pc-hints {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  }
+}
+.pc-hints > li {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 3.2rem;
+  padding: 0.5rem 0.8rem;
+  border: 1.5px dashed var(--color-line-strong);
+  border-radius: 10px;
+  font-size: 0.875rem;
+}
+.pc-hints > li[data-open] {
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--color-accent) 60%, var(--color-line-strong));
+  background: color-mix(in oklab, var(--color-accent) 8%, var(--color-panel));
+  animation: pc-clue-in 280ms var(--ease-out) both;
+}
+.pc-hint-label {
+  color: var(--color-faint);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 @keyframes pc-clue-in {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
     filter: blur(3px);
   }
 }
-.pc-clue-image {
-  filter: blur(var(--blur, 0px));
+
+/* Tableau des essais : sur téléphone, le titre puis six cases ; sur écran large, une ligne par essai. */
+.pc-guess-head,
+.pc-guess-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.pc-guess-head {
+  display: none;
+}
+.pc-guess-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.pc-guess-title {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (min-width: 640px) {
+  .pc-guess-head,
+  .pc-guess-row {
+    grid-template-columns: minmax(0, 1.5fr) repeat(6, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .pc-guess-head {
+    display: grid;
+    padding-bottom: 0.35rem;
+    color: var(--color-faint);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .pc-guess-head > span:first-child {
+    text-align: left;
+  }
+  .pc-guess-list {
+    gap: 4px;
+  }
+  .pc-guess-title {
+    grid-column: auto;
+    align-self: center;
+    padding-right: 0.5rem;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-height: 1.25;
+  }
+  .pc-attr-label {
+    display: none;
+  }
+}
+.pc-attr {
+  --tone: var(--color-line-strong);
+  display: flex;
+  min-height: 3.4rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.1rem;
+  padding: 0.3rem 0.2rem;
+  border: 1.5px solid var(--tone);
+  border-radius: 8px;
+  background: color-mix(in oklab, var(--tone) 24%, var(--color-panel));
+  text-align: center;
+}
+.pc-attr[data-state="good"] {
+  --tone: var(--color-good);
+}
+.pc-attr[data-state="near"] {
+  --tone: var(--color-warn);
+}
+.pc-attr[data-state="bad"] {
+  --tone: var(--color-danger);
+}
+.pc-attr[data-state="unknown"] {
+  border-style: dashed;
+  background: var(--color-panel-2);
+  color: var(--color-muted);
+}
+.pc-attr-label {
+  color: var(--color-muted);
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.pc-attr-value {
+  display: flex;
+  max-width: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+}
+.pc-attr-value > svg {
+  flex-shrink: 0;
+}
+
+/* Essai tout juste proposé : les cases se retournent l'une après l'autre. */
+.pc-guess-row[data-fresh] .pc-attr {
+  animation: pc-attr-in 260ms var(--ease-out) both;
+}
+.pc-guess-row[data-fresh] .pc-guess-title {
+  animation: pc-clue-in 200ms var(--ease-out) both;
+}
+@keyframes pc-attr-in {
+  from {
+    opacity: 0;
+    transform: perspective(400px) rotateX(-70deg);
+  }
+}
+
+/* Fin de partie : attributs de la réponse, grille de partage, essais des gagnants. */
+.pc-answer-attrs {
+  display: grid;
+  width: 100%;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem 1rem;
+  font-size: 0.85rem;
+}
+.pc-answer-attrs dt {
+  color: var(--color-faint);
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.pc-answer-attrs dd {
+  font-weight: 600;
+}
+.pc-share {
+  font-family: inherit;
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  line-height: 1.3;
+  text-align: center;
+}
+.pc-dist {
+  display: grid;
+  gap: 0.25rem;
+}
+.pc-dist > li {
+  display: grid;
+  grid-template-columns: 1rem minmax(0, 1fr) 1.5rem;
+  align-items: center;
+  gap: 0.4rem;
+}
+.pc-dist-bar {
+  height: 0.9rem;
+  border-radius: 4px;
+  background: var(--color-line-strong);
+  transform-origin: left;
+  transition: transform 400ms var(--ease-out);
+}
+.pc-dist > li[data-mine] .pc-dist-bar {
+  background: var(--color-good);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pc-guess-row[data-fresh] .pc-attr,
+  .pc-guess-row[data-fresh] .pc-guess-title,
+  .pc-hints > li[data-open],
+  .pc-combo-list {
+    animation: none;
+  }
+  .pc-article-image > img {
+    transition: opacity 200ms ease;
+  }
 }
 
 /* ------------------------------------------------------------------ */
-/* Boss du jour : la jauge géante, segmentée par assaillant            */
+/* Boss du jour : phases, jauge de la phase, règle du jour, sélecteur  */
 /* ------------------------------------------------------------------ */
+
+.pc-boss-rules {
+  border: 1px solid var(--color-line);
+  border-radius: 14px;
+  background: var(--color-panel);
+}
+.pc-boss-rules > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+.pc-boss-rules > summary::-webkit-details-marker {
+  display: none;
+}
+.pc-boss-rules > summary::after {
+  content: "";
+  margin-left: auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 200ms var(--ease-out);
+}
+.pc-boss-rules[open] > summary::after {
+  transform: rotate(-135deg);
+}
+.pc-boss-rules > ul {
+  display: grid;
+  gap: 0.45rem;
+  max-width: 72ch;
+  padding: 0 1rem 1rem 2.1rem;
+  list-style: disc;
+  color: var(--color-muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+.pc-boss-rules strong {
+  color: var(--color-text);
+}
+
+/* Règle du jour : la faiblesse dans le vert, la résistance dans le rouge (jamais les couleurs de rareté). */
+.pc-rule,
+.pc-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.pc-rule {
+  padding: 0.3rem 0.75rem;
+  border: 1.5px solid var(--tone);
+  background: color-mix(in oklab, var(--tone) 14%, var(--color-panel));
+}
+.pc-rule[data-tone="weak"],
+.pc-cat[data-tone="weak"] {
+  --tone: var(--color-good);
+}
+.pc-rule[data-tone="resist"],
+.pc-cat[data-tone="resist"] {
+  --tone: var(--color-danger);
+}
+.pc-cat {
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--color-line-strong);
+  color: var(--color-muted);
+  font-size: 0.72rem;
+}
+.pc-cat[data-tone] {
+  border-color: var(--tone);
+  background: color-mix(in oklab, var(--tone) 16%, transparent);
+  color: var(--color-text);
+}
+
+/* Phases : pastilles d'album, cochées une fois tombées. */
+.pc-phase-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.pc-phase-track > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.pc-phase-track > li[data-state="down"] {
+  background: color-mix(in oklab, var(--color-good) 18%, var(--color-panel-2));
+  color: var(--color-good);
+}
+.pc-phase-track > li[data-state="current"] {
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+.pc-phase-track > li[data-state="next"] {
+  border: 1.5px dashed var(--color-line-strong);
+  color: var(--color-faint);
+}
 
 .pc-boss-gauge {
   position: relative;
@@ -214,7 +617,7 @@
     inset 0 2px 6px rgb(0 0 0 / 0.35),
     0 0 0 2px var(--color-line-strong);
 }
-/* PV restants (à gauche) en rouge vif ; les dégâts des joueurs s'empilent à droite. */
+/* PV restants de la phase en rouge vif : une nouvelle phase se remplit depuis la gauche. */
 .pc-boss-hp {
   position: absolute;
   inset: 0;
@@ -223,39 +626,12 @@
     linear-gradient(180deg, color-mix(in oklab, var(--color-rarity-ur) 80%, #fff), var(--color-rarity-ur));
   transform-origin: left;
   transition: transform 620ms var(--ease-out);
+  animation: pc-phase-fill 560ms var(--ease-out) both;
 }
-.pc-boss-dealt {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  justify-content: flex-end;
-}
-/* Les segments se posent sans animer leur largeur (pas de recalcul de mise en page à chaque image) :
- * c'est la barre de PV, par transform, qui porte le mouvement. */
-.pc-boss-dealt > span {
-  position: relative;
-  display: grid;
-  place-items: center;
-  height: 100%;
-  overflow: hidden;
-  background: var(--seg);
-  color: var(--color-cover-2);
-  font-family: var(--font-sans);
-  font-stretch: 62%;
-  font-weight: 800;
-  font-size: clamp(0.9rem, 2.4vw, 1.3rem);
-  text-transform: uppercase;
-}
-/* Séparation des assaillants : une perforation pointillée de l'album. */
-.pc-boss-dealt > span + span::before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-left: 2px dashed rgb(15 42 134 / 0.45);
-}
-.pc-boss-dealt > span[data-me] {
-  color: var(--color-accent-ink);
-  background-image: repeating-linear-gradient(-45deg, rgb(255 255 255 / 0.3) 0 4px, transparent 4px 9px);
+@keyframes pc-phase-fill {
+  from {
+    transform: scaleX(0);
+  }
 }
 .pc-boss-hp-label {
   position: absolute;
@@ -277,6 +653,10 @@
 .pc-boss-gauge[data-hit] {
   animation: pc-boss-shake 360ms var(--ease-out);
 }
+/* Phase tombée : éclair blanc sur la nouvelle jauge. */
+.pc-boss-gauge[data-fall] {
+  animation: pc-phase-flash 520ms var(--ease-out);
+}
 @keyframes pc-boss-shake {
   20% {
     transform: translateX(-5px);
@@ -286,6 +666,11 @@
   }
   70% {
     transform: translateX(-2px);
+  }
+}
+@keyframes pc-phase-flash {
+  from {
+    filter: brightness(2.2) saturate(0.4);
   }
 }
 .pc-boss-pop {
@@ -301,48 +686,204 @@
   animation: duel-hit 1300ms var(--ease-out) forwards;
   pointer-events: none;
 }
-.pc-boss-legend > li::before {
-  content: "";
-  display: inline-block;
-  width: 0.7rem;
-  height: 0.7rem;
-  margin-right: 0.45rem;
-  border-radius: 3px;
-  background: var(--seg);
-  vertical-align: -0.05rem;
+/* Annonce de chute d'une phase, par-dessus le boss. */
+.pc-phase-fall {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 0.4rem;
+  padding: 1rem;
+  text-align: center;
+  background: color-mix(in oklab, var(--color-cover-2) 86%, transparent);
+  color: var(--color-cover-ink);
+  animation:
+    pc-fall-in 260ms var(--ease-out) both,
+    pc-fall-out 220ms ease-in 3.75s forwards;
 }
-.pc-boss-dead {
-  filter: grayscale(0.85) brightness(0.8);
-  transition: filter 600ms ease;
+.pc-phase-fall > p:first-child {
+  color: var(--color-accent);
+  text-shadow: 0 3px 0 rgb(0 0 0 / 0.35);
 }
-/* Après la chute : bandeau de renfort, pointillé jaune pochette tant que la récompense reste à prendre. */
-.pc-boss-reinforce {
+@keyframes pc-fall-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+@keyframes pc-fall-out {
+  to {
+    opacity: 0;
+  }
+}
+.pc-phase-fall[data-reduce] {
+  animation:
+    pc-fall-out 200ms ease reverse both,
+    pc-fall-out 220ms ease 3.75s forwards;
+}
+.pc-boss-earned {
   display: flex;
-  gap: 0.75rem;
-  padding: 0.75rem 0.9rem;
-  border: 2px dashed color-mix(in oklab, var(--color-accent) 70%, var(--color-line-strong));
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 1.5px dashed var(--color-line-strong);
   border-radius: 12px;
-  background: color-mix(in oklab, var(--color-accent) 9%, var(--color-panel));
-  color: var(--color-highlight);
-}
-.pc-boss-reinforce[data-rewarded] {
-  border-color: var(--color-line-strong);
   background: var(--color-panel-2);
-  color: var(--color-good);
+  font-size: 0.9rem;
 }
-/* Choix des cartes de l'assaut. */
-.pc-boss-pick {
+.pc-boss-earned[data-done] {
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--color-accent) 70%, var(--color-line-strong));
+  background: color-mix(in oklab, var(--color-accent) 9%, var(--color-panel));
+}
+
+/* Sélecteur : cinq emplacements, puis la liste des articles. */
+.pc-boss-slots {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+.pc-boss-slots > li {
+  display: grid;
+  min-height: 4.2rem;
+  place-items: center;
+  border: 1.5px dashed var(--color-line-strong);
+  border-radius: 10px;
+}
+.pc-boss-slots > li[data-filled] {
+  border: 1.5px solid var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 10%, var(--color-panel));
+  animation: pc-slot-in 200ms var(--ease-out) both;
+}
+.pc-boss-slots button {
+  position: relative;
+  display: flex;
+  width: 100%;
+  height: 100%;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.2rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 9px;
   transition: transform 160ms var(--ease-out);
 }
-.pc-boss-pick:active {
+.pc-boss-slots button:active {
   transform: scale(0.97);
 }
-.pc-boss-pick[aria-pressed="true"] .pc-card {
-  outline: 3px solid var(--color-accent);
-  outline-offset: 3px;
+.pc-boss-slot-x {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  color: var(--color-faint);
 }
+@keyframes pc-slot-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+}
+.pc-boss-list {
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+}
+@media (min-width: 640px) {
+  .pc-boss-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.pc-boss-list > li {
+  border-bottom: 1px solid var(--color-line);
+}
+.pc-boss-row {
+  display: flex;
+  width: 100%;
+  min-height: 3.4rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  transition: background-color 150ms ease;
+}
+.pc-boss-row[aria-pressed="true"] {
+  background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+}
+.pc-boss-row:disabled {
+  cursor: not-allowed;
+}
+.pc-boss-row[data-tired] {
+  opacity: 0.55;
+  filter: grayscale(0.8);
+}
+@media (hover: hover) and (pointer: fine) {
+  .pc-boss-row:hover:not(:disabled):not([aria-pressed="true"]) {
+    background: var(--color-panel-2);
+  }
+}
+.pc-boss-check {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  place-items: center;
+  border: 2px solid var(--color-line-strong);
+  border-radius: 999px;
+}
+.pc-boss-row[aria-pressed="true"] .pc-boss-check {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+
+/* Bilan d'un coup et de l'assaut. */
+.pc-boss-verdict {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 0;
+  text-align: center;
+  animation: pc-fall-in 220ms var(--ease-out) both;
+}
+.pc-boss-verdict[data-hit="miss"] > p:first-child {
+  color: var(--color-danger);
+}
+.pc-boss-verdict[data-hit="hit"] > p:first-child {
+  color: var(--color-good);
+}
+.pc-boss-verdict[data-hit="crit"] > p:first-child {
+  color: var(--color-highlight);
+}
+.pc-boss-recap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-panel);
+  font-size: 0.875rem;
+}
+@media (min-width: 640px) {
+  .pc-boss-recap {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+.pc-boss-recap[data-hit="miss"] > span:last-child {
+  color: var(--color-danger);
+}
+.pc-boss-recap:not([data-hit="miss"]) > span:last-child {
+  color: var(--color-good);
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .pc-boss-gauge[data-hit] {
+  .pc-boss-gauge[data-hit],
+  .pc-boss-gauge[data-fall],
+  .pc-boss-hp,
+  .pc-boss-slots > li[data-filled],
+  .pc-boss-verdict {
     animation: none;
   }
   .pc-boss-hp {
