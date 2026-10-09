@@ -55,3 +55,38 @@ test("mises à jour : un message fermé se relit depuis le menu", async ({ brows
     await apiCall(admin.page, "POST", `/admin/broadcasts/${older.id}/archive`);
   }
 });
+
+test("mises à jour : le compteur avance et « Tout passer » ferme la série", async ({ browser }) => {
+  const admin = await newPlayer(browser, "admin");
+  await apiCall(admin.page, "POST", "/test/make-admin");
+  const sent: Broadcast[] = [];
+  for (const n of [1, 2, 3]) {
+    sent.push(
+      await apiCall<Broadcast>(admin.page, "POST", "/admin/broadcasts", {
+        title: `Retour ${n}`,
+        body: `Message ${n}.`,
+        tone: "update",
+        send: true,
+      }),
+    );
+  }
+
+  try {
+    const { page } = await newPlayer(browser, "retour");
+    const dialog = page.locator("dialog.pc-broadcast[open]");
+    await expect(dialog.getByText("1 / 3")).toBeVisible();
+    await dialog.getByRole("button", { name: "Suivant" }).click();
+    // Le total reste fixe, le rang avance.
+    await expect(dialog.getByText("2 / 3")).toBeVisible();
+    await dialog.getByRole("button", { name: "Tout passer (2)" }).click();
+    await expect(dialog).toHaveCount(0);
+
+    // À la visite suivante, rien ne revient.
+    await page.reload();
+    await expect(page.getByRole("navigation", { name: "Menu principal" })).toBeVisible();
+    await expect.poll(() => apiCall<Broadcast[]>(page, "GET", "/broadcasts/pending")).toEqual([]);
+    await expect(dialog).toHaveCount(0);
+  } finally {
+    for (const m of sent) await apiCall(admin.page, "POST", `/admin/broadcasts/${m.id}/archive`);
+  }
+});
