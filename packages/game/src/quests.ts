@@ -1,4 +1,5 @@
 import type { GameEvent } from "./achievements.js";
+import { ARTICLE_FAST_GUESSES } from "./article.js";
 import { seededRandom } from "./battle.js";
 import { weekStart } from "./guild.js";
 import { RARITIES, type Rarity } from "./rarity.js";
@@ -98,7 +99,7 @@ export function questLabel(q: QuestDef): string {
     case "find_article":
       return q.target > 1 ? `Trouver ${n} articles du jour` : "Trouver l'article du jour";
     case "find_article_fast":
-      return "Trouver l'article du jour en 3 essais ou moins";
+      return `Trouver l'article du jour en ${ARTICLE_FAST_GUESSES} essais ou moins`;
     case "boss_assault":
       return q.target > 1 ? `Lancer ${n} assauts contre le boss` : "Lancer un assaut contre le boss";
     case "boss_damage":
@@ -149,7 +150,7 @@ export function questProgress(kind: QuestKind, e: GameEvent): number {
     case "find_article":
       return e.type === "article_played" && e.found ? 1 : 0;
     case "find_article_fast":
-      return e.type === "article_played" && e.found && e.guesses <= 3 ? 1 : 0;
+      return e.type === "article_played" && e.found && e.guesses <= ARTICLE_FAST_GUESSES ? 1 : 0;
     case "boss_assault":
       return e.type === "boss_assault" ? 1 : 0;
     case "boss_damage":
