@@ -13,6 +13,12 @@ test("boss du jour : choisir cinq articles, répondre aux questions, puis les vo
   await expect(page.getByText(/^Faiblesse : /)).toBeVisible();
   await expect(page.getByRole("meter", { name: "Points de vie de la phase 1" })).toBeVisible();
 
+  // Les articles en vignettes défilent dans leur grille ; les boutons d'assaut restent juste au-dessus.
+  const grid = page.getByRole("region", { name: "Tes articles" });
+  await grid.scrollIntoViewIfNeeded();
+  await expect(page.getByRole("button", { name: "Mes 5 plus efficaces" })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Attaquer (0/5)" })).toBeInViewport();
+
   await page.getByRole("button", { name: "Mes 5 plus efficaces" }).click();
   await page.getByRole("button", { name: "Attaquer (5/5)" }).click();
 
