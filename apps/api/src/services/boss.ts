@@ -203,10 +203,11 @@ export async function bossCards(ctx: Ctx, userId: string): Promise<BossCardsDTO>
     level: number;
     shiny: boolean;
     description: string | null;
+    thumb_url: string | null;
     summary: boolean;
   }>(sql`
     select i.id, i.card_id, i.season, c.title, i.rarity, i.atk, i.def, i.level, i.shiny,
-           s.description, s.page_id is not null as summary
+           s.description, s.thumb_url, s.page_id is not null as summary
     from card_instances i
     join cards c on c.season = i.season and c.id = i.card_id
     left join wiki_summaries s on s.page_id = i.card_id
@@ -225,7 +226,7 @@ export async function bossCards(ctx: Ctx, userId: string): Promise<BossCardsDTO>
     .sort((a, b) => b.eff - a.eff)
     .slice(0, 40)
     .map((r) => ({ cardId: Number(r.card_id), title: r.title }));
-  let summaries = new Map<number, { description: string | null }>();
+  let summaries = new Map<number, { description: string | null; thumbUrl: string | null }>();
   if (missing.length) {
     await withTimeout(ctx.wiki.load(missing), 2_500, []);
     summaries = await ctx.wiki.summaries(missing.map((m) => m.cardId));
@@ -243,6 +244,7 @@ export async function bossCards(ctx: Ctx, userId: string): Promise<BossCardsDTO>
       atk: r.eff,
       level: r.level,
       shiny: r.shiny,
+      thumbUrl: r.thumb_url ?? summaries.get(cardId)?.thumbUrl ?? null,
       category,
       mult,
       damage: bossDamage(r.eff, 1, mult),

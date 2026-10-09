@@ -115,6 +115,20 @@ describe("boss du jour : assauts", () => {
     expect(res.body.error).toBe("boss_same_article");
   });
 
+  it("donne l'image de chaque article au sélecteur", async () => {
+    const p = await signUp(app);
+    const [id] = await readyCards(p, 1, 1);
+    const [instance] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, id!));
+    const thumbUrl = "https://upload.wikimedia.org/test-boss.jpg";
+    await ctx.db
+      .insert(schema.wikiSummaries)
+      .values({ pageId: instance!.cardId, thumbUrl, status: "ok" })
+      .onConflictDoUpdate({ target: schema.wikiSummaries.pageId, set: { thumbUrl } });
+    const items = (await p.get("/boss/cards")).body.items as { instanceId: number; thumbUrl: string | null }[];
+    expect(items.find((c) => c.instanceId === id)?.thumbUrl).toBe(thumbUrl);
+    expect(items.every((c) => c.thumbUrl === null || typeof c.thumbUrl === "string")).toBe(true);
+  });
+
   it("cache la carte pendant une question d'image", async () => {
     const p = await signUp(app);
     const started = (await p.post("/boss/assault", { instanceIds: await readyCards(p) })).body;
