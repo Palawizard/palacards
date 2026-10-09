@@ -422,6 +422,26 @@ describe("collection et recyclage", () => {
     const other = await signUp(app);
     expect((await other.get("/collection/selectable")).body.items).toEqual([]);
   });
+
+  it("« sélectionner N cartes » prend les N premières de la liste triée, sans les cartes engagées", async () => {
+    for (const sort of ["date", "rarity", "title"]) {
+      const list = await p.get(`/collection?favorites=exclude&sort=${sort}&limit=120`);
+      const shown = (list.body.items as { instanceId: number; locked?: boolean }[])
+        .filter((c) => !c.locked)
+        .map((c) => c.instanceId);
+      expect(shown.length).toBeGreaterThan(2);
+      const first = await p.get(`/collection/selectable?favorites=exclude&sort=${sort}&count=2`);
+      expect(first.status).toBe(200);
+      expect(first.body.items.map((i: { id: number }) => i.id)).toEqual(shown.slice(0, 2));
+      expect(first.body.truncated).toBe(false);
+
+      // Plus que disponible : tout ce qui reste, dans le même ordre.
+      const many = await p.get(`/collection/selectable?favorites=exclude&sort=${sort}&count=500`);
+      expect(many.body.items.map((i: { id: number }) => i.id)).toEqual(shown);
+    }
+    expect((await p.get("/collection/selectable?count=0")).status).toBe(400);
+    expect((await p.get("/collection/selectable?count=5001")).status).toBe(400);
+  });
 });
 
 describe("catalogue", () => {
