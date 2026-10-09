@@ -308,6 +308,30 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* Catégories Wikipédia : toute la largeur, une étiquette par catégorie, verrouillées en pointillés. */
+.pc-hints > li.pc-hint-wide {
+  grid-column: 1 / -1;
+}
+.pc-hint-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.15rem;
+}
+.pc-hint-cat {
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--color-line-strong);
+  border-radius: 999px;
+  background: var(--color-panel);
+  line-height: 1.4;
+  animation: pc-clue-in 280ms var(--ease-out) both;
+}
+.pc-hint-cat[data-locked] {
+  border-style: dashed;
+  background: transparent;
+  font-size: 0.8rem;
+  animation: none;
+}
 @keyframes pc-clue-in {
   from {
     opacity: 0;
@@ -487,6 +511,7 @@
   .pc-guess-row[data-fresh] .pc-attr,
   .pc-guess-row[data-fresh] .pc-guess-title,
   .pc-hints > li[data-open],
+  .pc-hint-cat,
   .pc-combo-list {
     animation: none;
   }
