@@ -12,6 +12,7 @@ import { fmt } from "@/lib/format";
 export function SelectionBar({
   count,
   selectAll,
+  selectCount,
   onFavorite,
   favoriteLabel,
   onTag,
@@ -22,6 +23,8 @@ export function SelectionBar({
 }: {
   count: number;
   selectAll: ReactNode;
+  /** « Sélectionner N cartes » (`SelectCount`), entre le compte et les actions. */
+  selectCount?: ReactNode;
   onFavorite: () => void;
   favoriteLabel: string;
   onTag: () => void;
@@ -47,6 +50,7 @@ export function SelectionBar({
         </p>
         {selectAll}
       </div>
+      {selectCount}
       {/* Téléphone : une rangée pleine largeur sous le compte ; « Recycler » prend la place qui reste. */}
       <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-1.5 sm:flex sm:items-center">
         <button type="button" className="btn btn-sm" disabled={none || busy} onClick={onFavorite}>
@@ -63,6 +67,47 @@ export function SelectionBar({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * « Sélectionner N cartes » : un nombre et un bouton. `onSelect` prend les N premières cartes de la liste
+ * affichée ; le champ garde le nombre pour recommencer après un changement de filtre.
+ */
+export function SelectCount({
+  onSelect,
+  max,
+  disabled,
+}: {
+  onSelect: (n: number) => void;
+  max: number;
+  disabled: boolean;
+}) {
+  const [text, setText] = useState("");
+  const n = Math.min(Number(text), max);
+  return (
+    <form
+      className="flex items-center gap-1.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (n > 0) onSelect(n);
+      }}
+    >
+      <input
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        enterKeyHint="go"
+        aria-label="Nombre de cartes à sélectionner"
+        placeholder="Nombre"
+        className="field tnum h-8 min-h-0 w-24 flex-1 text-right text-sm pointer-coarse:h-11 sm:flex-none"
+        value={text}
+        onChange={(e) => setText(e.target.value.replace(/\D/g, "").slice(0, String(max).length))}
+      />
+      <button type="submit" className="btn btn-sm" disabled={disabled || !(n > 0)}>
+        Sélectionner{n > 0 ? ` les ${fmt(n)} premières` : ""}
+      </button>
+    </form>
   );
 }
 

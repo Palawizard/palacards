@@ -109,6 +109,39 @@ test("tout sélectionner les cartes du filtre pour les recycler", async ({ brows
   expect((await apiCall<{ total: number }>(page, "GET", "/collection?rarity=C&limit=1")).total).toBe(guarded);
 });
 
+test("sélectionner les N premières cartes, sans les favorites", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "lot");
+  await instantPacks(page);
+  for (let i = 0; i < 2; i++) await apiCall(page, "POST", "/packs/open");
+  const list = await apiCall<{ total: number; items: { instanceId: number }[] }>(
+    page,
+    "GET",
+    "/collection?limit=1&sort=rarity",
+  );
+  await apiCall(page, "POST", "/collection/favorite", { instanceIds: [list.items[0]!.instanceId], favorite: true });
+  const available = list.total - 1;
+
+  await page.goto("collection");
+  await page.getByRole("button", { name: "Sélectionner", exact: true }).click();
+  const bar = page.getByRole("region", { name: "Actions sur la sélection" });
+  const count = bar.getByRole("textbox", { name: "Nombre de cartes à sélectionner" });
+  await count.fill("5");
+  await bar.getByRole("button", { name: "Sélectionner les 5 premières" }).click();
+  await expect(bar.getByText("5 sélectionnées")).toBeVisible();
+  // La favorite (première de la liste) n'est pas prise ; la sélection reste modifiable à la main.
+  const grid = page.locator("button[aria-pressed]:has(article.pc-card)");
+  await expect(grid.first()).toHaveAttribute("aria-pressed", "false");
+  await expect(grid.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await grid.nth(1).click();
+  await expect(bar.getByText("4 sélectionnées")).toBeVisible();
+
+  // Plus que disponible : tout est pris, et c'est dit.
+  await count.fill("999");
+  await bar.getByRole("button", { name: "Sélectionner les 999 premières" }).click();
+  await expect(page.getByText(`Seulement ${available} cartes disponibles`, { exact: false })).toBeVisible();
+  await expect(bar.getByText(`${available} sélectionnées`)).toBeVisible();
+});
+
 test("« Doublons » trie par nombre d'exemplaires, sauf tri choisi à la main", async ({ browser }) => {
   const { page } = await newPlayer(browser, "dups");
   await instantPacks(page);
