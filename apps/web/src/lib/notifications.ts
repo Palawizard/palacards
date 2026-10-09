@@ -92,6 +92,18 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
         href: "/boss",
       };
     }
+    case "boss_phase": {
+      const r = (p.reward ?? {}) as { pw?: unknown; packs?: unknown };
+      const phases = Array.isArray(p.phases) ? p.phases.length : 0;
+      const packs = n(r.packs);
+      const gain = [`+${fmt(n(r.pw))} PW`, packs ? `${packs} paquet${packs > 1 ? "s" : ""}` : ""]
+        .filter(Boolean)
+        .join(" et ");
+      return {
+        text: `Boss d'hier : ${n(p.fallen)} phase${n(p.fallen) > 1 ? "s" : ""} tombée${n(p.fallen) > 1 ? "s" : ""}, ${phases > 1 ? `${phases} récompenses` : "une récompense"} pour toi : ${gain}.`,
+        href: "/boss",
+      };
+    }
     case "boss_mvp": {
       const r = (p.reward ?? {}) as { packs?: unknown };
       const packs = n(r.packs);
@@ -101,7 +113,13 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
       };
     }
     case "boss_consolation":
-      return { text: "Le boss d'hier a tenu bon. Lot de consolation : +30 PW.", href: "/boss" };
+      return {
+        text:
+          n(p.fallen) > 0
+            ? `Boss d'hier : pas assez de dégâts pour ses phases tombées. Lot de consolation : +${fmt(n((p.reward as { pw?: unknown } | undefined)?.pw ?? 30))} PW.`
+            : `Le boss d'hier a tenu bon. Lot de consolation : +${fmt(n((p.reward as { pw?: unknown } | undefined)?.pw ?? 30))} PW.`,
+        href: "/boss",
+      };
     case "gift": {
       const parts = [
         n(p.pw) ? `${fmt(n(p.pw))} PW` : "",

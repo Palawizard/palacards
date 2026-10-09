@@ -1,12 +1,20 @@
 "use client";
 
-import { bossDamage, bossHitBase, RARITY_LABELS } from "@palacards/game";
-import type { BossDTO, BossLiveDTO, CardDTO, Page } from "@palacards/shared";
-import { Check, Crown, Sword, Users, X, Zap } from "lucide-react";
+import { BOSS_QUESTION_LABELS, CATEGORY_LABELS, RARITY_LABELS, type BossQuestionType } from "@palacards/game";
+import type {
+  ArticleCategoryKey,
+  BossCardDTO,
+  BossCardsDTO,
+  BossDTO,
+  BossHitDTO,
+  BossLiveDTO,
+} from "@palacards/shared";
+import { BookOpen, Check, Crown, Moon, Shield, Sword, Swords, X, Zap } from "lucide-react";
+import { useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { CardBack, questionLabel } from "@/components/Battle";
+import { CardBack } from "@/components/Battle";
 import { Card } from "@/components/Card";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError, thumbSrc } from "@/lib/api";
@@ -17,21 +25,117 @@ import { play } from "@/lib/sfx";
 import { useNow } from "@/lib/use-now";
 import "@/components/content.css";
 
-/**
- * Assaillants dans la jauge : des pastilles de papier d'album, en trois teintes de couverture alternées
- * (jamais les couleurs de rareté) ; le jaune pochette est réservé au joueur.
- */
-const SEGMENTS = [
-  "color-mix(in oklab, var(--color-sticker) 96%, var(--color-cover))",
-  "color-mix(in oklab, var(--color-sticker) 80%, var(--color-cover))",
-  "color-mix(in oklab, var(--color-sticker) 66%, var(--color-cover))",
-];
+type BossState = BossDTO & { receivedAt: number };
+const withTime = (b: BossDTO): BossState => ({ ...b, receivedAt: Date.now() });
+const fetchBoss = (path: string) => api<BossDTO>(path).then(withTime);
 
-/**
- * La jauge géante : PV restants en rouge à gauche ; à droite, les dégâts de chaque joueur empilés à sa
- * couleur (les tiens rayés), dans l'ordre du classement. Un coup reçu la fait tressauter.
- */
-function Gauge({ boss, hit }: { boss: BossDTO; hit: { key: number; damage: number; name: string } | null }) {
+const RULES_KEY = "pc-boss-rules-v2";
+const mult = (m: number) => `×${String(m).replace(".", ",")}`;
+const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
+const label = (type: string) => BOSS_QUESTION_LABELS[type as BossQuestionType] ?? "Question";
+
+/** Repère de la règle du jour sur une carte : faiblesse (×2) ou résistance (×0,5). */
+function CategoryTag({ category, m }: { category: ArticleCategoryKey; m: number }) {
+  const tone = m > 1 ? "weak" : m < 1 ? "resist" : undefined;
+  return (
+    <span className="pc-cat" data-tone={tone}>
+      {tone === "weak" ? (
+        <Zap className="size-3" aria-hidden />
+      ) : tone === "resist" ? (
+        <Shield className="size-3" aria-hidden />
+      ) : null}
+      {CATEGORY_LABELS[category]}
+      {tone && <span className="tnum">{mult(m)}</span>}
+      {tone && <span className="sr-only">{tone === "weak" ? " (faiblesse du boss)" : " (résistance du boss)"}</span>}
+    </span>
+  );
+}
+
+/** Règles, dépliées à la première visite. */
+function Rules({ boss }: { boss: BossDTO }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem(RULES_KEY)) {
+        if (ref.current) ref.current.open = true;
+        localStorage.setItem(RULES_KEY, "1");
+      }
+    } catch {
+      // stockage indisponible : règles repliées
+    }
+  }, []);
+  const [p1, p2] = boss.rewards.phases;
+  return (
+    <details ref={ref} className="pc-boss-rules">
+      <summary>
+        <BookOpen className="size-4" aria-hidden />
+        Règles du boss
+      </summary>
+      <ul>
+        <li>
+          Le boss ne meurt plus : quand une <strong>phase</strong> tombe, la suivante arrive aussitôt avec 40 % de PV en
+          plus. Le combat dure jusqu&apos;à minuit.
+        </li>
+        <li>
+          Chaque jour, une catégorie d&apos;article est sa <strong>faiblesse</strong> ({mult(boss.rule.weaknessMult)}{" "}
+          dégâts) et une autre sa <strong>résistance</strong> ({mult(boss.rule.resistanceMult)}).
+        </li>
+        <li>
+          Un article joué contre le boss se <strong>repose {boss.fatigueDays} jours</strong> : varie tes cartes.
+        </li>
+        <li>
+          Questions : définition et image (×1,5 en moins de 4 s), année à taper (×1,5 exacte, ×1 à 2 ans près, ×0,5 à 10
+          ans, ×0,25 à 25 ans), duel contre le boss ({mult(0.75)}, sans critique). Jamais deux fois la même question sur
+          un article.
+        </li>
+        <li>
+          À minuit, chaque phase tombée paie ceux qui ont infligé au moins {fmt(boss.rewards.minDamage)} dégâts dans la
+          journée : {fmt(p1!.pw)} PW et {p1!.packs} paquet pour la phase 1, {fmt(p2!.pw)} PW et {p2!.packs} paquet pour
+          la 2, {fmt(boss.rewards.laterPhase.pw)} PW pour chacune des suivantes. Le meilleur assaillant gagne{" "}
+          {boss.rewards.mvpPacks} paquet de plus ; les autres qui ont touché le boss, {fmt(boss.rewards.consolationPw)}{" "}
+          PW de consolation.
+        </li>
+      </ul>
+    </details>
+  );
+}
+
+/** Phases : tombées (cochées), en cours, à venir. */
+function PhaseTrack({ boss }: { boss: BossDTO }) {
+  return (
+    <ol className="pc-phase-track" aria-label="Phases du boss">
+      {boss.phases.map((p) => (
+        <li
+          key={p.phase}
+          data-state={p.fallenAt ? "down" : "current"}
+          title={
+            p.fallenAt
+              ? `Phase ${p.phase} tombée à ${new Date(p.fallenAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}${p.fallenBy ? `, coup de ${p.fallenBy}` : ""}`
+              : `Phase ${p.phase} en cours : ${fmt(p.maxHp)} PV`
+          }
+        >
+          {p.fallenAt ? <Check className="size-3.5" strokeWidth={3} aria-hidden /> : null}
+          <span>Phase {p.phase}</span>
+          {p.fallenAt && <span className="sr-only"> tombée</span>}
+        </li>
+      ))}
+      <li data-state="next" aria-hidden>
+        Phase {boss.phase + 1}
+      </li>
+    </ol>
+  );
+}
+
+/** Jauge de la phase en cours : un coup la fait tressauter, une phase qui tombe la fait éclater puis la remplit. */
+function Gauge({
+  boss,
+  hit,
+  fall,
+}: {
+  boss: BossDTO;
+  hit: { key: number; damage: number; name: string } | null;
+  fall: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
@@ -40,57 +144,31 @@ function Gauge({ boss, hit }: { boss: BossDTO; hit: { key: number; damage: numbe
     void el.offsetWidth;
     el.setAttribute("data-hit", "");
   }, [hit]);
-  // Les segments remplissent la part perdue de la jauge, au prorata des dégâts de chacun (les coups portés
-  // après la chute restent à l'échelle).
-  const dealtTotal = Math.max(
-    1,
-    boss.ranking.reduce((s, r) => s + r.damage, 0),
-  );
-  const lost = 1 - boss.hp / boss.maxHp;
   return (
     <div className="relative">
       <div
         ref={ref}
+        key={`phase-${boss.phase}`}
         className="pc-boss-gauge"
+        data-fall={fall > 0 || undefined}
         role="meter"
         aria-valuemin={0}
         aria-valuemax={boss.maxHp}
         aria-valuenow={boss.hp}
-        aria-label="Points de vie du boss"
+        aria-label={`Points de vie de la phase ${boss.phase}`}
       >
         <div className="pc-boss-hp" style={{ transform: `scaleX(${boss.hp / boss.maxHp})` }} />
-        <div className="pc-boss-dealt" aria-hidden>
-          {[...boss.ranking].reverse().map((r) => {
-            const i = boss.ranking.indexOf(r);
-            const width = (r.damage / dealtTotal) * lost * 100;
-            return (
-              <span
-                key={r.userId}
-                data-me={r.me || undefined}
-                title={`${r.name} : ${fmt(r.damage)} dégâts`}
-                style={
-                  {
-                    width: `${width}%`,
-                    "--seg": r.me ? "var(--color-accent)" : SEGMENTS[i % SEGMENTS.length],
-                  } as React.CSSProperties
-                }
-              >
-                {width >= 7 && (r.me ? "Toi" : r.name.slice(0, 1))}
-              </span>
-            );
-          })}
-        </div>
         <div className="pc-boss-hp-label tnum">
           <span>
             {fmt(boss.hp)}
             <span className="text-[0.55em] opacity-80"> / {fmt(boss.maxHp)} PV</span>
           </span>
-          {boss.killedAt && <span className="text-accent">Vaincu</span>}
+          <span className="hidden text-[0.6em] sm:inline">Phase {boss.phase}</span>
         </div>
       </div>
       {hit && (
         <span key={hit.key} className="pc-boss-pop tnum" aria-hidden>
-          −{hit.damage}
+          −{fmt(hit.damage)}
           <span className="ml-1.5 font-sans text-xs font-semibold text-cover-ink [font-stretch:100%]">{hit.name}</span>
         </span>
       )}
@@ -98,177 +176,296 @@ function Gauge({ boss, hit }: { boss: BossDTO; hit: { key: number; damage: numbe
   );
 }
 
-/**
- * Boss tombé : les retardataires peuvent encore toucher la récompense en finissant un assaut (« renfort »),
- * et le paquet du meilleur assaillant n'est attribué qu'à minuit.
- */
-function Reinforcement({ boss, left }: { boss: BossDTO; left: number }) {
-  const { pw, packs } = boss.rewards.kill;
-  const [title, body] = boss.rewarded
-    ? [
-        "Récompense touchée",
-        `Tes assauts comptent encore pour la place de meilleur assaillant, désignée à minuit (${boss.rewards.mvpPacks} paquet bonus de plus).`,
-      ]
-    : left > 0
-      ? [
-          "Pas trop tard pour un renfort",
-          `Finis un assaut avant minuit : tu touches toi aussi ${fmt(pw)} PW et ${packs} paquets bonus.`,
-        ]
-      : ["Renfort en cours", "Termine ton assaut pour toucher la récompense de la chute."];
+/** Ce que le joueur a déjà acquis aujourd'hui, versé à minuit. */
+function Earned({ boss }: { boss: BossDTO }) {
+  const e = boss.earned;
+  const fallen = boss.phases.filter((p) => p.fallenAt).length;
+  let text: string;
+  if (!boss.myDamage) text = "Lance un assaut : chaque phase tombée paie ceux qui ont tapé assez fort.";
+  else if (e.phases.length)
+    text = `Acquis : ${fmt(e.pw)} PW${e.packs ? ` et ${e.packs} ${plural(e.packs, "paquet", "paquets")}` : ""} pour ${e.phases.length} ${plural(e.phases.length, "phase tombée", "phases tombées")}.`;
+  else if (e.missing > 0 && fallen > 0)
+    text = `Encore ${fmt(e.missing)} dégâts pour toucher ${plural(fallen, "la phase tombée", `les ${fallen} phases tombées`)}. En attendant : ${fmt(e.pw)} PW de consolation.`;
+  else if (e.missing > 0) text = `Encore ${fmt(e.missing)} dégâts pour toucher les phases qui tomberont aujourd'hui.`;
+  else if (fallen === 0)
+    text = `Seuil atteint : chaque phase qui tombe d'ici minuit te paiera. Sinon, ${fmt(e.pw)} PW de consolation.`;
+  else text = "Rien de plus à toucher pour l'instant : fais tomber la phase suivante !";
   return (
-    <div className="pc-boss-reinforce" data-rewarded={boss.rewarded || undefined} role="status">
-      <Users className="mt-0.5 size-5 shrink-0" aria-hidden />
-      <p className="min-w-0 text-sm">
-        <span className="block font-semibold text-text">{title}</span>
-        <span className="text-muted">{body}</span>
-      </p>
-    </div>
+    <p className="pc-boss-earned" data-done={e.phases.length > 0 || undefined} role="status">
+      <Moon className="size-4 shrink-0" aria-hidden />
+      <span className="min-w-0">
+        {text}
+        {e.mvp && (
+          <span className="block text-muted">
+            <Crown className="mr-1 inline size-3.5 align-[-0.1rem] text-warn" aria-hidden />
+            Tu mènes : {boss.rewards.mvpPacks} paquet en plus si tu restes en tête à minuit.
+          </span>
+        )}
+        <span className="block text-xs text-faint">Versé à minuit.</span>
+      </span>
+    </p>
   );
 }
 
-/** Choix des 5 cartes de l'assaut, parmi les plus fortes en ATK de la collection. */
-function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[]) => Promise<void> }) {
-  const { data, error } = useSWR<Page<CardDTO>>("/collection?sort=atk&limit=18");
+// ---------------------------------------------------------------------------
+// Choix des cinq articles
+// ---------------------------------------------------------------------------
+
+function CardRow({
+  c,
+  on,
+  disabled,
+  onToggle,
+}: {
+  c: BossCardDTO;
+  on: boolean;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  const tired = c.restDays > 0;
+  return (
+    <li>
+      <button
+        type="button"
+        aria-pressed={on}
+        disabled={tired || (disabled && !on)}
+        onClick={onToggle}
+        className="pc-boss-row"
+        data-tired={tired || undefined}
+      >
+        <span data-rarity={c.rarity} className="pc-sigil shrink-0" title={RARITY_LABELS[c.rarity]}>
+          {c.rarity}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5 font-semibold">
+            <span className="truncate">{c.title}</span>
+            {c.shiny && (
+              <span className="pc-shiny-tag !static shrink-0 !text-[0.65rem]" title="Carte brillante">
+                Brillante
+              </span>
+            )}
+          </span>
+          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+            <CategoryTag category={c.category} m={c.mult} />
+            {tired ? (
+              <span className="text-faint">
+                Reposée dans {c.restDays} {plural(c.restDays, "jour", "jours")}
+              </span>
+            ) : (
+              <span className="tnum">
+                {fmt(c.damage)} dégâts · {fmt(c.critDamage)} en critique
+              </span>
+            )}
+          </span>
+        </span>
+        <span className="pc-boss-check" aria-hidden>
+          {on && <Check className="size-3.5" strokeWidth={3} />}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[]) => Promise<boolean> }) {
+  const { data, error, mutate } = useSWR<BossCardsDTO>("/boss/cards");
   const [picked, setPicked] = useState<number[]>([]);
+  const [onlyWeak, setOnlyWeak] = useState(false);
   const [busy, setBusy] = useState(false);
-  const cards = data?.items ?? [];
   const need = boss.cardsPerAssault;
+  const items = data?.items ?? [];
+  const ready = items.filter((c) => c.restDays === 0);
+  const shown = onlyWeak ? ready.filter((c) => c.mult > 1) : items;
+  const weakCount = ready.filter((c) => c.mult > 1).length;
+  const byId = new Map(items.map((c) => [c.instanceId, c]));
   const toggle = (id: number) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length < need ? [...p, id] : p));
+  const total = picked.reduce((s, id) => s + (byId.get(id)?.damage ?? 0), 0);
+
   async function start(ids: number[]) {
     setBusy(true);
     try {
-      await onStart(ids);
-      setPicked([]);
+      if (await onStart(ids)) setPicked([]);
+      void mutate();
     } finally {
       setBusy(false);
     }
   }
-  if (error) return <ErrorBox error={error} />;
-  if (data && cards.length < need)
+
+  if (error) return <ErrorBox error={error} retry={() => mutate()} />;
+  if (!data) return <div className="h-64 animate-pulse rounded-xl bg-panel" aria-label="Chargement de tes cartes" />;
+  if (data.available < need)
     return (
-      <Empty title="Pas assez de cartes">
-        Il te faut {need} cartes dans ta collection pour lancer un assaut. Ouvre quelques paquets !
+      <Empty title="Pas assez d'articles reposés">
+        {data.total < need
+          ? `Il te faut ${need} articles différents pour lancer un assaut. Ouvre quelques paquets !`
+          : `Il te faut ${need} articles différents prêts à jouer : tu n'en as que ${data.available}, les autres se reposent après un assaut (${boss.fatigueDays} jours). Ouvre des paquets pour en avoir d'autres.`}
       </Empty>
     );
   return (
     <div className="flex flex-col gap-4">
-      {/* Sur téléphone, l'en-tête s'efface : la barre d'action passe sous la liste et y reste collée. */}
-      <div className="contents sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
-        <p className="text-sm text-muted">
-          Choisis {need} cartes : chacune frappe une fois si tu réponds juste à la question sur son article (
-          <span className="tnum">40 + ATK ÷ 100</span> dégâts, ×1,5 en moins de 4 s).
-        </p>
-        {/* Sur téléphone, les boutons restent sous le pouce pendant qu'on fait défiler les cartes. */}
-        <div className="sticky bottom-0 z-10 order-last -mx-4 flex w-[calc(100%+2rem)] gap-2 sm:order-none border-t border-line bg-panel/95 px-4 py-2.5 backdrop-blur-sm sm:static sm:mx-0 sm:w-auto sm:border-0 sm:bg-transparent sm:p-0">
-          <button
-            type="button"
-            className="btn btn-sm flex-1 sm:flex-none"
-            disabled={busy || cards.length < need}
-            onClick={() => setPicked(cards.slice(0, need).map((c) => c.instanceId!))}
-          >
-            Mes {need} plus fortes
+      <ol className="pc-boss-slots" aria-label="Ton assaut">
+        {Array.from({ length: need }, (_, i) => {
+          const c = picked[i] ? byId.get(picked[i]) : undefined;
+          return (
+            <li key={i} data-filled={!!c || undefined}>
+              {c ? (
+                <button type="button" onClick={() => toggle(c.instanceId)} aria-label={`Retirer ${c.title}`}>
+                  <span className="line-clamp-2 text-left text-sm font-semibold leading-tight">{c.title}</span>
+                  <span className="tnum text-xs text-muted">{fmt(c.damage)} dégâts</span>
+                  <X className="pc-boss-slot-x size-3.5" aria-hidden />
+                </button>
+              ) : (
+                <span className="text-xs text-faint">Carte {i + 1}</span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer">
+          <button type="button" className="chip" aria-pressed={!onlyWeak} onClick={() => setOnlyWeak(false)}>
+            Toutes
           </button>
           <button
             type="button"
-            className="btn btn-sm btn-primary flex-1 sm:flex-none"
-            disabled={busy || picked.length !== need}
-            onClick={() => void start(picked)}
+            className="chip"
+            aria-pressed={onlyWeak}
+            onClick={() => setOnlyWeak(true)}
+            disabled={!weakCount}
           >
-            <Sword className="size-4" aria-hidden />
-            Attaquer ({picked.length}/{need})
+            <Zap className="size-3.5" aria-hidden />
+            Efficaces aujourd&apos;hui ({weakCount})
           </button>
         </div>
+        <p className="tnum text-sm text-muted">
+          {fmt(data.available)} {plural(data.available, "article prêt", "articles prêts")}
+          {picked.length > 0 && ` · jusqu'à ${fmt(total)} dégâts`}
+        </p>
       </div>
-      {!data ? (
-        <div className="h-60 animate-pulse rounded-xl bg-panel" />
+      {shown.length === 0 ? (
+        <p className="slot px-4 py-6 text-center text-sm text-muted">
+          Aucun article {CATEGORY_LABELS[boss.rule.weakness].toLowerCase()} prêt aujourd&apos;hui.
+        </p>
       ) : (
-        <>
-          {/* Téléphone : des lignes compactes (sigle, titre, ATK, dégâts) plutôt qu'un mur de vignettes. */}
-          <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line sm:hidden">
-            {cards.map((c) => {
-              const on = picked.includes(c.instanceId!);
-              return (
-                <li key={c.instanceId}>
-                  <button
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => toggle(c.instanceId!)}
-                    className={`flex min-h-12 w-full items-center gap-3 px-3 py-2 text-left transition-colors duration-150 ${on ? "bg-accent/15" : ""}`}
-                  >
-                    <span data-rarity={c.rarity} className="pc-sigil shrink-0">
-                      {c.rarity}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5 font-semibold">
-                        <span className="truncate">{c.title}</span>
-                        {c.shiny && (
-                          <span className="pc-shiny-tag !static shrink-0 !text-[0.65rem]" title="Carte brillante">
-                            Brillante
-                          </span>
-                        )}
-                      </span>
-                      <span className="tnum text-xs text-muted">
-                        ATK {fmt(c.atk)} · {bossHitBase(c.atk)} dégâts, {bossDamage(c.atk, "crit")} en critique
-                      </span>
-                    </span>
-                    <span
-                      className={`grid size-6 shrink-0 place-items-center rounded-full border-2 ${on ? "border-accent bg-accent text-accent-ink" : "border-line-strong"}`}
-                      aria-hidden
-                    >
-                      {on && <Check className="size-3.5" strokeWidth={3} />}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <ul className="hidden grid-cols-[repeat(auto-fill,minmax(8.5rem,1fr))] gap-3 sm:grid">
-            {cards.map((c) => {
-              const on = picked.includes(c.instanceId!);
-              return (
-                <li key={c.instanceId}>
-                  <button
-                    type="button"
-                    className="pc-boss-pick flex w-full flex-col gap-1 rounded-[14px] text-left"
-                    aria-pressed={on}
-                    onClick={() => toggle(c.instanceId!)}
-                    aria-label={`${c.title} : ${bossHitBase(c.atk)} dégâts`}
-                  >
-                    <Card card={c} href={null} />
-                    <span className="tnum text-center text-xs text-muted">
-                      {bossHitBase(c.atk)} dégâts · {bossDamage(c.atk, "crit")} en critique
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </>
+        <ul className="pc-boss-list">
+          {shown.map((c) => (
+            <CardRow
+              key={c.instanceId}
+              c={c}
+              on={picked.includes(c.instanceId)}
+              disabled={picked.length >= need}
+              onToggle={() => toggle(c.instanceId)}
+            />
+          ))}
+        </ul>
       )}
+      {/* Sur téléphone, les boutons restent sous le pouce pendant qu'on fait défiler les cartes. */}
+      <div className="sticky bottom-0 z-10 -mx-4 flex gap-2 border-t border-line bg-panel/95 px-4 py-2.5 backdrop-blur-sm sm:static sm:mx-0 sm:justify-end sm:border-0 sm:bg-transparent sm:p-0">
+        <button
+          type="button"
+          className="btn btn-sm flex-1 sm:flex-none"
+          disabled={busy}
+          onClick={() => setPicked(ready.slice(0, need).map((c) => c.instanceId))}
+        >
+          Mes {need} plus efficaces
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-primary flex-1 sm:flex-none"
+          disabled={busy || picked.length !== need}
+          onClick={() => void start(picked)}
+        >
+          <Sword className="size-4" aria-hidden />
+          {busy ? "Préparation…" : `Attaquer (${picked.length}/${need})`}
+        </button>
+      </div>
     </div>
   );
 }
 
-/** Question en cours de l'assaut, avec son chrono ; puis le bilan du coup. */
-type BossState = BossDTO & { receivedAt: number };
-const withTime = (b: BossDTO): BossState => ({ ...b, receivedAt: Date.now() });
-const fetchBoss = (path: string) => api<BossDTO>(path).then(withTime);
+// ---------------------------------------------------------------------------
+// Assaut en cours
+// ---------------------------------------------------------------------------
+
+function verdict(h: BossHitDTO): string {
+  if (h.hit === "crit") return h.type === "year_input" ? "Année exacte !" : "Coup critique !";
+  if (h.hit === "hit") return h.type === "year_input" && h.guessYear !== h.correctYear ? "Pas loin !" : "Touché !";
+  if (h.choice === null && h.guessYear === null) return "Trop tard";
+  return "Raté";
+}
+
+function HitDetail({ h, choices }: { h: BossHitDTO; choices: string[] | null }) {
+  if (h.type === "year_input")
+    return (
+      <p className="tnum text-muted">
+        C&apos;était {h.correctYear}
+        {h.guessYear !== null && h.guessYear !== h.correctYear && ` (tu as dit ${h.guessYear})`}.{" "}
+        {h.damage > 0 && `${h.card.title} inflige ${fmt(h.damage)} dégâts.`}
+      </p>
+    );
+  const right =
+    h.correctIndex !== null && choices && !choices[h.correctIndex]?.startsWith("http") ? choices[h.correctIndex] : null;
+  return (
+    <p className="tnum text-muted">
+      {h.damage > 0
+        ? `${h.card.title} inflige ${fmt(h.damage)} dégâts.`
+        : right
+          ? `La bonne réponse : ${right}.`
+          : "Aucun dégât."}
+    </p>
+  );
+}
+
+function YearInput({ disabled, onSubmit }: { disabled: boolean; onSubmit: (year: number) => void }) {
+  const [value, setValue] = useState("");
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => ref.current?.focus(), []);
+  const year = /^-?\d{1,4}$/.test(value.trim()) ? Number(value.trim()) : null;
+  return (
+    <form
+      className="flex gap-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (year !== null && !disabled) onSubmit(year);
+      }}
+    >
+      <label htmlFor="boss-year" className="sr-only">
+        Ton année
+      </label>
+      <input
+        id="boss-year"
+        ref={ref}
+        className="field tnum h-12 max-w-[10rem] text-center text-xl"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="Année"
+        value={value}
+        onChange={(e) => setValue(e.target.value.replace(/[^\d-]/g, "").slice(0, 5))}
+        disabled={disabled}
+        enterKeyHint="send"
+      />
+      <button type="submit" className="btn btn-primary h-12 px-5" disabled={disabled || year === null}>
+        Valider
+      </button>
+    </form>
+  );
+}
 
 function AssaultPanel({
   boss,
   onAnswer,
   onNext,
+  lastChoices,
 }: {
   boss: BossState;
-  onAnswer: (choice: number) => void;
+  onAnswer: (answer: { choice: number } | { year: number }) => void;
   onNext: () => void;
+  lastChoices: string[] | null;
 }) {
   const a = boss.current!;
   const q = a.question;
   const last = a.hits.at(-1);
   const now = useNow(200);
-  // Échéance de la question : temps restant au moment où l'état a été reçu.
   const remaining = q ? Math.max(0, boss.receivedAt + q.remainingMs - now) : 0;
   const expired = !!q && remaining <= 0;
   // Chrono écoulé : le serveur compte la question comme ratée et passe à la suivante.
@@ -280,7 +477,7 @@ function AssaultPanel({
   // Bilan d'une question : affiché un instant, puis la suivante.
   useEffect(() => {
     if (q || a.finished || !last) return;
-    const t = setTimeout(onNext, 1_700);
+    const t = setTimeout(onNext, last.type === "year_input" || last.hit === "miss" ? 2_400 : 1_700);
     return () => clearTimeout(t);
   }, [q, a.finished, last, onNext]);
 
@@ -292,20 +489,18 @@ function AssaultPanel({
         </p>
         <ol className="grid gap-2 sm:grid-cols-5">
           {a.hits.map((h) => (
-            <li
-              key={h.idx}
-              className="flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-2 text-sm sm:flex-col sm:items-start"
-            >
+            <li key={h.idx} className="pc-boss-recap" data-hit={h.hit}>
               <span className="min-w-0 flex-1 truncate font-semibold sm:w-full">{h.card.title}</span>
-              <span className={`tnum inline-flex items-center gap-1 ${h.hit === "miss" ? "text-danger" : "text-good"}`}>
+              <span className="text-xs text-faint">{label(h.type)}</span>
+              <span className="tnum inline-flex items-center gap-1">
                 {h.hit === "crit" ? (
-                  <Zap className="size-3.5" />
+                  <Zap className="size-3.5" aria-hidden />
                 ) : h.hit === "hit" ? (
-                  <Check className="size-3.5" />
+                  <Check className="size-3.5" aria-hidden />
                 ) : (
-                  <X className="size-3.5" />
+                  <X className="size-3.5" aria-hidden />
                 )}
-                {h.hit === "miss" ? "Raté" : `−${h.damage}`}
+                {h.hit === "miss" ? "Raté" : `−${fmt(h.damage)}`}
               </span>
             </li>
           ))}
@@ -315,26 +510,23 @@ function AssaultPanel({
   }
 
   if (!q) {
-    if (!last) return <div className="h-40 animate-pulse rounded-xl bg-panel" />;
+    if (!last)
+      return <div className="h-40 animate-pulse rounded-xl bg-panel" aria-label="Préparation de la question" />;
     return (
-      <div className="flex flex-col items-center gap-2 py-6 text-center" aria-live="polite">
-        <p className={`font-display text-4xl uppercase ${last.hit === "miss" ? "text-danger" : "text-good"}`}>
-          {last.hit === "crit"
-            ? "Coup critique !"
-            : last.hit === "hit"
-              ? "Touché !"
-              : last.choice === null
-                ? "Trop tard"
-                : "Raté"}
-        </p>
-        <p className="tnum text-muted">
-          {last.hit === "miss" ? "Aucun dégât." : `${last.card.title} inflige ${last.damage} dégâts.`}
-        </p>
+      <div className="pc-boss-verdict" data-hit={last.hit} aria-live="polite">
+        <p className="font-display text-4xl uppercase">{verdict(last)}</p>
+        <HitDetail h={last} choices={lastChoices} />
+        {last.mult !== 1 && last.damage > 0 && (
+          <p className="text-sm text-muted">
+            <CategoryTag category={last.category} m={last.mult} /> compris
+          </p>
+        )}
       </div>
     );
   }
 
   const late = remaining < 4_000;
+  const duel = q.type === "duel_older" || q.type === "duel_popular";
   return (
     <div className="grid gap-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-start">
       <div className="mx-auto w-36 sm:w-full">
@@ -348,75 +540,108 @@ function AssaultPanel({
         )}
       </div>
       <div className="flex flex-col gap-3">
-        <div className="flex items-center justify-between gap-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
           <span className="font-display text-lg uppercase">
-            {questionLabel(q.type)} · {q.idx + 1}/{boss.cardsPerAssault}
+            {duel && <Swords className="mr-1.5 inline size-4 align-[-0.1rem]" aria-hidden />}
+            {label(q.type)} · {q.idx + 1}/{boss.cardsPerAssault}
           </span>
-          <span className="tnum text-muted">
-            {bossHitBase(q.card.atk)} dégâts, {bossDamage(q.card.atk, "crit")} en moins de 4 s
-          </span>
+          <CategoryTag category={q.category} m={q.mult} />
         </div>
         <div className="duel-clock" data-late={late} aria-hidden>
           <span style={{ transform: `scaleX(${remaining / q.durationMs})` }} />
         </div>
         <p className="leading-relaxed [text-wrap:pretty]">{q.prompt}</p>
-        <div className={`grid gap-2 ${q.type === "image" ? "grid-cols-2" : "sm:grid-cols-2"}`}>
-          {q.choices.map((c, i) => (
-            <button
-              key={i}
-              type="button"
-              className="btn h-auto min-h-12 justify-start whitespace-normal py-2.5 text-left"
-              disabled={expired}
-              onClick={() => onAnswer(i)}
-            >
-              {q.type === "image" ? (
-                // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API
-                <img src={thumbSrc(c)} alt={`Image ${i + 1}`} className="mx-auto max-h-28 rounded object-contain" />
-              ) : (
-                c
-              )}
-            </button>
-          ))}
-        </div>
+        {q.input === "year" ? (
+          <YearInput key={q.idx} disabled={expired} onSubmit={(year) => onAnswer({ year })} />
+        ) : (
+          <div className={`grid gap-2 ${q.type === "image" ? "grid-cols-2" : duel ? "grid-cols-2" : "sm:grid-cols-2"}`}>
+            {q.choices.map((c, i) => (
+              <button
+                key={i}
+                type="button"
+                className="btn h-auto min-h-12 justify-start whitespace-normal py-2.5 text-left"
+                disabled={expired}
+                onClick={() => onAnswer({ choice: i })}
+              >
+                {q.type === "image" ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API
+                  <img src={thumbSrc(c)} alt={`Image ${i + 1}`} className="mx-auto max-h-28 rounded object-contain" />
+                ) : (
+                  c
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-faint">
+          {q.input === "year"
+            ? "Exacte : ×1,5 · à 2 ans : ×1 · à 10 ans : ×0,5 · à 25 ans : ×0,25"
+            : duel
+              ? "Duel à deux choix : ×0,75, sans critique."
+              : "En moins de 4 s : coup critique (×1,5)."}
+        </p>
       </div>
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
+
 export default function BossPage() {
-  useSeenFeature("boss");
+  useSeenFeature("boss-v2");
   const { mutateMe } = useMe();
+  const reduce = useReducedMotion();
   const { data, error, mutate } = useSWR<BossState>("/boss", fetchBoss);
   const [hit, setHit] = useState<{ key: number; damage: number; name: string } | null>(null);
+  const [fell, setFell] = useState<{ key: number; phase: number; by: string } | null>(null);
   const [answering, setAnswering] = useState(false);
+  const [lastChoices, setLastChoices] = useState<string[] | null>(null);
   const now = useNow(30_000);
+
+  // Annonce de chute : quelques secondes, puis elle s'efface.
+  useEffect(() => {
+    if (!fell) return;
+    const t = setTimeout(() => setFell(null), 4_000);
+    return () => clearTimeout(t);
+  }, [fell]);
 
   useSocketEvent("boss:update", (b: BossLiveDTO) => {
     if (!data || b.day !== data.day) return;
     if (b.last && b.last.damage > 0) setHit({ key: Date.now(), damage: b.last.damage, name: b.last.name });
-    if (b.killedAt && !data.killedAt) play("victory");
-    void mutate((d) => (d ? { ...d, hp: b.hp, killedAt: b.killedAt } : d), { revalidate: true });
+    const down = b.fell.at(-1);
+    if (down) {
+      setFell({ key: Date.now(), phase: down.phase, by: down.by });
+      play("victory");
+    }
+    void mutate((d) => (d ? { ...d, phase: b.phase, hp: b.hp, maxHp: b.maxHp, totalDamage: b.totalDamage } : d), {
+      revalidate: !!down,
+    });
   });
 
-  async function start(ids: number[]) {
+  async function start(ids: number[]): Promise<boolean> {
     try {
       await mutate(withTime(await api<BossDTO>("/boss/assault", { body: { instanceIds: ids } })), {
         revalidate: false,
       });
       play("deal");
       void mutateMe();
+      return true;
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Impossible de lancer l'assaut.");
+      return false;
     }
   }
 
-  async function answer(choice: number) {
+  async function answer(a: { choice: number } | { year: number }) {
     const q = data?.current?.question;
     if (!data?.current || !q || answering) return;
     setAnswering(true);
+    setLastChoices(q.choices);
     try {
       const res = withTime(
-        await api<BossDTO>(`/boss/assault/${data.current.id}/answer`, { body: { idx: q.idx, choice } }),
+        await api<BossDTO>(`/boss/assault/${data.current.id}/answer`, { body: { idx: q.idx, ...a } }),
       );
       const h = res.current?.hits.find((x) => x.idx === q.idx);
       play(h?.hit === "crit" ? "sr" : h?.hit === "hit" ? "correct" : "wrong");
@@ -449,24 +674,21 @@ export default function BossPage() {
       <div>
         <h1 className="page-title">Boss du jour</h1>
         <p className="hatnote mt-2">
-          Une Légendaire à abattre ensemble avant minuit, avec des PV à la mesure des assaillants habituels. Deux
-          assauts par jour et par joueur ; s&apos;il tombe, chaque assaillant gagne{" "}
-          {data
-            ? `${fmt(data.rewards.kill.pw)} PW et ${data.rewards.kill.packs} paquets bonus`
-            : "des PW et des paquets"}
-          , même en renfort après la chute. Le meilleur de la journée, désigné à minuit, gagne un paquet de plus.
+          Une Légendaire à faire tomber ensemble, phase après phase, jusqu&apos;à minuit. Deux assauts par jour, cinq
+          articles chacun ; joue sa faiblesse.
         </p>
       </div>
 
       {!data ? (
-        <div className="h-80 animate-pulse rounded-xl bg-panel" />
+        <div className="h-80 animate-pulse rounded-xl bg-panel" aria-label="Chargement du boss" />
       ) : (
         <>
+          <Rules boss={data} />
           <section
             aria-label="Le boss"
-            className="grid gap-5 rounded-[18px] border border-line bg-panel p-4 shadow-lift sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] sm:p-5"
+            className="relative grid gap-5 overflow-hidden rounded-[18px] border border-line bg-panel p-4 shadow-lift sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] sm:p-5"
           >
-            <div className={`mx-auto w-44 sm:w-full ${data.killedAt ? "pc-boss-dead" : ""}`}>
+            <div className="mx-auto w-44 sm:w-full">
               <Card card={data.boss} />
             </div>
             <div className="flex min-w-0 flex-col gap-4">
@@ -475,25 +697,28 @@ export default function BossPage() {
                   {data.boss.title}
                 </h2>
                 <p className="mt-1 text-sm text-muted">
-                  {data.killedAt
-                    ? `Vaincu${data.killedBy ? ` par ${data.killedBy}` : ""} à ${new Date(data.killedAt).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}. Bien joué la bande !`
-                    : `${fmt(data.participants)} assaillant${data.participants > 1 ? "s" : ""} aujourd'hui. Il reste ${timeLeft(new Date(data.nextAt).getTime() - now)}.`}
+                  {fmt(data.participants)} {plural(data.participants, "assaillant", "assaillants")} aujourd&apos;hui ·{" "}
+                  {fmt(data.totalDamage)} dégâts en tout · fin dans {timeLeft(new Date(data.nextAt).getTime() - now)}
                 </p>
               </div>
-              <Gauge boss={data} hit={hit} />
+              <div className="flex flex-wrap items-center gap-2 text-sm" aria-label="Règle du jour">
+                <span className="pc-rule" data-tone="weak">
+                  <Zap className="size-4" aria-hidden />
+                  Faiblesse : {CATEGORY_LABELS[data.rule.weakness]}{" "}
+                  <span className="tnum">{mult(data.rule.weaknessMult)}</span>
+                </span>
+                <span className="pc-rule" data-tone="resist">
+                  <Shield className="size-4" aria-hidden />
+                  Résistance : {CATEGORY_LABELS[data.rule.resistance]}{" "}
+                  <span className="tnum">{mult(data.rule.resistanceMult)}</span>
+                </span>
+              </div>
+              <PhaseTrack boss={data} />
+              <Gauge boss={data} hit={hit} fall={fell?.key ?? 0} />
               {data.ranking.length > 0 && (
-                <ol
-                  className="pc-boss-legend tnum flex flex-wrap gap-x-4 gap-y-1.5 text-sm"
-                  aria-label="Classement des assaillants"
-                >
-                  {data.ranking.map((r, i) => (
-                    <li
-                      key={r.userId}
-                      className={r.me ? "font-semibold text-text" : "text-muted"}
-                      style={
-                        { "--seg": r.me ? "var(--color-accent)" : SEGMENTS[i % SEGMENTS.length] } as React.CSSProperties
-                      }
-                    >
+                <ol className="tnum flex flex-wrap gap-x-4 gap-y-1.5 text-sm" aria-label="Classement des assaillants">
+                  {data.ranking.slice(0, 8).map((r, i) => (
+                    <li key={r.userId} className={r.me ? "font-semibold text-text" : "text-muted"}>
                       {i === 0 && (
                         <Crown
                           className="mr-1 inline size-3.5 align-[-0.1rem] text-warn"
@@ -505,35 +730,45 @@ export default function BossPage() {
                   ))}
                 </ol>
               )}
-              {data.killedAt && <Reinforcement boss={data} left={left} />}
+              <Earned boss={data} />
             </div>
+            {fell && (
+              <div key={fell.key} className="pc-phase-fall" data-reduce={reduce || undefined} role="status">
+                <p className="font-display text-4xl uppercase sm:text-5xl">Phase {fell.phase} tombée !</p>
+                <p className="text-sm font-semibold">
+                  Coup de {fell.by}. La phase {fell.phase + 1} arrive, plus solide.
+                </p>
+              </div>
+            )}
           </section>
 
           <section aria-labelledby="assault-title" className="infobox">
             <h2 id="assault-title" className="infobox-head flex flex-wrap items-baseline justify-between gap-2">
-              <span>
-                {running
-                  ? `Assaut ${data.current!.number}`
-                  : data.killedAt && !data.rewarded
-                    ? "Ton renfort"
-                    : "Ton assaut"}
-              </span>
+              <span>{running ? `Assaut ${data.current!.number}` : "Ton assaut"}</span>
               <span className="tnum font-sans text-sm font-semibold normal-case text-muted [font-stretch:100%]">
-                {fmt(data.myDamage)} dégâts aujourd&apos;hui · {left} assaut{left > 1 ? "s" : ""} restant
-                {left > 1 ? "s" : ""}
+                {fmt(data.myDamage)} dégâts aujourd&apos;hui · {left}{" "}
+                {plural(left, "assaut restant", "assauts restants")}
               </span>
             </h2>
             <div className="p-4">
               {running ? (
-                <AssaultPanel boss={data} onAnswer={(c) => void answer(c)} onNext={() => void next()} />
+                <AssaultPanel
+                  boss={data}
+                  onAnswer={(a) => void answer(a)}
+                  onNext={() => void next()}
+                  lastChoices={lastChoices}
+                />
               ) : (
                 <div className="flex flex-col gap-6">
-                  {data.current?.finished && <AssaultPanel boss={data} onAnswer={() => {}} onNext={() => {}} />}
+                  {data.current?.finished && (
+                    <AssaultPanel boss={data} onAnswer={() => {}} onNext={() => {}} lastChoices={null} />
+                  )}
                   {left > 0 ? (
                     <CardPicker boss={data} onStart={start} />
                   ) : (
                     <Empty title="Plus d'assaut aujourd'hui">
-                      Un nouveau boss arrive dans {timeLeft(new Date(data.nextAt).getTime() - now)}.
+                      Un nouveau boss arrive dans {timeLeft(new Date(data.nextAt).getTime() - now)}. Tes gains du jour
+                      tombent à minuit.
                     </Empty>
                   )}
                 </div>

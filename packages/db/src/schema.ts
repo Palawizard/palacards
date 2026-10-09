@@ -933,7 +933,28 @@ export const playerQuests = pgTable(
   ],
 );
 
-/** Article du jour (le même pour tous) et ses indices, figés à la première demande du jour. */
+/** Attributs d'un article de l'article du jour (figés : réponse du jour, ou essai d'un joueur). */
+export interface ArticleAttrsJson {
+  category: "personne" | "lieu" | "oeuvre" | "organisation" | "autre" | null;
+  type: string | null;
+  countryId: string | null;
+  country: string | null;
+  continents: string[];
+  year: number | null;
+  rarity: "C" | "PC" | "R" | "SR" | "UR" | "L";
+  views: number;
+}
+
+/** Comparaison d'un essai à la réponse, attribut par attribut. */
+export type AttrComparisonJson = Record<
+  "category" | "type" | "country" | "year" | "rarity" | "views",
+  { state: "good" | "near" | "bad" | "unknown"; arrow: "up" | "down" | null }
+>;
+
+/**
+ * Article du jour (le même pour tous), figé à la première demande du jour. Format 1 : indices (ancien jeu) ;
+ * format 2 : attributs de la réponse comparés aux essais, et sa vignette (servie pixelisée).
+ */
 export const dailyArticles = pgTable("daily_articles", {
   day: date("day").primaryKey(),
   cardId: bigint("card_id", { mode: "number" }).notNull(),
@@ -941,16 +962,28 @@ export const dailyArticles = pgTable("daily_articles", {
   title: text("title").notNull(),
   rarity: rarityEnum("rarity").notNull(),
   clues: jsonb("clues").$type<{ kind: string; label: string; text?: string; image?: string }[]>().notNull(),
+  format: smallint("format").notNull().default(1),
+  attrs: jsonb("attrs").$type<ArticleAttrsJson>(),
+  description: text("description"),
+  /** Vignette de la réponse : jamais envoyée au joueur avant la fin de sa partie. */
+  imageUrl: text("image_url"),
   createdAt: tstz("created_at").notNull().defaultNow(),
 });
 
-/** Partie d'un joueur à l'article du jour. */
+/**
+ * Partie d'un joueur à l'article du jour. `guesses` : titres tapés (format 1) ; `entries` : articles proposés
+ * (format 2), avec leurs attributs et la comparaison figés au moment de l'essai.
+ */
 export const dailyGuesses = pgTable(
   "daily_guesses",
   {
     userId: userRef("user_id").notNull(),
     day: date("day").notNull(),
     guesses: jsonb("guesses").$type<string[]>().notNull().default([]),
+    entries: jsonb("entries")
+      .$type<{ cardId: number; title: string; attrs: ArticleAttrsJson; cmp: AttrComparisonJson }[]>()
+      .notNull()
+      .default([]),
     found: boolean("found").notNull().default(false),
     reward: integer("reward").notNull().default(0),
     finishedAt: tstz("finished_at"),
@@ -958,7 +991,11 @@ export const dailyGuesses = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.day] })],
 );
 
-/** Boss du jour : une Légendaire de la saison, PV partagés par tous les joueurs. */
+/**
+ * Boss du jour : une Légendaire de la saison, PV partagés par tous les joueurs. Version 2 : boss à phases
+ * (`max_hp` : PV de la phase 1 ; `hp` : PV restants de la phase en cours ; `damage` : dégâts de la journée).
+ * Version 1 (avant les phases) : `killed_at`/`killed_by` disent quand le boss est tombé, et par qui.
+ */
 export const bossDays = pgTable(
   "boss_days",
   {
@@ -967,12 +1004,31 @@ export const bossDays = pgTable(
     season: smallint("season").notNull(),
     maxHp: integer("max_hp").notNull(),
     hp: integer("hp").notNull(),
+    version: smallint("version").notNull().default(1),
+    phase: smallint("phase").notNull().default(1),
+    damage: integer("damage").notNull().default(0),
+    /** Règle du jour : catégorie en faiblesse (×2) et en résistance (×0,5). */
+    weakness: text("weakness"),
+    resistance: text("resistance"),
     killedAt: tstz("killed_at"),
     killedBy: text("killed_by").references(() => user.id, { onDelete: "set null" }),
-    /** Journée close à minuit : consolation (boss debout) ou meilleur assaillant et retardataires payés (boss tombé). */
+    /** Journée close à minuit : récompenses des phases, meilleur assaillant et consolation versés. */
     finalizedAt: tstz("finalized_at"),
   },
-  (t) => [check("boss_days_hp_ok", sql`${t.hp} >= 0 AND ${t.hp} <= ${t.maxHp}`)],
+  (t) => [check("boss_days_state_ok", sql`${t.hp} >= 0 AND ${t.damage} >= 0 AND ${t.phase} >= 1`)],
+);
+
+/** Phase du boss tombée : quand, et sous le coup de qui. */
+export const bossPhases = pgTable(
+  "boss_phases",
+  {
+    day: date("day").notNull(),
+    phase: smallint("phase").notNull(),
+    maxHp: integer("max_hp").notNull(),
+    fallenAt: tstz("fallen_at").notNull(),
+    fallenBy: text("fallen_by").references(() => user.id, { onDelete: "set null" }),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.phase] })],
 );
 
 /** Assaut d'un joueur contre le boss (2 par jour) : 5 cartes, 5 questions. */
@@ -994,14 +1050,15 @@ export const bossAssaults = pgTable(
 );
 
 /**
- * Récompense de chute du boss versée à un joueur pour un jour : une seule fois, que ce soit à la chute,
- * en renfort (assaut fini après la chute) ou au rattrapage de minuit.
+ * Récompense du boss versée à un joueur pour un jour, une seule fois. `phases` : phases payées (2 pour une
+ * chute de l'ancien format, payée 100 PW et 2 paquets à la chute ou en renfort ; 0 pour une consolation).
  */
 export const bossRewards = pgTable(
   "boss_rewards",
   {
     day: date("day").notNull(),
     userId: userRef("user_id").notNull(),
+    phases: smallint("phases").notNull().default(2),
     paidAt: tstz("paid_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.day, t.userId] })],
@@ -1026,10 +1083,52 @@ export const bossHits = pgTable(
     choice: smallint("choice"),
     correct: boolean("correct"),
     answerMs: integer("answer_ms"),
+    /** Année tapée (question « Quelle année ? » à saisie libre). */
+    guessYear: smallint("guess_year"),
+    /** Catégorie de l'article au lancement de l'assaut, et son multiplicateur ce jour-là. */
+    category: text("category"),
+    mult: doublePrecision("mult"),
     damage: integer("damage"),
   },
   (t) => [primaryKey({ columns: [t.assaultId, t.idx] })],
 );
+
+/**
+ * Questions du boss déjà posées à un joueur : on ne lui repose jamais le même couple article + variante de
+ * question tant qu'il en reste d'autres ; sinon la plus ancienne.
+ */
+export const bossQuestionHistory = pgTable(
+  "boss_question_history",
+  {
+    userId: userRef("user_id").notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    type: text("type").notNull(),
+    key: text("key").notNull(),
+    askedAt: tstz("asked_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.cardId, t.type, t.key] })],
+);
+
+/**
+ * Attributs Wikidata d'un article (article du jour, dates des questions du boss), en cache, indépendants de la
+ * saison : élément, pays (et ses continents), année de naissance, création ou publication.
+ */
+export const wikiAttributes = pgTable("wiki_attributes", {
+  pageId: bigint("page_id", { mode: "number" }).primaryKey(),
+  qid: text("qid"),
+  /** Être humain (nature Q5) : catégorie « personne » à coup sûr. */
+  human: boolean("human"),
+  countryId: text("country_id"),
+  country: text("country"),
+  continents: text("continents")
+    .array()
+    .notNull()
+    .default(sql`'{}'::text[]`),
+  year: smallint("year"),
+  yearKind: text("year_kind", { enum: ["birth", "inception", "publication", "start"] }),
+  status: text("status", { enum: ["ok", "missing", "error"] }).notNull(),
+  fetchedAt: tstz("fetched_at").notNull().defaultNow(),
+});
 
 /** Journal des tirages (paquets, roue, upgrader, boss) : fil d'activité. Purgé au bout de 30 jours. */
 export const pulls = pgTable(

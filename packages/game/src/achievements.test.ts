@@ -158,10 +158,11 @@ describe("succès à paliers", () => {
   it("compte boss, article du jour, quêtes, recyclage et upgrades", () => {
     const stats = run([
       { type: "boss_assault", damage: 320 },
-      { type: "boss_killed", lastHit: false },
+      { type: "boss_phase", phase: 1, lastHit: false },
+      { type: "boss_phase", phase: 2, lastHit: true },
       { type: "boss_mvp" },
       { type: "article_played", found: true, guesses: 1 },
-      { type: "article_played", found: false, guesses: 6 },
+      { type: "article_played", found: false, guesses: 8 },
       { type: "quest_completed", period: "day" },
       { type: "recycled", rarities: ["C", "L"] },
       { type: "upgrade", success: true },
@@ -170,6 +171,8 @@ describe("succès à paliers", () => {
       boss_assaults: 1,
       boss_damage: 320,
       boss_kills: 1,
+      boss_phases: 2,
+      boss_last_hit: 1,
       boss_mvp: 1,
       articles_found: 1,
       articles_first_try: 1,
