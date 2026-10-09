@@ -1,6 +1,6 @@
 import { eq, schema } from "@palacards/db";
 import {
-  ARTICLE_GUESS_MAX_LENGTH,
+  ARTICLE_SEARCH_MAX_LENGTH,
   BOSS_CARDS_PER_ASSAULT,
   FEED_REACTIONS,
   PASS_MAX_LEVEL,
@@ -13,8 +13,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
-import { articleState, guessArticle } from "../services/article.js";
-import { answerBoss, bossState, serveNext, startAssault } from "../services/boss.js";
+import { articleImage, articleState, guessArticle, searchArticles } from "../services/article.js";
+import { answerBoss, bossCards, bossState, serveNext, startAssault } from "../services/boss.js";
 import {
   adminBroadcasts,
   archiveBroadcast,
@@ -38,7 +38,7 @@ const XP_TABLE: PassDTO["xpTable"] = [
   { label: "Tour de roue", xp: XP.wheel },
   { label: "Article du jour trouvé", xp: XP.articleFound },
   { label: "Assaut contre le boss", xp: XP.bossAssault },
-  { label: "Boss vaincu", xp: XP.bossKill },
+  { label: "Phase du boss abattue", xp: XP.bossPhase },
   { label: "Duel gagné", xp: XP.battleWin },
   { label: "Duel perdu", xp: XP.battleLoss },
   { label: "Échange conclu", xp: XP.trade },
@@ -90,12 +90,33 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
   // --- Article du jour ---
   api.get("/article", auth, async (req) => articleState(ctx, req.user.id));
   api.post("/article/guess", { ...auth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) => {
-    const { guess } = parse(z.object({ guess: z.string().max(ARTICLE_GUESS_MAX_LENGTH * 2) }), req.body);
-    return guessArticle(ctx, req.user.id, guess);
+    const { cardId } = parse(z.object({ cardId: z.number().int().positive() }), req.body);
+    return guessArticle(ctx, req.user.id, cardId);
   });
+  // Autocomplétion des essais : une requête par frappe (après une courte pause côté navigateur).
+  api.get("/article/search", { ...auth, config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req) => {
+    const { q } = parse(z.object({ q: z.string().max(ARTICLE_SEARCH_MAX_LENGTH * 2) }), req.query);
+    return searchArticles(ctx, q);
+  });
+  // Image de la réponse, pixelisée selon l'avancement du joueur : jamais mise en cache (elle change à chaque essai).
+  api.get(
+    "/article/image",
+    { ...auth, config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
+    async (req, reply) => {
+      const img = await articleImage(ctx, req.user.id);
+      return reply
+        .header("content-type", img.type)
+        .header("cache-control", "private, no-store")
+        .header("x-content-type-options", "nosniff")
+        .header("content-security-policy", "default-src 'none'; sandbox")
+        .header("cross-origin-resource-policy", "same-site")
+        .send(img.body);
+    },
+  );
 
   // --- Boss du jour ---
   api.get("/boss", auth, async (req) => bossState(ctx, req.user.id));
+  api.get("/boss/cards", auth, async (req) => bossCards(ctx, req.user.id));
   api.post("/boss/assault", auth, async (req) => {
     const { instanceIds } = parse(
       z.object({ instanceIds: z.array(z.number().int().positive()).length(BOSS_CARDS_PER_ASSAULT) }),
@@ -109,18 +130,28 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
   });
   api.post("/boss/assault/:id/answer", auth, async (req) => {
     const { id } = parse(idParams, req.params);
-    const { idx, choice } = parse(
-      z.object({
-        idx: z
-          .number()
-          .int()
-          .min(0)
-          .max(BOSS_CARDS_PER_ASSAULT - 1),
-        choice: z.number().int().min(0).max(5),
-      }),
+    const body = parse(
+      z.union([
+        z.object({
+          idx: z
+            .number()
+            .int()
+            .min(0)
+            .max(BOSS_CARDS_PER_ASSAULT - 1),
+          choice: z.number().int().min(0).max(5),
+        }),
+        z.object({
+          idx: z
+            .number()
+            .int()
+            .min(0)
+            .max(BOSS_CARDS_PER_ASSAULT - 1),
+          year: z.number().int().min(-9_999).max(9_999),
+        }),
+      ]),
       req.body,
     );
-    return answerBoss(ctx, req.user.id, id, idx, choice);
+    return answerBoss(ctx, req.user.id, id, body.idx, "year" in body ? { year: body.year } : { choice: body.choice });
   });
 
   // --- Fil d'activité ---

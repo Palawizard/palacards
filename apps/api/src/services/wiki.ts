@@ -18,6 +18,78 @@ export interface ArticleSummary {
 }
 const REST = "https://fr.wikipedia.org/api/rest_v1/page/summary/";
 const ACTION_API = "https://fr.wikipedia.org/w/api.php";
+const WIKIDATA_API = "https://www.wikidata.org/w/api.php";
+/** Éléments par appel à l'API (plafond de MediaWiki pour `pageids` et `ids`). */
+const BATCH = 50;
+
+/** Attributs Wikidata d'un article (article du jour, dates des questions du boss). */
+export interface WikiAttributes {
+  qid: string | null;
+  human: boolean;
+  countryId: string | null;
+  country: string | null;
+  continents: string[];
+  year: number | null;
+  yearKind: "birth" | "inception" | "publication" | "start" | null;
+}
+
+type Claim = {
+  rank?: string;
+  mainsnak?: { datavalue?: { value?: { id?: string; time?: string } | string } };
+};
+type Entity = { claims?: Record<string, Claim[]>; labels?: Record<string, { value: string }>; missing?: string };
+
+/** Valeurs d'une propriété, rang « préféré » d'abord, sans les valeurs dépréciées. */
+function claimValues(entity: Entity | undefined, prop: string): (string | { id?: string; time?: string })[] {
+  const claims = (entity?.claims?.[prop] ?? []).filter((c) => c.rank !== "deprecated");
+  claims.sort((a, b) => Number(b.rank === "preferred") - Number(a.rank === "preferred"));
+  return claims.map((c) => c.mainsnak?.datavalue?.value).filter((v): v is NonNullable<typeof v> => v !== undefined);
+}
+
+const firstId = (entity: Entity | undefined, prop: string) => {
+  for (const v of claimValues(entity, prop)) if (typeof v === "object" && v.id) return v.id;
+  return null;
+};
+
+/** Année d'une date Wikidata (« +1952-03-11T00:00:00Z », « -0052-00-00T00:00:00Z »). */
+export function wikidataYear(time: string | undefined): number | null {
+  const m = time?.match(/^([+-])0*(\d{1,4})-/);
+  if (!m) return null;
+  const year = Number(m[2]) * (m[1] === "-" ? -1 : 1);
+  return year === 0 || Math.abs(year) > 9_999 ? null : year;
+}
+
+/** Date retenue : naissance pour une personne ; sinon sortie, création ou fondation, début. */
+const YEAR_PROPS: { prop: string; kind: NonNullable<WikiAttributes["yearKind"]>; human?: boolean }[] = [
+  { prop: "P569", kind: "birth", human: true },
+  { prop: "P577", kind: "publication" },
+  { prop: "P571", kind: "inception" },
+  { prop: "P580", kind: "start" },
+];
+
+/** Attributs d'un élément Wikidata (pays et continents résolus à part). */
+export function entityAttributes(entity: Entity | undefined): Omit<WikiAttributes, "qid" | "country" | "continents"> {
+  const natures = claimValues(entity, "P31").map((v) => (typeof v === "object" ? v.id : null));
+  const human = natures.includes("Q5");
+  const countryId = human
+    ? (firstId(entity, "P27") ?? firstId(entity, "P17"))
+    : (firstId(entity, "P17") ?? firstId(entity, "P495") ?? firstId(entity, "P27"));
+  let year: number | null = null;
+  let yearKind: WikiAttributes["yearKind"] = null;
+  for (const { prop, kind, human: forHuman } of YEAR_PROPS) {
+    if (forHuman !== undefined && forHuman !== human) continue;
+    for (const v of claimValues(entity, prop)) {
+      const y = typeof v === "object" ? wikidataYear(v.time) : null;
+      if (y !== null) {
+        year = y;
+        yearKind = kind;
+        break;
+      }
+    }
+    if (year !== null) break;
+  }
+  return { human, countryId, year, yearKind };
+}
 /** Plafonds d'une catégorie de booster à thème : articles gardés et appels à l'API. */
 export const CATEGORY_MAX_PAGES = 5_000;
 const CATEGORY_MAX_REQUESTS = 60;
@@ -200,6 +272,165 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     );
   }
 
+  async function getJson<T>(url: URL): Promise<T> {
+    const res = await limited(() =>
+      fetch(url, {
+        headers: { "User-Agent": config.WIKIMEDIA_USER_AGENT, Accept: "application/json" },
+        signal: AbortSignal.timeout(8_000),
+      }),
+    );
+    if (!res.ok) throw new Error(`API Wikimedia : HTTP ${res.status}`);
+    return (await res.json()) as T;
+  }
+
+  const api = (base: string, params: Record<string, string>) => {
+    const url = new URL(base);
+    url.search = new URLSearchParams({ format: "json", formatversion: "2", ...params }).toString();
+    return url;
+  };
+
+  /** Entités Wikidata (par lots de 50). */
+  async function entities(ids: string[], props: string): Promise<Record<string, Entity>> {
+    const out: Record<string, Entity> = {};
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const body = await getJson<{ entities?: Record<string, Entity> }>(
+        api(WIKIDATA_API, {
+          action: "wbgetentities",
+          ids: ids.slice(i, i + BATCH).join("|"),
+          props,
+          languages: "fr",
+        }),
+      );
+      Object.assign(out, body.entities ?? {});
+    }
+    return out;
+  }
+
+  /** Charge un lot d'attributs : élément Wikidata de chaque page, puis ses pays et leurs continents. */
+  async function fetchAttributes(pageIds: number[]) {
+    const qids = new Map<number, string>();
+    const missing = new Set<number>();
+    for (let i = 0; i < pageIds.length; i += BATCH) {
+      const chunk = pageIds.slice(i, i + BATCH);
+      const body = await getJson<{
+        query?: { pages?: { pageid?: number; missing?: boolean; pageprops?: { wikibase_item?: string } }[] };
+      }>(api(ACTION_API, { action: "query", prop: "pageprops", ppprop: "wikibase_item", pageids: chunk.join("|") }));
+      for (const p of body.query?.pages ?? []) {
+        if (!p.pageid) continue;
+        if (p.pageprops?.wikibase_item) qids.set(p.pageid, p.pageprops.wikibase_item);
+        else missing.add(p.pageid);
+      }
+    }
+    const items = await entities([...new Set(qids.values())], "claims");
+    const base = new Map([...qids].map(([page, qid]) => [page, { qid, ...entityAttributes(items[qid]) }]));
+    const countryIds = [...new Set([...base.values()].map((a) => a.countryId).filter((c): c is string => !!c))];
+    const countries = countryIds.length ? await entities(countryIds, "labels|claims") : {};
+    const rows = [
+      ...[...base].map(([pageId, a]) => {
+        const c = a.countryId ? countries[a.countryId] : undefined;
+        const continents = claimValues(c, "P30")
+          .map((v) => (typeof v === "object" ? v.id : undefined))
+          .filter((v): v is string => !!v);
+        return {
+          pageId,
+          qid: a.qid,
+          human: a.human,
+          countryId: a.countryId,
+          country: c?.labels?.fr?.value ?? null,
+          continents,
+          year: a.year,
+          yearKind: a.yearKind,
+          status: "ok" as const,
+        };
+      }),
+      ...[...missing].map((pageId) => ({
+        pageId,
+        qid: null,
+        human: false,
+        countryId: null,
+        country: null,
+        continents: [],
+        year: null,
+        yearKind: null,
+        status: "missing" as const,
+      })),
+    ];
+    if (!rows.length) return;
+    await db
+      .insert(schema.wikiAttributes)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: schema.wikiAttributes.pageId,
+        set: {
+          qid: sql`excluded.qid`,
+          human: sql`excluded.human`,
+          countryId: sql`excluded.country_id`,
+          country: sql`excluded.country`,
+          continents: sql`excluded.continents`,
+          year: sql`excluded.year`,
+          yearKind: sql`excluded.year_kind`,
+          status: sql`excluded.status`,
+          fetchedAt: sql`now()`,
+        },
+      });
+  }
+
+  const inflightAttrs = new Map<number, Promise<void>>();
+
+  /**
+   * Charge les attributs Wikidata manquants (dédoublonné, par lots). Les erreurs réseau ne sont pas mises en
+   * cache : on réessaiera au prochain besoin.
+   */
+  async function loadAttributes(cardIds: number[]): Promise<void> {
+    if (config.WIKIMEDIA_DISABLED || cardIds.length === 0) return;
+    const ids = [...new Set(cardIds)];
+    const rows = await db
+      .select({ pageId: schema.wikiAttributes.pageId })
+      .from(schema.wikiAttributes)
+      .where(inArray(schema.wikiAttributes.pageId, ids));
+    const have = new Set(rows.map((r) => r.pageId));
+    const waits: Promise<void>[] = [];
+    const todo: number[] = [];
+    for (const id of ids) {
+      if (have.has(id)) continue;
+      const p = inflightAttrs.get(id);
+      if (p) waits.push(p);
+      else todo.push(id);
+    }
+    if (todo.length) {
+      const p = fetchAttributes(todo)
+        .catch((err) => log.warn({ err, count: todo.length }, "attributs Wikidata indisponibles"))
+        .finally(() => {
+          for (const id of todo) inflightAttrs.delete(id);
+        });
+      for (const id of todo) inflightAttrs.set(id, p);
+      waits.push(p);
+    }
+    await Promise.all(waits);
+  }
+
+  /** Attributs Wikidata en cache (absents : pas encore chargés, ou page sans élément). */
+  async function attributes(cardIds: number[]): Promise<Map<number, WikiAttributes>> {
+    const out = new Map<number, WikiAttributes>();
+    if (cardIds.length === 0) return out;
+    const rows = await db
+      .select()
+      .from(schema.wikiAttributes)
+      .where(inArray(schema.wikiAttributes.pageId, [...new Set(cardIds)]));
+    for (const r of rows)
+      if (r.status === "ok")
+        out.set(r.pageId, {
+          qid: r.qid,
+          human: !!r.human,
+          countryId: r.countryId,
+          country: r.country,
+          continents: r.continents,
+          year: r.year,
+          yearKind: r.yearKind,
+        });
+    return out;
+  }
+
   /** Titre d'un article (saison la plus récente où il existe). */
   async function titleOf(cardId: number): Promise<string | null> {
     const [row] = await db
@@ -261,7 +492,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     return [...pages].slice(0, CATEGORY_MAX_PAGES);
   }
 
-  return { cached, summaries, load, titleOf, categoryMembers };
+  return { cached, summaries, load, titleOf, categoryMembers, loadAttributes, attributes };
 }
 
 export type Wiki = ReturnType<typeof createWiki>;

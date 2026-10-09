@@ -78,8 +78,8 @@ export interface MeDTO {
   quests: { done: number; total: number };
   /** Article du jour pas encore joué. */
   articleReady: boolean;
-  /** Boss du jour : encore debout, assauts restants pour le joueur, récompense de chute déjà touchée. */
-  boss: { alive: boolean; assaultsLeft: number; rewarded: boolean };
+  /** Boss du jour : assauts restants pour le joueur, phase en cours. */
+  boss: { assaultsLeft: number; phase: number };
 }
 
 /** Booster à thème temporaire (page Paquets). */
@@ -286,11 +286,29 @@ export interface PassDTO {
   xpTable: { label: string; xp: number }[];
 }
 
-export interface ArticleClueDTO {
-  kind: string;
-  label: string;
-  text?: string;
-  image?: string;
+/** Case d'un attribut dans le tableau de l'article du jour. */
+export interface ArticleCellDTO {
+  /** Valeur affichée (« ? » si inconnue). */
+  value: string;
+  state: "good" | "near" | "bad" | "unknown";
+  /** La réponse est au-dessus (`up`) ou en dessous (`down`). */
+  arrow: "up" | "down" | null;
+}
+
+export type ArticleAttrKey = "category" | "type" | "country" | "year" | "rarity" | "views";
+
+/** Essai à l'article du jour : un article du jeu et sa comparaison à la réponse. */
+export interface ArticleGuessDTO {
+  cardId: number;
+  title: string;
+  cells: Record<ArticleAttrKey, ArticleCellDTO>;
+}
+
+/** Suggestion de l'autocomplétion. */
+export interface ArticleSearchItemDTO {
+  cardId: number;
+  title: string;
+  rarity: Rarity;
 }
 
 export interface DailyArticleDTO {
@@ -298,34 +316,50 @@ export interface DailyArticleDTO {
   /** Numéro de l'article du jour (depuis le premier). */
   number: number;
   maxGuesses: number;
-  guesses: string[];
-  /** Indices dévoilés (un de plus par essai raté). */
-  clues: ArticleClueDTO[];
+  guesses: ArticleGuessDTO[];
   /** Titre en grille : mots séparés par trois espaces, cases par une espace, `_` pour une lettre cachée. */
   pattern: string;
+  /** Indices de secours : description masquée (après le 4e essai), première lettre (après le 6e). */
+  hints: { description: string | null; firstLetter: string | null };
+  /** Essais après lesquels chaque indice se dévoile. */
+  hintsAfter: { description: number; firstLetter: number };
+  /** Image de la réponse servie pixelisée par l'API (`/article/image`) ; false : pas d'image utilisable. */
+  image: boolean;
+  /** Largeur de l'image pixelisée (px) ; null : image entière (partie finie). */
+  imageWidth: number | null;
   found: boolean;
   finished: boolean;
   reward: number;
   /** Gain possible au prochain essai. */
   nextReward: number;
-  /** Une fois la partie finie : la carte à deviner. */
+  /** Une fois la partie finie : la carte à deviner et ses attributs. */
   answer: CardDTO | null;
-  /** Ligne de partage (carrés de couleur). */
+  answerCells: Record<ArticleAttrKey, string> | null;
+  /** Grille de partage (lignes de carrés de couleur). */
   share: string | null;
-  /** Joueurs ayant trouvé aujourd'hui, sur ceux ayant joué. */
-  stats: { found: number; played: number };
+  /** Statistiques du jour, une fois sa partie finie : joueurs, trouvés, essais des gagnants (index 0 = 1 essai). */
+  stats: { played: number; found: number; distribution: number[] } | null;
+  /** Partie finie avec l'ancien format (jour de la mise à jour) : ses essais tapés. */
+  legacy: { guesses: string[] } | null;
   nextAt: string;
 }
+
+export type ArticleCategoryKey = "personne" | "lieu" | "oeuvre" | "organisation" | "autre";
 
 export interface BossQuestionDTO {
   idx: number;
   /** Carte qui attaque ; sans titre, image ni identifiant quand elle est face cachée. */
   card: CardDTO;
-  /** Question dont la carte donnerait la réponse (image, « Qui suis-je ? ») : carte face cachée. */
+  /** Question dont la carte donnerait la réponse (image) : carte face cachée. */
   cardHidden: boolean;
   type: string;
+  /** `choice` : un choix parmi `choices` ; `year` : une année à taper. */
+  input: "choice" | "year";
   prompt: string;
   choices: string[];
+  /** Catégorie de l'article et son multiplicateur du jour (×2 faiblesse, ×0,5 résistance). */
+  category: ArticleCategoryKey;
+  mult: number;
   /** Temps restant pour répondre (ms) au moment de l'envoi. */
   remainingMs: number;
   durationMs: number;
@@ -334,11 +368,17 @@ export interface BossQuestionDTO {
 export interface BossHitDTO {
   idx: number;
   card: CardDTO;
+  type: string;
   correct: boolean;
-  correctIndex: number;
+  /** Bonne réponse : index du choix, ou l'année (question à taper). */
+  correctIndex: number | null;
+  correctYear: number | null;
   choice: number | null;
+  guessYear: number | null;
   answerMs: number | null;
   hit: "miss" | "hit" | "crit";
+  category: ArticleCategoryKey;
+  mult: number;
   damage: number;
 }
 
@@ -351,33 +391,82 @@ export interface BossAssaultDTO {
   finished: boolean;
 }
 
+export interface BossPhaseDTO {
+  phase: number;
+  maxHp: number;
+  /** Phase tombée : quand, et sous le coup de qui. */
+  fallenAt: string | null;
+  fallenBy: string | null;
+}
+
 export interface BossDTO {
   day: string;
   boss: CardDTO;
+  bossCategory: ArticleCategoryKey;
   extract: string | null;
+  /** Phase en cours, ses PV et ce qu'il en reste ; dégâts de la journée, toutes phases comprises. */
+  phase: number;
   maxHp: number;
   hp: number;
-  killedAt: string | null;
-  killedBy: string | null;
+  totalDamage: number;
+  /** Phases tombées, puis la phase en cours. */
+  phases: BossPhaseDTO[];
+  rule: { weakness: ArticleCategoryKey; resistance: ArticleCategoryKey; weaknessMult: number; resistanceMult: number };
   assaultsPerDay: number;
   assaultsUsed: number;
   cardsPerAssault: number;
   /** Assaut en cours du joueur (question à répondre ou à demander). */
   current: BossAssaultDTO | null;
   myDamage: number;
-  /** Récompense de chute déjà touchée aujourd'hui (à la chute, ou en renfort après). */
-  rewarded: boolean;
+  /** Ce que le joueur a déjà acquis aujourd'hui (versé à minuit). */
+  earned: { pw: number; packs: number; phases: number[]; consolation: boolean; mvp: boolean; missing: number };
   ranking: { userId: string; name: string; username: string; damage: number; me: boolean }[];
   participants: number;
-  rewards: { kill: { pw: number; packs: number }; mvpPacks: number; consolationPw: number };
+  rewards: {
+    phases: { pw: number; packs: number }[];
+    laterPhase: { pw: number; packs: number };
+    mvpPacks: number;
+    consolationPw: number;
+    minDamage: number;
+  };
+  fatigueDays: number;
   nextAt: string;
+}
+
+/** Article de sa collection pour un assaut : catégorie, dégâts du jour, repos. */
+export interface BossCardDTO {
+  instanceId: number;
+  cardId: number;
+  title: string;
+  rarity: Rarity;
+  atk: number;
+  level: number;
+  shiny: boolean;
+  category: ArticleCategoryKey;
+  mult: number;
+  /** Dégâts sur une bonne réponse et en critique, faiblesse ou résistance comprise. */
+  damage: number;
+  critDamage: number;
+  /** Jours de repos restants (0 : jouable aujourd'hui). */
+  restDays: number;
+}
+
+export interface BossCardsDTO {
+  /** Articles jouables (les plus efficaces d'abord), puis les articles au repos. */
+  items: BossCardDTO[];
+  /** Articles jouables et articles possédés en tout. */
+  available: number;
+  total: number;
 }
 
 export interface BossLiveDTO {
   day: string;
+  phase: number;
   hp: number;
   maxHp: number;
-  killedAt: string | null;
+  totalDamage: number;
+  /** Phases tombées par ce coup (en général aucune, parfois une). */
+  fell: { phase: number; by: string }[];
   /** Dernier coup porté (affiché en direct). */
   last: { name: string; damage: number; hit: "miss" | "hit" | "crit" } | null;
 }
