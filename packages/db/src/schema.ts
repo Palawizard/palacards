@@ -1247,7 +1247,7 @@ export const suggestions = pgTable(
 );
 
 export const TRIAGE_STATUSES = ["pending", "running", "done", "error"] as const;
-export const TRIAGE_VERDICTS = ["build", "decision", "non", "bug", "prod"] as const;
+export const TRIAGE_VERDICTS = ["build", "decision", "non", "bug", "prod", "saison"] as const;
 export const TRIAGE_CATEGORIES = ["important", "confort", "bloat", "refus", "troll"] as const;
 export const BUILD_STATUSES = [
   "none",
