@@ -354,7 +354,10 @@ describe("collection et recyclage", () => {
     await ctx.db.insert(schema.themeCards).values({ themeId: theme!.id, cardId: card.cardId });
 
     const filtered = await p.get(`/collection?theme=${theme!.id}`);
-    expect(filtered.body.items.map((c: { cardId: number }) => c.cardId)).toEqual([card.cardId]);
+    // Le paquet est tiré au hasard : il peut contenir plusieurs exemplaires de la même carte.
+    const filteredIds = filtered.body.items.map((c: { cardId: number }) => c.cardId);
+    expect(filteredIds).toContain(card.cardId);
+    expect(new Set(filteredIds)).toEqual(new Set([card.cardId]));
     const summary = await p.get("/collection/summary");
     expect(summary.body.themes).toContainEqual({ id: theme!.id, name: "Thème de test", owned: 1, cardCount: 1 });
     const sheet = await p.get(`/cards/${card.cardId}`);
