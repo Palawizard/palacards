@@ -442,6 +442,8 @@ export interface BossCardDTO {
   atk: number;
   level: number;
   shiny: boolean;
+  /** Image de l'article (vignette du sélecteur), null s'il n'en a pas. */
+  thumbUrl: string | null;
   category: ArticleCategoryKey;
   mult: number;
   /** Dégâts sur une bonne réponse et en critique, faiblesse ou résistance comprise. */

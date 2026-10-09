@@ -736,7 +736,7 @@
   background: color-mix(in oklab, var(--color-accent) 9%, var(--color-panel));
 }
 
-/* Sélecteur : cinq emplacements, puis la liste des articles. */
+/* Sélecteur : cinq emplacements, les boutons d'assaut, puis les vignettes des articles. */
 .pc-boss-slots {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -744,6 +744,8 @@
 }
 .pc-boss-slots > li {
   display: grid;
+  min-width: 0;
+  overflow: hidden;
   min-height: 4.2rem;
   place-items: center;
   border: 1.5px dashed var(--color-line-strong);
@@ -781,56 +783,110 @@
     transform: scale(0.95);
   }
 }
-.pc-boss-list {
-  display: grid;
-  gap: 0;
-  overflow: hidden;
+/* Grille de vignettes à hauteur bornée : elle défile seule, les boutons d'assaut restent au-dessus. */
+.pc-boss-scroll {
+  max-height: min(30rem, 62svh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.5rem;
   border: 1px solid var(--color-line);
   border-radius: 12px;
+  background: var(--color-panel-2);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line-strong) transparent;
+}
+.pc-boss-scroll:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+.pc-boss-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(5.4rem, 1fr));
+  gap: 0.4rem;
 }
 @media (min-width: 640px) {
-  .pc-boss-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .pc-boss-grid {
+    grid-template-columns: repeat(auto-fill, minmax(6.6rem, 1fr));
+    gap: 0.5rem;
   }
 }
-.pc-boss-list > li {
-  border-bottom: 1px solid var(--color-line);
-}
-.pc-boss-row {
+.pc-boss-tile {
   display: flex;
   width: 100%;
-  min-height: 3.4rem;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
+  height: 100%;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.35rem 0.35rem 0.5rem;
+  border: 1.5px solid var(--color-line);
+  border-radius: 10px;
+  background: var(--color-panel);
   text-align: left;
-  transition: background-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    transform 160ms var(--ease-out);
 }
-.pc-boss-row[aria-pressed="true"] {
-  background: color-mix(in oklab, var(--color-accent) 14%, transparent);
+.pc-boss-tile:active:not(:disabled) {
+  transform: scale(0.97);
 }
-.pc-boss-row:disabled {
+.pc-boss-tile[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: color-mix(in oklab, var(--color-accent) 12%, var(--color-panel));
+}
+.pc-boss-tile:disabled {
   cursor: not-allowed;
 }
-.pc-boss-row[data-tired] {
+.pc-boss-tile:disabled:not([data-tired]) {
+  opacity: 0.7;
+}
+.pc-boss-tile[data-tired] {
   opacity: 0.55;
   filter: grayscale(0.8);
 }
 @media (hover: hover) and (pointer: fine) {
-  .pc-boss-row:hover:not(:disabled):not([aria-pressed="true"]) {
-    background: var(--color-panel-2);
+  .pc-boss-tile:hover:not(:disabled):not([aria-pressed="true"]) {
+    border-color: var(--color-line-strong);
   }
 }
-.pc-boss-check {
+.pc-boss-thumb {
+  position: relative;
   display: grid;
-  width: 1.5rem;
-  height: 1.5rem;
-  flex-shrink: 0;
+  aspect-ratio: 4 / 3;
   place-items: center;
-  border: 2px solid var(--color-line-strong);
-  border-radius: 999px;
+  overflow: hidden;
+  border: 1.5px solid var(--r);
+  border-radius: 7px;
+  background: var(--color-panel-2);
 }
-.pc-boss-row[aria-pressed="true"] .pc-boss-check {
+.pc-boss-tile-rarity {
+  position: absolute;
+  bottom: 0.25rem;
+  left: 0.25rem;
+  z-index: 2;
+  font-size: 0.7rem;
+}
+.pc-boss-tile-shiny {
+  top: auto;
+  right: 0.25rem;
+  bottom: 0.25rem;
+  padding: 0.05rem 0.35rem;
+  font-size: 0.58rem;
+}
+.pc-boss-check {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  z-index: 2;
+  display: grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  place-items: center;
+  border: 2px solid rgb(255 255 255 / 0.9);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.28);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+}
+.pc-boss-tile[aria-pressed="true"] .pc-boss-check {
   border-color: var(--color-accent);
   background: var(--color-accent);
   color: var(--color-accent-ink);

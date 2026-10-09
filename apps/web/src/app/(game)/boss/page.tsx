@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { CardBack } from "@/components/Battle";
 import { Card } from "@/components/Card";
+import { CardImage } from "@/components/CardImage";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError, thumbSrc } from "@/lib/api";
 import { fmt, timeLeft } from "@/lib/format";
@@ -211,7 +212,8 @@ function Earned({ boss }: { boss: BossDTO }) {
 // Choix des cinq articles
 // ---------------------------------------------------------------------------
 
-function CardRow({
+/** Vignette d'un article : image, rareté, dégâts du jour (ou repos restant). */
+function CardTile({
   c,
   on,
   disabled,
@@ -230,36 +232,41 @@ function CardRow({
         aria-pressed={on}
         disabled={tired || (disabled && !on)}
         onClick={onToggle}
-        className="pc-boss-row"
+        className="pc-boss-tile"
         data-tired={tired || undefined}
+        title={tired ? undefined : `${fmt(c.critDamage)} dégâts en critique`}
       >
-        <span data-rarity={c.rarity} className="pc-sigil shrink-0" title={RARITY_LABELS[c.rarity]}>
-          {c.rarity}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="flex items-center gap-1.5 font-semibold">
-            <span className="truncate">{c.title}</span>
-            {c.shiny && (
-              <span className="pc-shiny-tag !static shrink-0 !text-[0.65rem]" title="Carte brillante">
-                Brillante
-              </span>
-            )}
+        <span className="pc-boss-thumb" data-rarity={c.rarity}>
+          {c.thumbUrl ? (
+            <CardImage cardId={c.cardId} src={thumbSrc(c.thumbUrl)} revealable={false} />
+          ) : (
+            <span className="font-display text-3xl uppercase text-faint" aria-hidden>
+              {c.title.slice(0, 1)}
+            </span>
+          )}
+          <span className="pc-sigil pc-boss-tile-rarity" title={RARITY_LABELS[c.rarity]}>
+            {c.rarity}
+            <span className="sr-only"> ({RARITY_LABELS[c.rarity]})</span>
           </span>
-          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-            <CategoryTag category={c.category} m={c.mult} />
-            {tired ? (
-              <span className="text-faint">
-                Reposée dans {c.restDays} {plural(c.restDays, "jour", "jours")}
-              </span>
-            ) : (
-              <span className="tnum">
-                {fmt(c.damage)} dégâts · {fmt(c.critDamage)} en critique
-              </span>
-            )}
+          {c.shiny && (
+            <span className="pc-shiny-tag pc-boss-tile-shiny" title="Carte brillante">
+              Brillante
+            </span>
+          )}
+          <span className="pc-boss-check" aria-hidden>
+            {on && <Check className="size-3.5" strokeWidth={3} />}
           </span>
         </span>
-        <span className="pc-boss-check" aria-hidden>
-          {on && <Check className="size-3.5" strokeWidth={3} />}
+        <span className="line-clamp-2 text-[0.8rem] font-semibold leading-tight">{c.title}</span>
+        <span className="mt-auto flex flex-col items-start gap-1 text-xs">
+          {tired ? (
+            <span className="text-faint">
+              Reposée dans {c.restDays} {plural(c.restDays, "jour", "jours")}
+            </span>
+          ) : (
+            <span className="tnum text-muted">{fmt(c.damage)} dégâts</span>
+          )}
+          <CategoryTag category={c.category} m={c.mult} />
         </span>
       </button>
     </li>
@@ -321,7 +328,33 @@ function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[])
           );
         })}
       </ol>
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* Boutons au-dessus des vignettes : toujours à portée, la grille défile en dessous. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <p className="tnum text-sm text-muted">
+          {fmt(data.available)} {plural(data.available, "article prêt", "articles prêts")}
+          {picked.length > 0 && ` · jusqu'à ${fmt(total)} dégâts`}
+        </p>
+        <div className="flex w-full gap-2 sm:w-auto">
+          <button
+            type="button"
+            className="btn btn-sm flex-1 sm:flex-none"
+            disabled={busy}
+            onClick={() => setPicked(ready.slice(0, need).map((c) => c.instanceId))}
+          >
+            Mes {need} plus efficaces
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-primary flex-1 sm:flex-none"
+            disabled={busy || picked.length !== need}
+            onClick={() => void start(picked)}
+          >
+            <Sword className="size-4" aria-hidden />
+            {busy ? "Préparation…" : `Attaquer (${picked.length}/${need})`}
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer">
           <button type="button" className="chip" aria-pressed={!onlyWeak} onClick={() => setOnlyWeak(false)}>
             Toutes
@@ -337,47 +370,25 @@ function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[])
             Efficaces aujourd&apos;hui ({weakCount})
           </button>
         </div>
-        <p className="tnum text-sm text-muted">
-          {fmt(data.available)} {plural(data.available, "article prêt", "articles prêts")}
-          {picked.length > 0 && ` · jusqu'à ${fmt(total)} dégâts`}
-        </p>
-      </div>
-      {shown.length === 0 ? (
-        <p className="slot px-4 py-6 text-center text-sm text-muted">
-          Aucun article {CATEGORY_LABELS[boss.rule.weakness].toLowerCase()} prêt aujourd&apos;hui.
-        </p>
-      ) : (
-        <ul className="pc-boss-list">
-          {shown.map((c) => (
-            <CardRow
-              key={c.instanceId}
-              c={c}
-              on={picked.includes(c.instanceId)}
-              disabled={picked.length >= need}
-              onToggle={() => toggle(c.instanceId)}
-            />
-          ))}
-        </ul>
-      )}
-      {/* Sur téléphone, les boutons restent sous le pouce pendant qu'on fait défiler les cartes. */}
-      <div className="sticky bottom-0 z-10 -mx-4 flex gap-2 border-t border-line bg-panel/95 px-4 py-2.5 backdrop-blur-sm sm:static sm:mx-0 sm:justify-end sm:border-0 sm:bg-transparent sm:p-0">
-        <button
-          type="button"
-          className="btn btn-sm flex-1 sm:flex-none"
-          disabled={busy}
-          onClick={() => setPicked(ready.slice(0, need).map((c) => c.instanceId))}
-        >
-          Mes {need} plus efficaces
-        </button>
-        <button
-          type="button"
-          className="btn btn-sm btn-primary flex-1 sm:flex-none"
-          disabled={busy || picked.length !== need}
-          onClick={() => void start(picked)}
-        >
-          <Sword className="size-4" aria-hidden />
-          {busy ? "Préparation…" : `Attaquer (${picked.length}/${need})`}
-        </button>
+        {shown.length === 0 ? (
+          <p className="slot px-4 py-6 text-center text-sm text-muted">
+            Aucun article {CATEGORY_LABELS[boss.rule.weakness].toLowerCase()} prêt aujourd&apos;hui.
+          </p>
+        ) : (
+          <div className="pc-boss-scroll" tabIndex={0} role="region" aria-label="Tes articles">
+            <ul className="pc-boss-grid">
+              {shown.map((c) => (
+                <CardTile
+                  key={c.instanceId}
+                  c={c}
+                  on={picked.includes(c.instanceId)}
+                  disabled={picked.length >= need}
+                  onToggle={() => toggle(c.instanceId)}
+                />
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
