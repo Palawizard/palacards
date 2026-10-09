@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, isNull, or, schema, sql } from "@palacards/db";
+import { and, desc, eq, gt, inArray, isNull, or, schema, sql } from "@palacards/db";
 import type { AdminBroadcastDTO, BroadcastDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { conflict, notFound } from "../errors.js";
@@ -62,6 +62,21 @@ export async function markBroadcastRead(ctx: Ctx, userId: string, id: number) {
   const [row] = await ctx.db.select({ id: b.id }).from(b).where(eq(b.id, id));
   if (!row) throw notFound("Message introuvable.");
   await ctx.db.insert(schema.broadcastReads).values({ broadcastId: id, userId }).onConflictDoNothing();
+}
+
+/**
+ * « Tout passer » : le joueur ferme d'un coup les messages qu'il avait à l'écran. Les ids sont ceux
+ * reçus par le client (et non « tout ce qui est en attente ») : un message arrivé entre-temps reste à lire.
+ * Les ids inconnus sont ignorés.
+ */
+export async function markBroadcastsRead(ctx: Ctx, userId: string, ids: number[]) {
+  if (!ids.length) return;
+  const rows = await ctx.db.select({ id: b.id }).from(b).where(inArray(b.id, ids));
+  if (!rows.length) return;
+  await ctx.db
+    .insert(schema.broadcastReads)
+    .values(rows.map((r) => ({ broadcastId: r.id, userId })))
+    .onConflictDoNothing();
 }
 
 // ---------------------------------------------------------------------------
