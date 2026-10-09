@@ -141,6 +141,12 @@ describe("article du jour : autocomplétion", () => {
     expect(many).toHaveLength(8);
     for (const r of many) expect(["SR", "UR", "L"]).toContain(r.rarity);
     expect(many[0].rarity).toBe("L");
+    // Titre tapé en entier : en tête, même moins lu que ceux qui commencent pareil.
+    const [low] = await ctx.db.execute<{ title: string; id: string }>(
+      sql`select title, id from cards where season = ${a.season} and rarity = 'SR' order by views_12m limit 1`,
+    );
+    const exact = (await p.get(`/article/search?q=${encodeURIComponent(low!.title)}`)).body;
+    expect(exact[0].cardId).toBe(Number(low!.id));
     expect((await p.get("/article/search?q=a")).body).toEqual([]);
   });
 });

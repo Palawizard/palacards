@@ -370,21 +370,22 @@ export async function guessArticle(ctx: Ctx, userId: string, cardId: number): Pr
 
 /**
  * Autocomplétion : articles Super rares et mieux de la saison dont le titre contient la recherche (sans
- * accents), ceux qui commencent par elle d'abord, puis les plus lus. Les attributs des premiers se chargent
+ * accents) : le titre exact d'abord, puis ceux qui commencent par elle, puis les plus lus. Les attributs des premiers se chargent
  * en arrière-plan : l'essai sera rapide.
  */
 export async function searchArticles(ctx: Ctx, raw: string): Promise<ArticleSearchItemDTO[]> {
   const q = raw.trim().replace(/\s+/g, " ").slice(0, ARTICLE_SEARCH_MAX_LENGTH);
   if (q.length < 2) return [];
   const season = await activeSeason(ctx.db);
-  const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const escaped = q.replace(/[\\%_]/g, (c) => `\\${c}`);
   const rows = await ctx.db.transaction(async (tx) => {
     await tx.execute(sql`set local statement_timeout = 2000`);
     return tx.execute<{ id: string; title: string; rarity: Rarity }>(sql`
       select id, title, rarity from cards
       where season = ${season} and rarity in (${inList(GUESS_RARITIES)})
-        and search_title like lower(f_unaccent(${like}))
-      order by (search_title like lower(f_unaccent(${`${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`}))) desc,
+        and search_title like lower(f_unaccent(${`%${escaped}%`}))
+      order by (search_title = lower(f_unaccent(${q}))) desc,
+               (search_title like lower(f_unaccent(${`${escaped}%`}))) desc,
                views_12m desc, id
       limit ${SEARCH_LIMIT}
     `);
