@@ -8,6 +8,7 @@ import {
   attrValues,
   compactViews,
   compareAttrs,
+  hintCategories,
   maskedDescription,
   shareGrid,
   titlePattern,
@@ -144,13 +145,42 @@ describe("article du jour : récompense, indices, image, partage", () => {
     expect(articleReward(3, false)).toBe(0);
   });
 
-  it("dévoile la description masquée après 4 essais, la première lettre après 6", () => {
-    expect(articleHints(3, false)).toEqual({ description: false, firstLetter: false });
-    expect(articleHints(4, false)).toEqual({ description: true, firstLetter: false });
-    expect(articleHints(6, false)).toEqual({ description: true, firstLetter: true });
-    expect(articleHints(0, true)).toEqual({ description: true, firstLetter: true });
+  it("montre les catégories dès le départ, la description après 4 essais, la première lettre après 6", () => {
+    expect(articleHints(0, false)).toEqual({ categories: 3, description: false, firstLetter: false });
+    expect(articleHints(3, false)).toEqual({ categories: 3, description: false, firstLetter: false });
+    expect(articleHints(4, false)).toEqual({ categories: 3, description: true, firstLetter: false });
+    expect(articleHints(5, false)).toEqual({ categories: 3, description: true, firstLetter: false });
+    expect(articleHints(6, false)).toEqual({ categories: 3, description: true, firstLetter: true });
+    expect(articleHints(0, true)).toEqual({ categories: 3, description: true, firstLetter: true });
     expect(maskedDescription("tour en fer puddlé de Paris, dite tour Eiffel", "Tour Eiffel")).not.toMatch(/eiffel/i);
     expect(titlePattern("Tour Eiffel", "first")).toBe("T _ _ _   _ _ _ _ _ _");
+  });
+
+  it("choisit des catégories qui ne nomment pas la réponse, les plus générales d'abord", () => {
+    const raw = [
+      "Catégorie:Tour en France",
+      "Catégorie:Monument de Paris",
+      "Catégorie:Gustave Eiffel",
+      "Catégorie:Article de qualité",
+      "Catégorie:Portail:Paris/Articles liés",
+      "Catégorie:Page utilisant P1435",
+      "Catégorie:Tours d'observation",
+      "Catégorie:Édifice construit en 1889",
+      "Catégorie:Monument historique classé en 1964",
+      "Catégorie:Monument de Paris",
+    ];
+    expect(hintCategories(raw, "Tour Eiffel")).toEqual([
+      "Monument de Paris",
+      "Édifice construit en 1889",
+      "Monument historique classé en 1964",
+    ]);
+    // Accents ignorés, précision entre parenthèses retirée, titre court comparé mot à mot.
+    expect(hintCategories(["Élan en Europe", "Cervidé"], "Elan (animal)")).toEqual(["Cervidé"]);
+    expect(hintCategories(["Satellite de Jupiter", "Objet céleste découvert en 1610"], "Io (lune)")).toEqual([
+      "Satellite de Jupiter",
+      "Objet céleste découvert en 1610",
+    ]);
+    expect(hintCategories([], "Tour Eiffel")).toEqual([]);
   });
 
   it("précise l'image à chaque essai, entière à la fin", () => {

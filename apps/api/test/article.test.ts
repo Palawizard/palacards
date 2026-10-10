@@ -50,7 +50,7 @@ describe("article du jour : essais", () => {
     expect(start.nextReward).toBe(100);
     expect(start.maxGuesses).toBe(ARTICLE_MAX_GUESSES);
     expect(start.stats).toBeNull();
-    expect(start.hints).toEqual({ description: null, firstLetter: null });
+    expect(start.hints).toEqual({ categories: [], description: null, firstLetter: null });
     const [wrong] = await wrongCards(1);
     const res = await p.post("/article/guess", { cardId: wrong!.id });
     expect(res.status).toBe(200);
@@ -94,8 +94,12 @@ describe("article du jour : essais", () => {
     const a = await dailyArticle(ctx);
     await ctx.db
       .update(schema.dailyArticles)
-      .set({ description: `tour métallique, symbole de ${a.title}` })
+      .set({ description: `tour métallique, symbole de ${a.title}`, categories: ["Monument", "Édifice", "Tour"] })
       .where(eq(schema.dailyArticles.day, a.day));
+    const start = (await p.get("/article")).body;
+    // Catégories visibles dès le départ.
+    expect(start.hints.categories).toEqual(["Monument", "Édifice", "Tour"]);
+    expect(start.hintsAfter.categories).toEqual([0, 0, 0]);
     const wrong = await wrongCards(ARTICLE_MAX_GUESSES);
     let last;
     for (let i = 0; i < ARTICLE_MAX_GUESSES; i++) {
@@ -112,6 +116,44 @@ describe("article du jour : essais", () => {
     expect(last.answer).not.toBeNull();
     expect(last.share.split("\n")[0]).toMatch(/X\/8$/);
     expect(await ledgerSum(p.userId, "daily_article")).toBe(0);
+  });
+});
+
+describe("article du jour : catégories en indice", () => {
+  it("charge les catégories une fois, les filtre et les fige pour tout le monde", async () => {
+    const day = "2099-04-04";
+    await ctx.db.delete(schema.dailyArticles).where(eq(schema.dailyArticles.day, day));
+    const now = ctx.now;
+    ctx.now = () => new Date("2099-04-04T12:00:00+02:00");
+    const spy = vi
+      .spyOn(ctx.wiki, "pageCategories")
+      .mockResolvedValueOnce(null)
+      .mockImplementation(async () => [
+        "Catégorie:Article de qualité",
+        "Catégorie:Monument historique classé en 1964",
+        "Catégorie:Monument de Paris",
+      ]);
+    try {
+      const a = await dailyArticle(ctx, day);
+      expect(a.categories).toBeNull();
+      const p = await signUp(app);
+      // Wikipédia indisponible : pas d'indice pour l'instant, et pas de nouvel appel tout de suite.
+      expect((await p.get("/article")).body.hintsAfter.categories).toEqual([]);
+      expect((await p.get("/article")).body.hintsAfter.categories).toEqual([]);
+      expect(spy).toHaveBeenCalledTimes(1);
+      ctx.now = () => new Date("2099-04-04T12:30:00+02:00");
+      const q = await signUp(app);
+      expect((await q.get("/article")).body.hintsAfter.categories).toEqual([0, 0]);
+      const [row] = await ctx.db.select().from(schema.dailyArticles).where(eq(schema.dailyArticles.day, day));
+      expect(row!.categories).toEqual(["Monument de Paris", "Monument historique classé en 1964"]);
+      await p.get("/article");
+      expect(spy).toHaveBeenCalledTimes(2);
+      const finished = await p.post("/article/guess", { cardId: a.cardId });
+      expect(finished.body.hints.categories).toEqual(row!.categories);
+    } finally {
+      spy.mockRestore();
+      ctx.now = now;
+    }
   });
 });
 

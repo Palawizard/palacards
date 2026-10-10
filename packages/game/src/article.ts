@@ -7,7 +7,8 @@ import { RARITIES, type Rarity } from "./rarity.js";
 // Chaque essai est un vrai article du jeu (Super rare ou mieux), choisi dans une autocomplétion, et il est
 // comparé à la réponse sur six attributs : catégorie, type, pays, année, rareté, popularité. Vert : identique ;
 // orange : proche ; rouge : différent ; flèches pour les valeurs numériques. L'image de la réponse, pixelisée
-// par le serveur, se précise à chaque essai. Huit essais ; indices de secours après le 4e et le 6e.
+// par le serveur, se précise à chaque essai. Huit essais ; catégories Wikipédia de la réponse visibles dès le
+// départ, puis indices de secours après les essais ratés : description (4e), première lettre (6e).
 // Gain : 70 PW pour avoir trouvé, plus un bonus de 30 PW qui perd 5 PW par essai (100 au premier, 70 au 7e).
 // ---------------------------------------------------------------------------
 
@@ -15,6 +16,11 @@ export const ARTICLE_MAX_GUESSES = 8;
 export const ARTICLE_BASE_REWARD = 70;
 export const ARTICLE_BONUS_MAX = 30;
 export const ARTICLE_BONUS_STEP = 5;
+/**
+ * Catégories Wikipédia de la réponse : une de plus dévoilée après chacun de ces nombres d'essais ratés
+ * (0 : visible dès le départ).
+ */
+export const ARTICLE_HINT_CATEGORIES_AFTER = [0, 0, 0] as const;
 /** Description courte masquée dévoilée après ce nombre d'essais ratés. */
 export const ARTICLE_HINT_DESCRIPTION_AFTER = 4;
 /** Première lettre du titre dévoilée après ce nombre d'essais ratés. */
@@ -155,9 +161,47 @@ export function compactViews(n: number): string {
 /** Indices dévoilés après `guesses` essais ratés (tous une fois la partie finie). */
 export function articleHints(guesses: number, finished: boolean) {
   return {
+    categories: finished
+      ? ARTICLE_HINT_CATEGORIES_AFTER.length
+      : ARTICLE_HINT_CATEGORIES_AFTER.filter((n) => guesses >= n).length,
     description: finished || guesses >= ARTICLE_HINT_DESCRIPTION_AFTER,
     firstLetter: finished || guesses >= ARTICLE_HINT_LETTER_AFTER,
   };
+}
+
+/** Catégories de maintenance ou de portail : aucune information sur l'article. */
+const META_CATEGORY =
+  /^(article|page|portail|projet|homonymie|bon article|wikipédia|catégorie)|wiki(pédia|data|media)|ébauche|\bà (sourcer|recycler|vérifier|illustrer|wikifier)\b|\bmodèle\b/i;
+
+const plain = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * Catégories Wikipédia montrées en indice (cachées déjà écartées par l'API) : sans préfixe, sans les catégories
+ * de maintenance, et jamais une qui contient le titre ou un mot commençant par l'un de ses mots significatifs
+ * (4 lettres et plus), accents ignorés. Les plus courtes (les plus générales) d'abord : la première dévoilée est la plus vague.
+ */
+export function hintCategories(raw: string[], title: string): string[] {
+  const base = plain(baseTitle(title));
+  const words = base.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4);
+  const out = new Set<string>();
+  for (const r of raw) {
+    const name = r
+      .replace(/^(catégorie|category)\s*:/i, "")
+      .replace(/_/g, " ")
+      .trim();
+    if (!name || META_CATEGORY.test(name)) continue;
+    const p = plain(name);
+    const tokens = p.split(/[^\p{L}\p{N}]+/u);
+    const named =
+      (base.length >= 4 && p.includes(base)) ||
+      tokens.includes(base) ||
+      words.some((w) => tokens.some((t) => t.startsWith(w)));
+    if (named) continue;
+    out.add(name);
+  }
+  return [...out]
+    .sort((a, b) => a.length - b.length || a.localeCompare(b, "fr"))
+    .slice(0, ARTICLE_HINT_CATEGORIES_AFTER.length);
 }
 
 /** Description courte de la réponse, titre et mots du titre masqués (jamais une phrase de l'article). */

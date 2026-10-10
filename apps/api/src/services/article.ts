@@ -1,6 +1,7 @@
-import { and, eq, schema, sql } from "@palacards/db";
+import { and, eq, isNull, schema, sql } from "@palacards/db";
 import {
   addDays,
+  ARTICLE_HINT_CATEGORIES_AFTER,
   ARTICLE_HINT_DESCRIPTION_AFTER,
   ARTICLE_HINT_LETTER_AFTER,
   ARTICLE_MAX_GUESSES,
@@ -14,6 +15,7 @@ import {
   baseTitle,
   compareAttrs,
   descriptionType,
+  hintCategories,
   maskedDescription,
   parisDay,
   seededRandom,
@@ -200,6 +202,34 @@ export async function dailyArticle(ctx: Ctx, day = parisDay(ctx.now())): Promise
   return row!;
 }
 
+/** Dernier échec du chargement des catégories (par jour) : on ne réessaie qu'après CATEGORIES_RETRY_MS. */
+let categoriesFailed: { day: string; at: number } | null = null;
+const CATEGORIES_RETRY_MS = 10 * 60_000;
+
+/**
+ * Catégories Wikipédia de la réponse montrées en indice : chargées une fois, filtrées (`hintCategories`) puis
+ * figées avec l'article du jour, les mêmes pour tous. Wikipédia indisponible : aucune pour l'instant.
+ */
+async function answerCategories(ctx: Ctx, a: ArticleRow): Promise<string[]> {
+  if (a.categories) return a.categories;
+  const now = ctx.now().getTime();
+  if (categoriesFailed?.day === a.day && now - categoriesFailed.at < CATEGORIES_RETRY_MS) return [];
+  const raw = await withTimeout(ctx.wiki.pageCategories(a.cardId), 4_000, null);
+  if (!raw) {
+    categoriesFailed = { day: a.day, at: now };
+    return [];
+  }
+  await ctx.db
+    .update(schema.dailyArticles)
+    .set({ categories: hintCategories(raw, a.title) })
+    .where(and(eq(schema.dailyArticles.day, a.day), isNull(schema.dailyArticles.categories)));
+  const [row] = await ctx.db
+    .select({ categories: schema.dailyArticles.categories })
+    .from(schema.dailyArticles)
+    .where(eq(schema.dailyArticles.day, a.day));
+  return row?.categories ?? [];
+}
+
 async function answerCard(ctx: Ctx, a: ArticleRow): Promise<CardDTO> {
   const [row] = await ctx.db.execute<{
     atk: number;
@@ -273,6 +303,7 @@ export async function articleState(ctx: Ctx, userId: string): Promise<DailyArtic
     stats = { played: rows.length, found: rows.filter((r) => r.found).length, distribution };
   }
   const answerAttrs = a.attrs;
+  const categories = await answerCategories(ctx, a);
   const firstLetter = [...baseTitle(a.title)].find((ch) => /[\p{L}\p{N}]/u.test(ch))?.toUpperCase() ?? null;
   return {
     day: a.day,
@@ -281,10 +312,15 @@ export async function articleState(ctx: Ctx, userId: string): Promise<DailyArtic
     guesses: entries.map(guessDTO),
     pattern: titlePattern(a.title, finished ? "all" : hints.firstLetter ? "first" : "none"),
     hints: {
+      categories: categories.slice(0, hints.categories),
       description: hints.description ? maskedDescription(a.description, a.title) : null,
       firstLetter: hints.firstLetter ? firstLetter : null,
     },
-    hintsAfter: { description: ARTICLE_HINT_DESCRIPTION_AFTER, firstLetter: ARTICLE_HINT_LETTER_AFTER },
+    hintsAfter: {
+      categories: ARTICLE_HINT_CATEGORIES_AFTER.slice(0, categories.length),
+      description: ARTICLE_HINT_DESCRIPTION_AFTER,
+      firstLetter: ARTICLE_HINT_LETTER_AFTER,
+    },
     image: !!a.imageUrl,
     imageWidth: articleImageWidth(entries.length, finished),
     found: !!g?.found,

@@ -443,6 +443,29 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
   }
 
   /**
+   * Catégories visibles d'un article (sans les catégories cachées de maintenance), avec le préfixe
+   * « Catégorie: ». null : API désactivée ou indisponible (pas mis en cache, on réessaiera).
+   */
+  async function pageCategories(pageId: number): Promise<string[] | null> {
+    if (config.WIKIMEDIA_DISABLED) return null;
+    try {
+      const body = await getJson<{ query?: { pages?: { categories?: { title: string }[] }[] } }>(
+        api(ACTION_API, {
+          action: "query",
+          prop: "categories",
+          clshow: "!hidden",
+          cllimit: "max",
+          pageids: String(pageId),
+        }),
+      );
+      return (body.query?.pages?.[0]?.categories ?? []).map((c) => c.title);
+    } catch (err) {
+      log.warn({ err, pageId }, "catégories Wikipédia indisponibles");
+      return null;
+    }
+  }
+
+  /**
    * Articles d'une catégorie Wikipédia et de ses sous-catégories jusqu'à `depth` niveaux (API MediaWiki,
    * parcours en largeur). Au plus CATEGORY_MAX_PAGES articles et CATEGORY_MAX_REQUESTS appels.
    */
@@ -492,7 +515,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     return [...pages].slice(0, CATEGORY_MAX_PAGES);
   }
 
-  return { cached, summaries, load, titleOf, categoryMembers, loadAttributes, attributes };
+  return { cached, summaries, load, titleOf, categoryMembers, pageCategories, loadAttributes, attributes };
 }
 
 export type Wiki = ReturnType<typeof createWiki>;
