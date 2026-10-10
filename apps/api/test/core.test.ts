@@ -445,6 +445,51 @@ describe("collection et recyclage", () => {
     expect((await p.get("/collection/selectable?count=0")).status).toBe(400);
     expect((await p.get("/collection/selectable?count=5001")).status).toBe(400);
   });
+
+  it("« tout sélectionner » laisse de côté les favorites et les cartes taguées si on le demande", async () => {
+    const ids = (r: { body: { items: { id: number }[] } }) => r.body.items.map((i) => i.id).sort((a, b) => a - b);
+    const plain = await p.get("/collection/selectable");
+    expect(plain.body.excluded).toBe(0);
+    const all = ids(plain);
+    const [garder, vendre] = all.filter((id) => id !== cards[3]!.instanceId);
+    await p.post("/collection/tags", { instanceIds: [garder!], add: "garder" });
+    await p.post("/collection/tags", { instanceIds: [vendre!], add: "à vendre" });
+    const favorite = cards[3]!.instanceId; // mise en favori plus haut
+    const without = (...gone: number[]) => all.filter((id) => !gone.includes(id));
+
+    // Sans option : comportement inchangé.
+    expect(ids(await p.get("/collection/selectable"))).toEqual(all);
+
+    const noFav = await p.get("/collection/selectable?skipFavorites=true");
+    expect(ids(noFav)).toEqual(without(favorite));
+    expect(noFav.body.excluded).toBe(1);
+
+    // Des cartes ont déjà reçu des tags plus haut : la liste dit lesquelles.
+    const listed = await p.get("/collection?limit=120");
+    const tagged = (listed.body.items as { instanceId: number; tags?: string[] }[])
+      .filter((c) => c.tags?.length)
+      .map((c) => c.instanceId);
+    expect(tagged).toEqual(expect.arrayContaining([garder!, vendre!]));
+    const noTagged = await p.get("/collection/selectable?skipTagged=true");
+    expect(ids(noTagged)).toEqual(without(...tagged));
+    expect(noTagged.body.excluded).toBe(tagged.length);
+
+    const oneTag = await p.get("/collection/selectable?skipTags=garder");
+    expect(ids(oneTag)).toEqual(without(garder!));
+    const twoTags = await p.get(`/collection/selectable?skipTags=garder&skipTags=${encodeURIComponent("à vendre")}`);
+    expect(ids(twoTags)).toEqual(without(garder!, vendre!));
+
+    // Les options se combinent, et avec les filtres.
+    const both = await p.get("/collection/selectable?skipFavorites=true&skipTags=garder");
+    expect(ids(both)).toEqual(without(favorite, garder!));
+    expect(both.body.excluded).toBe(2);
+    const onlyFav = await p.get("/collection/selectable?favorites=only&skipFavorites=true");
+    expect(onlyFav.body).toMatchObject({ items: [], excluded: 1 });
+
+    expect((await p.get(`/collection/selectable?skipTags=${"x".repeat(25)}`)).status).toBe(400);
+    await p.post("/collection/tags", { instanceIds: [garder!, vendre!], remove: "garder" });
+    await p.post("/collection/tags", { instanceIds: [vendre!], remove: "à vendre" });
+  });
 });
 
 describe("catalogue", () => {
