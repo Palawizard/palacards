@@ -1,0 +1,1 @@
+ALTER TABLE "daily_articles" ADD COLUMN "categories" jsonb;
