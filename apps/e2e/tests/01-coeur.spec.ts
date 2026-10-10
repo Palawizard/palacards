@@ -159,20 +159,22 @@ test("« Tout sélectionner » sans les favorites ni les cartes d'un tag", async
   await bar.getByRole("button", { name: "Tout sélectionner" }).click();
   await expect(bar.getByText(`${list.total} sélectionnées`)).toBeVisible();
 
-  await bar.getByText("Exclure", { exact: true }).click();
+  const exclude = bar.locator("summary");
+  await expect(exclude).toHaveText("Exclure");
+  await exclude.click();
   await bar.getByRole("button", { name: "Les favorites" }).click();
   await bar
     .getByRole("list", { name: "Exclure les cartes avec le tag" })
     .getByRole("button", { name: "garder" })
     .click();
-  await expect(bar.getByText("Exclure (2)")).toBeVisible();
+  await expect(exclude).toHaveAccessibleName("Exclure de « Tout sélectionner » : 2 options");
   // Les options changent la sélection à faire : le bouton revient à « Tout sélectionner ».
   await bar.getByRole("button", { name: "Tout sélectionner" }).click();
   await expect(bar.getByText(`${list.total - 2} sélectionnées`)).toBeVisible();
   await expect(page.getByText("2 cartes exclues de la sélection", { exact: false })).toBeVisible();
 
   // « Les cartes taguées » écarte aussi celle du tag « autre ».
-  await bar.getByText("Exclure (2)").click();
+  await exclude.click();
   await bar.getByRole("button", { name: "Les cartes taguées" }).click();
   await bar.getByRole("button", { name: "Tout sélectionner" }).click();
   await expect(bar.getByText(`${list.total - 3} sélectionnées`)).toBeVisible();

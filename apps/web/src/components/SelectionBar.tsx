@@ -162,11 +162,13 @@ export function ExcludeMenu({
   return (
     <details ref={ref} className="relative">
       <summary
-        className={`chip cursor-pointer list-none ${n ? "border-accent text-text" : ""}`}
+        className={`chip cursor-pointer list-none max-sm:px-2.5 ${n ? "border-accent text-text" : ""}`}
         aria-label={n ? `Exclure de « Tout sélectionner » : ${n} option${n > 1 ? "s" : ""}` : undefined}
       >
         <EyeOff aria-hidden className="size-3.5" />
-        Exclure{n ? <span className="tnum"> ({fmt(n)})</span> : null}
+        {/* Téléphone : l'icône seule, pour laisser la place au compte de la sélection. */}
+        <span className="max-sm:sr-only">Exclure</span>
+        {n ? <span className="tnum">({fmt(n)})</span> : null}
       </summary>
       <div className="absolute bottom-full right-0 z-30 mb-2 flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-3 rounded-xl border border-line-strong bg-panel p-3 shadow-pop sm:left-0 sm:right-auto">
         <p className="text-sm text-muted">« Tout sélectionner » laisse de côté :</p>
