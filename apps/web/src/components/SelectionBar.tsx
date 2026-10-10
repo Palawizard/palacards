@@ -1,6 +1,6 @@
 // Barre d'actions d'une sélection de cartes (Collection) et boîte « Tag » en masse.
 // Importé uniquement par des composants client.
-import { Recycle, Star, Tag, X } from "lucide-react";
+import { EyeOff, Recycle, Star, Tag, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import useSWR from "swr";
 import { fmt } from "@/lib/format";
@@ -108,6 +108,122 @@ export function SelectCount({
         Sélectionner{n > 0 ? ` les ${fmt(n)} premières` : ""}
       </button>
     </form>
+  );
+}
+
+/** Cartes que « Tout sélectionner » laisse de côté : jamais sélectionnées, donc jamais recyclées par lui. */
+export interface Exclusions {
+  favorites: boolean;
+  /** Toute carte qui a au moins un tag. */
+  tagged: boolean;
+  /** Cartes qui portent l'un de ces tags. */
+  tags: string[];
+}
+
+export const NO_EXCLUSIONS: Exclusions = { favorites: false, tagged: false, tags: [] };
+
+/** Nombre d'options d'exclusion actives (affiché sur le bouton). */
+export const exclusionCount = (e: Exclusions) => Number(e.favorites) + Number(e.tagged) + e.tags.length;
+
+/**
+ * « Exclure » : un menu à côté de « Tout sélectionner » pour laisser de côté les favorites, les cartes taguées
+ * ou celles d'un tag choisi (`tags` : ceux du joueur). Les options se cumulent. Le menu s'ouvre au-dessus de
+ * la barre et se ferme d'un clic ailleurs ou avec Échap.
+ */
+export function ExcludeMenu({
+  value,
+  onChange,
+  tags,
+}: {
+  value: Exclusions;
+  onChange: (v: Exclusions) => void;
+  tags: string[];
+}) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  const n = exclusionCount(value);
+
+  useEffect(() => {
+    const close = (e: Event) => {
+      const d = ref.current;
+      if (!d?.open) return;
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !d.contains(e.target as Node)) d.open = false;
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
+
+  const toggleTag = (t: string) =>
+    onChange({ ...value, tags: value.tags.includes(t) ? value.tags.filter((x) => x !== t) : [...value.tags, t] });
+
+  return (
+    <details ref={ref} className="relative">
+      <summary
+        className={`chip cursor-pointer list-none max-sm:px-2.5 ${n ? "border-accent text-text" : ""}`}
+        aria-label={n ? `Exclure de « Tout sélectionner » : ${n} option${n > 1 ? "s" : ""}` : undefined}
+      >
+        <EyeOff aria-hidden className="size-3.5" />
+        {/* Téléphone : l'icône seule, pour laisser la place au compte de la sélection. */}
+        <span className="max-sm:sr-only">Exclure</span>
+        {n ? <span className="tnum">({fmt(n)})</span> : null}
+      </summary>
+      <div className="absolute bottom-full right-0 z-30 mb-2 flex w-[min(20rem,calc(100vw-2rem))] flex-col gap-3 rounded-xl border border-line-strong bg-panel p-3 shadow-pop sm:left-0 sm:right-auto">
+        <p className="text-sm text-muted">« Tout sélectionner » laisse de côté :</p>
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Exclure de « Tout sélectionner »">
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={value.favorites}
+            onClick={() => onChange({ ...value, favorites: !value.favorites })}
+          >
+            <Star aria-hidden className="size-3.5" />
+            Les favorites
+          </button>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={value.tagged}
+            onClick={() => onChange({ ...value, tagged: !value.tagged })}
+          >
+            <Tag aria-hidden className="size-3.5" />
+            Les cartes taguées
+          </button>
+        </div>
+        {tags.length > 0 &&
+          (value.tagged ? (
+            <p className="text-xs text-faint">Toutes les cartes qui ont un tag sont déjà exclues.</p>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <span className="label">Avec le tag</span>
+              <ul
+                className="flex max-h-36 flex-wrap gap-1.5 overflow-y-auto"
+                aria-label="Exclure les cartes avec le tag"
+              >
+                {tags.map((t) => (
+                  <li key={t}>
+                    <button
+                      type="button"
+                      className="chip"
+                      aria-pressed={value.tags.includes(t)}
+                      onClick={() => toggleTag(t)}
+                    >
+                      {t}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        {n > 0 && (
+          <button type="button" className="btn btn-sm btn-ghost self-start" onClick={() => onChange(NO_EXCLUSIONS)}>
+            Ne rien exclure
+          </button>
+        )}
+      </div>
+    </details>
   );
 }
 
