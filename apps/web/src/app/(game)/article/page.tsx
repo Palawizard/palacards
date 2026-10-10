@@ -84,10 +84,10 @@ function Rules({ data }: { data: DailyArticleDTO }) {
           Propose un vrai article du jeu (Super rare ou mieux) : tape quelques lettres et choisis-le dans la liste.
         </li>
         <li>
-          Chaque essai est comparé à la réponse : <strong>vert</strong> identique, <strong>orange</strong> proche (même
-          continent, à 10 ans près, à 25 % des vues près, type voisin), <strong>rouge</strong> différent. Les flèches
-          disent si la réponse est plus récente, plus rare ou plus lue. « ? » : on ne sait pas, ce n&apos;est pas compté
-          faux.
+          Chaque essai est comparé à la réponse : <strong>vert</strong> identique, <strong>orange</strong> proche (à 10
+          ans près, à 25 % des vues près, type voisin), <strong>rouge</strong> différent ; le pays est juste ou faux.
+          Les flèches disent si la réponse est plus récente, plus rare ou plus lue. « ? » : on ne sait pas, ce
+          n&apos;est pas compté faux.
         </li>
         <li>L&apos;image de la réponse se précise à chaque essai.</li>
         {categoriesAtStart && <li>Des catégories Wikipédia de la réponse sont visibles dès le départ.</li>}

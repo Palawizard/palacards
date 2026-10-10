@@ -83,16 +83,26 @@ describe("article du jour : comparaison des attributs", () => {
     expect(allGood(compareAttrs(a, a))).toBe(true);
   });
 
-  it("orange : type proche, même continent, à 10 ans près, à 25 % des vues", () => {
+  it("orange : type proche, à 10 ans près, à 25 % des vues", () => {
     const c = compareAttrs(
       attrs({ type: "actrice", countryId: "Q183", country: "Allemagne", year: 1958, views: 800_000 }),
       attrs({}),
     );
     expect(c.category).toEqual({ state: "good", arrow: null });
     expect(c.type.state).toBe("near");
-    expect(c.country.state).toBe("near");
     expect(c.year).toEqual({ state: "near", arrow: "down" });
     expect(c.views).toEqual({ state: "near", arrow: "up" });
+  });
+
+  it("pays juste ou faux, jamais « proche »", () => {
+    // Même continent, pays sans rapport : faux.
+    expect(compareAttrs(attrs({ countryId: "Q183", country: "Allemagne" }), attrs({})).country.state).toBe("bad");
+    // Même pays, nom écrit autrement (casse, accents, tiret) ou autre élément Wikidata : juste.
+    const usa = attrs({ countryId: "Q30", country: "États-Unis", continents: ["Q49"] });
+    expect(compareAttrs(usa, usa).country.state).toBe("good");
+    expect(compareAttrs(attrs({ countryId: "Q99", country: "etats unis" }), usa).country.state).toBe("good");
+    expect(compareAttrs(attrs({ countryId: "Q99", country: "FRANCE" }), attrs({})).country.state).toBe("good");
+    expect(compareAttrs(attrs({ countryId: "Q30", country: "États-Unis" }), attrs({})).country.state).toBe("bad");
   });
 
   it("rouge et flèches au-delà", () => {
@@ -101,6 +111,7 @@ describe("article du jour : comparaison des attributs", () => {
         category: "lieu",
         type: "commune",
         countryId: "Q30",
+        country: "États-Unis",
         continents: ["Q49"],
         year: 1900,
         rarity: "SR",

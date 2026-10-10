@@ -27,6 +27,11 @@ export const ARTICLE_HINT_DESCRIPTION_AFTER = 4;
 export const ARTICLE_HINT_LETTER_AFTER = 6;
 /** Années « proches » (orange) : à 10 ans près. */
 export const ARTICLE_YEAR_NEAR = 10;
+/**
+ * Pays « proche » (orange) s'il partage un continent avec la réponse. Désactivé : un pays est juste ou faux,
+ * sinon un pays sans rapport (Allemagne pour la France) passait pour « presque ».
+ */
+export const ARTICLE_COUNTRY_NEAR_CONTINENT = false;
 /** Popularité « proche » (orange) : à 25 % près des vues de la réponse. */
 export const ARTICLE_VIEWS_NEAR = 0.25;
 /** Quête « Trouver l'article du jour en N essais ou moins ». */
@@ -64,7 +69,7 @@ export interface ArticleAttrs {
   /** Pays (élément Wikidata) et son nom. */
   countryId: string | null;
   country: string | null;
-  /** Continents du pays (éléments Wikidata) : orange si l'un est commun. */
+  /** Continents du pays (éléments Wikidata) : orange si l'un est commun et ARTICLE_COUNTRY_NEAR_CONTINENT. */
   continents: string[];
   /** Naissance, création, fondation ou publication selon l'article. */
   year: number | null;
@@ -92,6 +97,12 @@ export const ATTR_LABELS: Record<AttrKey, string> = {
   views: "Popularité",
 };
 
+/** Nom de pays comparable : sans accents ni majuscules, ponctuation et espaces réduits (« États-Unis » = « etats unis »). */
+const countryKey = (name: string) =>
+  plain(name)
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
 const cell = (state: AttrState, arrow: AttrCell["arrow"] = null): AttrCell => ({ state, arrow });
 const arrowOf = (guess: number, answer: number): AttrCell["arrow"] =>
   answer > guess ? "up" : answer < guess ? "down" : null;
@@ -110,10 +121,15 @@ export function compareAttrs(guess: ArticleAttrs, answer: ArticleAttrs): AttrCom
     type = cell(g === a ? "good" : typeStem(g) === typeStem(a) ? "near" : "bad");
   }
 
+  // Pays : vert ou rouge seulement (même élément Wikidata ou même nom, casse, accents et ponctuation ignorés) ;
+  // orange pour un pays du même continent seulement si ARTICLE_COUNTRY_NEAR_CONTINENT.
   let country = cell("unknown");
   if (guess.countryId && answer.countryId) {
-    const shared = guess.continents.some((c) => answer.continents.includes(c));
-    country = cell(guess.countryId === answer.countryId ? "good" : shared ? "near" : "bad");
+    const same =
+      guess.countryId === answer.countryId ||
+      (!!guess.country && !!answer.country && countryKey(guess.country) === countryKey(answer.country));
+    const shared = ARTICLE_COUNTRY_NEAR_CONTINENT && guess.continents.some((c) => answer.continents.includes(c));
+    country = cell(same ? "good" : shared ? "near" : "bad");
   }
 
   let year = cell("unknown");
