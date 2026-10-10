@@ -8,6 +8,7 @@ import {
   attrValues,
   compactViews,
   compareAttrs,
+  hintCategories,
   maskedDescription,
   shareGrid,
   titlePattern,
@@ -82,16 +83,26 @@ describe("article du jour : comparaison des attributs", () => {
     expect(allGood(compareAttrs(a, a))).toBe(true);
   });
 
-  it("orange : type proche, même continent, à 10 ans près, à 25 % des vues", () => {
+  it("orange : type proche, à 10 ans près, à 25 % des vues", () => {
     const c = compareAttrs(
       attrs({ type: "actrice", countryId: "Q183", country: "Allemagne", year: 1958, views: 800_000 }),
       attrs({}),
     );
     expect(c.category).toEqual({ state: "good", arrow: null });
     expect(c.type.state).toBe("near");
-    expect(c.country.state).toBe("near");
     expect(c.year).toEqual({ state: "near", arrow: "down" });
     expect(c.views).toEqual({ state: "near", arrow: "up" });
+  });
+
+  it("pays juste ou faux, jamais « proche »", () => {
+    // Même continent, pays sans rapport : faux.
+    expect(compareAttrs(attrs({ countryId: "Q183", country: "Allemagne" }), attrs({})).country.state).toBe("bad");
+    // Même pays, nom écrit autrement (casse, accents, tiret) ou autre élément Wikidata : juste.
+    const usa = attrs({ countryId: "Q30", country: "États-Unis", continents: ["Q49"] });
+    expect(compareAttrs(usa, usa).country.state).toBe("good");
+    expect(compareAttrs(attrs({ countryId: "Q99", country: "etats unis" }), usa).country.state).toBe("good");
+    expect(compareAttrs(attrs({ countryId: "Q99", country: "FRANCE" }), attrs({})).country.state).toBe("good");
+    expect(compareAttrs(attrs({ countryId: "Q30", country: "États-Unis" }), attrs({})).country.state).toBe("bad");
   });
 
   it("rouge et flèches au-delà", () => {
@@ -100,6 +111,7 @@ describe("article du jour : comparaison des attributs", () => {
         category: "lieu",
         type: "commune",
         countryId: "Q30",
+        country: "États-Unis",
         continents: ["Q49"],
         year: 1900,
         rarity: "SR",
@@ -144,13 +156,42 @@ describe("article du jour : récompense, indices, image, partage", () => {
     expect(articleReward(3, false)).toBe(0);
   });
 
-  it("dévoile la description masquée après 4 essais, la première lettre après 6", () => {
-    expect(articleHints(3, false)).toEqual({ description: false, firstLetter: false });
-    expect(articleHints(4, false)).toEqual({ description: true, firstLetter: false });
-    expect(articleHints(6, false)).toEqual({ description: true, firstLetter: true });
-    expect(articleHints(0, true)).toEqual({ description: true, firstLetter: true });
+  it("montre les catégories dès le départ, la description après 4 essais, la première lettre après 6", () => {
+    expect(articleHints(0, false)).toEqual({ categories: 3, description: false, firstLetter: false });
+    expect(articleHints(3, false)).toEqual({ categories: 3, description: false, firstLetter: false });
+    expect(articleHints(4, false)).toEqual({ categories: 3, description: true, firstLetter: false });
+    expect(articleHints(5, false)).toEqual({ categories: 3, description: true, firstLetter: false });
+    expect(articleHints(6, false)).toEqual({ categories: 3, description: true, firstLetter: true });
+    expect(articleHints(0, true)).toEqual({ categories: 3, description: true, firstLetter: true });
     expect(maskedDescription("tour en fer puddlé de Paris, dite tour Eiffel", "Tour Eiffel")).not.toMatch(/eiffel/i);
     expect(titlePattern("Tour Eiffel", "first")).toBe("T _ _ _   _ _ _ _ _ _");
+  });
+
+  it("choisit des catégories qui ne nomment pas la réponse, les plus générales d'abord", () => {
+    const raw = [
+      "Catégorie:Tour en France",
+      "Catégorie:Monument de Paris",
+      "Catégorie:Gustave Eiffel",
+      "Catégorie:Article de qualité",
+      "Catégorie:Portail:Paris/Articles liés",
+      "Catégorie:Page utilisant P1435",
+      "Catégorie:Tours d'observation",
+      "Catégorie:Édifice construit en 1889",
+      "Catégorie:Monument historique classé en 1964",
+      "Catégorie:Monument de Paris",
+    ];
+    expect(hintCategories(raw, "Tour Eiffel")).toEqual([
+      "Monument de Paris",
+      "Édifice construit en 1889",
+      "Monument historique classé en 1964",
+    ]);
+    // Accents ignorés, précision entre parenthèses retirée, titre court comparé mot à mot.
+    expect(hintCategories(["Élan en Europe", "Cervidé"], "Elan (animal)")).toEqual(["Cervidé"]);
+    expect(hintCategories(["Satellite de Jupiter", "Objet céleste découvert en 1610"], "Io (lune)")).toEqual([
+      "Satellite de Jupiter",
+      "Objet céleste découvert en 1610",
+    ]);
+    expect(hintCategories([], "Tour Eiffel")).toEqual([]);
   });
 
   it("précise l'image à chaque essai, entière à la fin", () => {

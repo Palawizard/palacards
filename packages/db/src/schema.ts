@@ -965,6 +965,8 @@ export const dailyArticles = pgTable("daily_articles", {
   format: smallint("format").notNull().default(1),
   attrs: jsonb("attrs").$type<ArticleAttrsJson>(),
   description: text("description"),
+  /** Catégories Wikipédia montrées en indice, figées pour la journée ; null : pas encore chargées. */
+  categories: jsonb("categories").$type<string[]>(),
   /** Vignette de la réponse : jamais envoyée au joueur avant la fin de sa partie. */
   imageUrl: text("image_url"),
   createdAt: tstz("created_at").notNull().defaultNow(),

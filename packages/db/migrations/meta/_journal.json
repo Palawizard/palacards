@@ -260,6 +260,13 @@
       "when": 1791531302375,
       "tag": "0036_boss_phases_data",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1791585179875,
+      "tag": "0037_article_categories",
+      "breakpoints": true
     }
   ]
 }

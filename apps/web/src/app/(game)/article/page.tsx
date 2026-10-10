@@ -17,7 +17,7 @@ import { play } from "@/lib/sfx";
 import { useNow } from "@/lib/use-now";
 import "@/components/content.css";
 
-const RULES_KEY = "pc-article-rules-v2";
+const RULES_KEY = "pc-article-rules-v3";
 const STATE_LABELS = { good: "identique", near: "proche", bad: "différent", unknown: "inconnu" } as const;
 const plural = (n: number, one: string, many: string) => (n > 1 ? many : one);
 
@@ -61,6 +61,8 @@ function TitleGrid({ pattern, state }: { pattern: string; state: "playing" | "fo
 /** Règles, dépliées à la première visite. */
 function Rules({ data }: { data: DailyArticleDTO }) {
   const ref = useRef<HTMLDetailsElement>(null);
+  // Catégories toutes visibles dès le départ (ARTICLE_HINT_CATEGORIES_AFTER à 0) : pas d'essai à citer.
+  const categoriesAtStart = data.hintsAfter.categories.length > 0 && data.hintsAfter.categories.every((n) => n === 0);
   useEffect(() => {
     try {
       if (!localStorage.getItem(RULES_KEY)) {
@@ -82,16 +84,32 @@ function Rules({ data }: { data: DailyArticleDTO }) {
           Propose un vrai article du jeu (Super rare ou mieux) : tape quelques lettres et choisis-le dans la liste.
         </li>
         <li>
-          Chaque essai est comparé à la réponse : <strong>vert</strong> identique, <strong>orange</strong> proche (même
-          continent, à 10 ans près, à 25 % des vues près, type voisin), <strong>rouge</strong> différent. Les flèches
-          disent si la réponse est plus récente, plus rare ou plus lue. « ? » : on ne sait pas, ce n&apos;est pas compté
-          faux.
+          Chaque essai est comparé à la réponse : <strong>vert</strong> identique, <strong>orange</strong> proche (à 10
+          ans près, à 25 % des vues près, type voisin), <strong>rouge</strong> différent ; le pays est juste ou faux.
+          Les flèches disent si la réponse est plus récente, plus rare ou plus lue. « ? » : on ne sait pas, ce
+          n&apos;est pas compté faux.
         </li>
         <li>L&apos;image de la réponse se précise à chaque essai.</li>
+        {categoriesAtStart && <li>Des catégories Wikipédia de la réponse sont visibles dès le départ.</li>}
         <li>
-          {data.maxGuesses} essais. Après le {data.hintsAfter.description}
-          <sup>e</sup>, sa description (titre masqué) ; après le {data.hintsAfter.firstLetter}
-          <sup>e</sup>, sa première lettre.
+          {data.maxGuesses} essais. Les essais ratés débloquent des indices{" : "}
+          {data.hintsAfter.categories.length > 0 && !categoriesAtStart && (
+            <>
+              une catégorie Wikipédia après le{" "}
+              {data.hintsAfter.categories.map((n, i) => (
+                <span key={i}>
+                  {i > 0 && (i === data.hintsAfter.categories.length - 1 ? " et le " : ", le ")}
+                  {n}
+                  <sup>e</sup>
+                </span>
+              ))}
+              {" ; "}
+            </>
+          )}
+          sa description (titre masqué) après le {data.hintsAfter.description}
+          <sup>e</sup>
+          {" ; "}sa première lettre après le {data.hintsAfter.firstLetter}
+          <sup>e</sup>.
         </li>
         <li>Trouvé : 70 PW, plus un bonus de 30 PW qui perd 5 PW par essai (100 PW au premier).</li>
       </ul>
@@ -443,6 +461,26 @@ export default function ArticlePage() {
                   )}
                 </div>
                 <ul className="pc-hints" aria-label="Indices de secours">
+                  {data.hintsAfter.categories.length > 0 && (
+                    <li className="pc-hint-wide" data-open={data.hints.categories.length > 0 || undefined}>
+                      <span className="pc-hint-label">Catégories Wikipédia</span>
+                      <span className="pc-hint-cats">
+                        {data.hintsAfter.categories.map((n, i) => {
+                          const name = data.hints.categories[i];
+                          return name ? (
+                            <span key={i} className="pc-hint-cat">
+                              {name}
+                            </span>
+                          ) : (
+                            <span key={i} className="pc-hint-cat text-faint" data-locked>
+                              <Lock className="mr-1 inline size-3.5 align-[-0.15rem]" aria-hidden />
+                              Après {n} essais
+                            </span>
+                          );
+                        })}
+                      </span>
+                    </li>
+                  )}
                   <li data-open={!!data.hints.description || undefined}>
                     {data.hints.description ? (
                       <>
