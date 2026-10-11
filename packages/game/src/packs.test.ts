@@ -85,14 +85,20 @@ describe("équilibre paquet bonus / booster à thème", () => {
   });
 
   it("garde le booster à thème plus rentable par légendaire, mais plus cher à l'unité", () => {
+    expect(ECONOMY.bonusPackPrice).toBe(90);
     expect(ECONOMY.themePackPrice).toBeGreaterThan(ECONOMY.bonusPackPrice);
-    expect(Math.round(pwPerCard("standard", ECONOMY.bonusPackPrice, "L"))).toBe(21_429);
-    expect(Math.round(pwPerCard("themed", ECONOMY.themePackPrice, "L"))).toBe(7_353);
+    const standard = pwPerCard("standard", ECONOMY.bonusPackPrice, "L");
+    const themed = pwPerCard("themed", ECONOMY.themePackPrice, "L");
+    expect(Math.round(standard)).toBe(12_857);
+    expect(Math.round(themed)).toBe(7_353);
+    // À prix égal, le booster garde environ 2 fois plus de chances de légendaire.
+    expect(standard / themed).toBeGreaterThan(1.5);
+    expect(standard / themed).toBeLessThan(2.5);
   });
 
   it("ne rembourse jamais un paquet acheté par le recyclage", () => {
-    // ≈ 61 PW pour 150 PW, ≈ 126 PW pour un booster à thème (200 à 250 PW).
-    expect(recycleValue("standard")).toBeLessThan(ECONOMY.bonusPackPrice / 2);
+    // ≈ 61 PW pour 90 PW (≈ 29 PW net), ≈ 126 PW pour un booster à thème (200 à 250 PW).
+    expect(Math.round(ECONOMY.bonusPackPrice - recycleValue("standard"))).toBe(29);
     expect(recycleValue("themed")).toBeLessThan(200);
   });
 });

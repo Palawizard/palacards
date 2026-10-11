@@ -29,7 +29,7 @@ export const ECONOMY = {
   } satisfies DailyLoginRates,
   battle: { win: 30, loss: 10 },
   startingBalance: 100,
-  bonusPackPrice: 150,
+  bonusPackPrice: 90,
   /** Prix par défaut d'un booster à thème (réglable par thème dans l'admin). */
   themePackPrice: 250,
   marketTaxRate: 0.05,

@@ -344,7 +344,7 @@ describe("portefeuille", () => {
     }
   });
 
-  it("vend un paquet bonus contre 150 PW", async () => {
+  it("vend un paquet bonus contre 90 PW", async () => {
     const p = await signUp(app);
     expect((await p.post("/packs/buy")).body.error).toBe("insufficient_funds");
     await givePw(p, 200);
