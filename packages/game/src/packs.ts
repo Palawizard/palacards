@@ -105,6 +105,18 @@ export function rollPack(pityCounter: number, randomInt: RandomInt, kind: PackKi
   return { rarities, pityCounter: gotUrOrBetter ? 0 : pityCounter + 1 };
 }
 
+/**
+ * Nombre moyen de cartes d'une rareté par paquet, en points de base (70 = 0,007 carte), hors pity.
+ * Légendaires : 70 par paquet bonus, 340 par booster à thème (≈ 4,9 fois plus) ; UR : 630 contre 1 960.
+ */
+export function expectedPackRarity(kind: PackKind, rarity: Rarity): number {
+  const [table, last] =
+    kind === "themed"
+      ? [DROP_TABLE_THEMED, DROP_TABLE_THEMED_GUARANTEED]
+      : [DROP_TABLE_STANDARD, DROP_TABLE_GUARANTEED];
+  return (CARDS_PER_PACK - 1) * table[rarity] + last[rarity];
+}
+
 /** Minimum de paquets mesurés pour figurer au classement « Chance » (petits échantillons trop aléatoires). */
 export const LUCK_MIN_PACKS = 20;
 

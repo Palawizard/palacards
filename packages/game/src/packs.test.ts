@@ -14,10 +14,13 @@ import {
   availablePacks,
   consumeFreePack,
   expectedPackPoints,
+  expectedPackRarity,
   msUntilNextPack,
   pulledPackPoints,
   rollPack,
+  type PackKind,
 } from "./packs.js";
+import { ECONOMY } from "./economy.js";
 import { RARITIES, rarityFromViewRank, type Rarity } from "./rarity.js";
 
 const sum = (t: Record<Rarity, number>) => RARITIES.reduce((acc, r) => acc + t[r], 0);
@@ -63,6 +66,40 @@ describe("booster à thème", () => {
     expect(pityCounter).toBe(0);
     const last = rollPack(0, () => 0, "themed").rarities[CARDS_PER_PACK - 1];
     expect(["R", "SR", "UR", "L"]).toContain(last);
+  });
+});
+
+describe("équilibre paquet bonus / booster à thème", () => {
+  /** PW dépensés en moyenne pour obtenir une carte de cette rareté (hors pity). */
+  const pwPerCard = (kind: PackKind, price: number, r: Rarity) =>
+    (price * DROP_TABLE_TOTAL) / expectedPackRarity(kind, r);
+  /** Valeur de recyclage moyenne d'un paquet, en PW. */
+  const recycleValue = (kind: PackKind) =>
+    RARITIES.reduce((acc, r) => acc + (expectedPackRarity(kind, r) * ECONOMY.recycleValue[r]) / DROP_TABLE_TOTAL, 0);
+
+  it("compte les légendaires et UR moyennes par paquet", () => {
+    expect(expectedPackRarity("standard", "L")).toBe(70);
+    expect(expectedPackRarity("themed", "L")).toBe(340);
+    expect(expectedPackRarity("standard", "UR")).toBe(630);
+    expect(expectedPackRarity("themed", "UR")).toBe(1_960);
+  });
+
+  it("garde le booster à thème plus rentable par légendaire, mais plus cher à l'unité", () => {
+    expect(ECONOMY.bonusPackPrice).toBe(90);
+    expect(ECONOMY.themePackPrice).toBeGreaterThan(ECONOMY.bonusPackPrice);
+    const standard = pwPerCard("standard", ECONOMY.bonusPackPrice, "L");
+    const themed = pwPerCard("themed", ECONOMY.themePackPrice, "L");
+    expect(Math.round(standard)).toBe(12_857);
+    expect(Math.round(themed)).toBe(7_353);
+    // À prix égal, le booster garde environ 2 fois plus de chances de légendaire.
+    expect(standard / themed).toBeGreaterThan(1.5);
+    expect(standard / themed).toBeLessThan(2.5);
+  });
+
+  it("ne rembourse jamais un paquet acheté par le recyclage", () => {
+    // ≈ 61 PW pour 90 PW (≈ 29 PW net), ≈ 126 PW pour un booster à thème (200 à 250 PW).
+    expect(Math.round(ECONOMY.bonusPackPrice - recycleValue("standard"))).toBe(29);
+    expect(recycleValue("themed")).toBeLessThan(200);
   });
 });
 
