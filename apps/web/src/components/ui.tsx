@@ -1,6 +1,6 @@
 // Composants d'interface partagés, importés uniquement par des composants client.
 import { RARITIES, RARITY_LABELS, TITLE_NAMES, titleDetail, type Rarity, type TitleRef } from "@palacards/game";
-import { Award } from "lucide-react";
+import { Award, Ban } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
 /** Filtre de raretés : les sigles eux-mêmes servent de bascules. Sans sélection, tout est affiché. */
@@ -45,6 +45,41 @@ export function Toggle({
   return (
     <button type="button" className="chip" aria-pressed={pressed} onClick={() => onChange(!pressed)}>
       {children}
+    </button>
+  );
+}
+
+/** État d'un filtre à trois états : indifférent (`""`), seulement ces cartes, ou toutes sauf elles. */
+export type FilterMode = "" | "only" | "exclude";
+const NEXT_MODE: Record<FilterMode, FilterMode> = { "": "only", only: "exclude", exclude: "" };
+
+/**
+ * Filtre à trois états : chaque clic passe d'indifférent à « seulement » (puce pleine), puis à « sauf » (puce
+ * barrée d'une icône, libellé `excludeLabel`), puis revient à indifférent.
+ */
+export function TriToggle({
+  value,
+  onChange,
+  label,
+  excludeLabel,
+}: {
+  value: FilterMode;
+  onChange: (v: FilterMode) => void;
+  label: string;
+  excludeLabel: string;
+}) {
+  const hint = { "": "indifférent", only: "seulement", exclude: "exclues" }[value];
+  return (
+    <button
+      type="button"
+      className="chip"
+      aria-pressed={value !== ""}
+      data-mode={value || undefined}
+      title={`${label} : ${hint}. Clic : ${{ "": "seulement", only: "exclure", exclude: "indifférent" }[value]}.`}
+      onClick={() => onChange(NEXT_MODE[value])}
+    >
+      {value === "exclude" && <Ban aria-hidden className="size-3.5" />}
+      {value === "exclude" ? excludeLabel : label}
     </button>
   );
 }

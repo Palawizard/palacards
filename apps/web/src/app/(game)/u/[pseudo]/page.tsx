@@ -200,7 +200,7 @@ function Actions({ p, onChanged }: { p: ProfileDTO; onChanged: () => void }) {
 /** Collection d'un autre joueur, avec les filtres de la sienne (sauf favoris, privés ; tags s'il les partage). */
 function TheirCollection({ username }: { username: string }) {
   const source = `/players/${encodeURIComponent(username)}/collection`;
-  const { value: f, set, q, params } = useCollectionFilters();
+  const { value: f, set, reset, q, params } = useCollectionFilters();
   const summary = useSWR<CollectionFilterOptions>(`${source}/summary`);
   const query = `${params}${params ? "&" : ""}sort=${f.sort}&limit=60`;
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
@@ -218,6 +218,7 @@ function TheirCollection({ username }: { username: string }) {
       <CollectionFilterBar
         value={f}
         onChange={set}
+        onReset={reset}
         options={summary.data}
         owner={false}
         className="rounded-xl border border-line bg-panel p-3"

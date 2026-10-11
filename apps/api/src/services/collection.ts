@@ -33,17 +33,23 @@ export async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promi
 
 export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title" | "copies";
 
+/** Filtre à trois états : absent (indifférent), seulement les cartes concernées, ou toutes sauf elles. */
+export type FilterMode = "only" | "exclude";
+
 export interface CollectionQuery {
   rarity?: Rarity[];
   season?: number;
   tag?: string;
+  /** Toutes sauf les cartes portant ce tag. */
+  notTag?: string;
   /** Booster à thème : seulement les articles qui en font partie. */
   theme?: number;
-  /** Seulement les favorites, ou toutes sauf elles. */
-  favorites?: "only" | "exclude";
-  /** Seulement les brillantes. */
-  shiny?: boolean;
-  duplicates?: boolean;
+  favorites?: FilterMode;
+  shiny?: FilterMode;
+  /** Articles possédés en plusieurs exemplaires. */
+  duplicates?: FilterMode;
+  /** Cartes portant au moins un tag. */
+  tagged?: FilterMode;
   q?: string;
   /** La recherche porte aussi sur le résumé Wikipédia (et la description courte) de l'article. */
   inSummary?: boolean;
@@ -70,15 +76,22 @@ function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
   const where: SQL[] = [eq(ci.ownerId, ownerId)];
   if (query.rarity?.length) where.push(inArray(ci.rarity, query.rarity));
   if (query.season) where.push(eq(ci.season, query.season));
-  if (query.favorites) where.push(eq(ci.favorite, query.favorites === "only"));
-  if (query.shiny) where.push(eq(ci.shiny, true));
+  /** Ajoute la condition, ou sa négation en mode « exclure ». */
+  const mode = (m: FilterMode | undefined, cond: SQL) => {
+    if (m) where.push(m === "only" ? cond : sql`not (${cond})`);
+  };
+  mode(query.favorites, eq(ci.favorite, true));
+  mode(query.shiny, eq(ci.shiny, true));
+  mode(query.tagged, sql`exists (select 1 from user_tags t where t.instance_id = ${ci.id})`);
   if (query.tag)
     where.push(sql`exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag = ${query.tag})`);
+  if (query.notTag)
+    where.push(sql`not exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag = ${query.notTag})`);
   if (query.theme)
     where.push(
       sql`exists (select 1 from theme_cards tc where tc.theme_id = ${query.theme} and tc.card_id = ${ci.cardId})`,
     );
-  if (query.duplicates) where.push(sql`${copiesOf(ownerId)} > 1`);
+  mode(query.duplicates, sql`${copiesOf(ownerId)} > 1`);
   const q = query.q?.trim();
   if (q) {
     const pattern = sql`'%' || lower(f_unaccent(${escapeLike(q)})) || '%'`;

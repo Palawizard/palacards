@@ -230,7 +230,7 @@ function BannerCardPicker({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const { value: f, set, params } = useCollectionFilters();
+  const { value: f, set, reset, params } = useCollectionFilters();
   useEffect(() => {
     const d = ref.current;
     if (!d) return;
@@ -266,7 +266,14 @@ function BannerCardPicker({
               <X aria-hidden className="size-5" />
             </button>
           </div>
-          <CollectionFilterBar value={f} onChange={set} options={options.data} owner className="px-5 pt-4" />
+          <CollectionFilterBar
+            value={f}
+            onChange={set}
+            onReset={reset}
+            options={options.data}
+            owner
+            className="px-5 pt-4"
+          />
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4">
             {list.error ? (
               <ErrorBox error={list.error} retry={() => list.mutate()} />

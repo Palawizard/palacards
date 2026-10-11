@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ELO_START } from "./battle.js";
-import { TITLE_BOARDS, TITLE_MAX_RANK, TITLE_NAMES, titleDetail, titleWinners } from "./titles.js";
+import { LEADERBOARDS, TITLE_BOARDS, TITLE_MAX_RANK, TITLE_NAMES, titleDetail, titleWinners } from "./titles.js";
 
 describe("titres de classement", () => {
   it("récompense les premiers du classement, dans l'ordre", () => {
@@ -24,6 +24,9 @@ describe("titres de classement", () => {
 
   it("nomme chaque classement et situe le titre", () => {
     for (const b of TITLE_BOARDS) expect(TITLE_NAMES[b]).toBeTruthy();
+    // « Succès » n'est pas un classement à titre : aucune récompense en fin de saison.
+    expect(LEADERBOARDS).toContain("achievements");
+    expect(TITLE_BOARDS as readonly string[]).not.toContain("achievements");
     expect(titleDetail({ board: "luck", rank: 1, season: 3 })).toBe("n°\u00a01 en Chance, saison 3");
   });
 });
