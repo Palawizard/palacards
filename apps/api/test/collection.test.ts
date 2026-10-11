@@ -61,6 +61,41 @@ describe("filtres de la collection", () => {
     expect((await p.get("/collection?favorites=maybe")).status).toBe(400);
   });
 
+  it("exclut les favorites, brillantes, doublons, cartes taguées ou un tag précis, et le compte suit", async () => {
+    const q = await signUp(app);
+    const own = await freshCollection(q);
+    const [shiny, fav, twin, tagA, tagB] = own;
+    await ctx.db.update(ci).set({ shiny: true }).where(eq(ci.id, shiny!.instanceId));
+    await q.post(`/collection/${fav!.instanceId}/favorite`, { favorite: true });
+    const [copy] = await addCopies(twin!.instanceId, 1);
+    await q.post("/collection/tags", { instanceIds: [tagA!.instanceId, tagB!.instanceId], add: "garde" });
+    await q.post("/collection/tags", { instanceIds: [tagB!.instanceId], add: "vente" });
+    const all = own.map((c) => c.instanceId).concat(copy!);
+    const except = (...out: number[]) => all.filter((id) => !out.includes(id)).sort((a, b) => a - b);
+    const get = async (query: string) => (await q.get(`/collection?${query}&limit=120`)).body;
+
+    const noFavShiny = await get("favorites=exclude&shiny=exclude");
+    expect(ids(noFavShiny)).toEqual(except(fav!.instanceId, shiny!.instanceId));
+    expect(noFavShiny.total).toBe(all.length - 2);
+    expect(ids(await get("shiny=only"))).toEqual([shiny!.instanceId]);
+    expect(ids(await get("duplicates=exclude"))).toEqual(except(twin!.instanceId, copy!));
+    expect(ids(await get("tagged=only"))).toEqual([tagA!.instanceId, tagB!.instanceId].sort((a, b) => a - b));
+    expect(ids(await get("tagged=exclude"))).toEqual(except(tagA!.instanceId, tagB!.instanceId));
+    expect(ids(await get("notTag=vente"))).toEqual(except(tagB!.instanceId));
+    // Se combine au reste (ici : un tag gardé, l'autre écarté).
+    expect(ids(await get("tag=garde&notTag=vente"))).toEqual([tagA!.instanceId]);
+    // `false` : indifférent, comme avant ; valeur inconnue refusée.
+    expect((await get("shiny=false")).total).toBe(all.length);
+    expect((await q.get("/collection?duplicates=sans")).status).toBe(400);
+
+    // « Tout sélectionner » et la fusion en masse suivent les mêmes exclusions.
+    const selectable = (await q.get("/collection/selectable?shiny=exclude&favorites=exclude")).body;
+    expect(selectable.items.map((i: { id: number }) => i.id).sort((a: number, b: number) => a - b)).toEqual(
+      except(fav!.instanceId, shiny!.instanceId),
+    );
+    expect((await q.get("/collection/fusions?duplicates=exclude")).body.consumed).toBe(0);
+  });
+
   it("cherche aussi dans le résumé Wikipédia quand on le demande", async () => {
     const target = cards[4]!;
     await ctx.db
@@ -269,12 +304,15 @@ describe("collection d'un autre joueur (échanges)", () => {
     const both = await viewer.get(`${url}?tag=${encodeURIComponent("châteaux")}&rarity=${rarity}`);
     expect(both.body.items.every((c: { rarity: string }) => c.rarity === rarity)).toBe(true);
     expect(both.body.total).toBeLessThanOrEqual(2);
+    expect((await viewer.get(`${url}?tagged=exclude`)).body.total).toBe(cards.length - 2);
 
     // Repris : rien dans le menu, et le filtre est ignoré (on ne devine pas ses tags en essayant).
     expect((await owner.patch("/me/settings", { publicTags: false })).body.publicTags).toBe(false);
     expect((await viewer.get(`${url}/summary`)).body.tags).toEqual([]);
     expect((await viewer.get(`${url}?tag=${encodeURIComponent("châteaux")}`)).body.total).toBe(cards.length);
     expect((await viewer.get(`${url}?tag=inconnu`)).body.total).toBe(cards.length);
+    expect((await viewer.get(`${url}?tagged=exclude`)).body.total).toBe(cards.length);
+    expect((await viewer.get(`${url}?notTag=${encodeURIComponent("châteaux")}`)).body.total).toBe(cards.length);
     // Sa propre collection garde le filtre.
     expect((await owner.get("/collection/summary")).body.tags).toEqual(["châteaux"]);
   });

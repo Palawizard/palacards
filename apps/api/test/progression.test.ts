@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, ELO_START, LUCK_MIN_PACKS, TITLE_BOARDS } from "@palacards/game";
+import { ACHIEVEMENTS, ECONOMY, ELO_START, LEADERBOARDS, LUCK_MIN_PACKS } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { lockOrder, PLAYER_LOCK_ORDER } from "../src/services/players.js";
 import { collectionEvent, progressionIdle } from "../src/services/progression.js";
@@ -94,7 +94,7 @@ describe("classements et saisons", () => {
   it("classe par collection, Elo et richesse", async () => {
     const p = await signUp(app);
     await p.post("/packs/open");
-    for (const board of TITLE_BOARDS) {
+    for (const board of LEADERBOARDS) {
       for (const period of ["season", "all"]) {
         const res = await p.get(`/leaderboard?board=${board}&period=${period}`);
         expect(res.status).toBe(200);
@@ -148,6 +148,55 @@ describe("classements et saisons", () => {
     expect(rows.find((r) => r.id === c.userId)).toBeUndefined();
     // Ordre décroissant.
     for (let i = 1; i < rows.length; i++) expect(rows[i]!.value).toBeLessThanOrEqual(rows[i - 1]!.value);
+  });
+
+  it("classe par paliers de succès débloqués, premier arrivé devant, sans titre de fin de saison", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const c = await signUp(app);
+    await progressionIdle();
+    // Paliers posés à la main (dates fixées pour le départage), assez nombreux pour passer devant la base partagée.
+    const unlock = async (userId: string, keys: string[], at: string) => {
+      await ctx.db.execute(sql`delete from achievements_progress where user_id = ${userId}`);
+      await ctx.db.insert(schema.achievementsProgress).values(
+        keys.map((achievementKey, i) => ({
+          userId,
+          achievementKey,
+          progress: 1,
+          unlockedAt: new Date(Date.parse(at) + i * 60_000),
+        })),
+      );
+    };
+    const keys = ACHIEVEMENTS.map((x) => x.key);
+    const n = keys.length - 1;
+    // A et B : même nombre de paliers, B l'a atteint avant ; une clé disparue ou un succès en cours ne comptent pas.
+    await unlock(a.userId, [...keys.slice(0, n), "succes_disparu"], "2001-01-01");
+    await unlock(b.userId, keys.slice(1), "2000-01-01");
+    await ctx.db
+      .insert(schema.achievementsProgress)
+      .values({ userId: b.userId, achievementKey: "succes_disparu", progress: 1, unlockedAt: new Date("2000-06-01") });
+    await unlock(c.userId, keys.slice(0, 1), "2000-01-01");
+    await ctx.db
+      .update(schema.achievementsProgress)
+      .set({ unlockedAt: null })
+      .where(eq(schema.achievementsProgress.userId, c.userId));
+
+    for (const period of ["season", "all"]) {
+      const rows = (await a.get(`/leaderboard?board=achievements&period=${period}`)).body.rows as {
+        id: string;
+        value: number;
+        rank: number;
+        me: boolean;
+      }[];
+      const ra = rows.find((r) => r.id === a.userId)!;
+      const rb = rows.find((r) => r.id === b.userId)!;
+      expect(ra).toMatchObject({ value: n, me: true });
+      expect(rb).toMatchObject({ value: n, me: false });
+      expect(rb.rank).toBeLessThan(ra.rank);
+      expect(rows.find((r) => r.id === c.userId)).toBeUndefined();
+      for (let i = 1; i < rows.length; i++) expect(rows[i]!.value).toBeLessThanOrEqual(rows[i - 1]!.value);
+    }
+    expect((await a.get("/leaderboard?board=nope&period=all")).status).toBe(400);
   });
 
   it("affiche le badge « Créateur » à côté des comptes admin", async () => {

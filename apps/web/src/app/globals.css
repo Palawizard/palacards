@@ -327,6 +327,10 @@
       background: var(--color-accent-strong);
       color: var(--color-accent-ink);
     }
+    button.chip[data-mode="exclude"]:hover:not(:disabled) {
+      background: color-mix(in oklab, var(--color-danger) 20%, transparent);
+      color: var(--color-danger);
+    }
   }
 
   .field {
@@ -397,6 +401,12 @@
     background: var(--color-accent);
     border-color: var(--color-accent);
     color: var(--color-accent-ink);
+  }
+  /* Filtre à trois états en mode « sauf » : teinte d'alerte, distincte de « seulement ». */
+  .chip[data-mode="exclude"] {
+    background: color-mix(in oklab, var(--color-danger) 12%, transparent);
+    border-color: var(--color-danger);
+    color: var(--color-danger);
   }
 
   /* Couverture de l'album : fines rayures en relief. */
