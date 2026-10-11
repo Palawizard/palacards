@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { BOSS_MIN_HP, BOSS_REWARDS, bossPhaseHp, parisDay } from "@palacards/game";
+import { BOSS_MIN_HP, BOSS_REWARDS, bossDamage, bossPhaseHp, bossYearMult, parisDay } from "@palacards/game";
 import { readFileSync } from "node:fs";
 import { afterAll, describe, expect, it } from "vitest";
 import { bossOfDay, finalizeBosses } from "../src/services/boss.js";
@@ -171,7 +171,8 @@ describe("boss du jour : assauts", () => {
     const res = await p.post(`/boss/assault/${started.current.id}/answer`, { idx: 0, year: 1918 });
     const hit = res.body.current.hits[0];
     expect(hit).toMatchObject({ type: "year_input", hit: "hit", correctYear: 1920, guessYear: 1918 });
-    expect(hit.damage).toBe(Math.max(1, Math.round((40 + hit.card.atk / 100) * hit.mult)));
+    // Même calcul que le serveur : base arrondie (40 + ATK/100), multiplicateur de l'année, puis catégorie.
+    expect(hit.damage).toBe(bossDamage(hit.card.atk, bossYearMult(1918, 1920), hit.mult));
     const history = await ctx.db
       .select()
       .from(schema.bossQuestionHistory)
