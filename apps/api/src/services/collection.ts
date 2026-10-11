@@ -482,19 +482,47 @@ export interface SelectableItem {
   protected: boolean;
 }
 
+/** Options d'exclusion de « Tout sélectionner » : ces cartes ne sont jamais prises, donc jamais recyclées. */
+export interface SelectExclusions {
+  /** Ignorer les favorites. */
+  skipFavorites?: boolean;
+  /** Ignorer les cartes qui ont au moins un tag. */
+  skipTagged?: boolean;
+  /** Ignorer les cartes qui portent l'un de ces tags. */
+  skipTags?: string[];
+}
+
+/** Conditions SQL qui gardent les exemplaires non exclus (vide sans option : rien n'est exclu). */
+function keepWhere(query: SelectExclusions): SQL[] {
+  const keep: SQL[] = [];
+  if (query.skipFavorites) keep.push(eq(ci.favorite, false));
+  if (query.skipTagged) keep.push(sql`not exists (select 1 from user_tags t where t.instance_id = ${ci.id})`);
+  if (query.skipTags?.length)
+    keep.push(
+      sql`not exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag in (${sql.join(
+        query.skipTags.map((t) => sql`${t}`),
+        sql`, `,
+      )}))`,
+    );
+  return keep;
+}
+
 /**
  * « Tout sélectionner » : tous les exemplaires qui correspondent aux filtres en cours. Ceux qui sont protégés
  * (favoris, brillantes, épinglés, cartes engagées ou demandées dans un échange) restent sélectionnés pour
  * les favoris et les tags, mais le recyclage les laisse de côté ; `protected` les compte pour l'afficher.
  * Avec `count` (« Sélectionner N cartes ») : les `count` premières dans l'ordre de `sort`, comme la liste,
  * sans les cartes engagées (grisées dans la grille, on ne peut pas les sélectionner à la main non plus).
+ * Les options d'exclusion (`skipFavorites`, `skipTagged`, `skipTags`) écartent des cartes du filtre ;
+ * `excluded` les compte pour l'afficher.
  */
 export async function selectableIds(
   ctx: Ctx,
   ownerId: string,
-  query: CollectionFilters & { sort?: CollectionSort; count?: number },
-): Promise<{ items: SelectableItem[]; protected: number; truncated: boolean }> {
+  query: CollectionFilters & SelectExclusions & { sort?: CollectionSort; count?: number },
+): Promise<{ items: SelectableItem[]; protected: number; excluded: number; truncated: boolean }> {
   const cap = Math.min(query.count ?? SELECT_ALL_MAX, SELECT_ALL_MAX);
+  const keep = keepWhere(query);
   const rows = await ctx.db
     .select({
       id: ci.id,
@@ -506,7 +534,7 @@ export async function selectableIds(
     })
     .from(ci)
     .innerJoin(c, and(eq(c.season, ci.season), eq(c.id, ci.cardId)))
-    .where(and(...collectionWhere(ownerId, query), query.count ? isNull(ci.lockedBy) : undefined))
+    .where(and(...collectionWhere(ownerId, query), ...keep, query.count ? isNull(ci.lockedBy) : undefined))
     .orderBy(...(query.sort ? collectionOrder(ownerId, query.sort, ownerId) : [ci.id]))
     .limit(cap + 1);
   // Tronquée seulement par le plafond : avec `count`, des cartes au-delà de N sont attendues.
@@ -523,7 +551,16 @@ export async function selectableIds(
     favorite: r.favorite,
     protected: !!r.lockedBy || r.favorite || r.shiny || r.pinned !== null || requested.has(r.id),
   }));
-  return { items, protected: items.filter((i) => i.protected).length, truncated };
+  let excluded = 0;
+  if (keep.length) {
+    const [row] = await ctx.db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(ci)
+      .innerJoin(c, and(eq(c.season, ci.season), eq(c.id, ci.cardId)))
+      .where(and(...collectionWhere(ownerId, query), sql`not (${and(...keep)})`));
+    excluded = row?.n ?? 0;
+  }
+  return { items, protected: items.filter((i) => i.protected).length, excluded, truncated };
 }
 
 /** Exemplaires du joueur parmi `ids` (les autres sont ignorés, jamais modifiés). */
