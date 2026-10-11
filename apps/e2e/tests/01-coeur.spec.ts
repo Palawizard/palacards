@@ -192,8 +192,13 @@ test("« Doublons » trie par nombre d'exemplaires, sauf tri choisi à la main",
   const duplicates = page.getByRole("button", { name: "Doublons", exact: true });
   await duplicates.click();
   await expect(sort).toHaveValue("copies");
+  // Deuxième clic : « Sans doublons », le tri de départ revient ; troisième : indifférent.
+  const without = page.getByRole("button", { name: "Sans doublons" });
   await duplicates.click();
+  await expect(without).toHaveAttribute("data-mode", "exclude");
   await expect(sort).toHaveValue("rarity");
+  await without.click();
+  await expect(duplicates).toHaveAttribute("aria-pressed", "false");
 
   // Un tri choisi à la main reste en place.
   await sort.selectOption("title");
@@ -240,11 +245,23 @@ test("fusionne les doublons d'un coup, puis met une sélection en favori et la t
   await tag.getByRole("button", { name: "Ajouter à 2 cartes" }).click();
   await expect(page.getByText("« châteaux » ajouté à 2 cartes.")).toBeVisible();
   expect((await apiCall<{ total: number }>(page, "GET", "/collection?tag=ch%C3%A2teaux&limit=1")).total).toBe(2);
-  // Filtre « Sans favoris » : les deux cartes disparaissent de la liste.
+  // « Favoris » : seulement elles ; second clic, « Sans favoris » : elles disparaissent de la liste.
   await bar.getByRole("button", { name: "Quitter la sélection" }).click();
   const all = (await apiCall<{ total: number }>(page, "GET", "/collection?limit=1")).total;
-  await page.getByRole("button", { name: "Sans favoris" }).click();
+  await page.getByRole("button", { name: "Favoris", exact: true }).click();
+  await expect(page.getByText("2 cartes", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Favoris", exact: true }).click();
   await expect(page.getByText(`${all - 2} cartes`, { exact: true })).toBeVisible();
+  // « Sans tag » s'y ajoute (les deux taguées étaient déjà exclues), puis « Réinitialiser » remet tout.
+  const sansTag = page.getByRole("button", { name: "Taguées", exact: true });
+  await sansTag.click();
+  await sansTag.click();
+  await expect(page.getByRole("button", { name: "Sans tag" })).toHaveAttribute("data-mode", "exclude");
+  await expect(page.getByText(`${all - 2} cartes`, { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Réinitialiser" }).click();
+  await expect(page.getByText(`${all} cartes`, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Favoris", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("button", { name: "Réinitialiser" })).toBeHidden();
 });
 
 test("redirige vers la connexion sans session", async ({ page }) => {
