@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, MAX_PRICE, TITLE_BOARDS } from "@palacards/game";
+import { ECONOMY, LEADERBOARDS, MAX_PRICE, TITLE_BOARDS } from "@palacards/game";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
@@ -24,7 +24,7 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/leaderboard", auth, async (req) => {
     const q = parse(
       z.object({
-        board: z.enum(TITLE_BOARDS).default("collection"),
+        board: z.enum(LEADERBOARDS).default("collection"),
         period: z.enum(["season", "all"]).default("season"),
       }),
       req.query,

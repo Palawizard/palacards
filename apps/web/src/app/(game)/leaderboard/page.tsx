@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { LUCK_MIN_PACKS, TITLE_MAX_RANK, type TitleBoard, type TitleRef } from "@palacards/game";
+import { LUCK_MIN_PACKS, TITLE_MAX_RANK, type Leaderboard, type TitleRef } from "@palacards/game";
 import type { BannerDTO } from "@palacards/shared";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
 import { RowBanner } from "@/components/Banner";
 import { CreatorBadge, ErrorBox, TitleBadge } from "@/components/ui";
+import { useSeenFeature } from "@/lib/features";
 import { fmt } from "@/lib/format";
+import { useSocketEvent } from "@/lib/game";
 
-type Board = TitleBoard;
+type Board = Leaderboard;
 interface Row {
   id: string;
   name: string;
@@ -42,18 +44,28 @@ const BOARDS: { value: Board; label: string; unit: string }[] = [
   { value: "wealth", label: "Richesse", unit: "PW" },
   { value: "guilds", label: "Guildes", unit: "pts" },
   { value: "pass", label: "Passe de saison", unit: "niv." },
+  { value: "achievements", label: "Succès", unit: "Paliers" },
 ];
 
+/** Classements cumulés depuis l'inscription : pas de saison (ni de titre), le choix de période est masqué. */
+const ALL_TIME_BOARDS: readonly Board[] = ["achievements"];
+
 export default function LeaderboardPage() {
+  useSeenFeature("leaderboard-achievements");
   const [board, setBoard] = useState<Board>("collection");
   const [period, setPeriod] = useState<"season" | "all">("season");
+  const allTime = ALL_TIME_BOARDS.includes(board);
   // Garde l'ancien tableau (atténué) pendant le changement d'onglet : pas de flash de squelette.
   const { data, error, mutate, isLoading } = useSWR<{ season: number; rows: Row[] }>(
-    `/leaderboard?board=${board}&period=${period}`,
+    `/leaderboard?board=${board}&period=${allTime ? "all" : period}`,
     {
       keepPreviousData: true,
     },
   );
+  // Un palier débloqué par le joueur fait bouger le classement « Succès » aussitôt.
+  useSocketEvent("progress:update", () => {
+    if (board === "achievements") void mutate();
+  });
   const unit = BOARDS.find((b) => b.value === board)!.unit;
 
   return (
@@ -78,6 +90,12 @@ export default function LeaderboardPage() {
             premier à avoir atteint ce nombre passe devant.
           </p>
         )}
+        {board === "achievements" && (
+          <p className="hatnote mt-2">
+            Nombre de paliers de succès débloqués depuis ton inscription, secrets compris. Ce classement ne repart pas à
+            zéro et ne donne pas de titre. À égalité, le premier à avoir atteint ce nombre passe devant.
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Classements" className="flex flex-wrap gap-1.5">
@@ -93,14 +111,21 @@ export default function LeaderboardPage() {
             </button>
           ))}
         </nav>
-        <div className="flex gap-1.5" role="group" aria-label="Période">
-          <button type="button" className="chip" aria-pressed={period === "season"} onClick={() => setPeriod("season")}>
-            Saison {data?.season ?? ""}
-          </button>
-          <button type="button" className="chip" aria-pressed={period === "all"} onClick={() => setPeriod("all")}>
-            Tout temps
-          </button>
-        </div>
+        {!allTime && (
+          <div className="flex gap-1.5" role="group" aria-label="Période">
+            <button
+              type="button"
+              className="chip"
+              aria-pressed={period === "season"}
+              onClick={() => setPeriod("season")}
+            >
+              Saison {data?.season ?? ""}
+            </button>
+            <button type="button" className="chip" aria-pressed={period === "all"} onClick={() => setPeriod("all")}>
+              Tout temps
+            </button>
+          </div>
+        )}
       </div>
 
       {error ? (
@@ -113,7 +138,9 @@ export default function LeaderboardPage() {
             ? `Personne n’a encore ouvert ${LUCK_MIN_PACKS} boosters${period === "season" ? " cette saison" : ""}.`
             : board === "legendary"
               ? `Personne n’a encore de carte légendaire${period === "season" ? " cette saison" : ""}.`
-              : "Personne au classement pour l’instant."}
+              : board === "achievements"
+                ? "Personne n’a encore débloqué de succès."
+                : "Personne au classement pour l’instant."}
         </p>
       ) : (
         <table

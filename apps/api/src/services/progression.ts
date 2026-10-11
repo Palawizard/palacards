@@ -14,9 +14,9 @@ import {
   xpForEvent,
   type AchievementDef,
   type GameEvent,
+  type Leaderboard,
   type QuestKind,
   type StatKey,
-  type TitleBoard,
   type TitleRef,
 } from "@palacards/game";
 import type { BannerDTO } from "@palacards/shared";
@@ -531,8 +531,8 @@ export function passState(player: Pick<Player, "seasonXp" | "passSeason">, seaso
 // Classements
 // ---------------------------------------------------------------------------
 
-/** Les classements, qui donnent chacun un titre en fin de saison. */
-export type Board = TitleBoard;
+/** Les classements (tous donnent un titre en fin de saison, sauf « Succès »). */
+export type Board = Leaderboard;
 
 interface Row {
   id: string;
@@ -556,7 +556,8 @@ interface Row {
 
 /**
  * Classements : collection (points des articles uniques), légendaires (articles L différents), boosters ouverts, chance (points tirés ÷ points attendus,
- * en %, à partir de LUCK_MIN_PACKS paquets mesurés), Elo, richesse (solde), guildes et niveau du passe.
+ * en %, à partir de LUCK_MIN_PACKS paquets mesurés), Elo, richesse (solde), guildes, niveau du passe et succès (paliers
+ * débloqués, sans saison).
  * « Saison » : édition en cours et Elo remis à 1 000 ; « tout temps » : toutes éditions, meilleur Elo, archives.
  */
 export async function leaderboard(ctx: Ctx, userId: string, board: Board, period: "season" | "all") {
@@ -659,6 +660,29 @@ export async function boardRows(db: DbOrTx, board: Board, period: "season" | "al
       order by l.value desc, l.reached_at, u.username limit 100
     `);
     rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
+  } else if (board === "achievements") {
+    // Paliers de succès débloqués depuis l'inscription (même liste pour les deux périodes) ; seuls comptent les
+    // succès qui existent encore. Égalité : le premier à avoir atteint ce nombre (date de son dernier palier).
+    const res = await db.execute<{
+      user_id: string;
+      value: number;
+      username: string;
+      name: string;
+      avatar: string | null;
+    }>(sql`
+      select a.user_id, a.value, u.username, coalesce(u.display_username, u.name) as name, p.avatar
+      from (
+        select user_id, count(*)::int as value, max(unlocked_at) as reached_at
+        from achievements_progress
+        where unlocked_at is not null and achievement_key in (${sql.join(
+          ACHIEVEMENTS.map((a) => sql`${a.key}`),
+          sql`, `,
+        )})
+        group by user_id
+      ) a join "user" u on u.id = a.user_id left join players p on p.user_id = a.user_id
+      order by a.value desc, a.reached_at, u.username limit 100
+    `);
+    rows = res.map((r) => ({ id: r.user_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
   } else if (board === "packs" || board === "luck") {
     const seasonFilter = period === "season" ? sql`where ps.season = ${season}` : sql``;
     const res = await db.execute<{
