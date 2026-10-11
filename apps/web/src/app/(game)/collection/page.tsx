@@ -139,7 +139,7 @@ function Collection() {
   // `?theme=<id>` : ouverte depuis « Mes cartes de ce booster » sur une fiche carte.
   const urlTheme = useSearchParams().get("theme") ?? "";
   /** Filtres en cours (`filters`), partagés par la liste, « Tout sélectionner » et la fusion en masse. */
-  const { value: f, set, q: query, params: filters } = useCollectionFilters({ theme: urlTheme });
+  const { value: f, set, reset, q: query, params: filters } = useCollectionFilters({ theme: urlTheme });
   const [seenTheme, setSeenTheme] = useState(urlTheme);
   if (urlTheme !== seenTheme) {
     // Fiche ouverte par-dessus la collection : la page reste montée, l'URL change.
@@ -398,6 +398,7 @@ function Collection() {
           <CollectionFilterBar
             value={f}
             onChange={set}
+            onReset={reset}
             options={summary.data}
             owner
             className="rounded-xl border border-line bg-panel p-3"
@@ -451,7 +452,12 @@ function Collection() {
                   </Link>
                 </>
               ) : f.inSummary || !query ? (
-                "Change les filtres pour voir d'autres cartes."
+                <>
+                  Change les filtres pour voir d’autres cartes.{" "}
+                  <button type="button" className="article-link" onClick={reset}>
+                    Réinitialiser les filtres
+                  </button>
+                </>
               ) : (
                 <>
                   Aucun titre ne contient « {query} ».{" "}

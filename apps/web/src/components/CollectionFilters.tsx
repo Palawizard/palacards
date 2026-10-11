@@ -1,8 +1,8 @@
 // Filtres de collection partagés, importés uniquement par des composants client.
 import type { Rarity } from "@palacards/game";
-import { Search } from "lucide-react";
+import { RotateCcw, Search } from "lucide-react";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
-import { RarityFilter, Select, Toggle } from "@/components/ui";
+import { RarityFilter, Select, Toggle, TriToggle, type FilterMode } from "@/components/ui";
 import { useDebounced } from "@/lib/use-debounced";
 
 const SORTS = [
@@ -25,10 +25,15 @@ export interface CollectionFilterState {
   /** La recherche porte aussi sur le résumé de l'article. */
   inSummary: boolean;
   rarity: Rarity[];
-  favorites: "" | "only" | "exclude";
-  shiny: boolean;
-  duplicates: boolean;
+  favorites: FilterMode;
+  shiny: FilterMode;
+  duplicates: FilterMode;
+  /** Cartes portant au moins un tag. */
+  tagged: FilterMode;
+  /** Seulement les cartes portant ce tag. */
   tag: string;
+  /** Toutes sauf les cartes portant ce tag (l'un ou l'autre, choisi dans le même menu). */
+  notTag: string;
   theme: string;
   season: string;
   sort: CollectionSort;
@@ -49,13 +54,17 @@ const EMPTY: CollectionFilterState = {
   inSummary: false,
   rarity: [],
   favorites: "",
-  shiny: false,
-  duplicates: false,
+  shiny: "",
+  duplicates: "",
+  tagged: "",
   tag: "",
+  notTag: "",
   theme: "",
   season: "",
   sort: "rarity",
 };
+/** Ce que remet « Réinitialiser » : tout sauf le tri. */
+const { sort: _sort, ...RESET } = EMPTY;
 
 /**
  * Filtres d'une collection (la sienne ou celle d'un autre joueur). `params` : la requête des filtres, sans tri ni
@@ -68,19 +77,23 @@ export function useCollectionFilters(init: Partial<CollectionFilterState> = {}) 
   const [value, setValue] = useState<CollectionFilterState>(() => ({
     ...EMPTY,
     ...init,
-    sort: init.sort ?? (init.duplicates ? DUPLICATES_SORT : EMPTY.sort),
+    sort: init.sort ?? (init.duplicates === "only" ? DUPLICATES_SORT : EMPTY.sort),
   }));
   const sortChosen = useRef(init.sort !== undefined);
   const set = useCallback(
     (patch: Partial<CollectionFilterState>) => {
       if (patch.sort !== undefined) sortChosen.current = true;
       const auto = patch.duplicates !== undefined && patch.sort === undefined && !sortChosen.current;
-      setValue((v) => ({ ...v, ...patch, ...(auto && { sort: patch.duplicates ? DUPLICATES_SORT : baseSort }) }));
+      setValue((v) => ({
+        ...v,
+        ...patch,
+        ...(auto && { sort: patch.duplicates === "only" ? DUPLICATES_SORT : baseSort }),
+      }));
     },
     [baseSort],
   );
   const q = useDebounced(value.q).trim();
-  const { rarity, inSummary, favorites, shiny, duplicates, tag, theme, season } = value;
+  const { rarity, inSummary, favorites, shiny, duplicates, tagged, tag, notTag, theme, season } = value;
   const params = useMemo(() => {
     const p = new URLSearchParams();
     if (rarity.length) p.set("rarity", rarity.join(","));
@@ -89,19 +102,32 @@ export function useCollectionFilters(init: Partial<CollectionFilterState> = {}) 
       if (inSummary) p.set("inSummary", "true");
     }
     if (favorites) p.set("favorites", favorites);
-    if (shiny) p.set("shiny", "true");
-    if (duplicates) p.set("duplicates", "true");
+    if (shiny) p.set("shiny", shiny);
+    if (duplicates) p.set("duplicates", duplicates);
+    if (tagged) p.set("tagged", tagged);
     if (tag) p.set("tag", tag);
+    if (notTag) p.set("notTag", notTag);
     if (theme) p.set("theme", theme);
     if (season) p.set("season", season);
     return p.toString();
-  }, [rarity, q, inSummary, favorites, shiny, duplicates, tag, theme, season]);
-  return { value, set, q, params };
+  }, [rarity, q, inSummary, favorites, shiny, duplicates, tagged, tag, notTag, theme, season]);
+  /** « Réinitialiser » : filtres à indifférent et recherche vidée ; le tri reste (ou est rendu s'il suivait « Doublons »). */
+  const reset = useCallback(() => set(RESET), [set]);
+  return { value, set, reset, q, params };
+}
+
+/** Un filtre ou une recherche réduit la liste. */
+export function filtersActive(f: CollectionFilterState): boolean {
+  return (Object.keys(RESET) as (keyof typeof RESET)[]).some((k) => {
+    const v = f[k];
+    return Array.isArray(v) ? v.length > 0 : v !== RESET[k];
+  });
 }
 
 /**
  * Barre de filtres d'une collection : recherche (titre, ou résumé aussi), tri, raretés, brillantes, doublons,
- * tag, booster et édition. Favoris seulement sur sa propre collection (`owner`) : ceux des autres sont privés ; tags
+ * tag, booster et édition. Favoris, brillantes, doublons et « Taguées » ont trois états (indifférent, seulement,
+ * sauf) ; le menu des tags garde un tag ou l'écarte. Favoris seulement sur sa propre collection (`owner`) : ceux des autres sont privés ; tags
  * d'un autre joueur seulement s'il les partage (le résumé les donne alors).
  * L'upgrader masque les raretés (fixées par l'établi) et les favoris (son propre interrupteur, dans `children`).
  */
@@ -114,11 +140,14 @@ export function CollectionFilterBar({
   disabled = false,
   rarities = true,
   favorites = owner,
+  onReset,
   children,
   className = "",
 }: {
   value: CollectionFilterState;
   onChange: (patch: Partial<CollectionFilterState>) => void;
+  /** Bouton « Réinitialiser », affiché dès qu'un filtre ou une recherche réduit la liste. */
+  onReset?: () => void;
   options?: CollectionFilterOptions;
   owner: boolean;
   /** Préfixe du nom accessible de la recherche quand plusieurs collections sont à l'écran (échanges). */
@@ -126,7 +155,7 @@ export function CollectionFilterBar({
   disabled?: boolean;
   /** Filtre par rareté (masqué quand la page fixe déjà la rareté). */
   rarities?: boolean;
-  /** Interrupteurs « Favoris » et « Sans favoris ». */
+  /** Filtre « Favoris » (seulement, ou sans). */
   favorites?: boolean;
   /** Interrupteurs propres à la page, à la suite des filtres. */
   children?: ReactNode;
@@ -164,28 +193,47 @@ export function CollectionFilterBar({
           </>
         )}
         {favorites && (
-          <div className="flex gap-1.5" role="group" aria-label="Favoris">
-            <Toggle pressed={f.favorites === "only"} onChange={(on) => set({ favorites: on ? "only" : "" })}>
-              Favoris
-            </Toggle>
-            <Toggle pressed={f.favorites === "exclude"} onChange={(on) => set({ favorites: on ? "exclude" : "" })}>
-              Sans favoris
-            </Toggle>
-          </div>
-        )}
-        <Toggle pressed={f.shiny} onChange={(shiny) => set({ shiny })}>
-          Brillantes
-        </Toggle>
-        <Toggle pressed={f.duplicates} onChange={(duplicates) => set({ duplicates })}>
-          Doublons
-        </Toggle>
-        {!!options?.tags?.length && (
-          <Select
-            label="Tag"
-            value={f.tag}
-            onChange={(tag) => set({ tag })}
-            options={[{ value: "", label: "Tous" }, ...options.tags.map((t) => ({ value: t, label: t }))]}
+          <TriToggle
+            value={f.favorites}
+            onChange={(v) => set({ favorites: v })}
+            label="Favoris"
+            excludeLabel="Sans favoris"
           />
+        )}
+        <TriToggle
+          value={f.shiny}
+          onChange={(shiny) => set({ shiny })}
+          label="Brillantes"
+          excludeLabel="Sans brillantes"
+        />
+        <TriToggle
+          value={f.duplicates}
+          onChange={(duplicates) => set({ duplicates })}
+          label="Doublons"
+          excludeLabel="Sans doublons"
+        />
+        {!!options?.tags?.length && (
+          <>
+            <TriToggle
+              value={f.tagged}
+              onChange={(tagged) => set({ tagged })}
+              label="Taguées"
+              excludeLabel="Sans tag"
+            />
+            <Select
+              label="Tag"
+              // Un seul menu pour « seulement ce tag » (+) et « sauf ce tag » (−) : préfixe interne au menu.
+              value={f.tag ? `+${f.tag}` : f.notTag ? `-${f.notTag}` : ""}
+              onChange={(v) =>
+                set({ tag: v.startsWith("+") ? v.slice(1) : "", notTag: v.startsWith("-") ? v.slice(1) : "" })
+              }
+              options={[
+                { value: "", label: "Tous" },
+                ...options.tags.map((t) => ({ value: `+${t}`, label: t })),
+                ...options.tags.map((t) => ({ value: `-${t}`, label: `Sauf « ${t} »` })),
+              ]}
+            />
+          </>
         )}
         {!!options?.themes.length && (
           <Select
@@ -210,6 +258,12 @@ export function CollectionFilterBar({
           />
         )}
         {children}
+        {onReset && filtersActive(f) && (
+          <button type="button" className="btn btn-sm btn-ghost" onClick={onReset}>
+            <RotateCcw aria-hidden className="size-4" />
+            Réinitialiser
+          </button>
+        )}
       </div>
     </div>
   );

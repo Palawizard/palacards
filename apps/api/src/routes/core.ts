@@ -47,6 +47,11 @@ const rarityList = z
   .transform((v) => (v ? v.split(",") : undefined))
   .pipe(z.array(z.enum(RARITIES)).optional());
 const intParam = z.coerce.number().int();
+/** Filtre à trois états de la collection : `only`, `exclude`, ou absent. `true` : ancienne forme de `only`. */
+export const filterModeParam = z
+  .enum(["true", "false", "only", "exclude"])
+  .optional()
+  .transform((v) => (v === "true" ? "only" : v === "false" ? undefined : v));
 /** ATK / DEF : colonnes smallint, bornées pour ne jamais déborder côté SQL. */
 const statParam = intParam.min(0).max(32_767);
 const idParams = z.object({ id: z.coerce.number().int().positive() });
@@ -213,14 +218,12 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     rarity: rarityList,
     season: intParam.positive().optional(),
     tag: z.string().max(24).optional(),
+    notTag: z.string().max(24).optional(),
     theme: intParam.positive().optional(),
-    // `true` : ancienne forme de « seulement les favorites ».
-    favorites: z
-      .enum(["true", "only", "exclude"])
-      .optional()
-      .transform((v) => (v === "true" ? "only" : v)),
-    shiny: z.stringbool().optional(),
-    duplicates: z.stringbool().optional(),
+    favorites: filterModeParam,
+    shiny: filterModeParam,
+    duplicates: filterModeParam,
+    tagged: filterModeParam,
     q: z.string().max(100).optional(),
     inSummary: z.stringbool().optional(),
   });

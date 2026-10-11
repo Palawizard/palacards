@@ -43,7 +43,7 @@ function Picker({
   allowed: Set<number>;
   label: string;
 }) {
-  const { value: f, set, params } = useCollectionFilters();
+  const { value: f, set, reset, params } = useCollectionFilters();
   const summary = useSWR<CollectionFilterOptions>(source && `${source}/summary`);
   const base = source ? `${source}?${params}${params ? "&" : ""}sort=${f.sort}&limit=40` : null;
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
@@ -61,6 +61,7 @@ function Picker({
       <CollectionFilterBar
         value={f}
         onChange={set}
+        onReset={reset}
         options={summary.data}
         owner={owner}
         label={label}
