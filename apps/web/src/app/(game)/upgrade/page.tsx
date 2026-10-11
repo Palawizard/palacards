@@ -108,12 +108,23 @@ export default function UpgradePage() {
   const quick = !!me?.quickUpgrade;
   const [rarity, setRarity] = useState<Rarity>("C");
   // Mêmes filtres que la collection (recherche dans le résumé, tags, booster…), sauf la rareté, fixée par l'établi.
-  const {
-    value: f,
-    set: setFilter,
-    reset: resetFilters,
-    params: filters,
-  } = useCollectionFilters({ duplicates: "only", sort: "date" });
+  const { value: f, set: setFilter, params: filters } = useCollectionFilters({ duplicates: "only", sort: "date" });
+  /** Retirer les filtres rend ceux de l'établi : « Doublons » seulement, comme à l'arrivée. */
+  const resetFilters = useCallback(
+    () =>
+      setFilter({
+        q: "",
+        inSummary: false,
+        shiny: "",
+        duplicates: "only",
+        tagged: "",
+        tag: "",
+        notTag: "",
+        theme: "",
+        season: "",
+      }),
+    [setFilter],
+  );
   const options = useSWR<CollectionFilterOptions>("/collection/summary");
   // Favoris masqués par défaut : on ne les sacrifie pas par mégarde. Le choix est gardé sur l'appareil.
   const [showFavorites, storeShowFavorites] = useStoredFlag(SHOW_FAVORITES_KEY);
