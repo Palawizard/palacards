@@ -54,6 +54,11 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   await page.getByRole("button", { name: "Légendaires" }).click();
   await expect(page.getByRole("button", { name: "Légendaires" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText(/articles légendaires différents/)).toBeVisible();
+  // Onglet « Succès » : le premier paquet a débloqué un palier ; pas de saison pour ce classement.
+  await page.getByRole("button", { name: "Succès", exact: true }).click();
+  await expect(page.getByText(/paliers de succès débloqués/)).toBeVisible();
+  await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
+  await expect(page.getByRole("group", { name: "Période" })).toHaveCount(0);
 
   // Paramètres : avatar et vitesse d'animation enregistrés.
   await page.goto("settings");

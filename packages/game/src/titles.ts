@@ -8,6 +8,13 @@ import type { Rarity } from "./rarity.js";
 export const TITLE_BOARDS = ["collection", "legendary", "packs", "luck", "elo", "wealth", "guilds", "pass"] as const;
 export type TitleBoard = (typeof TITLE_BOARDS)[number];
 
+/**
+ * Tous les classements : ceux à titre, plus ceux qui n'en donnent pas (« Succès » : les paliers débloqués
+ * se cumulent depuis l'inscription, sans saison, et ne rapportent rien de plus).
+ */
+export const LEADERBOARDS = [...TITLE_BOARDS, "achievements"] as const;
+export type Leaderboard = (typeof LEADERBOARDS)[number];
+
 /** Rangs récompensés : les TITLE_MAX_RANK premiers de chaque classement. */
 export const TITLE_MAX_RANK = 3;
 
