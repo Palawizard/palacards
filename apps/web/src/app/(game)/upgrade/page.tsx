@@ -108,7 +108,12 @@ export default function UpgradePage() {
   const quick = !!me?.quickUpgrade;
   const [rarity, setRarity] = useState<Rarity>("C");
   // Mêmes filtres que la collection (recherche dans le résumé, tags, booster…), sauf la rareté, fixée par l'établi.
-  const { value: f, set: setFilter, params: filters } = useCollectionFilters({ duplicates: true, sort: "date" });
+  const {
+    value: f,
+    set: setFilter,
+    reset: resetFilters,
+    params: filters,
+  } = useCollectionFilters({ duplicates: "only", sort: "date" });
   const options = useSWR<CollectionFilterOptions>("/collection/summary");
   // Favoris masqués par défaut : on ne les sacrifie pas par mégarde. Le choix est gardé sur l'appareil.
   const [showFavorites, storeShowFavorites] = useStoredFlag(SHOW_FAVORITES_KEY);
@@ -141,8 +146,17 @@ export default function UpgradePage() {
     phase === "spinning" ? "spinning" : phase === "done" && result ? (result.success ? "win" : "lose") : "idle";
 
   const params = `rarity=${rarity}${filters ? `&${filters}` : ""}${showFavorites ? "" : "&favorites=exclude"}&sort=${f.sort}&limit=60`;
-  /** Un filtre de la barre (hors « Doublons ») réduit la liste. */
-  const narrowed = !!(f.q.trim() || f.shiny || f.tag || f.theme || f.season);
+  /** Un filtre de la barre (hors « Doublons » seulement) réduit la liste. */
+  const narrowed = !!(
+    f.q.trim() ||
+    f.shiny ||
+    f.tagged ||
+    f.tag ||
+    f.notTag ||
+    f.theme ||
+    f.season ||
+    f.duplicates === "exclude"
+  );
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
     prev && !prev.nextCursor ? null : `/collection?${params}&page=${i}`,
   );
@@ -531,6 +545,7 @@ export default function UpgradePage() {
         <CollectionFilterBar
           value={f}
           onChange={setFilter}
+          onReset={resetFilters}
           options={options.data}
           owner
           rarities={false}
@@ -549,7 +564,7 @@ export default function UpgradePage() {
             title={
               narrowed
                 ? "Aucune carte ne correspond"
-                : f.duplicates
+                : f.duplicates === "only"
                   ? "Aucun doublon de cette rareté"
                   : showFavorites
                     ? "Aucune carte de cette rareté"
@@ -557,15 +572,11 @@ export default function UpgradePage() {
             }
           >
             {narrowed ? (
-              <button
-                type="button"
-                className="article-link"
-                onClick={() => setFilter({ q: "", shiny: false, tag: "", theme: "", season: "" })}
-              >
+              <button type="button" className="article-link" onClick={resetFilters}>
                 Retirer les filtres
               </button>
-            ) : f.duplicates ? (
-              <button type="button" className="article-link" onClick={() => setFilter({ duplicates: false })}>
+            ) : f.duplicates === "only" ? (
+              <button type="button" className="article-link" onClick={() => setFilter({ duplicates: "" })}>
                 Voir toutes les cartes de cette rareté
               </button>
             ) : (

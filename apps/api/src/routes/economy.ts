@@ -10,6 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
+import { filterModeParam } from "./core.js";
 import { buyBonusPack, claimDaily, ledgerHistory, listWishlist, setWishlist } from "../services/economy.js";
 import {
   auctionDetail,
@@ -138,11 +139,13 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
           .optional()
           .transform((v) => (v ? v.split(",") : undefined))
           .pipe(z.array(z.enum(RARITIES)).optional()),
-        shiny: z.stringbool().optional(),
-        duplicates: z.stringbool().optional(),
+        shiny: filterModeParam,
+        duplicates: filterModeParam,
         season: z.coerce.number().int().positive().optional(),
         theme: z.coerce.number().int().positive().optional(),
         tag: z.string().max(24).optional(),
+        notTag: z.string().max(24).optional(),
+        tagged: filterModeParam,
         // Sans « Vues » : elles donneraient la réponse de « Plus lu » en duel.
         sort: z.enum(["rarity", "title", "atk", "def", "date", "copies"]).default("rarity"),
         page: z.coerce.number().int().min(0).default(0),
@@ -153,7 +156,11 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     const owner = await findUserByName(ctx.db, username);
     if (q.inSummary && q.q?.trim()) loadOwnedSummaries(ctx, owner.id);
     // Tags privés : le filtre est ignoré, pour qu'on ne puisse pas deviner ses tags en essayant.
-    if (q.tag && !(await tagsArePublic(ctx.db, owner.id))) delete q.tag;
+    if ((q.tag || q.notTag || q.tagged) && !(await tagsArePublic(ctx.db, owner.id))) {
+      delete q.tag;
+      delete q.notTag;
+      delete q.tagged;
+    }
     // Sans vues ni favoris ni tags : listCollection ne donne les vues qu'au propriétaire.
     const res = await listCollection(ctx, owner.id, q, req.user.id);
     return { ...res, items: res.items.map(({ tags: _t, favorite: _f, views12m: _v, ...c }) => c) };
