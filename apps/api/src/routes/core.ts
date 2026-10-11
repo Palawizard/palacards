@@ -239,6 +239,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
   });
   // « Tout sélectionner » : les exemplaires recyclables du filtre en cours (paramètres de GET /collection).
   // « Sélectionner N cartes » : `count` et `sort`, les N premières de la liste affichée.
+  // Exclusions : `skipFavorites`, `skipTagged` et `skipTags` (répétable), jamais sélectionnées.
   api.get("/collection/selectable", auth, async (req) =>
     selectableIds(
       ctx,
@@ -247,6 +248,13 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
         collectionFilters.extend({
           sort: collectionSort.optional(),
           count: intParam.min(1).max(SELECT_ALL_MAX).optional(),
+          skipFavorites: z.stringbool().optional(),
+          skipTagged: z.stringbool().optional(),
+          skipTags: z
+            .union([z.string(), z.array(z.string())])
+            .optional()
+            .transform((v) => (v === undefined ? undefined : [v].flat()))
+            .pipe(z.array(z.string().min(1).max(24)).max(50).optional()),
         }),
         req.query,
       ),

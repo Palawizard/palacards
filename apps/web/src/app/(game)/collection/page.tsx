@@ -11,7 +11,14 @@ import useSWR, { useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid, RaritySigil } from "@/components/Card";
 import { CollectionFilterBar, useCollectionFilters } from "@/components/CollectionFilters";
-import { BulkTagDialog, SelectCount, SelectionBar } from "@/components/SelectionBar";
+import {
+  BulkTagDialog,
+  ExcludeMenu,
+  NO_EXCLUSIONS,
+  SelectCount,
+  SelectionBar,
+  type Exclusions,
+} from "@/components/SelectionBar";
 import { CardSkeletons, ConfirmDialog, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -81,7 +88,18 @@ interface Picked {
 interface Selectable {
   items: { id: number; rarity: Rarity; shiny: boolean; favorite: boolean; protected: boolean }[];
   protected: number;
+  /** Cartes du filtre laissées de côté par les options « Exclure ». */
+  excluded: number;
   truncated: boolean;
+}
+
+/** Paramètres d'exclusion de « Tout sélectionner » (vide sans option : comportement d'origine). */
+function exclusionParams(e: Exclusions): string {
+  const p = new URLSearchParams();
+  if (e.favorites) p.set("skipFavorites", "true");
+  if (e.tagged) p.set("skipTagged", "true");
+  else for (const t of e.tags) p.append("skipTags", t);
+  return p.toString();
 }
 
 /** Sélection prise d'un coup (« Tout sélectionner », « Sélectionner N cartes »). */
@@ -138,10 +156,27 @@ function Collection() {
   const [selectingAll, setSelectingAll] = useState(false);
   /** Filtre pour lequel « Tout sélectionner » a été utilisé (le bouton devient « Tout désélectionner »). */
   const [allFor, setAllFor] = useState<string | null>(null);
+  /** Options « Exclure » de « Tout sélectionner », gardées le temps de la visite. */
+  const [exclusions, setExclusions] = useState<Exclusions>(NO_EXCLUSIONS);
 
   const summary = useSWR<Summary>("/collection/summary");
   const { mutate } = useSWRConfig();
   const params = `${filters}${filters ? "&" : ""}sort=${f.sort}&limit=60`;
+
+  const ownTags = summary.data?.tags ?? [];
+  // Un tag supprimé depuis ne compte plus parmi les exclusions.
+  const excluding: Exclusions = { ...exclusions, tags: exclusions.tags.filter((t) => ownTags.includes(t)) };
+  /** Requête de « Tout sélectionner » : filtres en cours et exclusions (clé de « Tout désélectionner »). */
+  const allQuery = [filters, exclusionParams(excluding)].filter(Boolean).join("&");
+  const exclusionLabel = [
+    excluding.favorites && "favorites",
+    excluding.tagged
+      ? "taguées"
+      : excluding.tags.length > 0 &&
+        `${plural(excluding.tags.length, "tag")} ${excluding.tags.map((t) => `« ${t} »`).join(", ")}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
     prev && !prev.nextCursor ? null : `/collection?${params}&page=${i}`,
@@ -229,14 +264,22 @@ function Collection() {
     }
   }
 
-  /** Sélectionne toutes les cartes du filtre en cours, y compris celles pas encore affichées. */
+  /**
+   * Sélectionne toutes les cartes du filtre en cours, y compris celles pas encore affichées, sauf celles que
+   * les options « Exclure » laissent de côté.
+   */
   async function selectAll() {
     setSelectingAll(true);
     try {
-      const res = await api<Selectable>(`/collection/selectable${filters ? `?${filters}` : ""}`);
+      const res = await api<Selectable>(`/collection/selectable${allQuery ? `?${allQuery}` : ""}`);
       setSelected(toSelection(res));
-      setAllFor(res.items.length ? filters : null);
-      if (res.items.length === 0) toast("Aucune carte dans ce filtre.");
+      setAllFor(res.items.length ? allQuery : null);
+      if (res.items.length === 0)
+        toast(res.excluded ? "Aucune carte à sélectionner : toutes sont exclues." : "Aucune carte dans ce filtre.");
+      else if (res.excluded)
+        toast(
+          `${fmt(res.excluded)} ${plural(res.excluded, "carte exclue", "cartes exclues")} de la sélection (${exclusionLabel}).`,
+        );
       if (res.truncated) toast(`Sélection limitée aux ${fmt(SELECT_MAX)} premières cartes.`);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Impossible de tout sélectionner.");
@@ -456,25 +499,28 @@ function Collection() {
           count={selected.size}
           busy={busy}
           selectAll={
-            allFor === filters && selected.size > 0 ? (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={() => (setSelected(new Map()), setAllFor(null))}
-              >
-                Tout désélectionner
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-sm btn-ghost"
-                onClick={selectAll}
-                disabled={selectingAll || total === 0}
-                aria-busy={selectingAll}
-              >
-                Tout sélectionner
-              </button>
-            )
+            <>
+              {allFor === allQuery && selected.size > 0 ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => (setSelected(new Map()), setAllFor(null))}
+                >
+                  Tout désélectionner
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={selectAll}
+                  disabled={selectingAll || total === 0}
+                  aria-busy={selectingAll}
+                >
+                  Tout sélectionner
+                </button>
+              )}
+              <ExcludeMenu value={excluding} onChange={setExclusions} tags={ownTags} />
+            </>
           }
           selectCount={
             <SelectCount
