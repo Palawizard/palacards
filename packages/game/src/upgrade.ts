@@ -1,5 +1,5 @@
 import { ECONOMY } from "./economy.js";
-import { CARDS_PER_PACK, DROP_TABLE_GUARANTEED, DROP_TABLE_STANDARD } from "./packs.js";
+import { expectedPackRarity } from "./packs.js";
 import { RARITIES, type Rarity } from "./rarity.js";
 
 /** Upgrader : 1 à 10 cartes d'une même rareté pour tenter une carte de la rareté au-dessus. */
@@ -24,7 +24,7 @@ export function nextRarity(r: Rarity): Rarity | null {
 }
 
 /** Nombre moyen de cartes d'une rareté par paquet standard (en points de base), tiré des tables de tirage. */
-const perPack = (r: Rarity) => (CARDS_PER_PACK - 1) * DROP_TABLE_STANDARD[r] + DROP_TABLE_GUARANTEED[r];
+const perPack = (r: Rarity) => expectedPackRarity("standard", r);
 
 /**
  * Chance de réussite (points de base) d'un upgrade de `count` cartes de rareté `from`.
