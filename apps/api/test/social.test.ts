@@ -279,8 +279,12 @@ describe("guildes", () => {
     const [obj] = await ctx.db.select().from(schema.guildObjectives).where(eq(schema.guildObjectives.guildId, body.id));
     expect(obj!.progress).toBe(60);
     expect(obj!.completedAt).not.toBeNull();
-    const [p] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, chief.userId));
-    expect(p!.bonusPacks).toBe(GUILD_OBJECTIVE_REWARD.packs);
+    // Paquets de la guilde seulement : le tirage peut aussi faire monter le passe en arrière-plan (paquet offert).
+    const [packs] = await ctx.db.execute<{ n: number }>(
+      sql`select coalesce(sum(delta), 0)::int as n from ledger
+          where user_id = ${chief.userId} and kind = 'bonus_pack' and reason = 'guild_objective'`,
+    );
+    expect(packs!.n).toBe(GUILD_OBJECTIVE_REWARD.packs);
     // Un paquet bonus et des PW, une seule fois.
     const [rows] = await ctx.db.execute<{ n: number }>(
       sql`select count(*)::int as n from ledger where user_id = ${chief.userId} and reason = 'guild_objective'`,
