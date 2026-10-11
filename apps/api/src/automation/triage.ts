@@ -91,7 +91,7 @@ Pages et systèmes existants :
 - Classements (collection, boosters ouverts, chance, Elo, richesse, guildes, passe), badge « Créateur » de l'admin.
 - Mises à jour (historique des messages serveur), Suggestions (cette page), Paramètres (thème, sons, flouter les arthropodes…), Admin.
 
-Économie (repères) : un joueur actif gagne environ 850 PW par jour ; un paquet bonus vaut 150 PW ; un booster à thème 200 à 250 PW ; valeur de recyclage C 1, PC 3, R 10, SR 40, UR 150, L 1 000 PW.`;
+Économie (repères) : un joueur actif gagne environ 850 PW par jour ; un paquet bonus vaut 90 PW ; un booster à thème 200 à 250 PW ; valeur de recyclage C 1, PC 3, R 10, SR 40, UR 150, L 1 000 PW.`;
 
 export const TRIAGE_SYSTEM_PROMPT = `Tu tries les suggestions envoyées par les joueurs de PalaCards pour Palawi, son créateur (seul développeur). Ton verdict décide si une branche de code est préparée automatiquement.
 

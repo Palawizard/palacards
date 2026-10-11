@@ -344,13 +344,15 @@ describe("portefeuille", () => {
     }
   });
 
-  it("vend un paquet bonus contre 150 PW", async () => {
+  it("vend un paquet bonus contre 90 PW", async () => {
     const p = await signUp(app);
+    // Le solde de départ paie un paquet, pas deux.
+    expect((await p.post("/packs/buy")).body.packs.bonus).toBe(1);
     expect((await p.post("/packs/buy")).body.error).toBe("insufficient_funds");
     await givePw(p, 200);
     const res = await p.post("/packs/buy");
-    expect(res.body.packs.bonus).toBe(1);
-    expect((await wallet(p)).balance).toBe(ECONOMY.startingBalance + 200 - ECONOMY.bonusPackPrice);
+    expect(res.body.packs.bonus).toBe(2);
+    expect((await wallet(p)).balance).toBe(ECONOMY.startingBalance + 200 - 2 * ECONOMY.bonusPackPrice);
   });
 });
 
