@@ -91,6 +91,9 @@ function Rules({ data }: { data: DailyArticleDTO }) {
         </li>
         <li>L&apos;image de la réponse se précise à chaque essai.</li>
         {categoriesAtStart && <li>Des catégories Wikipédia de la réponse sont visibles dès le départ.</li>}
+        {data.hints.start && (
+          <li>La {data.hints.start.label.toLowerCase()} de la réponse est visible dès le départ, en indice.</li>
+        )}
         <li>
           {data.maxGuesses} essais. Les essais ratés débloquent des indices{" : "}
           {data.hintsAfter.categories.length > 0 && !categoriesAtStart && (
@@ -106,9 +109,14 @@ function Rules({ data }: { data: DailyArticleDTO }) {
               {" ; "}
             </>
           )}
-          sa description (titre masqué) après le {data.hintsAfter.description}
-          <sup>e</sup>
-          {" ; "}sa première lettre après le {data.hintsAfter.firstLetter}
+          {data.hintsAfter.description !== null && (
+            <>
+              sa description (titre masqué) après le {data.hintsAfter.description}
+              <sup>e</sup>
+              {" ; "}
+            </>
+          )}
+          sa première lettre après le {data.hintsAfter.firstLetter}
           <sup>e</sup>.
         </li>
         <li>Trouvé : 70 PW, plus un bonus de 30 PW qui perd 5 PW par essai (100 PW au premier).</li>
@@ -481,12 +489,20 @@ export default function ArticlePage() {
                       </span>
                     </li>
                   )}
+                  {data.hints.start && (
+                    <li className="pc-hint-wide" data-open>
+                      <span className="pc-hint-label">{data.hints.start.label}</span>
+                      <span>{data.hints.start.value}</span>
+                    </li>
+                  )}
                   <li data-open={!!data.hints.description || undefined}>
                     {data.hints.description ? (
                       <>
                         <span className="pc-hint-label">Description</span>
                         <span>{data.hints.description}</span>
                       </>
+                    ) : data.hintsAfter.description === null ? (
+                      <span className="text-faint">Pas de description pour cet article</span>
                     ) : (
                       <span className="text-faint">
                         <Lock className="mr-1 inline size-3.5 align-[-0.15rem]" aria-hidden />

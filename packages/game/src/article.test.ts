@@ -11,6 +11,7 @@ import {
   hintCategories,
   maskedDescription,
   shareGrid,
+  startHint,
   titlePattern,
   type ArticleAttrs,
 } from "./article.js";
@@ -192,6 +193,13 @@ describe("article du jour : récompense, indices, image, partage", () => {
       "Objet céleste découvert en 1610",
     ]);
     expect(hintCategories([], "Tour Eiffel")).toEqual([]);
+  });
+
+  it("donne un indice de départ de secours sans catégorie Wikipédia : la catégorie, sinon la rareté", () => {
+    expect(startHint({ category: "lieu" }, "UR", 0)).toEqual({ label: "Catégorie", value: "Lieu" });
+    expect(startHint({ category: null }, "L", 0)).toEqual({ label: "Rareté", value: "Légendaire" });
+    expect(startHint(null, "UR", 0)).toEqual({ label: "Rareté", value: "Ultra rare" });
+    expect(startHint({ category: "lieu" }, "UR", 2)).toBeNull();
   });
 
   it("précise l'image à chaque essai, entière à la fin", () => {

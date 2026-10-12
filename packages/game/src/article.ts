@@ -1,6 +1,6 @@
 import { baseTitle, maskExtract } from "./battle.js";
 import { CATEGORY_LABELS, typeStem, type ArticleCategory } from "./category.js";
-import { RARITIES, type Rarity } from "./rarity.js";
+import { RARITIES, RARITY_LABELS, type Rarity } from "./rarity.js";
 
 // ---------------------------------------------------------------------------
 // Article du jour : un article à deviner, le même pour tout le monde (jour de Paris), façon Loldle.
@@ -8,7 +8,8 @@ import { RARITIES, type Rarity } from "./rarity.js";
 // comparé à la réponse sur six attributs : catégorie, type, pays, année, rareté, popularité. Vert : identique ;
 // orange : proche ; rouge : différent ; flèches pour les valeurs numériques. L'image de la réponse, pixelisée
 // par le serveur, se précise à chaque essai. Huit essais ; catégories Wikipédia de la réponse visibles dès le
-// départ, puis indices de secours après les essais ratés : description (4e), première lettre (6e).
+// départ (à défaut : la catégorie de la réponse ou sa rareté), puis indices de secours après les essais ratés :
+// description (4e), première lettre (6e).
 // Gain : 70 PW pour avoir trouvé, plus un bonus de 30 PW qui perd 5 PW par essai (100 au premier, 70 au 7e).
 // ---------------------------------------------------------------------------
 
@@ -183,6 +184,26 @@ export function articleHints(guesses: number, finished: boolean) {
     description: finished || guesses >= ARTICLE_HINT_DESCRIPTION_AFTER,
     firstLetter: finished || guesses >= ARTICLE_HINT_LETTER_AFTER,
   };
+}
+
+/**
+ * Indice de départ de secours quand Wikipédia n'a donné aucune catégorie (indisponible, ou toutes écartées) :
+ * sans lui, une partie neuve ne montrait aucun indice. Désactivé : rien au départ dans ce cas.
+ */
+export const ARTICLE_HINT_START_FALLBACK = true;
+
+/**
+ * Indice de départ de secours : la catégorie de la réponse (Personne, Lieu…) si on la connaît, sinon sa rareté.
+ * null : des catégories Wikipédia sont montrées, ou secours désactivé.
+ */
+export function startHint(
+  answer: Pick<ArticleAttrs, "category"> | null,
+  rarity: Rarity,
+  categories: number,
+): { label: string; value: string } | null {
+  if (!ARTICLE_HINT_START_FALLBACK || categories > 0) return null;
+  if (answer?.category) return { label: ATTR_LABELS.category, value: CATEGORY_LABELS[answer.category] };
+  return { label: ATTR_LABELS.rarity, value: RARITY_LABELS[rarity] };
 }
 
 /** Catégories de maintenance ou de portail : aucune information sur l'article. */

@@ -20,6 +20,7 @@ import {
   parisDay,
   seededRandom,
   shareGrid,
+  startHint,
   titlePattern,
   unusableQuizImage,
   type ArticleAttrs,
@@ -230,6 +231,30 @@ async function answerCategories(ctx: Ctx, a: ArticleRow): Promise<string[]> {
   return row?.categories ?? [];
 }
 
+/** Dernier échec du chargement de la description (par jour) : on ne réessaie qu'après CATEGORIES_RETRY_MS. */
+let descriptionFailed: { day: string; at: number } | null = null;
+
+/**
+ * Description courte de la réponse (indice du 4e essai). Absente quand Wikipédia n'a pas répondu à temps au
+ * tirage : rechargée ici puis figée, sinon l'indice restait verrouillé toute la journée.
+ */
+async function answerDescription(ctx: Ctx, a: ArticleRow): Promise<string | null> {
+  if (a.description) return a.description;
+  const now = ctx.now().getTime();
+  if (descriptionFailed?.day === a.day && now - descriptionFailed.at < CATEGORIES_RETRY_MS) return null;
+  await withTimeout(ctx.wiki.load([{ cardId: a.cardId, title: a.title }], undefined, { fresh: true }), 4_000, null);
+  const description = (await ctx.wiki.summaries([a.cardId])).get(a.cardId)?.description ?? null;
+  if (!description) {
+    descriptionFailed = { day: a.day, at: now };
+    return null;
+  }
+  await ctx.db
+    .update(schema.dailyArticles)
+    .set({ description })
+    .where(and(eq(schema.dailyArticles.day, a.day), isNull(schema.dailyArticles.description)));
+  return description;
+}
+
 async function answerCard(ctx: Ctx, a: ArticleRow): Promise<CardDTO> {
   const [row] = await ctx.db.execute<{
     atk: number;
@@ -303,7 +328,8 @@ export async function articleState(ctx: Ctx, userId: string): Promise<DailyArtic
     stats = { played: rows.length, found: rows.filter((r) => r.found).length, distribution };
   }
   const answerAttrs = a.attrs;
-  const categories = await answerCategories(ctx, a);
+  const [categories, description] = await Promise.all([answerCategories(ctx, a), answerDescription(ctx, a)]);
+  const masked = maskedDescription(description, a.title);
   const firstLetter = [...baseTitle(a.title)].find((ch) => /[\p{L}\p{N}]/u.test(ch))?.toUpperCase() ?? null;
   return {
     day: a.day,
@@ -313,12 +339,13 @@ export async function articleState(ctx: Ctx, userId: string): Promise<DailyArtic
     pattern: titlePattern(a.title, finished ? "all" : hints.firstLetter ? "first" : "none"),
     hints: {
       categories: categories.slice(0, hints.categories),
-      description: hints.description ? maskedDescription(a.description, a.title) : null,
+      start: startHint(answerAttrs, a.rarity, categories.length),
+      description: hints.description ? masked : null,
       firstLetter: hints.firstLetter ? firstLetter : null,
     },
     hintsAfter: {
       categories: ARTICLE_HINT_CATEGORIES_AFTER.slice(0, categories.length),
-      description: ARTICLE_HINT_DESCRIPTION_AFTER,
+      description: masked ? ARTICLE_HINT_DESCRIPTION_AFTER : null,
       firstLetter: ARTICLE_HINT_LETTER_AFTER,
     },
     image: !!a.imageUrl,

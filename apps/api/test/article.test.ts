@@ -50,7 +50,11 @@ describe("article du jour : essais", () => {
     expect(start.nextReward).toBe(100);
     expect(start.maxGuesses).toBe(ARTICLE_MAX_GUESSES);
     expect(start.stats).toBeNull();
-    expect(start.hints).toEqual({ categories: [], description: null, firstLetter: null });
+    // Sans catégorie Wikipédia (tests) : un indice de départ de secours, jamais aucun.
+    expect(start.hints.categories).toEqual([]);
+    expect(start.hints.start).not.toBeNull();
+    expect(start.hints.start.value).not.toContain((await dailyArticle(ctx)).title);
+    expect(start.hints).toMatchObject({ description: null, firstLetter: null });
     const [wrong] = await wrongCards(1);
     const res = await p.post("/article/guess", { cardId: wrong!.id });
     expect(res.status).toBe(200);
@@ -100,6 +104,9 @@ describe("article du jour : essais", () => {
     // Catégories visibles dès le départ.
     expect(start.hints.categories).toEqual(["Monument", "Édifice", "Tour"]);
     expect(start.hintsAfter.categories).toEqual([0, 0, 0]);
+    // Des catégories : pas d'indice de secours.
+    expect(start.hints.start).toBeNull();
+    expect(start.hintsAfter.description).toBe(4);
     const wrong = await wrongCards(ARTICLE_MAX_GUESSES);
     let last;
     for (let i = 0; i < ARTICLE_MAX_GUESSES; i++) {
@@ -152,6 +159,41 @@ describe("article du jour : catégories en indice", () => {
       expect(finished.body.hints.categories).toEqual(row!.categories);
     } finally {
       spy.mockRestore();
+      ctx.now = now;
+    }
+  });
+});
+
+describe("article du jour : description en indice", () => {
+  it("recharge une description absente au tirage, la fige, et dit quand il n'y en a pas", async () => {
+    const day = "2099-05-05";
+    await ctx.db.delete(schema.dailyArticles).where(eq(schema.dailyArticles.day, day));
+    const now = ctx.now;
+    ctx.now = () => new Date("2099-05-05T12:00:00+02:00");
+    try {
+      const a = await dailyArticle(ctx, day);
+      expect(a.description).toBeNull();
+      const p = await signUp(app);
+      // Aucune description connue : pas d'indice verrouillé qui ne s'ouvrira jamais.
+      expect((await p.get("/article")).body.hintsAfter.description).toBeNull();
+      const summaries = ctx.wiki.summaries;
+      const spy = vi.spyOn(ctx.wiki, "summaries").mockImplementation(async (ids) => {
+        const out = await summaries(ids);
+        if (ids.includes(a.cardId))
+          out.set(a.cardId, { extract: null, description: "monument parisien", thumbUrl: null, pageUrl: null });
+        return out;
+      });
+      try {
+        // Réessai seulement après le délai.
+        expect((await p.get("/article")).body.hintsAfter.description).toBeNull();
+        ctx.now = () => new Date("2099-05-05T12:30:00+02:00");
+        expect((await p.get("/article")).body.hintsAfter.description).toBe(4);
+      } finally {
+        spy.mockRestore();
+      }
+      const [row] = await ctx.db.select().from(schema.dailyArticles).where(eq(schema.dailyArticles.day, day));
+      expect(row!.description).toBe("monument parisien");
+    } finally {
       ctx.now = now;
     }
   });

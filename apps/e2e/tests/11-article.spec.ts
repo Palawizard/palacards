@@ -8,6 +8,8 @@ test("article du jour : proposer des articles au clavier, comparer leurs attribu
   await page.goto("article");
   await expect(page.getByRole("heading", { name: /^Article du jour n° \d+$/ })).toBeVisible();
   await expect(page.getByText(/Propose un vrai article du jeu/)).toBeVisible();
+  // Partie neuve : au moins un indice déjà ouvert.
+  await expect(page.getByRole("list", { name: "Indices de secours" }).locator("li[data-open]").first()).toBeVisible();
 
   const input = page.getByRole("combobox", { name: "Propose un article du jeu" });
   // Un essai faux, choisi au clavier (flèche puis Entrée), qui n'est pas la réponse.

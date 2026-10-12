@@ -321,11 +321,20 @@ export interface DailyArticleDTO {
   pattern: string;
   /**
    * Indices de secours : catégories Wikipédia de la réponse (visibles dès le départ), description masquée
-   * (après le 4e essai), première lettre (après le 6e).
+   * (après le 4e essai), première lettre (après le 6e). `start` : indice de départ de secours (catégorie ou
+   * rareté de la réponse), seulement quand aucune catégorie Wikipédia n'est disponible.
    */
-  hints: { categories: string[]; description: string | null; firstLetter: string | null };
-  /** Essais après lesquels chaque indice se dévoile (`categories` : une entrée par catégorie disponible). */
-  hintsAfter: { categories: number[]; description: number; firstLetter: number };
+  hints: {
+    categories: string[];
+    start: { label: string; value: string } | null;
+    description: string | null;
+    firstLetter: string | null;
+  };
+  /**
+   * Essais après lesquels chaque indice se dévoile (`categories` : une entrée par catégorie disponible ;
+   * `description` null : la réponse n'a pas de description).
+   */
+  hintsAfter: { categories: number[]; description: number | null; firstLetter: number };
   /** Image de la réponse servie pixelisée par l'API (`/article/image`) ; false : pas d'image utilisable. */
   image: boolean;
   /** Largeur de l'image pixelisée (px) ; null : image entière (partie finie). */
