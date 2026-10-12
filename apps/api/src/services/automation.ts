@@ -58,9 +58,11 @@ export async function enqueueTriage(ctx: Ctx, suggestionId: number) {
     .from(schema.suggestions)
     .where(eq(schema.suggestions.id, suggestionId));
   if (!exists) throw notFound("Suggestion introuvable.");
+  // Horloge de l'app, pas `now()` de Postgres (à la microseconde) : sinon un tri lancé dans la même milliseconde
+  // ne la voit pas encore due.
   await ctx.db
     .insert(a)
-    .values({ suggestionId })
+    .values({ suggestionId, nextAttemptAt: ctx.now(), updatedAt: ctx.now() })
     .onConflictDoUpdate({
       target: a.suggestionId,
       set: { triageStatus: "pending", attempts: 0, error: null, nextAttemptAt: ctx.now(), updatedAt: ctx.now() },

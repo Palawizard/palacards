@@ -128,7 +128,7 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                               : item.badge === "quests"
                                 ? `${badge} quête${badge > 1 ? "s" : ""} à terminer`
                                 : item.badge === "suggestions"
-                                  ? `${badge} nouvelle${badge > 1 ? "s" : ""} suggestion${badge > 1 ? "s" : ""}`
+                                  ? `${badge} nouveauté${badge > 1 ? "s" : ""} (suggestions ou réponses)`
                                   : undefined
                           }
                         >

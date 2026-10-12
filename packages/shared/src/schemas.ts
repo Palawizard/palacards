@@ -62,10 +62,20 @@ export type SuggestionKind = (typeof SUGGESTION_KINDS)[number];
 export const SUGGESTION_STATUSES = ["new", "accepted", "done", "declined"] as const;
 export type SuggestionStatus = (typeof SUGGESTION_STATUSES)[number];
 /** Longueurs maximales. Pas de plafond par jour : seul l'anti-spam de la route (10 envois par minute) limite le rythme. */
-export const SUGGESTION_LIMITS = { title: 100, body: 2_000, reply: 1_000 } as const;
+/** `answer` : réponse de l'auteur dans le fil, sous le retour de Palawi (les messages de l'admin vont jusqu'à `reply`). */
+export const SUGGESTION_LIMITS = { title: 100, body: 2_000, reply: 1_000, answer: 500 } as const;
+/**
+ * Fil de réponses : l'auteur répond au plus `answers` fois par suggestion, et attend `cooldownSeconds`
+ * entre deux réponses (anti-spam). L'admin n'a pas de limite.
+ */
+export const SUGGESTION_THREAD = { answers: 5, cooldownSeconds: 60 } as const;
 
 export const suggestionInputSchema = z.object({
   kind: z.enum(SUGGESTION_KINDS),
   title: z.string().trim().min(4, "4 caractères minimum").max(SUGGESTION_LIMITS.title),
   body: z.string().trim().min(10, "10 caractères minimum").max(SUGGESTION_LIMITS.body),
+});
+
+export const suggestionAnswerSchema = z.object({
+  body: z.string().trim().min(2, "2 caractères minimum").max(SUGGESTION_LIMITS.answer),
 });

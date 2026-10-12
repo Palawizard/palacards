@@ -70,7 +70,7 @@ export interface MeDTO {
   newFeatures: string[];
   /** Bandeau « Une idée ? » à afficher (pas fermé ni suggestion envoyée depuis une semaine). */
   suggestionBanner: boolean;
-  /** Admin : suggestions pas encore ouvertes (pastille du menu). 0 pour les autres joueurs. */
+  /** Admin : suggestions et réponses d'auteurs pas encore ouvertes (pastille du menu). 0 pour les autres joueurs. */
   newSuggestions: number;
   /** Passe de saison : niveau, XP dans le niveau en cours et XP du niveau (0 au niveau maximal). */
   pass: { level: number; into: number; need: number; xp: number };
@@ -539,6 +539,16 @@ export interface SuggestionDTO {
   reply: string | null;
   repliedAt: string | null;
   createdAt: string;
+  /** Fil sous le retour de Palawi, du plus ancien au plus récent. */
+  thread: SuggestionMessageDTO[];
+}
+
+/** Message du fil d'une suggestion : de son auteur ou de Palawi. */
+export interface SuggestionMessageDTO {
+  id: number;
+  fromAdmin: boolean;
+  body: string;
+  createdAt: string;
 }
 
 /** Verdict du tri automatique : à coder, à trancher par l'admin, refus proposé, bug à corriger. */
@@ -587,6 +597,8 @@ export interface SuggestionAutomationDTO {
 export interface AdminSuggestionDTO extends SuggestionDTO {
   author: { id: string; username: string; displayName: string } | null;
   seen: boolean;
+  /** Réponses de l'auteur pas encore ouvertes par un admin. */
+  unseenAnswers: number;
   updatedAt: string;
   automation: SuggestionAutomationDTO | null;
 }

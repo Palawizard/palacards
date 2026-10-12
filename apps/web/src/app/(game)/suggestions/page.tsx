@@ -3,15 +3,17 @@
 import {
   SUGGESTION_KINDS,
   SUGGESTION_LIMITS,
+  SUGGESTION_THREAD,
+  suggestionAnswerSchema,
   suggestionInputSchema,
   type SuggestionDTO,
   type SuggestionKind,
 } from "@palacards/shared";
-import { Send } from "lucide-react";
+import { MessageSquareReply, Send } from "lucide-react";
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { KindTag, Reply, StatusPill } from "@/components/Suggestions";
+import { KindTag, Reply, StatusPill, Thread } from "@/components/Suggestions";
 import { Empty, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useSeenFeature } from "@/lib/features";
@@ -146,6 +148,83 @@ function SuggestionForm({ onSent }: { onSent: (s: SuggestionDTO) => void }) {
   );
 }
 
+/** Réponse de l'auteur sous le retour de Palawi : quelques réponses par suggestion, une par minute. */
+function AnswerBox({ s, onSent }: { s: SuggestionDTO; onSent: (s: SuggestionDTO) => void }) {
+  const [open, setOpen] = useState(false);
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const fieldId = useId();
+  const left = SUGGESTION_THREAD.answers - s.thread.filter((m) => !m.fromAdmin).length;
+  const valid = suggestionAnswerSchema.safeParse({ body }).success;
+
+  if (left <= 0)
+    return (
+      <p className="mt-2 text-xs text-faint">
+        Tu as utilisé tes {SUGGESTION_THREAD.answers} réponses. Pour autre chose, envoie une nouvelle suggestion.
+      </p>
+    );
+
+  async function submit(e: { preventDefault(): void }) {
+    e.preventDefault();
+    if (!valid || busy) return;
+    setBusy(true);
+    try {
+      onSent(await api<SuggestionDTO>(`/suggestions/${s.id}/answers`, { body: { body: body.trim() } }));
+      setBody("");
+      setOpen(false);
+      toast.success("Réponse envoyée à Palawi.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Envoi impossible, réessaie dans un instant.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const remaining = `${left} réponse${left > 1 ? "s" : ""} possible${left > 1 ? "s" : ""}`;
+  if (!open)
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button type="button" className="btn btn-sm btn-ghost -ml-2" onClick={() => setOpen(true)}>
+          <MessageSquareReply aria-hidden className="size-4" />
+          Répondre à Palawi
+        </button>
+        <span className="tnum text-xs text-faint">{remaining}</span>
+      </div>
+    );
+
+  return (
+    <form onSubmit={submit} className="mt-3 flex flex-col gap-2">
+      <label htmlFor={fieldId} className="sr-only">
+        Ta réponse à Palawi
+      </label>
+      <textarea
+        id={fieldId}
+        className="field min-h-20 text-sm leading-relaxed"
+        value={body}
+        maxLength={SUGGESTION_LIMITS.answer}
+        onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => e.key === "Escape" && !busy && setOpen(false)}
+        placeholder="Une précision, une réponse à sa question…"
+        autoFocus
+      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="tnum text-xs text-faint">
+          {remaining} · {SUGGESTION_LIMITS.answer - body.length} caractères restants
+        </span>
+        <div className="flex gap-2">
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setOpen(false)} disabled={busy}>
+            Annuler
+          </button>
+          <button type="submit" className="btn btn-sm btn-primary" disabled={!valid || busy} aria-busy={busy}>
+            <Send aria-hidden className="size-3.5" />
+            {busy ? "Envoi…" : "Envoyer"}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 export default function SuggestionsPage() {
   useSeenFeature("suggestions");
   const { mutateMe } = useMe();
@@ -200,6 +279,15 @@ export default function SuggestionsPage() {
                   <h3 className="mt-1.5 font-semibold leading-snug">{s.title}</h3>
                   <p className="mt-1 whitespace-pre-wrap text-sm leading-relaxed text-muted">{s.body}</p>
                   <Reply s={s} />
+                  <Thread thread={s.thread} author="Toi" />
+                  {s.reply && (
+                    <AnswerBox
+                      s={s}
+                      onSent={(u) =>
+                        void list.mutate((items) => items?.map((x) => (x.id === u.id ? u : x)), { revalidate: false })
+                      }
+                    />
+                  )}
                 </li>
               ))}
             </ul>
