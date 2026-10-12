@@ -1248,6 +1248,26 @@ export const suggestions = pgTable(
   ],
 );
 
+/**
+ * Fil sous le retour de l'admin : réponses de l'auteur de la suggestion et de l'admin, dans l'ordre.
+ * Pas d'auteur stocké : un message vient soit de l'auteur de la suggestion, soit de Palawi.
+ */
+export const suggestionMessages = pgTable(
+  "suggestion_messages",
+  {
+    id: id(),
+    suggestionId: bigint("suggestion_id", { mode: "number" })
+      .notNull()
+      .references(() => suggestions.id, { onDelete: "cascade" }),
+    fromAdmin: boolean("from_admin").notNull(),
+    body: text("body").notNull(),
+    /** Première ouverture par un admin (null : pastille du menu admin). Rempli dès l'envoi pour l'admin. */
+    adminSeenAt: tstz("admin_seen_at"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("suggestion_messages_suggestion_idx").on(t.suggestionId, t.createdAt)],
+);
+
 export const TRIAGE_STATUSES = ["pending", "running", "done", "error"] as const;
 export const TRIAGE_VERDICTS = ["build", "decision", "non", "bug", "prod", "saison"] as const;
 export const TRIAGE_CATEGORIES = ["important", "confort", "bloat", "refus", "troll"] as const;
