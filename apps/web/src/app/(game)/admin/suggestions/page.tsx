@@ -5,6 +5,7 @@ import {
   SUGGESTION_LIMITS,
   SUGGESTION_STATUSES,
   type AdminSuggestionDTO,
+  type SuggestionDTO,
   type SuggestionKind,
   type SuggestionStatus,
 } from "@palacards/shared";
@@ -14,7 +15,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { AutomationPanel, automationInFlight } from "@/components/SuggestionAutomation";
-import { KindTag, StatusPill } from "@/components/Suggestions";
+import { KindTag, StatusPill, Thread } from "@/components/Suggestions";
 import { ConfirmDialog, Empty, ErrorBox, Select } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { relative } from "@/lib/format";
@@ -43,38 +44,52 @@ function subscribeHash(onChange: () => void) {
 function SuggestionRow({
   s,
   fresh,
+  freshAnswers,
   onChanged,
   onReload,
   onDelete,
 }: {
   s: AdminSuggestionDTO;
   fresh: boolean;
+  /** L'auteur a répondu dans le fil depuis la dernière visite. */
+  freshAnswers: boolean;
   onChanged: (s: AdminSuggestionDTO) => void;
   onReload: () => void;
   onDelete: () => void;
 }) {
   const [reply, setReply] = useState(s.reply ?? "");
+  const [answer, setAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const dirty = reply.trim() !== (s.reply ?? "");
+  const author = s.author?.displayName ?? "l'auteur";
 
-  async function patch(body: { status?: SuggestionStatus; reply?: string | null }, ok: string) {
+  async function send(path: string, init: Parameters<typeof api>[1], ok: string) {
     setBusy(true);
     try {
-      const updated = await api<AdminSuggestionDTO>(`/admin/suggestions/${s.id}`, { method: "PATCH", body });
+      const updated = await api<SuggestionDTO>(path, init);
       onChanged({ ...s, ...updated });
       toast.success(ok);
+      return true;
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Modification impossible.");
+      return false;
     } finally {
       setBusy(false);
     }
   }
+  const patch = (body: { status?: SuggestionStatus; reply?: string | null }, ok: string) =>
+    send(`/admin/suggestions/${s.id}`, { method: "PATCH", body }, ok);
 
   return (
     <li id={`suggestion-${s.id}`} className="scroll-mt-24 rounded-xl border border-line bg-panel p-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <KindTag kind={s.kind} />
         {fresh && <StatusPill status="new" admin />}
+        {freshAnswers && (
+          <span className="pc-status" data-status="new" data-admin>
+            Nouvelle réponse
+          </span>
+        )}
         <span className="tnum text-xs text-faint">
           {s.author ? (
             <Link href={`/u/${s.author.username.toLowerCase()}`} className="article-link">
@@ -153,6 +168,51 @@ function SuggestionRow({
             </button>
           </div>
         </form>
+        {s.thread.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold text-faint">Fil avec {author}</p>
+            <Thread
+              thread={s.thread}
+              author={author}
+              onDelete={(m) =>
+                void send(
+                  `/admin/suggestions/${s.id}/answers/${m.id}`,
+                  { method: "DELETE" },
+                  "Message supprimé du fil.",
+                )
+              }
+            />
+            <form
+              className="mt-2 flex flex-col gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!answer.trim() || busy) return;
+                void send(
+                  `/admin/suggestions/${s.id}/answers`,
+                  { body: { body: answer.trim() } },
+                  "Réponse ajoutée au fil.",
+                ).then((ok) => ok && setAnswer(""));
+              }}
+            >
+              <label className="sr-only" htmlFor={`answer-${s.id}`}>
+                Répondre dans le fil à {author}
+              </label>
+              <textarea
+                id={`answer-${s.id}`}
+                className="field min-h-16 text-sm leading-relaxed"
+                value={answer}
+                maxLength={SUGGESTION_LIMITS.reply}
+                onChange={(e) => setAnswer(e.target.value)}
+                placeholder={`Répondre dans le fil à ${author} (une notification lui est envoyée)`}
+              />
+              <div className="flex justify-end">
+                <button type="submit" className="btn btn-sm btn-primary" disabled={!answer.trim() || busy}>
+                  Répondre dans le fil
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
       </div>
     </li>
   );
@@ -171,10 +231,15 @@ export default function AdminSuggestionsPage() {
   const [touched, setTouched] = useState<Set<number>>(new Set());
   /** Suggestions pas encore ouvertes à l'arrivée sur la page : marquées « À traiter » pendant la visite. */
   const [fresh, setFresh] = useState<Set<number> | null>(null);
-  if (list.data && fresh === null) setFresh(new Set(list.data.items.filter((s) => !s.seen).map((s) => s.id)));
+  /** Suggestions où l'auteur a répondu dans le fil depuis la dernière visite (affichées aussi dans « À traiter »). */
+  const [freshAnswers, setFreshAnswers] = useState<Set<number>>(new Set());
+  if (list.data && fresh === null) {
+    setFresh(new Set(list.data.items.filter((s) => !s.seen).map((s) => s.id)));
+    setFreshAnswers(new Set(list.data.items.filter((s) => s.unseenAnswers > 0).map((s) => s.id)));
+  }
 
   // Ouverture de la liste : plus de pastille dans le menu.
-  const unseen = fresh?.size ?? 0;
+  const unseen = (fresh?.size ?? 0) + freshAnswers.size;
   useEffect(() => {
     if (!unseen) return;
     void api("/admin/suggestions/seen", { method: "POST" })
@@ -199,7 +264,12 @@ export default function AdminSuggestionsPage() {
 
   const items = (list.data?.items ?? []).filter(
     (s) =>
-      (filter === "all" || s.status === filter || touched.has(s.id) || s.id === target) && (!kind || s.kind === kind),
+      (filter === "all" ||
+        s.status === filter ||
+        touched.has(s.id) ||
+        s.id === target ||
+        (filter === "new" && freshAnswers.has(s.id))) &&
+      (!kind || s.kind === kind),
   );
   const total = list.data ? list.data.items.length : 0;
 
@@ -236,7 +306,7 @@ export default function AdminSuggestionsPage() {
         <h1 className="page-title">Suggestions reçues</h1>
         <p className="hatnote mt-2 tnum">
           {list.data
-            ? `${total} suggestion${total > 1 ? "s" : ""}, dont ${list.data.counts.new} à traiter. Un changement de statut ou une réponse prévient l'auteur.`
+            ? `${total} suggestion${total > 1 ? "s" : ""}, dont ${list.data.counts.new} à traiter${freshAnswers.size ? ` et ${freshAnswers.size} avec une nouvelle réponse` : ""}. Un changement de statut ou une réponse prévient l'auteur.`
             : "Chargement…"}
         </p>
       </div>
@@ -296,6 +366,7 @@ export default function AdminSuggestionsPage() {
               key={s.id}
               s={s}
               fresh={!!fresh?.has(s.id) && s.status === "new"}
+              freshAnswers={freshAnswers.has(s.id)}
               onChanged={replace}
               onReload={() => void list.mutate()}
               onDelete={() => setConfirm(s)}

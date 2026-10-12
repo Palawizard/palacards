@@ -240,8 +240,8 @@ export async function answerSuggestion(ctx: Ctx, userId: string, id: number, bod
         `Tu as déjà répondu ${SUGGESTION_THREAD.answers} fois. Pour une autre idée, envoie une nouvelle suggestion.`,
       );
     const last = answers[0]?.createdAt.getTime();
-    const wait = last ? Math.ceil((last + SUGGESTION_THREAD.cooldownSeconds * 1000 - ctx.now().getTime()) / 1000) : 0;
-    if (wait > 0) throw conflict("suggestion_answer_cooldown", `Attends encore ${wait} s avant de répondre à nouveau.`);
+    if (last && ctx.now().getTime() - last < SUGGESTION_THREAD.cooldownSeconds * 1000)
+      throw conflict("suggestion_answer_cooldown", "Tu viens de répondre. Attends un peu avant d'en rajouter.");
     await tx.insert(m).values({ suggestionId: id, fromAdmin: false, body, createdAt: ctx.now() });
     const [updated] = await tx.update(s).set({ updatedAt: ctx.now() }).where(eq(s.id, id)).returning();
     return withThread(tx, updated!);
