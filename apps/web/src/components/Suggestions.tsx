@@ -1,12 +1,13 @@
 "use client";
 
 // Suggestions : bandeau « Une idée ? » et petits éléments partagés par la page joueur et la page admin.
-import type { SuggestionDTO, SuggestionKind, SuggestionStatus } from "@palacards/shared";
-import { CornerDownRight, Lightbulb, X } from "lucide-react";
+import type { SuggestionDTO, SuggestionKind, SuggestionMessageDTO, SuggestionStatus } from "@palacards/shared";
+import { CornerDownRight, Lightbulb, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/api";
+import { relative } from "@/lib/format";
 import { useMe } from "@/lib/game";
 import { KINDS, STATUSES } from "@/lib/suggestions";
 import "./suggestions.css";
@@ -40,6 +41,46 @@ export function Reply({ s }: { s: Pick<SuggestionDTO, "reply" | "repliedAt"> }) 
       </p>
       <p className="whitespace-pre-wrap text-sm leading-relaxed">{s.reply}</p>
     </div>
+  );
+}
+
+/**
+ * Fil sous le retour de Palawi, du plus ancien au plus récent. `author` nomme l'auteur de la suggestion
+ * (« Toi » côté joueur, son pseudo côté admin) ; `onDelete` ajoute la corbeille (admin).
+ */
+export function Thread({
+  thread,
+  author,
+  onDelete,
+}: {
+  thread: SuggestionMessageDTO[];
+  author: string;
+  onDelete?: (m: SuggestionMessageDTO) => void;
+}) {
+  if (!thread.length) return null;
+  return (
+    <ol className="pc-thread" aria-label="Fil de réponses">
+      {thread.map((m) => (
+        <li key={m.id} className="pc-thread-msg" data-admin={m.fromAdmin || undefined}>
+          <p className="pc-thread-by">
+            <span>{m.fromAdmin ? "Palawi" : author}</span>
+            <span className="tnum font-normal text-faint">{relative(m.createdAt)}</span>
+            {onDelete && (
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost ml-auto -my-1 px-1.5 text-faint hover:text-danger"
+                onClick={() => onDelete(m)}
+                aria-label={`Supprimer le message de ${m.fromAdmin ? "Palawi" : author}`}
+                title="Supprimer"
+              >
+                <Trash2 aria-hidden className="size-3.5" />
+              </button>
+            )}
+          </p>
+          <p className="whitespace-pre-wrap text-sm leading-relaxed">{m.body}</p>
+        </li>
+      ))}
+    </ol>
   );
 }
 
