@@ -79,6 +79,13 @@ export async function exportData(ctx: Ctx, userId: string) {
       .where(or(eq(s.trades.fromId, userId), eq(s.trades.toId, userId))),
     wishlist: await db.select().from(s.wishlist).where(eq(s.wishlist.userId, userId)),
     suggestions: await db.select().from(s.suggestions).where(eq(s.suggestions.userId, userId)),
+    // Fil de réponses sous ses suggestions (les siennes et celles de Palawi).
+    suggestionMessages: await db
+      .select({ message: s.suggestionMessages })
+      .from(s.suggestionMessages)
+      .innerJoin(s.suggestions, eq(s.suggestions.id, s.suggestionMessages.suggestionId))
+      .where(eq(s.suggestions.userId, userId))
+      .then((rows) => rows.map((r) => r.message)),
     // Tri automatique de ses suggestions (verdict, résumé, réponse proposée, branche).
     suggestionTriage: await db
       .select({ automation: s.suggestionAutomation })

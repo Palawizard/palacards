@@ -1,4 +1,5 @@
 import { eq, schema } from "@palacards/db";
+import { SUGGESTION_LIMITS, SUGGESTION_THREAD } from "@palacards/shared";
 import { afterAll, describe, expect, it } from "vitest";
 import { makeApp, signUp, signUpAdmin } from "./helpers.js";
 
@@ -67,6 +68,76 @@ describe("suggestions", () => {
 
     expect((await admin.del(`/admin/suggestions/${sent.body.id}`)).status).toBe(200);
     expect((await p.get("/suggestions")).body).toEqual([]);
+  });
+
+  it("fil sous le retour : l'auteur répond (plafond, délai), l'admin voit, répond et supprime", async () => {
+    const p = await signUp(app);
+    const other = await signUp(app);
+    const admin = await signUpAdmin(app, ctx);
+    const { id } = (
+      await p.post("/suggestions", { kind: "feature", title: "Trier par date", body: "Trier la collection par date." })
+    ).body;
+    const answer = (body: string, who = p) => who.post(`/suggestions/${id}/answers`, { body });
+    /** Les réponses de l'auteur paraissent vieilles d'une heure : le délai entre deux réponses est passé. */
+    const age = () =>
+      ctx.db
+        .update(schema.suggestionMessages)
+        .set({ createdAt: new Date(Date.now() - 3_600_000) })
+        .where(eq(schema.suggestionMessages.suggestionId, id));
+
+    // Pas avant le retour de Palawi, ni pour un autre joueur.
+    expect((await answer("Merci d'avance !")).status).toBe(409);
+    await admin.post("/admin/suggestions/seen");
+    await admin.patch(`/admin/suggestions/${id}`, { reply: "Par date d'obtention ou de sortie ?" });
+    expect((await answer("Coucou", other)).status).toBe(404);
+    expect((await answer("a".repeat(SUGGESTION_LIMITS.answer + 1))).status).toBe(400);
+
+    const before = (await admin.get("/me")).body.newSuggestions;
+    const first = await answer("D'obtention, pour retrouver mes derniers tirages.");
+    expect(first.status).toBe(200);
+    expect(first.body.thread).toMatchObject([
+      { fromAdmin: false, body: "D'obtention, pour retrouver mes derniers tirages." },
+    ]);
+    // Deux réponses coup sur coup : la seconde attend.
+    expect((await answer("Et aussi par rareté ?")).status).toBe(409);
+
+    // L'admin voit la réponse (pastille et liste), y répond : l'auteur est prévenu.
+    expect((await admin.get("/me")).body.newSuggestions).toBe(before + 1);
+    const row = (await admin.get("/admin/suggestions")).body.items.find((x: { id: number }) => x.id === id);
+    expect(row).toMatchObject({ unseenAnswers: 1, thread: [{ fromAdmin: false }] });
+    const reply = await admin.post(`/admin/suggestions/${id}/answers`, { body: "Noté, merci !" });
+    expect(reply.status).toBe(200);
+    expect(reply.body.thread.map((x: { fromAdmin: boolean }) => x.fromAdmin)).toEqual([false, true]);
+    expect((await admin.get("/me")).body.newSuggestions).toBe(before);
+    const notifs = (await p.get("/notifications")).body.items.filter(
+      (x: { type: string }) => x.type === "suggestion_update",
+    );
+    expect(notifs).toHaveLength(1);
+    expect(notifs[0].payload).toMatchObject({ suggestionId: id, replied: true });
+
+    // Fil dans l'ordre, côté joueur.
+    const mine = (await p.get("/suggestions")).body.find((x: { id: number }) => x.id === id);
+    expect(mine.thread.map((x: { body: string }) => x.body)).toEqual([
+      "D'obtention, pour retrouver mes derniers tirages.",
+      "Noté, merci !",
+    ]);
+
+    // Plafond de réponses par suggestion.
+    for (let i = 1; i < SUGGESTION_THREAD.answers; i++) {
+      await age();
+      expect((await answer(`Précision n° ${i}`)).status).toBe(200);
+    }
+    await age();
+    const capped = await answer("Encore une !");
+    expect(capped.status).toBe(409);
+
+    // Réponse abusive supprimée par l'admin : elle disparaît du fil.
+    const abusive = mine.thread[0].id;
+    expect((await p.del(`/admin/suggestions/${id}/answers/${abusive}`)).status).toBe(403);
+    const cleaned = await admin.del(`/admin/suggestions/${id}/answers/${abusive}`);
+    expect(cleaned.status).toBe(200);
+    expect(cleaned.body.thread.some((x: { id: number }) => x.id === abusive)).toBe(false);
+    expect((await admin.del(`/admin/suggestions/${id}/answers/${abusive}`)).status).toBe(404);
   });
 
   it("refuse une suggestion vide ou trop courte, sans plafond par jour", async () => {

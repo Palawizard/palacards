@@ -1,4 +1,9 @@
-import { SUGGESTION_LIMITS, SUGGESTION_STATUSES, suggestionInputSchema } from "@palacards/shared";
+import {
+  SUGGESTION_LIMITS,
+  SUGGESTION_STATUSES,
+  suggestionAnswerSchema,
+  suggestionInputSchema,
+} from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
@@ -11,9 +16,12 @@ import {
   reportBuild,
 } from "../services/automation.js";
 import {
+  adminAnswerSuggestion,
   adminSuggestions,
+  answerSuggestion,
   createSuggestion,
   deleteSuggestion,
+  deleteSuggestionMessage,
   markSuggestionsSeen,
   mySuggestions,
   pauseSuggestionBanner,
@@ -29,6 +37,13 @@ export function suggestionRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/suggestions", auth, async (req) => mySuggestions(ctx, req.user.id));
   api.post("/suggestions", { ...auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } }, async (req) =>
     createSuggestion(ctx, req.user.id, parse(suggestionInputSchema, req.body)),
+  );
+  /** Réponse de l'auteur sous le retour de Palawi (plafond et délai entre deux réponses dans le service). */
+  api.post(
+    "/suggestions/:id/answers",
+    { ...auth, config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+    async (req) =>
+      answerSuggestion(ctx, req.user.id, parse(idParams, req.params).id, parse(suggestionAnswerSchema, req.body).body),
   );
   /** Bandeau « Une idée ? » fermé : il revient dans une semaine. */
   api.post("/suggestions/banner/dismiss", auth, async (req) => pauseSuggestionBanner(ctx, req.user.id));
@@ -50,6 +65,19 @@ export function suggestionRoutes(api: FastifyInstance, ctx: Ctx) {
       req.body,
     );
     return updateSuggestion(ctx, id, patch);
+  });
+  /** Fil sous le retour : l'admin y répond (l'auteur est prévenu) ou supprime un message abusif. */
+  api.post("/admin/suggestions/:id/answers", admin, async (req) => {
+    const { id } = parse(idParams, req.params);
+    const { body } = parse(z.object({ body: z.string().trim().min(1).max(SUGGESTION_LIMITS.reply) }), req.body);
+    return adminAnswerSuggestion(ctx, id, body);
+  });
+  api.delete("/admin/suggestions/:id/answers/:messageId", admin, async (req) => {
+    const { id, messageId } = parse(
+      z.object({ id: z.coerce.number().int().positive(), messageId: z.coerce.number().int().positive() }),
+      req.params,
+    );
+    return deleteSuggestionMessage(ctx, id, messageId);
   });
   api.delete("/admin/suggestions/:id", admin, async (req) => {
     const { id } = parse(idParams, req.params);
