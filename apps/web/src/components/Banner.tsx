@@ -54,7 +54,7 @@ export function ProfileBanner({
   banner: BannerDTO | null;
   isMe: boolean;
   imageSaved?: boolean;
-  onChanged: () => void;
+  onChanged: () => Promise<unknown>;
 }) {
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -63,7 +63,9 @@ export function ProfileBanner({
     setBusy(true);
     try {
       await action();
-      onChanged();
+      // Profil rechargé avant de rendre la main : les boutons apparus (retour par défaut…) ne décalent plus
+      // celui que le joueur s'apprête à toucher.
+      await onChanged();
       toast.success(done);
     } catch (err) {
       // Erreur de l'API ou de la préparation de l'image (format, poids) : message déjà en français.
