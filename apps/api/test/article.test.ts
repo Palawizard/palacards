@@ -3,6 +3,7 @@ import { ARTICLE_MAX_GUESSES, articleReward, parisDay } from "@palacards/game";
 import { PNG } from "pngjs";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { dailyArticle } from "../src/services/article.js";
+import { createWiki } from "../src/services/wiki.js";
 import { progressionIdle } from "../src/services/progression.js";
 import { makeApp, signUp, type Client } from "./helpers.js";
 
@@ -275,5 +276,106 @@ describe("article du jour : jour de la mise à jour", () => {
     expect(g!.reward).toBe(90);
     expect(await ledgerSum(done.userId, "daily_article")).toBe(0);
     expect(parisDay(ctx.now())).not.toBe(day);
+  });
+});
+
+describe("article du jour : choix de la réponse", () => {
+  const photo = (id: number) => `https://upload.wikimedia.org/wikipedia/commons/a/a1/Photo_${id}.jpg`;
+
+  it("préfère une image et des catégories en indice à un pays et une année connus", async () => {
+    const day = "2099-06-06";
+    await ctx.db.delete(schema.dailyArticles).where(eq(schema.dailyArticles.day, day));
+    let ids: number[] = [];
+    const titles = new Map<number, string>();
+    // 1er candidat : complet (pays, année) mais sans image ; 2e : image, mais sa seule catégorie le nomme ;
+    // 3e : image et catégories, sans année ; les suivants : rien.
+    const summaries = vi.spyOn(ctx.wiki, "summaries").mockImplementation(async (list) => {
+      ids = list;
+      const rows = await ctx.db.execute<{ id: string; title: string }>(
+        sql`select id, title from cards where id in (${sql.join(
+          list.map((i) => sql`${i}`),
+          sql`, `,
+        )})`,
+      );
+      for (const r of rows) titles.set(Number(r.id), r.title);
+      return new Map(
+        list
+          .slice(0, 3)
+          .map((id, i) => [
+            id,
+            { extract: null, pageUrl: null, description: "sport de précision", thumbUrl: i === 0 ? null : photo(id) },
+          ]),
+      );
+    });
+    const attributes = vi.spyOn(ctx.wiki, "attributes").mockImplementation(
+      async (list) =>
+        new Map(
+          list.slice(0, 3).map((id, i) => [
+            id,
+            {
+              qid: `Q${id}`,
+              human: false,
+              countryId: i === 2 ? null : "Q142",
+              country: i === 2 ? null : "France",
+              continents: [],
+              year: i === 2 ? null : 1966,
+              yearKind: null,
+            },
+          ]),
+        ),
+    );
+    const categories = vi
+      .spyOn(ctx.wiki, "pagesCategories")
+      .mockImplementation(
+        async (list) =>
+          new Map(
+            list.map((id, i) => [
+              id,
+              i === 1
+                ? [`Catégorie:${titles.get(id)}`]
+                : ["Catégorie:Article de qualité", "Catégorie:Sport d'hiver", "Catégorie:Sport olympique"],
+            ]),
+          ),
+      );
+    try {
+      const a = await dailyArticle(ctx, day);
+      expect(ids.length).toBeGreaterThan(3);
+      expect(a.cardId).toBe(ids[2]);
+      expect(a.imageUrl).toBe(photo(ids[2]!));
+      // Catégories figées avec la réponse : pas de nouvel appel à la première partie.
+      expect(a.categories).toEqual(["Sport d'hiver", "Sport olympique"]);
+      expect(a.attrs?.year).toBeNull();
+    } finally {
+      summaries.mockRestore();
+      attributes.mockRestore();
+      categories.mockRestore();
+      await ctx.db.delete(schema.dailyArticles).where(eq(schema.dailyArticles.day, day));
+    }
+  });
+
+  it("charge les catégories de plusieurs articles par lots, pages suivantes comprises", async () => {
+    const wiki = createWiki(ctx.db, { ...ctx.config, WIKIMEDIA_DISABLED: false }, ctx.log);
+    const calls: string[] = [];
+    const fetchMock = vi.fn(async (url: URL) => {
+      const cont = url.searchParams.get("clcontinue");
+      calls.push(`${url.searchParams.get("pageids")}${cont ? `@${cont}` : ""}`);
+      return Response.json(
+        cont
+          ? { query: { pages: [{ pageid: 1, categories: [{ title: "Catégorie:B" }] }, { pageid: 2 }] } }
+          : {
+              query: { pages: [{ pageid: 1, categories: [{ title: "Catégorie:A" }] }, { pageid: 2 }] },
+              continue: { clcontinue: "1|B", continue: "||" },
+            },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const out = await wiki.pagesCategories([1, 2, 1]);
+      expect(out && Object.fromEntries(out)).toEqual({ 1: ["Catégorie:A", "Catégorie:B"], 2: [] });
+      expect(calls).toEqual(["1|2", "1|2@1|B"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(await ctx.wiki.pagesCategories([1])).toBeNull();
   });
 });
