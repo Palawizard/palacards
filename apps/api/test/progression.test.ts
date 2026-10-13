@@ -357,6 +357,24 @@ describe("classements et saisons", () => {
 });
 
 describe("paramètres et admin", () => {
+  it("règle chaque catégorie de notifications une à une, même sans préférence enregistrée", async () => {
+    const p = await signUp(app);
+    const groups = (await p.get("/settings/notifications")).body as { group: string; enabled: boolean }[];
+    expect(groups.every((g) => g.enabled)).toBe(true);
+    // Un seul groupe envoyé à la fois, comme le fait la page Paramètres.
+    for (const { group } of groups) {
+      expect((await p.put("/settings/notifications", { [group]: false })).status).toBe(200);
+    }
+    expect((await p.get("/settings/notifications")).body.every((g: { enabled: boolean }) => !g.enabled)).toBe(true);
+    expect((await p.put("/settings/notifications", { market: true })).status).toBe(200);
+    const after = (await p.get("/settings/notifications")).body as { group: string; enabled: boolean }[];
+    expect(after.find((g) => g.group === "market")?.enabled).toBe(true);
+    expect(after.find((g) => g.group === "trades")?.enabled).toBe(false);
+    // Clé inconnue ou valeur non booléenne : refusées.
+    expect((await p.put("/settings/notifications", { nope: false })).status).toBe(400);
+    expect((await p.put("/settings/notifications", { market: "non" })).status).toBe(400);
+  });
+
   it("change de pseudo, refuse un pseudo pris", async () => {
     const p = await signUp(app);
     const other = await signUp(app);
