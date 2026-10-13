@@ -46,8 +46,13 @@ type Entry = GuessRow["entries"][number];
 const ANSWER_RARITIES = ["UR", "L"] as const;
 /** Essais possibles : Super rares et mieux de la saison (≈ 50 000 articles). */
 const GUESS_RARITIES = ["SR", "UR", "L"] as const;
-/** Candidats examinés pour la réponse du jour (attributs complets, image). */
-const CANDIDATES = 12;
+/**
+ * Candidats examinés pour la réponse du jour (attributs, image, catégories en indice). Assez pour en trouver un
+ * jouable même quand la veille écarte toute une catégorie (les personnes, souvent la moitié du lot).
+ */
+const CANDIDATES = 40;
+/** Catégories en indice attendues d'une bonne réponse (trois au plus sont montrées). */
+const ANSWER_MIN_HINT_CATEGORIES = 2;
 /** Suggestions de l'autocomplétion. */
 const SEARCH_LIMIT = 8;
 
@@ -123,8 +128,10 @@ const usableImage = (url: string | null) => (url && !unusableQuizImage(url) && p
 
 /**
  * Article du jour : une Ultra rare ou une Légendaire de la saison, tirée d'après le jour, jamais deux fois, pas
- * de la même catégorie que la veille. Seulement un article dont la catégorie, le pays et l'année sont connus,
- * avec une image si possible ; sinon on relâche ces exigences une à une. Figé en base à la première demande.
+ * de la même catégorie que la veille. On veut une partie jouable : une image et des catégories en indice
+ * passent avant le pays et l'année (une case « ? » gêne moins qu'une partie sans image ni indice). Les
+ * exigences sont relâchées une à une ; catégories en indice figées avec la réponse. Figé en base à la
+ * première demande.
  * Un article du jour de l'ancien format (jour de la mise à jour) est converti : même réponse, ses attributs.
  */
 export async function dailyArticle(ctx: Ctx, day = parisDay(ctx.now())): Promise<ArticleRow> {
@@ -163,23 +170,35 @@ export async function dailyArticle(ctx: Ctx, day = parisDay(ctx.now())): Promise
       .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
       .slice(0, CANDIDATES);
   if (!rows.length) throw conflict("no_article", "Aucun article disponible aujourd'hui.");
-  const attrs = await attrsOf(
-    ctx,
-    rows.map((r) => ({ cardId: Number(r.id), title: r.title, rarity: r.rarity, views: Number(r.views_12m) })),
-    8_000,
-  );
+  type Row = (typeof rows)[number];
+  const [attrs, rawCategories] = await Promise.all([
+    attrsOf(
+      ctx,
+      rows.map((r) => ({ cardId: Number(r.id), title: r.title, rarity: r.rarity, views: Number(r.views_12m) })),
+      10_000,
+    ),
+    withTimeout(ctx.wiki.pagesCategories(rows.map((r) => Number(r.id))), 6_000, null),
+  ]);
+  // Catégories en indice de chaque candidat ; null : Wikipédia indisponible, chargées plus tard (answerCategories).
+  const hints = (r: Row) => (rawCategories ? hintCategories(rawCategories.get(Number(r.id)) ?? [], r.title) : null);
   const [yesterday] = await ctx.db
     .select({ attrs: schema.dailyArticles.attrs })
     .from(schema.dailyArticles)
     .where(eq(schema.dailyArticles.day, addDays(day, -1)));
   const prevCategory = yesterday?.attrs?.category ?? null;
-  const a = (r: (typeof rows)[number]) => attrs.get(Number(r.id))!;
-  const complete = (r: (typeof rows)[number]) => !!a(r).category && !!a(r).countryId && a(r).year !== null;
-  const fresh = (r: (typeof rows)[number]) => a(r).category !== prevCategory;
+  const a = (r: Row) => attrs.get(Number(r.id))!;
+  const complete = (r: Row) => !!a(r).category && !!a(r).countryId && a(r).year !== null;
+  const fresh = (r: Row) => a(r).category !== prevCategory;
+  const known = (r: Row) => fresh(r) && !!a(r).category;
+  const image = (r: Row) => !!usableImage(a(r).thumbUrl);
+  // Catégories inconnues (Wikipédia indisponible) : on ne peut pas juger, on n'écarte personne.
+  const hinted = (r: Row, min = ANSWER_MIN_HINT_CATEGORIES) => (hints(r)?.length ?? min) >= min;
   const chosen =
-    rows.find((r) => complete(r) && fresh(r) && usableImage(a(r).thumbUrl)) ??
-    rows.find((r) => complete(r) && fresh(r)) ??
-    rows.find((r) => !!a(r).category && fresh(r)) ??
+    rows.find((r) => known(r) && complete(r) && image(r) && hinted(r)) ??
+    rows.find((r) => known(r) && image(r) && hinted(r)) ??
+    rows.find((r) => known(r) && image(r) && hinted(r, 1)) ??
+    rows.find((r) => known(r) && (image(r) || hinted(r, 1))) ??
+    rows.find(known) ??
     rows.find(fresh) ??
     rows[0]!;
   const ca = a(chosen);
@@ -196,6 +215,7 @@ export async function dailyArticle(ctx: Ctx, day = parisDay(ctx.now())): Promise
       attrs: strip(ca),
       description: ca.description,
       imageUrl: usableImage(ca.thumbUrl),
+      categories: hints(chosen),
     })
     .onConflictDoNothing();
   const [row] = await ctx.db.select().from(schema.dailyArticles).where(eq(schema.dailyArticles.day, day));

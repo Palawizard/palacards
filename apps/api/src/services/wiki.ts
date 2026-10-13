@@ -21,6 +21,8 @@ const ACTION_API = "https://fr.wikipedia.org/w/api.php";
 const WIKIDATA_API = "https://www.wikidata.org/w/api.php";
 /** Éléments par appel à l'API (plafond de MediaWiki pour `pageids` et `ids`). */
 const BATCH = 50;
+/** Appels au plus pour les catégories de plusieurs articles (`pagesCategories`), pagination comprise. */
+const PAGES_CATEGORIES_MAX_REQUESTS = 6;
 
 /** Attributs Wikidata d'un article (article du jour, dates des questions du boss). */
 export interface WikiAttributes {
@@ -466,6 +468,50 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
   }
 
   /**
+   * Catégories visibles de plusieurs articles (par lots de BATCH, suite de pagination comprise, au plus
+   * PAGES_CATEGORIES_MAX_REQUESTS appels). Article absent de la réponse : liste vide. null : API désactivée ou
+   * indisponible.
+   */
+  async function pagesCategories(pageIds: number[]): Promise<Map<number, string[]> | null> {
+    if (config.WIKIMEDIA_DISABLED) return null;
+    const out = new Map<number, string[]>();
+    const ids = [...new Set(pageIds)];
+    for (const id of ids) out.set(id, []);
+    let requests = 0;
+    try {
+      for (let i = 0; i < ids.length; i += BATCH) {
+        const chunk = ids.slice(i, i + BATCH);
+        let cont: Record<string, string> | undefined;
+        do {
+          if (++requests > PAGES_CATEGORIES_MAX_REQUESTS) return out;
+          const body = await getJson<{
+            query?: { pages?: { pageid?: number; categories?: { title: string }[] }[] };
+            continue?: Record<string, string>;
+          }>(
+            api(ACTION_API, {
+              action: "query",
+              prop: "categories",
+              clshow: "!hidden",
+              cllimit: "max",
+              pageids: chunk.join("|"),
+              ...cont,
+            }),
+          );
+          for (const p of body.query?.pages ?? []) {
+            if (!p.pageid || !p.categories) continue;
+            out.get(p.pageid)?.push(...p.categories.map((c) => c.title));
+          }
+          cont = body.continue?.clcontinue ? body.continue : undefined;
+        } while (cont);
+      }
+      return out;
+    } catch (err) {
+      log.warn({ err, count: ids.length }, "catégories Wikipédia indisponibles");
+      return null;
+    }
+  }
+
+  /**
    * Articles d'une catégorie Wikipédia et de ses sous-catégories jusqu'à `depth` niveaux (API MediaWiki,
    * parcours en largeur). Au plus CATEGORY_MAX_PAGES articles et CATEGORY_MAX_REQUESTS appels.
    */
@@ -515,7 +561,17 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     return [...pages].slice(0, CATEGORY_MAX_PAGES);
   }
 
-  return { cached, summaries, load, titleOf, categoryMembers, pageCategories, loadAttributes, attributes };
+  return {
+    cached,
+    summaries,
+    load,
+    titleOf,
+    categoryMembers,
+    pageCategories,
+    pagesCategories,
+    loadAttributes,
+    attributes,
+  };
 }
 
 export type Wiki = ReturnType<typeof createWiki>;
