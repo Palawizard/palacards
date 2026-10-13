@@ -27,6 +27,9 @@ describe("titres de classement", () => {
     // « Succès » n'est pas un classement à titre : aucune récompense en fin de saison.
     expect(LEADERBOARDS).toContain("achievements");
     expect(TITLE_BOARDS as readonly string[]).not.toContain("achievements");
+    // « Brillantes » non plus : classement de confort, sans récompense.
+    expect(LEADERBOARDS).toContain("shiny");
+    expect(TITLE_BOARDS as readonly string[]).not.toContain("shiny");
     expect(titleDetail({ board: "luck", rank: 1, season: 3 })).toBe("n°\u00a01 en Chance, saison 3");
   });
 });

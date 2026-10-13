@@ -45,6 +45,7 @@ const BOARDS: { value: Board; label: string; unit: string }[] = [
   { value: "guilds", label: "Guildes", unit: "pts" },
   { value: "pass", label: "Passe de saison", unit: "niv." },
   { value: "achievements", label: "Succès", unit: "Paliers" },
+  { value: "shiny", label: "Brillantes", unit: "Brillantes" },
 ];
 
 /** Classements cumulés depuis l'inscription : pas de saison (ni de titre), le choix de période est masqué. */
@@ -52,6 +53,7 @@ const ALL_TIME_BOARDS: readonly Board[] = ["achievements"];
 
 export default function LeaderboardPage() {
   useSeenFeature("leaderboard-achievements");
+  useSeenFeature("leaderboard-shiny");
   const [board, setBoard] = useState<Board>("collection");
   const [period, setPeriod] = useState<"season" | "all">("season");
   const allTime = ALL_TIME_BOARDS.includes(board);
@@ -94,6 +96,13 @@ export default function LeaderboardPage() {
           <p className="hatnote mt-2">
             Nombre de paliers de succès débloqués depuis ton inscription, secrets compris. Ce classement ne repart pas à
             zéro et ne donne pas de titre. À égalité, le premier à avoir atteint ce nombre passe devant.
+          </p>
+        )}
+        {board === "shiny" && (
+          <p className="hatnote mt-2">
+            Nombre de cartes brillantes possédées, chaque exemplaire compté (comme le filtre «&nbsp;Brillantes&nbsp;» de
+            ta collection). Ce classement ne donne pas de titre. À égalité, le premier à avoir atteint ce nombre passe
+            devant.
           </p>
         )}
       </div>
@@ -140,7 +149,9 @@ export default function LeaderboardPage() {
               ? `Personne n’a encore de carte légendaire${period === "season" ? " cette saison" : ""}.`
               : board === "achievements"
                 ? "Personne n’a encore débloqué de succès."
-                : "Personne au classement pour l’instant."}
+                : board === "shiny"
+                  ? `Personne n’a encore de carte brillante${period === "season" ? " cette saison" : ""}.`
+                  : "Personne au classement pour l’instant."}
         </p>
       ) : (
         <table
