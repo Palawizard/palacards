@@ -531,7 +531,7 @@ export function passState(player: Pick<Player, "seasonXp" | "passSeason">, seaso
 // Classements
 // ---------------------------------------------------------------------------
 
-/** Les classements (tous donnent un titre en fin de saison, sauf « Succès »). */
+/** Les classements (tous donnent un titre en fin de saison, sauf « Succès » et « Brillantes »). */
 export type Board = Leaderboard;
 
 interface Row {
@@ -556,8 +556,8 @@ interface Row {
 
 /**
  * Classements : collection (points des articles uniques), légendaires (articles L différents), boosters ouverts, chance (points tirés ÷ points attendus,
- * en %, à partir de LUCK_MIN_PACKS paquets mesurés), Elo, richesse (solde), guildes, niveau du passe et succès (paliers
- * débloqués, sans saison).
+ * en %, à partir de LUCK_MIN_PACKS paquets mesurés), Elo, richesse (solde), guildes, niveau du passe, succès (paliers
+ * débloqués, sans saison) et brillantes (exemplaires brillants possédés).
  * « Saison » : édition en cours et Elo remis à 1 000 ; « tout temps » : toutes éditions, meilleur Elo, archives.
  */
 export async function leaderboard(ctx: Ctx, userId: string, board: Board, period: "season" | "all") {
@@ -658,6 +658,27 @@ export async function boardRows(db: DbOrTx, board: Board, period: "season" | "al
         ) cards group by owner_id
       ) l join "user" u on u.id = l.owner_id left join players p on p.user_id = l.owner_id
       order by l.value desc, l.reached_at, u.username limit 100
+    `);
+    rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
+  } else if (board === "shiny") {
+    // Exemplaires brillants possédés, le même compte que le filtre « Brillantes » de la collection (restreint à
+    // l'édition en cours pour la saison). Égalité : le premier à avoir atteint ce nombre (date de sa dernière brillante).
+    const seasonFilter = period === "season" ? sql`and season = ${season}` : sql``;
+    const res = await db.execute<{
+      owner_id: string;
+      value: number;
+      username: string;
+      name: string;
+      avatar: string | null;
+    }>(sql`
+      select s.owner_id, s.value, u.username, coalesce(u.display_username, u.name) as name, p.avatar
+      from (
+        select owner_id, count(*)::int as value, max(obtained_at) as reached_at
+        from card_instances
+        where shiny ${seasonFilter}
+        group by owner_id
+      ) s join "user" u on u.id = s.owner_id left join players p on p.user_id = s.owner_id
+      order by s.value desc, s.reached_at, u.username limit 100
     `);
     rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
   } else if (board === "achievements") {
