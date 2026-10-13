@@ -150,6 +150,52 @@ describe("classements et saisons", () => {
     for (let i = 1; i < rows.length; i++) expect(rows[i]!.value).toBeLessThanOrEqual(rows[i - 1]!.value);
   });
 
+  it("classe par cartes brillantes, comme le filtre de la collection, premier arrivé devant", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const c = await signUp(app);
+    const season = (await a.get("/me")).body.season as number;
+    const [card] = await ctx.db.execute<{ id: number }>(
+      sql`select id::int as id from cards where season = ${season} order by id limit 1`,
+    );
+    // Cartes données puis passées en brillantes (date d'obtention fixée pour le départage).
+    const give = async (p: typeof a, count: number, shiny: boolean, at: string) => {
+      const { instanceIds } = (await p.post("/test/grant-card", { cardId: card!.id, count })).body as {
+        instanceIds: number[];
+      };
+      await ctx.db.execute(sql`
+        update card_instances set shiny = ${shiny}, obtained_at = ${at}::timestamptz
+        where id in (${sql.join(
+          instanceIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})
+      `);
+    };
+    // A : 5 brillantes (doublons compris), atteintes en 2001 ; B : 5 aussi, atteintes en 2000 ; C : aucune.
+    await give(a, 5, true, "2001-01-01");
+    await give(a, 2, false, "2001-01-02");
+    await give(b, 5, true, "2000-01-01");
+    await give(c, 3, false, "2000-01-01");
+
+    for (const period of ["season", "all"]) {
+      const rows = (await a.get(`/leaderboard?board=shiny&period=${period}`)).body.rows as {
+        id: string;
+        value: number;
+        rank: number;
+        me: boolean;
+      }[];
+      const ra = rows.find((r) => r.id === a.userId)!;
+      const rb = rows.find((r) => r.id === b.userId)!;
+      expect(ra).toMatchObject({ value: 5, me: true });
+      expect(rb).toMatchObject({ value: 5, me: false });
+      expect(rb.rank).toBeLessThan(ra.rank);
+      expect(rows.find((r) => r.id === c.userId)).toBeUndefined();
+      for (let i = 1; i < rows.length; i++) expect(rows[i]!.value).toBeLessThanOrEqual(rows[i - 1]!.value);
+    }
+    // Même valeur que le filtre « Brillantes » de la collection, sur l'édition en cours.
+    expect((await a.get(`/collection?shiny=only&season=${season}`)).body.total).toBe(5);
+  });
+
   it("classe par paliers de succès débloqués, premier arrivé devant, sans titre de fin de saison", async () => {
     const a = await signUp(app);
     const b = await signUp(app);
