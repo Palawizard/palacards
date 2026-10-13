@@ -73,7 +73,7 @@ export const NAV: NavGroup[] = [
       { href: "/messages", label: "Messages", icon: MessageSquare, badge: "messages" },
       { href: "/feed", label: "Fil d'activité", icon: Radio, feature: "feed" },
       { href: "/guild", label: "Guilde", icon: Shield },
-      { href: "/leaderboard", label: "Classement", icon: Trophy, feature: "leaderboard-achievements" },
+      { href: "/leaderboard", label: "Classement", icon: Trophy, feature: "leaderboard-shiny" },
       { href: "/nouveautes", label: "Mises à jour", icon: Newspaper, feature: "updates" },
       { href: "/suggestions", label: "Suggestions", icon: Lightbulb, feature: "suggestions" },
     ],

@@ -59,6 +59,10 @@ test("succès débloqué, fusion, classement et paramètres", async ({ browser }
   await expect(page.getByText(/paliers de succès débloqués/)).toBeVisible();
   await expect(page.getByRole("row", { name: new RegExp(name) })).toBeVisible();
   await expect(page.getByRole("group", { name: "Période" })).toHaveCount(0);
+  // Onglet « Brillantes » : exemplaires brillants, avec le choix de la période.
+  await page.getByRole("button", { name: "Brillantes", exact: true }).click();
+  await expect(page.getByText(/Nombre de cartes brillantes possédées/)).toBeVisible();
+  await expect(page.getByRole("group", { name: "Période" })).toBeVisible();
 
   // Paramètres : avatar et vitesse d'animation enregistrés.
   await page.goto("settings");
