@@ -40,8 +40,9 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
     return Object.keys(NOTIFICATION_GROUPS).map((group) => ({ group, enabled: p?.prefs?.[group] !== false }));
   });
   api.put("/settings/notifications", auth, async (req) => {
+    // Record partiel : le client n'envoie que le groupe modifié (z.record sur un enum exige toutes les clés).
     const body = parse(
-      z.record(z.enum(Object.keys(NOTIFICATION_GROUPS) as [string, ...string[]]), z.boolean()),
+      z.partialRecord(z.enum(Object.keys(NOTIFICATION_GROUPS) as [string, ...string[]]), z.boolean()),
       req.body,
     );
     // Fusion (et non remplacement) : deux cases cochées coup sur coup ne s'écrasent pas.
