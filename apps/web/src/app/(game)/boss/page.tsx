@@ -212,19 +212,45 @@ function Earned({ boss }: { boss: BossDTO }) {
 // Choix des cinq articles
 // ---------------------------------------------------------------------------
 
-/** Vignette d'un article : image, rareté, dégâts du jour (ou repos restant). */
+/** Image d'un article, ou son initiale s'il n'en a pas. */
+function Thumb({ c }: { c: BossCardDTO }) {
+  return c.thumbUrl ? (
+    <CardImage cardId={c.cardId} src={thumbSrc(c.thumbUrl)} revealable={false} />
+  ) : (
+    <span className="font-display text-3xl uppercase text-faint" aria-hidden>
+      {c.title.slice(0, 1)}
+    </span>
+  );
+}
+
+/** Faiblesse (×2) ou résistance (×0,5) du jour, en pastille sur l'image. */
+function MultBadge({ m }: { m: number }) {
+  if (m === 1) return null;
+  const weak = m > 1;
+  return (
+    <span className="pc-boss-mult tnum" data-tone={weak ? "weak" : "resist"}>
+      {weak ? <Zap className="size-3" aria-hidden /> : <Shield className="size-3" aria-hidden />}
+      {mult(m)}
+      <span className="sr-only">{weak ? " (faiblesse du boss)" : " (résistance du boss)"}</span>
+    </span>
+  );
+}
+
+/** Vignette d'un article : image, dégâts du jour en grand, catégorie (ou repos restant). */
 function CardTile({
   c,
-  on,
+  order,
   disabled,
   onToggle,
 }: {
   c: BossCardDTO;
-  on: boolean;
+  /** Place dans l'assaut (1 à 5), 0 si l'article n'est pas choisi. */
+  order: number;
   disabled: boolean;
   onToggle: () => void;
 }) {
   const tired = c.restDays > 0;
+  const on = order > 0;
   return (
     <li>
       <button
@@ -234,39 +260,37 @@ function CardTile({
         onClick={onToggle}
         className="pc-boss-tile"
         data-tired={tired || undefined}
-        title={tired ? undefined : `${fmt(c.critDamage)} dégâts en critique`}
+        title={tired ? undefined : `${fmt(c.damage)} dégâts, ${fmt(c.critDamage)} en critique`}
       >
         <span className="pc-boss-thumb" data-rarity={c.rarity}>
-          {c.thumbUrl ? (
-            <CardImage cardId={c.cardId} src={thumbSrc(c.thumbUrl)} revealable={false} />
-          ) : (
-            <span className="font-display text-3xl uppercase text-faint" aria-hidden>
-              {c.title.slice(0, 1)}
-            </span>
-          )}
+          <Thumb c={c} />
           <span className="pc-sigil pc-boss-tile-rarity" title={RARITY_LABELS[c.rarity]}>
             {c.rarity}
             <span className="sr-only"> ({RARITY_LABELS[c.rarity]})</span>
           </span>
+          {!tired && <MultBadge m={c.mult} />}
           {c.shiny && (
             <span className="pc-shiny-tag pc-boss-tile-shiny" title="Carte brillante">
               Brillante
             </span>
           )}
-          <span className="pc-boss-check" aria-hidden>
-            {on && <Check className="size-3.5" strokeWidth={3} />}
+          <span className="pc-boss-check tnum" aria-hidden>
+            {on && order}
           </span>
         </span>
         <span className="line-clamp-2 text-[0.8rem] font-semibold leading-tight">{c.title}</span>
-        <span className="mt-auto flex flex-col items-start gap-1 text-xs">
+        <span className="mt-auto flex min-w-0 flex-col gap-0.5">
           {tired ? (
-            <span className="text-faint">
+            <span className="text-xs text-faint">
               Reposée dans {c.restDays} {plural(c.restDays, "jour", "jours")}
             </span>
           ) : (
-            <span className="tnum text-muted">{fmt(c.damage)} dégâts</span>
+            <span className="pc-boss-dmg tnum">
+              {fmt(c.damage)}
+              <span> dégâts</span>
+            </span>
           )}
-          <CategoryTag category={c.category} m={c.mult} />
+          <span className="truncate text-[0.7rem] text-faint">{CATEGORY_LABELS[c.category]}</span>
         </span>
       </button>
     </li>
@@ -286,7 +310,10 @@ function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[])
   const byId = new Map(items.map((c) => [c.instanceId, c]));
   const toggle = (id: number) =>
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length < need ? [...p, id] : p));
-  const total = picked.reduce((s, id) => s + (byId.get(id)?.damage ?? 0), 0);
+  const chosen = picked.map((id) => byId.get(id)).filter((c): c is BossCardDTO => !!c);
+  const total = chosen.reduce((s, c) => s + c.damage, 0);
+  const crit = chosen.reduce((s, c) => s + c.critDamage, 0);
+  const armed = picked.length === need;
 
   async function start(ids: number[]) {
     setBusy(true);
@@ -310,65 +337,95 @@ function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[])
     );
   return (
     <div className="flex flex-col gap-4">
-      <ol className="pc-boss-slots" aria-label="Ton assaut">
-        {Array.from({ length: need }, (_, i) => {
-          const c = picked[i] ? byId.get(picked[i]) : undefined;
-          return (
-            <li key={i} data-filled={!!c || undefined}>
-              {c ? (
-                <button type="button" onClick={() => toggle(c.instanceId)} aria-label={`Retirer ${c.title}`}>
-                  <span className="line-clamp-2 text-left text-sm font-semibold leading-tight">{c.title}</span>
-                  <span className="tnum text-xs text-muted">{fmt(c.damage)} dégâts</span>
-                  <X className="pc-boss-slot-x size-3.5" aria-hidden />
-                </button>
-              ) : (
-                <span className="text-xs text-faint">Carte {i + 1}</span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-      {/* Boutons au-dessus des vignettes : toujours à portée, la grille défile en dessous. */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <p className="tnum text-sm text-muted">
-          {fmt(data.available)} {plural(data.available, "article prêt", "articles prêts")}
-          {picked.length > 0 && ` · jusqu'à ${fmt(total)} dégâts`}
-        </p>
-        <div className="flex w-full gap-2 sm:w-auto">
-          <button
-            type="button"
-            className="btn btn-sm flex-1 sm:flex-none"
-            disabled={busy}
-            onClick={() => setPicked(ready.slice(0, need).map((c) => c.instanceId))}
-          >
-            Mes {need} plus efficaces
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-primary flex-1 sm:flex-none"
-            disabled={busy || picked.length !== need}
-            onClick={() => void start(picked)}
-          >
-            <Sword className="size-4" aria-hidden />
-            {busy ? "Préparation…" : `Attaquer (${picked.length}/${need})`}
-          </button>
+      {/* La pochette de l'assaut : cinq cases à remplir, la puissance cumulée et le bouton d'attaque. */}
+      <div className="pc-loadout cover-texture" data-armed={armed || undefined}>
+        <ol className="pc-pockets" aria-label="Ton assaut">
+          {Array.from({ length: need }, (_, i) => {
+            const c = chosen[i];
+            return (
+              <li key={c ? c.instanceId : `empty-${i}`} data-filled={!!c || undefined}>
+                {c ? (
+                  <button
+                    type="button"
+                    onClick={() => toggle(c.instanceId)}
+                    aria-label={`Retirer ${c.title}`}
+                    title={c.title}
+                  >
+                    <span className="pc-pocket-img" data-rarity={c.rarity}>
+                      <Thumb c={c} />
+                      <span className="pc-pocket-dmg tnum">{fmt(c.damage)}</span>
+                      <X className="pc-pocket-x size-3.5" strokeWidth={3} aria-hidden />
+                    </span>
+                    <span className="pc-pocket-title">{c.title}</span>
+                  </button>
+                ) : (
+                  <span className="pc-pocket-n tnum" aria-label={`Case ${i + 1} vide`}>
+                    {i + 1}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+        <div className="pc-loadout-side">
+          <p className="min-w-0" aria-live="polite">
+            {chosen.length > 0 ? (
+              <>
+                <span className="pc-loadout-total tnum">
+                  {fmt(total)}
+                  <span> dégâts</span>
+                </span>
+                <span className="block text-xs text-cover-muted tnum">jusqu&apos;à {fmt(crit)} en critique</span>
+              </>
+            ) : (
+              <span className="block text-sm text-cover-muted [text-wrap:balance]">
+                Choisis {need} articles ci-dessous, ou prends d&apos;office les plus efficaces.
+              </span>
+            )}
+          </p>
+          <div className="flex gap-2 sm:flex-col">
+            <button
+              type="button"
+              className="btn btn-sm pc-loadout-auto flex-1 sm:flex-none"
+              disabled={busy}
+              onClick={() => setPicked(ready.slice(0, need).map((c) => c.instanceId))}
+            >
+              Mes {need} plus efficaces
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary pc-loadout-go flex-1 sm:flex-none"
+              disabled={busy || !armed}
+              onClick={() => void start(picked)}
+            >
+              <Sword className="size-4" aria-hidden />
+              {busy ? "Préparation…" : `Attaquer (${picked.length}/${need})`}
+            </button>
+          </div>
         </div>
       </div>
+
       <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer">
-          <button type="button" className="chip" aria-pressed={!onlyWeak} onClick={() => setOnlyWeak(false)}>
-            Toutes
-          </button>
-          <button
-            type="button"
-            className="chip"
-            aria-pressed={onlyWeak}
-            onClick={() => setOnlyWeak(true)}
-            disabled={!weakCount}
-          >
-            <Zap className="size-3.5" aria-hidden />
-            Efficaces aujourd&apos;hui ({weakCount})
-          </button>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filtrer">
+            <button type="button" className="chip" aria-pressed={!onlyWeak} onClick={() => setOnlyWeak(false)}>
+              Toutes
+            </button>
+            <button
+              type="button"
+              className="chip"
+              aria-pressed={onlyWeak}
+              onClick={() => setOnlyWeak(true)}
+              disabled={!weakCount}
+            >
+              <Zap className="size-3.5" aria-hidden />
+              Efficaces aujourd&apos;hui ({weakCount})
+            </button>
+          </div>
+          <p className="tnum text-xs text-faint">
+            {fmt(data.available)} {plural(data.available, "article prêt", "articles prêts")} · les plus efficaces
+            d&apos;abord
+          </p>
         </div>
         {shown.length === 0 ? (
           <p className="slot px-4 py-6 text-center text-sm text-muted">
@@ -381,8 +438,8 @@ function CardPicker({ boss, onStart }: { boss: BossDTO; onStart: (ids: number[])
                 <CardTile
                   key={c.instanceId}
                   c={c}
-                  on={picked.includes(c.instanceId)}
-                  disabled={picked.length >= need}
+                  order={picked.indexOf(c.instanceId) + 1}
+                  disabled={armed}
                   onToggle={() => toggle(c.instanceId)}
                 />
               ))}
