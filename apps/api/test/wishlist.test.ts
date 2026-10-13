@@ -1,4 +1,4 @@
-import { eq, schema } from "@palacards/db";
+import { and, eq, schema } from "@palacards/db";
 import { afterAll, describe, expect, it } from "vitest";
 import { makeApp, signUp } from "./helpers.js";
 
@@ -10,9 +10,25 @@ describe("wishlist", () => {
     const seller = await signUp(app);
     const fan = await signUp(app);
     const opened = await seller.post("/packs/open");
-    const instanceId: number = opened.body.cards[0].instanceId;
-    const [inst] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, instanceId));
-    const cardId = inst!.cardId;
+    // Base partagée entre fichiers : on prend une carte du paquet que personne d'autre ne vend déjà.
+    let instanceId = 0;
+    let cardId = 0;
+    for (const card of opened.body.cards as { instanceId: number }[]) {
+      const [inst] = await ctx.db
+        .select()
+        .from(schema.cardInstances)
+        .where(eq(schema.cardInstances.id, card.instanceId));
+      const open = await ctx.db
+        .select({ id: schema.auctions.id })
+        .from(schema.auctions)
+        .where(and(eq(schema.auctions.cardId, inst!.cardId), eq(schema.auctions.status, "open")));
+      if (open.length === 0) {
+        instanceId = card.instanceId;
+        cardId = inst!.cardId;
+        break;
+      }
+    }
+    expect(cardId).toBeGreaterThan(0);
 
     expect((await fan.get("/wishlist")).body).toEqual([]);
     expect((await fan.put(`/wishlist/${cardId}`)).body).toEqual({ wishlisted: true });
