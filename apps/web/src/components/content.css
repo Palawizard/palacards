@@ -112,6 +112,25 @@
 .pc-loyalty-cell[data-fresh] .pc-loyalty-ink {
   animation: pc-stamp-thunk 420ms var(--ease-out) both;
 }
+/* Tampons bonus après la case 100 : une rangée plus serrée, en pointillés or. */
+.pc-loyalty-grid[data-bonus] {
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: clamp(4px, 0.9vw, 8px);
+  padding: clamp(8px, 1.6vw, 14px);
+  border-color: color-mix(in oklab, var(--color-rarity-l) 40%, transparent);
+}
+@media (min-width: 40rem) {
+  .pc-loyalty-grid[data-bonus] {
+    grid-template-columns: repeat(20, minmax(0, 1fr));
+  }
+}
+.pc-loyalty-grid[data-bonus] .pc-loyalty-cell {
+  border-color: color-mix(in oklab, var(--color-rarity-l) 45%, transparent);
+}
+.pc-loyalty-grid[data-bonus] .pc-loyalty-ink {
+  background: var(--color-rarity-l);
+  color: #2a1600;
+}
 
 /* ------------------------------------------------------------------ */
 /* Article du jour : le titre en grille de mots croisés                */

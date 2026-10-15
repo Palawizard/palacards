@@ -57,6 +57,37 @@ export function passReward(level: number): PassReward {
   return { pw: 0, packs: 1 };
 }
 
+// ---------------------------------------------------------------------------
+// Après le niveau 100 : l'XP continue de compter et chaque tranche donne une récompense bonus
+// répétable, plafonnée par saison. Le compteur repart de 0 avec la saison, comme le reste du passe.
+// ---------------------------------------------------------------------------
+
+/** Une récompense bonus tous les `PASS_BONUS_LEVELS` niveaux d'XP (au prix du niveau 100). */
+export const PASS_BONUS_LEVELS = 5;
+/** XP d'une tranche bonus : 2 500 XP. */
+export const PASS_BONUS_XP = PASS_BONUS_LEVELS * xpForLevel(PASS_MAX_LEVEL);
+/** Plafond de récompenses bonus par saison (50 000 XP après le niveau 100). */
+export const PASS_BONUS_MAX = 20;
+/** Récompense de chaque tranche bonus. */
+export const PASS_BONUS_REWARD: PassReward = { pw: 0, packs: 1 };
+
+export interface PassBonusProgress {
+  /** Récompenses bonus gagnées cette saison (au plus `PASS_BONUS_MAX`). */
+  count: number;
+  /** XP gagnée dans la tranche en cours. */
+  into: number;
+  /** XP de la tranche en cours (0 une fois le plafond atteint). */
+  need: number;
+}
+
+/** Avancement des récompenses bonus pour une XP de saison (rien avant le niveau 100). */
+export function passBonus(xp: number): PassBonusProgress {
+  const extra = Math.max(0, xp - xpToReach(PASS_MAX_LEVEL));
+  const count = Math.min(PASS_BONUS_MAX, Math.floor(extra / PASS_BONUS_XP));
+  if (count >= PASS_BONUS_MAX) return { count, into: 0, need: 0 };
+  return { count, into: extra - count * PASS_BONUS_XP, need: PASS_BONUS_XP };
+}
+
 /** XP gagnée par événement (les quêtes ajoutent la leur à part). */
 export const XP = {
   pack: 10,

@@ -3,6 +3,9 @@ import {
   ARTICLE_SEARCH_MAX_LENGTH,
   BOSS_CARDS_PER_ASSAULT,
   FEED_REACTIONS,
+  PASS_BONUS_MAX,
+  PASS_BONUS_REWARD,
+  PASS_BONUS_XP,
   PASS_MAX_LEVEL,
   passReward,
   WEIRD_GENRES,
@@ -81,8 +84,10 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
     const season = await activeSeason(ctx.db);
     const p = await getPlayer(ctx.db, req.user.id);
     const [s] = await ctx.db.select().from(schema.seasons).where(eq(schema.seasons.id, season));
+    const { bonus, ...state } = passState(p, season);
     return {
-      ...passState(p, season),
+      ...state,
+      bonus: { ...bonus, max: PASS_BONUS_MAX, every: PASS_BONUS_XP, reward: PASS_BONUS_REWARD },
       maxLevel: PASS_MAX_LEVEL,
       levels: Array.from({ length: PASS_MAX_LEVEL }, (_, i) => ({ level: i + 1, reward: passReward(i + 1) })),
       endsAt: s?.endsAt?.toISOString() ?? null,

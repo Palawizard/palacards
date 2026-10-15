@@ -110,24 +110,36 @@ function QuestStamp({
   );
 }
 
-/**
- * La carte de fidélité de la saison : 100 cases à tamponner, une par niveau du passe. Les cases atteintes
- * portent leur tampon (paquets ou PW), les dizaines un gros tampon or ; la prochaine case est entourée.
- */
-function LoyaltyCard({ pass }: { pass: PassDTO }) {
-  const prevLevel = useRef(pass.level);
+/** Cases tamponnées depuis le dernier rendu (de `prev + 1` à `value`), pour leur coup de tampon. */
+function useFreshStamps(value: number) {
+  const prev = useRef(value);
   const [fresh, setFresh] = useState<Set<number>>(new Set());
   useEffect(() => {
-    if (pass.level > prevLevel.current) {
+    if (value > prev.current) {
       const gained = new Set<number>();
-      for (let n = prevLevel.current + 1; n <= pass.level; n++) gained.add(n);
+      for (let n = prev.current + 1; n <= value; n++) gained.add(n);
       setFresh(gained);
       play("achievement");
     }
-    prevLevel.current = pass.level;
-  }, [pass.level]);
+    prev.current = value;
+  }, [value]);
+  return fresh;
+}
+
+/**
+ * La carte de fidélité de la saison : 100 cases à tamponner, une par niveau du passe. Les cases atteintes
+ * portent leur tampon (paquets ou PW), les dizaines un gros tampon or ; la prochaine case est entourée.
+ * Après la case 100, l'XP remplit une rangée de tampons bonus (plafonnée par saison).
+ */
+function LoyaltyCard({ pass }: { pass: PassDTO }) {
+  const fresh = useFreshStamps(pass.level);
+  const freshBonus = useFreshStamps(pass.bonus.count);
+  const { bonus } = pass;
+  const complete = pass.level >= pass.maxLevel;
   const next = pass.levels[pass.level];
-  const pct = pass.need ? Math.round((pass.into / pass.need) * 100) : 100;
+  const into = complete ? bonus.into : pass.into;
+  const need = complete ? bonus.need : pass.need;
+  const pct = need ? Math.round((into / need) * 100) : 100;
 
   return (
     <section
@@ -149,6 +161,11 @@ function LoyaltyCard({ pass }: { pass: PassDTO }) {
             {pass.level}
             <span className="text-[1.2rem] text-cover-muted">/{pass.maxLevel}</span>
           </p>
+          {bonus.count > 0 && (
+            <p className="tnum mt-1 text-sm font-semibold text-rarity-l">
+              +{bonus.count} bonus{bonus.count >= bonus.max ? " (max)" : ""}
+            </p>
+          )}
         </div>
       </div>
 
@@ -161,11 +178,17 @@ function LoyaltyCard({ pass }: { pass: PassDTO }) {
         </div>
         <p className="tnum mt-1.5 flex flex-wrap justify-between gap-2 text-xs text-cover-muted">
           <span>
-            {pass.need
+            {!complete
               ? `${fmt(pass.into)} / ${fmt(pass.need)} XP vers le niveau ${pass.level + 1}`
-              : "Carte complète !"}
+              : bonus.need
+                ? `${fmt(bonus.into)} / ${fmt(bonus.need)} XP vers le tampon bonus n° ${bonus.count + 1}`
+                : "Carte complète, tous les bonus sont tamponnés !"}
           </span>
-          {next && <span>Prochain tampon : {rewardText(next.reward)}</span>}
+          {next ? (
+            <span>Prochain tampon : {rewardText(next.reward)}</span>
+          ) : (
+            bonus.need > 0 && <span>Prochain bonus : {rewardText(bonus.reward)}</span>
+          )}
         </p>
       </div>
 
@@ -204,6 +227,46 @@ function LoyaltyCard({ pass }: { pass: PassDTO }) {
           );
         })}
       </ol>
+
+      <div className="mx-auto mt-5 max-w-[46rem]">
+        <h3 className="flex items-baseline justify-between gap-3 font-display text-lg uppercase leading-none">
+          Tampons bonus
+          <span className="tnum font-sans text-sm font-semibold normal-case text-cover-muted">
+            {bonus.count}/{bonus.max}
+          </span>
+        </h3>
+        <p className="mt-1 text-xs text-cover-muted">
+          Après la case 100, l&apos;XP continue de compter : {rewardText(bonus.reward)} tous les {fmt(bonus.every)} XP,
+          jusqu&apos;à {bonus.max} par saison.
+        </p>
+        <ol className="pc-loyalty-grid mt-2.5" data-bonus aria-label="Tampons bonus du passe de saison">
+          {Array.from({ length: bonus.max }, (_, i) => i + 1).map((n) => {
+            const reached = n <= bonus.count;
+            const label = `Bonus ${n} : ${rewardText(bonus.reward)}${reached ? " (obtenu)" : ""}`;
+            return (
+              <li
+                key={n}
+                className="pc-loyalty-cell"
+                data-reached={reached || undefined}
+                data-next={(complete && n === bonus.count + 1) || undefined}
+                data-fresh={freshBonus.has(n) || undefined}
+                title={label}
+                aria-label={label}
+              >
+                {reached ? (
+                  <span className="pc-loyalty-ink" aria-hidden>
+                    <Package className="size-[55%]" strokeWidth={2.5} />
+                  </span>
+                ) : (
+                  <span className="tnum font-semibold" aria-hidden>
+                    {n}
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </section>
   );
 }
