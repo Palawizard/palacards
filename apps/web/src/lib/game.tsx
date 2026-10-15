@@ -61,6 +61,7 @@ const NOTIFICATION_SFX: Partial<Record<string, Sfx>> = {
   title_won: "achievement",
   quest_completed: "coin",
   pass_level: "achievement",
+  pass_bonus: "achievement",
   boss_killed: "victory",
   boss_phase: "victory",
   boss_mvp: "achievement",

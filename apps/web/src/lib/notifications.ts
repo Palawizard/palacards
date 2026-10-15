@@ -83,6 +83,14 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
     }
     case "pass_level":
       return { text: `Passe de saison : niveau ${n(p.level)} atteint !`, href: "/quests" };
+    case "pass_bonus": {
+      const r = (p.reward ?? {}) as { packs?: unknown };
+      const packs = n(r.packs);
+      return {
+        text: `Passe de saison : tampon bonus ${n(p.count)}/${n(p.max)}, +${packs} paquet${packs > 1 ? "s" : ""} bonus !`,
+        href: "/quests",
+      };
+    }
     case "boss_killed": {
       const r = (p.reward ?? {}) as { pw?: unknown; packs?: unknown };
       return {

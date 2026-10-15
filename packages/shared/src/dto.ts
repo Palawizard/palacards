@@ -280,6 +280,11 @@ export interface PassDTO {
   maxLevel: number;
   /** Les 100 paliers et leur récompense. */
   levels: PassLevelDTO[];
+  /**
+   * Après le niveau 100 : une récompense bonus par tranche de `every` XP, au plus `max` par saison.
+   * `count` gagnées, `into` / `need` vers la suivante (`need` à 0 une fois le plafond atteint).
+   */
+  bonus: { count: number; max: number; into: number; need: number; every: number; reward: PassLevelDTO["reward"] };
   /** Fin de la saison (le passe repart de 0). */
   endsAt: string | null;
   /** XP par action, pour la légende « Comment gagner de l'XP ». */

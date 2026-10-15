@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { GameEvent } from "./achievements.js";
 import { autoRecyclePicks, isBetterCopy } from "./collection.js";
 import { weirdGenresOfTitle } from "./feed.js";
-import { PASS_MAX_LEVEL, passProgress, passReward, xpForEvent, xpToReach } from "./pass.js";
+import {
+  PASS_BONUS_MAX,
+  PASS_BONUS_XP,
+  PASS_MAX_LEVEL,
+  passBonus,
+  passProgress,
+  passReward,
+  xpForEvent,
+  xpToReach,
+} from "./pass.js";
 import { dailyQuests, QUEST_POOL, questLabel, questProgress, rerollQuest, weeklyQuest } from "./quests.js";
 import { recycleValue, rollShiny, SHINY_CHANCE } from "./shiny.js";
 
@@ -30,6 +39,18 @@ describe("passe de saison", () => {
     expect(passReward(2)).toEqual({ pw: 51, packs: 0 });
     expect(passReward(10)).toEqual({ pw: 150, packs: 3 });
     expect(passReward(100)).toEqual({ pw: 1_000, packs: 5 });
+  });
+
+  it("donne une récompense bonus par tranche d'XP après le niveau 100, plafonnée par saison", () => {
+    const top = xpToReach(PASS_MAX_LEVEL);
+    expect(PASS_BONUS_XP).toBe(2_500);
+    expect(passBonus(0)).toEqual({ count: 0, into: 0, need: 2_500 });
+    expect(passBonus(top - 1)).toEqual({ count: 0, into: 0, need: 2_500 });
+    expect(passBonus(top + 2_499)).toEqual({ count: 0, into: 2_499, need: 2_500 });
+    expect(passBonus(top + 2_500)).toEqual({ count: 1, into: 0, need: 2_500 });
+    expect(passBonus(top + 3 * 2_500 + 10)).toEqual({ count: 3, into: 10, need: 2_500 });
+    expect(passBonus(top + PASS_BONUS_MAX * 2_500)).toEqual({ count: PASS_BONUS_MAX, into: 0, need: 0 });
+    expect(passBonus(10_000_000)).toEqual({ count: PASS_BONUS_MAX, into: 0, need: 0 });
   });
 
   it("donne de l'XP pour chaque paquet ouvert, plus pour un booster à thème", () => {
