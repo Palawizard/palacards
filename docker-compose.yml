@@ -18,6 +18,10 @@ services:
     image: postgres:17.6-alpine
     container_name: palacards-postgres
     restart: unless-stopped
+    # /dev/shm de Docker = 64 Mo par défaut : trop peu pour les hash joins parallèles de Postgres
+    # (ex. /boss/cards sur les collections de plus de ~14 000 cartes : « could not resize shared
+    # memory segment ... No space left on device »).
+    shm_size: 512mb
     # Seulement ses variables, pas tout le .env : sinon toute modification du .env recrée Postgres
     # (coupure de la base) au déploiement suivant.
     environment:
