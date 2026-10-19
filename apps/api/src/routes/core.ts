@@ -1,6 +1,6 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
 import { AUTO_RECYCLE_RARITIES, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
-import { avatarSchema, type MeDTO } from "@palacards/shared";
+import { avatarSchema, collectionThemeParam, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
@@ -221,7 +221,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     season: intParam.positive().optional(),
     tag: z.string().max(24).optional(),
     notTag: z.string().max(24).optional(),
-    theme: intParam.positive().optional(),
+    theme: collectionThemeParam.optional(),
     favorites: filterModeParam,
     shiny: filterModeParam,
     duplicates: filterModeParam,

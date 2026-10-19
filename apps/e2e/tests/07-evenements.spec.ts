@@ -97,7 +97,18 @@ test("roues du jour : la petite tout de suite, la moyenne après 2 h 30", async 
   expect((await apiCall<Me>(page, "GET", "/me")).wheelReady).toBe(true);
   await page.goto("wheel");
   await expect(page.getByRole("button", { name: /Moyenne/ })).toContainText("2 h 30 après la petite");
+  // Pendant la rotation, ni le solde ni le stock de paquets du bandeau ne trahissent le lot.
+  const balance = page.locator('a[href$="/settings#wallet"]');
+  // Stock gratuit et paquets bonus (sans le compte à rebours, qui avance tout seul).
+  const stock = page.locator('a[href$="/pulls"][title] span.tnum:not(.hidden)');
+  await expect(balance).not.toHaveText(/…/);
+  const shown = async () => ({ balance: await balance.innerText(), stock: await stock.allInnerTexts() });
+  const before = await shown();
   await page.getByRole("button", { name: "Tourner la petite roue" }).click();
+  await expect(page.getByRole("button", { name: "La roue tourne…" })).toBeVisible();
+  await page.waitForTimeout(1_500);
+  await expect(page.getByRole("button", { name: "La roue tourne…" })).toBeVisible();
+  expect(await shown()).toEqual(before);
   await expect(page.getByRole("heading", { name: "Gagné" })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Déjà tournée aujourd'hui" })).toBeDisabled();
   await expect(page.getByRole("button", { name: /Petite/ })).toContainText("Tournée");

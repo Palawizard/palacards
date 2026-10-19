@@ -6,6 +6,7 @@ import {
   UPGRADE_MAX_CARDS,
   UPGRADE_MIN_CARDS,
 } from "@palacards/game";
+import { collectionThemeParam } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
@@ -142,7 +143,7 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
         shiny: filterModeParam,
         duplicates: filterModeParam,
         season: z.coerce.number().int().positive().optional(),
-        theme: z.coerce.number().int().positive().optional(),
+        theme: collectionThemeParam.optional(),
         tag: z.string().max(24).optional(),
         notTag: z.string().max(24).optional(),
         tagged: filterModeParam,

@@ -54,7 +54,7 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Carte de saison : 10 × 10 cases à tamponner                         */
+/* Carte de saison : 10 × 10 cases à tamponner, au recto et au verso   */
 /* ------------------------------------------------------------------ */
 
 .pc-loyalty {
@@ -111,6 +111,23 @@
 }
 .pc-loyalty-cell[data-fresh] .pc-loyalty-ink {
   animation: pc-stamp-thunk 420ms var(--ease-out) both;
+}
+/* Recto (1 à 100) et verso (101 à 200) : pastilles en verre clair posées sur la couverture. */
+.pc-loyalty-faces .chip {
+  border-color: rgb(255 255 255 / 0.3);
+  background: rgb(255 255 255 / 0.1);
+  color: var(--color-cover-ink);
+}
+.pc-loyalty-faces .chip[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-accent-ink);
+}
+@media (hover: hover) and (pointer: fine) {
+  .pc-loyalty-faces .chip:not([aria-pressed="true"]):hover {
+    border-color: rgb(255 255 255 / 0.55);
+    background: rgb(255 255 255 / 0.18);
+  }
 }
 
 /* ------------------------------------------------------------------ */

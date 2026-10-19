@@ -591,7 +591,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     ["pass_10", 10, "Saison lancée", 100],
     ["pass_25", 25, "Mi-parcours", 300],
     ["pass_50", 50, "Cap des 50", 800],
-    ["pass_100", 100, "Saison bouclée", 3_000],
+    ["pass_100", 100, "Recto tamponné", 3_000],
+    ["pass_150", 150, "Verso entamé", 4_000],
+    ["pass_200", 200, "Saison bouclée", 6_000],
   ]),
   secret("secret_meta", "secret_meta", "Mise en abyme", "Tirer l'article « Wikipédia ».", 500),
   secret(

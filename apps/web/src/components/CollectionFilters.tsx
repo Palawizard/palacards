@@ -1,5 +1,6 @@
 // Filtres de collection partagés, importés uniquement par des composants client.
 import type { Rarity } from "@palacards/game";
+import { CLASSIC_THEME } from "@palacards/shared";
 import { RotateCcw, Search } from "lucide-react";
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { RarityFilter, Select, Toggle, TriToggle, type FilterMode } from "@/components/ui";
@@ -17,6 +18,8 @@ const SORTS = [
 export type CollectionSort = (typeof SORTS)[number]["value"];
 /** Tri pris d'office avec le filtre « Doublons », tant que le joueur (ou la page) n'en a pas choisi un. */
 const DUPLICATES_SORT: CollectionSort = "copies";
+/** Option du menu « Booster » : les articles d'aucun booster à thème, donc des seuls paquets classiques. */
+const CLASSIC_THEME_LABEL = "Classique";
 /** Sans « Vues » chez les autres : elles donneraient la réponse de « Plus lu » en duel. */
 const OTHER_SORTS = SORTS.filter((s) => s.value !== "views");
 
@@ -34,6 +37,7 @@ export interface CollectionFilterState {
   tag: string;
   /** Toutes sauf les cartes portant ce tag (l'un ou l'autre, choisi dans le même menu). */
   notTag: string;
+  /** Id d'un booster à thème, ou `classic` (articles d'aucun booster à thème). */
   theme: string;
   season: string;
   sort: CollectionSort;
@@ -242,6 +246,7 @@ export function CollectionFilterBar({
             onChange={(theme) => set({ theme })}
             options={[
               { value: "", label: "Tous les boosters" },
+              { value: CLASSIC_THEME, label: CLASSIC_THEME_LABEL },
               ...options.themes.map((t) => ({ value: String(t.id), label: t.name })),
             ]}
           />

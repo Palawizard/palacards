@@ -3,13 +3,22 @@
 import type { ClientToServerEvents, MeDTO, ServerToClientEvents } from "@palacards/shared";
 import { RARITY_LABELS } from "@palacards/game";
 import { useRouter } from "next/navigation";
-import { createContext, useContext, useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { io, type Socket } from "socket.io-client";
 import useSWR, { SWRConfig, type KeyedMutator } from "swr";
 import { toast } from "sonner";
 import { api, API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
 import { describe } from "./notifications";
-import { play, unlockAudioOnFirstGesture, type Sfx } from "./sfx";
+import { play, unlockAudioOnGestures, type Sfx } from "./sfx";
 import { setArthropodFlag } from "./arthropods";
 import { pushMedia } from "./media";
 
@@ -21,7 +30,23 @@ interface GameContextValue {
   connection: number;
   me: MeDTO | undefined;
   mutateMe: KeyedMutator<MeDTO>;
+  /** Retient les nouvelles (voir `useHoldNews`) ; renvoie la fonction qui les relâche. */
+  holdNews: () => () => void;
+  /** Lance `fn` tout de suite, ou à la fin de la retenue en cours. */
+  afterHold: (fn: () => void) => void;
 }
+
+/**
+ * Événements qui pourraient trahir le lot d'un tirage en cours (solde, paquets, succès, quêtes, fil) :
+ * retenus pendant l'animation d'une roue ou de l'upgrader.
+ */
+const NEWS_EVENTS = new Set<keyof ServerToClientEvents>([
+  "wallet:update",
+  "packs:update",
+  "notification:new",
+  "progress:update",
+  "feed:new",
+]);
 
 const GameContext = createContext<GameContextValue | null>(null);
 
@@ -38,20 +63,50 @@ export const useMe = () => {
 export const useSocket = () => useGame().socket;
 export const useConnection = () => useGame().connection;
 
+/**
+ * Suspense d'un tirage : `hold()` fige le profil affiché (solde, paquets, compteurs du menu) et met de côté
+ * les notifications et nouvelles en direct jusqu'à l'appel de la fonction renvoyée, à la fin de l'animation.
+ * Le serveur a déjà tout enregistré : seul l'affichage attend. Relâché aussi si la page est quittée.
+ */
+export function useHoldNews() {
+  const { holdNews } = useGame();
+  const release = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      release.current?.();
+      release.current = null;
+    },
+    [],
+  );
+  const hold = useCallback(() => {
+    release.current?.();
+    const done = holdNews();
+    const once = () => {
+      if (release.current !== once) return;
+      release.current = null;
+      done();
+    };
+    release.current = once;
+    return once;
+  }, [holdNews]);
+  return hold;
+}
+
 /** Écoute un événement temps réel tant que le composant est monté. */
 export function useSocketEvent<E extends keyof ServerToClientEvents>(event: E, handler: ServerToClientEvents[E]) {
-  const socket = useSocket();
+  const { socket, afterHold } = useGame();
   const onEvent = useEffectEvent((...args: Parameters<ServerToClientEvents[E]>) => {
     (handler as (...a: Parameters<ServerToClientEvents[E]>) => void)(...args);
   });
   useEffect(() => {
     if (!socket) return;
-    const listener = ((...args: Parameters<ServerToClientEvents[E]>) => onEvent(...args)) as never;
+    const listener = ((...args: Parameters<ServerToClientEvents[E]>) =>
+      NEWS_EVENTS.has(event) ? afterHold(() => onEvent(...args)) : onEvent(...args)) as never;
     socket.on(event, listener);
     return () => {
       socket.off(event, listener);
     };
-  }, [socket, event]);
+  }, [socket, event, afterHold]);
 }
 
 /** Bruitages des notifications reçues en direct (les autres restent silencieuses). */
@@ -83,24 +138,61 @@ export function GameProvider({ children }: { children: ReactNode }) {
     meId.current = me?.id ?? null;
   }, [me?.id]);
 
+  // Retenue des nouvelles pendant un tirage (voir `useHoldNews`) : profil figé et événements en file.
+  const latestMe = useRef(me);
+  useEffect(() => {
+    latestMe.current = me;
+  }, [me]);
+  const holds = useRef(0);
+  const held = useRef<(() => void)[]>([]);
+  const [frozenMe, setFrozenMe] = useState<MeDTO | null>(null);
+  const afterHold = useCallback((fn: () => void) => {
+    if (holds.current) held.current.push(fn);
+    else fn();
+  }, []);
+  const holdNews = useCallback(() => {
+    if (holds.current++ === 0) setFrozenMe(latestMe.current ?? null);
+    return () => {
+      if (--holds.current > 0) return;
+      setFrozenMe(null);
+      const queue = held.current;
+      held.current = [];
+      for (const fn of queue) fn();
+    };
+  }, []);
+
   useEffect(() => {
     if (error instanceof ApiError && error.status === 401) router.replace("/login");
   }, [error, router]);
 
-  // Les navigateurs n'autorisent le son qu'après un geste : on prépare l'audio au premier clic.
-  useEffect(() => unlockAudioOnFirstGesture(), []);
+  // Les navigateurs n'autorisent le son qu'après un geste : on (re)lance l'audio aux gestes du joueur.
+  useEffect(() => unlockAudioOnGestures(), []);
 
   useEffect(() => {
     const s: GameSocket = io(API_URL || undefined, { path: SOCKET_PATH, withCredentials: true });
-    s.on("wallet:update", (wallet) => void mutateMe((m) => (m ? { ...m, wallet } : m), { revalidate: false }));
-    s.on("packs:update", (packs) => void mutateMe((m) => (m ? { ...m, packs } : m), { revalidate: false }));
-    s.on("notification:new", (n) => {
-      void mutateMe((m) => (m ? { ...m, unreadNotifications: n.unread } : m), { revalidate: false });
-      const { text, href } = describe(n);
-      const sound = NOTIFICATION_SFX[n.type];
-      if (sound) play(sound);
-      toast(text, { action: { label: "Voir", onClick: () => router.push(href) } });
-    });
+    // Nouvelles d'un tirage : rien ne doit s'afficher avant la fin de son animation.
+    const news =
+      <A extends unknown[]>(fn: (...a: A) => void) =>
+      (...a: A) =>
+        afterHold(() => fn(...a));
+    s.on(
+      "wallet:update",
+      news((wallet) => void mutateMe((m) => (m ? { ...m, wallet } : m), { revalidate: false })),
+    );
+    s.on(
+      "packs:update",
+      news((packs) => void mutateMe((m) => (m ? { ...m, packs } : m), { revalidate: false })),
+    );
+    s.on(
+      "notification:new",
+      news((n) => {
+        void mutateMe((m) => (m ? { ...m, unreadNotifications: n.unread } : m), { revalidate: false });
+        const { text, href } = describe(n);
+        const sound = NOTIFICATION_SFX[n.type];
+        if (sound) play(sound);
+        toast(text, { action: { label: "Voir", onClick: () => router.push(href) } });
+      }),
+    );
     s.on("message:new", () => void mutateMe());
     // Défi accepté : le duel attend le challenger sur son écran (2 minutes pour le rejoindre).
     s.on("battle:update", ({ battleId, started, opponent, matched }) => {
@@ -130,21 +222,27 @@ export function GameProvider({ children }: { children: ReactNode }) {
       pushMedia(m);
     });
     // Quêtes, passe, succès : les compteurs du menu suivent.
-    s.on("progress:update", () => void mutateMe());
+    s.on(
+      "progress:update",
+      news(() => void mutateMe()),
+    );
     // Boss du jour : la phase en cours suit les coups de toute la bande.
     s.on("boss:update", (b) => {
       if (b.fell.length)
         void mutateMe((m) => (m ? { ...m, boss: { ...m.boss, phase: b.phase } } : m), { revalidate: false });
     });
     // Gros tirage d'un pote (Légendaire ou brillante) : on le dit à toute la bande.
-    s.on("feed:new", (item) => {
-      if (item.user.id === meId.current) return;
-      if (item.card.rarity !== "L" && !item.card.shiny) return;
-      const what = `${RARITY_LABELS[item.card.rarity]}${item.card.shiny ? " brillante" : ""}`;
-      toast(`${item.user.name} a tiré ${item.card.title} (${what}) !`, {
-        action: { label: "Voir", onClick: () => router.push("/feed") },
-      });
-    });
+    s.on(
+      "feed:new",
+      news((item) => {
+        if (item.user.id === meId.current) return;
+        if (item.card.rarity !== "L" && !item.card.shiny) return;
+        const what = `${RARITY_LABELS[item.card.rarity]}${item.card.shiny ? " brillante" : ""}`;
+        toast(`${item.user.name} a tiré ${item.card.title} (${what}) !`, {
+          action: { label: "Voir", onClick: () => router.push("/feed") },
+        });
+      }),
+    );
     // Exposé aux composants une fois connecté ; après une coupure, on relit l'état manqué.
     s.on("connect", () => {
       setSocket(s);
@@ -154,7 +252,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return () => {
       s.disconnect();
     };
-  }, [mutateMe, router]);
+  }, [mutateMe, router, afterHold]);
 
   // Bonus de connexion du jour, réclamé une fois par chargement (le serveur l'accorde une fois par jour).
   // Aussi au retour sur l'onglet et après une reconnexion : un onglet ouvert passé minuit le touche.
@@ -177,7 +275,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [loggedIn, connection]);
 
-  return <GameContext.Provider value={{ socket, connection, me, mutateMe }}>{children}</GameContext.Provider>;
+  return (
+    <GameContext.Provider value={{ socket, connection, me: frozenMe ?? me, mutateMe, holdNews, afterHold }}>
+      {children}
+    </GameContext.Provider>
+  );
 }
 
 export function SwrProvider({ children }: { children: ReactNode }) {

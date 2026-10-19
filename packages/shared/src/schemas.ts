@@ -79,3 +79,10 @@ export const suggestionInputSchema = z.object({
 export const suggestionAnswerSchema = z.object({
   body: z.string().trim().min(2, "2 caractères minimum").max(SUGGESTION_LIMITS.answer),
 });
+
+/**
+ * Filtre « Booster » de la collection : `theme=classic` garde les articles qui ne font partie d'aucun booster à
+ * thème (ceux des seuls paquets classiques) ; sinon `theme` est l'id d'un booster.
+ */
+export const CLASSIC_THEME = "classic";
+export const collectionThemeParam = z.union([z.literal(CLASSIC_THEME), z.coerce.number().int().positive()]);
