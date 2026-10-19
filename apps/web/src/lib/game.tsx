@@ -18,7 +18,7 @@ import useSWR, { SWRConfig, type KeyedMutator } from "swr";
 import { toast } from "sonner";
 import { api, API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
 import { describe } from "./notifications";
-import { play, unlockAudioOnFirstGesture, type Sfx } from "./sfx";
+import { play, unlockAudioOnGestures, type Sfx } from "./sfx";
 import { setArthropodFlag } from "./arthropods";
 import { pushMedia } from "./media";
 
@@ -165,8 +165,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (error instanceof ApiError && error.status === 401) router.replace("/login");
   }, [error, router]);
 
-  // Les navigateurs n'autorisent le son qu'après un geste : on prépare l'audio au premier clic.
-  useEffect(() => unlockAudioOnFirstGesture(), []);
+  // Les navigateurs n'autorisent le son qu'après un geste : on (re)lance l'audio aux gestes du joueur.
+  useEffect(() => unlockAudioOnGestures(), []);
 
   useEffect(() => {
     const s: GameSocket = io(API_URL || undefined, { path: SOCKET_PATH, withCredentials: true });
