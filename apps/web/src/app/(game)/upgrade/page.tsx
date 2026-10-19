@@ -36,7 +36,7 @@ import { chanceText, UpgradeDial, type DialState } from "@/components/UpgradeDia
 import { UpgradeSeries } from "@/components/UpgradeSeries";
 import { api, ApiError, thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import { useMe } from "@/lib/game";
+import { useHoldNews, useMe } from "@/lib/game";
 import { useCardMedia } from "@/lib/media";
 import { play } from "@/lib/sfx";
 import { useStoredFlag } from "@/lib/use-stored-flag";
@@ -105,6 +105,7 @@ export default function UpgradePage() {
   const reduce = useReducedMotion();
   // Réglage « Upgrader sans animation » : pas de tour d'aiguille, le résultat s'affiche dès la réponse du serveur.
   const { me } = useMe();
+  const holdNews = useHoldNews();
   const quick = !!me?.quickUpgrade;
   const [rarity, setRarity] = useState<Rarity>("C");
   // Mêmes filtres que la collection (recherche dans le résumé, tags, booster…), sauf la rareté, fixée par l'établi.
@@ -281,6 +282,8 @@ export default function UpgradePage() {
       if (box && (box.top < 64 || box.bottom > window.innerHeight))
         dialRef.current?.scrollIntoView({ block: "center", behavior: reduce ? "auto" : "smooth" });
     });
+    // Solde (quart remboursé), succès et fil n'annoncent l'issue qu'une fois l'aiguille arrêtée.
+    const release = holdNews();
     try {
       const [res] = await Promise.all([
         api<UpgradeResultDTO>("/upgrade", { body: { instanceIds: picked.map((c) => c.instanceId) } }),
@@ -310,12 +313,25 @@ export default function UpgradePage() {
       setInstant(fast);
       setPhase("done");
       if (res.success) {
-        if (fast) setRevealed(true);
-        else setTimeout(() => setRevealed(true), reduce ? 0 : 380);
-      } else play("wrong");
+        if (fast) {
+          setRevealed(true);
+          release();
+        } else
+          setTimeout(
+            () => {
+              setRevealed(true);
+              release();
+            },
+            reduce ? 0 : 380,
+          );
+      } else {
+        play("wrong");
+        release();
+      }
       void list.mutate();
       void revalidate((key) => typeof key === "string" && key.startsWith(`/upgrade/series?rarity=${rarity}`));
     } catch (err) {
+      release();
       setPhase("idle");
       setResult(null);
       toast.error(err instanceof ApiError ? err.message : "Upgrade impossible.");
