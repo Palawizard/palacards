@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
-import { play, setSfxEnabled, setSfxVolume, useSfxEnabled, useSfxVolume } from "@/lib/sfx";
+import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { isIos, play, setSfxEnabled, setSfxVolume, useSfxEnabled, useSfxVolume } from "@/lib/sfx";
 
 /** Délai avant le son d'essai : on attend que le curseur se pose au lieu de jouer à chaque cran. */
 const PREVIEW_DELAY_MS = 180;
@@ -42,6 +42,22 @@ export function VolumeControl({ className = "" }: { className?: string }) {
         }}
       />
     </div>
+  );
+}
+
+const noop = () => () => {};
+
+/**
+ * Note sous les réglages de son. Sur iPhone et iPad, le bouton de mode silencieux coupe aussi le
+ * jeu : on le dit, sinon un joueur croit les sons cassés.
+ */
+export function SoundNote() {
+  const ios = useSyncExternalStore(noop, isIos, () => false);
+  return (
+    <p className="mt-2 text-xs text-faint">
+      Enregistré sur cet appareil.
+      {ios && " Le mode silencieux de l'iPhone coupe aussi les sons du jeu."}
+    </p>
   );
 }
 
