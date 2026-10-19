@@ -8,7 +8,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { Avatar } from "@/components/Avatar";
-import { SoundSettings } from "@/components/SoundSettings";
+import { SoundNote, SoundSettings } from "@/components/SoundSettings";
 import { ConfirmDialog } from "@/components/ui";
 import { api, API_BASE, ApiError, BASE_PATH } from "@/lib/api";
 import { prepareAvatar } from "@/lib/avatar-image";
@@ -296,7 +296,7 @@ export default function SettingsPage() {
 
       <Section title="Sons" id="sons">
         <SoundSettings />
-        <p className="mt-2 text-xs text-faint">Enregistré sur cet appareil.</p>
+        <SoundNote />
       </Section>
 
       <Section title="Ouverture des paquets">

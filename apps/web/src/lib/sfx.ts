@@ -161,27 +161,66 @@ function engine(): { ctx: AudioContext; out: GainNode } | null {
     master.gain.value = gainFor(readVolume());
     master.connect(comp).connect(ctx.destination);
   }
-  if (ctx.state === "suspended") void ctx.resume();
+  // « suspended » avant le premier geste, « interrupted » sur iOS après un appel ou un retour
+  // d'arrière-plan : dans les deux cas, on relance.
+  if (ctx.state !== "running") void ctx.resume().catch(() => {});
   return { ctx, out: master! };
 }
 
 /**
- * Débloque l'audio au premier geste (iOS exige un démarrage dans un gestionnaire d'événement).
- * Renvoie de quoi retirer les écouteurs.
+ * Sur iPhone, le mode silencieux coupe aussi les sons du jeu (comportement normal d'iOS, et la
+ * musique du joueur continue). À `true`, le jeu sonne malgré le mode silencieux, mais met en pause
+ * la musique en cours (Safari 17 et plus).
  */
-export function unlockAudioOnFirstGesture(): () => void {
+const IGNORE_IOS_SILENT_MODE = false;
+
+/**
+ * Évènements qu'un navigateur accepte comme geste pour lancer l'audio. Au doigt, seul le relâché
+ * compte (`pointerup`, `touchend`) : `pointerdown` ne suffit qu'à la souris.
+ */
+const GESTURES = ["pointerdown", "pointerup", "touchend", "click", "keydown"] as const;
+
+/** Démarre (ou relance) l'audio pendant un geste du joueur, si le son est activé. */
+function wakeAudio() {
+  if (!readAudible() || ctx?.state === "running") return;
+  if (IGNORE_IOS_SILENT_MODE) {
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session) session.type = "playback";
+  }
+  const e = engine();
+  if (!e) return;
+  // Anciennes versions d'iOS : un son muet joué pendant le geste ouvre la sortie pour de bon.
+  try {
+    const src = e.ctx.createBufferSource();
+    src.buffer = e.ctx.createBuffer(1, 1, e.ctx.sampleRate);
+    src.connect(e.ctx.destination);
+    src.start();
+  } catch {
+    // sans conséquence : le resume() suffit sur les navigateurs récents
+  }
+}
+
+/**
+ * Débloque l'audio au geste du joueur (iOS exige un démarrage dans un gestionnaire d'événement).
+ * Les écouteurs restent en place : iOS suspend l'audio en arrière-plan ou pendant un appel, et
+ * seul un nouveau geste le relance. Tant que l'audio tourne, ils ne font rien. Renvoie de quoi
+ * retirer les écouteurs.
+ */
+export function unlockAudioOnGestures(): () => void {
   if (typeof window === "undefined") return () => {};
-  const unlock = () => {
-    if (readAudible()) engine();
-    remove();
+  const opts = { capture: true, passive: true };
+  for (const type of GESTURES) window.addEventListener(type, wakeAudio, opts);
+  return () => {
+    for (const type of GESTURES) window.removeEventListener(type, wakeAudio, opts);
   };
-  const remove = () => {
-    window.removeEventListener("pointerdown", unlock);
-    window.removeEventListener("keydown", unlock);
-  };
-  window.addEventListener("pointerdown", unlock, { passive: true });
-  window.addEventListener("keydown", unlock);
-  return remove;
+}
+
+/** Appareil iOS (iPhone, iPad, y compris l'iPad qui se présente comme un Mac). */
+export function isIos(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return (
+    /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  );
 }
 
 type Env = { a?: number; d: number; peak?: number };
@@ -387,21 +426,31 @@ const lastPlayed = new Map<string, number>();
  * Joue un bruitage (sans effet si le son est coupé, à 0 %, ou si le navigateur n'a pas encore
  * autorisé l'audio).
  */
-export function play(name: Sfx, delayMs = 0, retry = true) {
+export function play(name: Sfx, delayMs = 0) {
   if (!readAudible()) return;
   const at = performance.now() + delayMs;
   if (Math.abs(at - (lastPlayed.get(name) ?? -1e9)) < 45) return;
   lastPlayed.set(name, at);
   const e = engine();
-  if (!e || e.ctx.state !== "running") {
-    // Premier son juste après le geste : le contexte finit de démarrer, on rejoue une seule fois.
-    if (e && retry && e.ctx.state === "suspended")
-      void e.ctx.resume().then(
-        () => play(name, delayMs, false),
-        () => {},
-      );
-    return;
-  }
+  if (!e) return;
+  if (e.ctx.state === "running") return schedule(e, name, delayMs);
+  // Premier son juste après le geste : le contexte finit de démarrer, on joue dès qu'il tourne. Un
+  // son qui attendrait plus longtemps (iOS sans geste) tomberait à contretemps : on l'abandonne.
+  if (e.ctx.state === "closed") return;
+  const asked = performance.now();
+  void e.ctx.resume().then(
+    () => {
+      const late = performance.now() - asked;
+      if (late < MAX_RESUME_WAIT_MS) schedule(e, name, Math.max(0, delayMs - late));
+    },
+    () => {},
+  );
+}
+
+/** Attente maximale du démarrage de l'audio avant d'abandonner un son. */
+const MAX_RESUME_WAIT_MS = 300;
+
+function schedule(e: { ctx: AudioContext; out: GainNode }, name: Sfx, delayMs: number) {
   try {
     RECIPES[name](e.ctx, e.out, e.ctx.currentTime + 0.01 + delayMs / 1000);
   } catch {

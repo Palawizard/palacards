@@ -14,7 +14,7 @@ import { ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { countdown, fmt } from "@/lib/format";
 import { useSeenFeature } from "@/lib/features";
-import { useMe } from "@/lib/game";
+import { useHoldNews, useMe } from "@/lib/game";
 import { play } from "@/lib/sfx";
 import { useNow } from "@/lib/use-now";
 import "@/components/content.css";
@@ -181,6 +181,7 @@ function stationText(
 export default function WheelPage() {
   useSeenFeature("wheels");
   const { me, mutateMe } = useMe();
+  const holdNews = useHoldNews();
   const wheel = useSWR<WheelDTO>("/wheel");
   const reduce = useReducedMotion();
   const rotation = useMotionValue(0);
@@ -244,6 +245,8 @@ export default function WheelPage() {
     setResult(null);
     setRevealed(false);
     lastTick.current = Math.floor(rotation.get() / seg);
+    // Solde, paquets, succès et fil n'annoncent le lot qu'une fois la roue arrêtée (et la carte retournée).
+    const release = holdNews();
     try {
       const res = await api<WheelSpinDTO>("/wheel/spin", { method: "POST" });
       // Case gagnante sous le repère (en haut), décalée au hasard dans la case, après plusieurs tours.
@@ -265,9 +268,20 @@ export default function WheelPage() {
         revalidate: false,
       });
       void wheel.mutate(res.wheel, { revalidate: false });
-      if (res.prize.kind === "card") setTimeout(() => setRevealed(true), reduce ? 0 : 450);
-      else play("coin");
+      if (res.prize.kind === "card")
+        setTimeout(
+          () => {
+            setRevealed(true);
+            release();
+          },
+          reduce ? 0 : 450,
+        );
+      else {
+        play("coin");
+        release();
+      }
     } catch (err) {
+      release();
       toast.error(err instanceof ApiError ? err.message : "La roue est coincée, réessaie.");
       void wheel.mutate();
     } finally {

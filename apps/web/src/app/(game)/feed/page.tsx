@@ -27,6 +27,12 @@ const GENRES: { key: string; label: string; icon: LucideIcon }[] = [
 ];
 const genreOf = (key: string) => GENRES.find((g) => g.key === key);
 
+/**
+ * Rechargement de la première page de chaque rayon pendant que la page est visible : seuls les tirages
+ * marquants (UR et plus, brillantes, bizarres) arrivent en direct, les Super rares ne passent que par là.
+ */
+const FEED_REFRESH_MS = 60_000;
+
 const SOURCE: Record<string, string> = {
   pack: "paquet",
   theme: "booster à thème",
@@ -140,11 +146,17 @@ function Shelf({
   children?: React.ReactNode;
 }) {
   const now = useNow(30_000);
+  // La première page est rechargée à chaque retour sur le fil, au retour sur l'onglet et toutes les minutes.
+  // (Avec `revalidateFirstPage: false`, les pages en cache n'étaient plus jamais redemandées : le fil restait
+  // figé sur la première visite tant que l'onglet n'était pas rechargé.)
   const { data, error, size, setSize, isValidating, mutate } = useSWRInfinite<FeedDTO>(
     (i, prev) => (i > 0 && !prev?.nextCursor ? null : `/feed?${query}${i ? `&cursor=${prev!.nextCursor}` : ""}`),
-    { revalidateFirstPage: false },
+    { refreshInterval: FEED_REFRESH_MS },
   );
-  const loaded = data?.flatMap((p) => p.items) ?? [];
+  // Pagination par décalage : un tirage arrivé en tête depuis repousse le dernier d'une page sur la suivante.
+  const loaded = (data?.flatMap((p) => p.items) ?? []).filter(
+    (item, i, all) => all.findIndex((x) => x.id === item.id) === i,
+  );
   const items = [...live.filter((l) => !loaded.some((x) => x.id === l.id)), ...loaded];
   const more = !!data?.at(-1)?.nextCursor;
   return (
