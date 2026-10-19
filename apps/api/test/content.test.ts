@@ -1,14 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import {
-  PASS_BONUS_MAX,
-  PASS_BONUS_REWARD,
-  PASS_BONUS_XP,
-  PASS_MAX_LEVEL,
-  passReward,
-  XP,
-  xpForLevel,
-  xpToReach,
-} from "@palacards/game";
+import { PASS_OVERFLOW_PW, passReward, XP, xpForLevel, xpToReach } from "@palacards/game";
 import type { QuestDTO } from "@palacards/shared";
 import { afterAll, describe, expect, it } from "vitest";
 import { STATS_VERSION, progressionIdle } from "../src/services/progression.js";
@@ -79,7 +70,7 @@ describe("passe de saison", () => {
     await openPacks(p, 1);
     const pass = (await p.get("/pass")).body;
     expect(pass.level).toBe(1);
-    expect(pass.levels).toHaveLength(100);
+    expect(pass.levels).toHaveLength(200);
     const reward = passReward(1);
     expect(await ledgerSum(p.userId, "season_pass", "bonus_pack")).toBe(reward.packs);
     // Un autre paquet ne repaie pas le niveau 1.
@@ -90,54 +81,30 @@ describe("passe de saison", () => {
     expect(board.rows.find((r: { me: boolean }) => r.me)?.value).toBe(1);
   });
 
-  it("après le niveau 100, paie chaque tranche bonus une seule fois, dans la limite du plafond", async () => {
+  it("paie le verso de la carte puis des PW à chaque niveau après 200, une seule fois", async () => {
     const p = await signUp(app);
-    const top = xpToReach(PASS_MAX_LEVEL);
-    // Niveau 100 déjà payé, juste sous la première tranche bonus.
+    // Quêtes neutralisées : seule l'XP du paquet compte.
+    await p.get("/quests");
+    await ctx.db.execute(sql`update player_quests set kind = 'open_packs', target = 99 where user_id = ${p.userId}`);
+    // Un joueur resté au niveau 100 (ancien maximum) avec assez d'XP pour le niveau 202, à 5 XP près.
     await ctx.db.execute(sql`
-      update players set season_xp = ${top + PASS_BONUS_XP - 5}, pass_rewarded = ${PASS_MAX_LEVEL},
+      update players set season_xp = ${xpToReach(202) - 5}, pass_rewarded = 100,
         pass_season = (select id from seasons where status = 'active')
       where user_id = ${p.userId}
     `);
-    const before = (await p.get("/pass")).body;
-    expect(before.level).toBe(PASS_MAX_LEVEL);
-    expect(before.bonus).toMatchObject({ count: 0, into: PASS_BONUS_XP - 5, need: PASS_BONUS_XP, max: PASS_BONUS_MAX });
     await openPacks(p, 1);
-    const after = (await p.get("/pass")).body;
-    expect(after.bonus.count).toBe(1);
-    expect(await ledgerSum(p.userId, "season_pass", "bonus_pack")).toBe(PASS_BONUS_REWARD.packs);
-    // Un autre paquet ne repaie pas la tranche.
-    await openPacks(p, 1);
-    expect(await ledgerSum(p.userId, "season_pass", "bonus_pack")).toBe(PASS_BONUS_REWARD.packs);
-    const notifs = await ctx.db.execute<{ n: number }>(sql`
-      select count(*)::int as n from notifications where user_id = ${p.userId} and type = 'pass_bonus'
-    `);
-    expect(notifs[0]!.n).toBe(1);
-
-    // Bien au-delà du plafond : seules les tranches restantes jusqu'au plafond sont payées.
-    await ctx.db.execute(sql`
-      update players set season_xp = ${top + (PASS_BONUS_MAX + 5) * PASS_BONUS_XP} where user_id = ${p.userId}
-    `);
-    await openPacks(p, 1);
-    expect(await ledgerSum(p.userId, "season_pass", "bonus_pack")).toBe(PASS_BONUS_MAX * PASS_BONUS_REWARD.packs);
-    expect((await p.get("/pass")).body.bonus).toMatchObject({ count: PASS_BONUS_MAX, into: 0, need: 0 });
-    await openPacks(p, 1);
-    expect(await ledgerSum(p.userId, "season_pass", "bonus_pack")).toBe(PASS_BONUS_MAX * PASS_BONUS_REWARD.packs);
-  });
-
-  it("le compteur bonus repart de zéro avec la saison", async () => {
-    const p = await signUp(app);
-    // XP et bonus d'une saison passée : ne comptent plus.
-    await ctx.db.execute(sql`
-      update players set season_xp = ${xpToReach(PASS_MAX_LEVEL) + 3 * PASS_BONUS_XP},
-        pass_rewarded = ${PASS_MAX_LEVEL + 3}, pass_season = (select id from seasons where status = 'active') - 1
-      where user_id = ${p.userId}
-    `);
     const pass = (await p.get("/pass")).body;
-    expect(pass.level).toBe(0);
-    expect(pass.bonus.count).toBe(0);
+    expect(pass).toMatchObject({ level: 202, need: 500, maxLevel: 200, halfLevel: 100, overflowPw: PASS_OVERFLOW_PW });
+    const levels = Array.from({ length: 102 }, (_, i) => passReward(101 + i));
+    const packs = levels.reduce((sum, r) => sum + r.packs, 0);
+    const pw = levels.reduce((sum, r) => sum + r.pw, 0);
+    expect(passReward(201).pw + passReward(202).pw).toBe(2 * PASS_OVERFLOW_PW);
+    expect(await ledgerSum(p.userId, "season_pass", "bonus_pack")).toBe(packs);
+    expect(await ledgerSum(p.userId, "season_pass")).toBe(pw);
+    // Un autre paquet ne repaie rien.
     await openPacks(p, 1);
-    expect(await ledgerSum(p.userId, "season_pass", "bonus_pack")).toBe(0);
+    expect(await ledgerSum(p.userId, "season_pass")).toBe(pw);
+    expect((await p.get("/me")).body.pass.level).toBe(202);
   });
 
   it("un upgrade donne l'XP annoncée dans le tableau « Gagner de l'XP »", async () => {

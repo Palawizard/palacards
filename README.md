@@ -1,6 +1,6 @@
 # PalaCards
 
-Jeu de cartes à collectionner où chaque carte est un article du Wikipédia FR (~2,7 M cartes). Paquets, boosters à thème temporaires, cartes brillantes, roue du jour, upgrader, codes promo, collection, catalogue, marché aux enchères, échanges, amis, messages, guildes, duels quiz, quêtes du jour et de la semaine, passe de saison (100 niveaux), article du jour à deviner, boss du jour coopératif, fil d'activité, succès à paliers, messages serveur, classements et saisons mensuelles. Auto-hébergé, pour jouer entre potes sur `palawi.fr/palacards/`.
+Jeu de cartes à collectionner où chaque carte est un article du Wikipédia FR (~2,7 M cartes). Paquets, boosters à thème temporaires, cartes brillantes, roue du jour, upgrader, codes promo, collection, catalogue, marché aux enchères, échanges, amis, messages, guildes, duels quiz, quêtes du jour et de la semaine, passe de saison (200 niveaux, puis des PW à chaque niveau), article du jour à deviner, boss du jour coopératif, fil d'activité, succès à paliers, messages serveur, classements et saisons mensuelles. Auto-hébergé, pour jouer entre potes sur `palawi.fr/palacards/`.
 
 ## Prérequis
 

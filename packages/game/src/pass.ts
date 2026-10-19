@@ -2,41 +2,63 @@ import type { GameEvent } from "./achievements.js";
 import { GUILD_OBJECTIVE_REWARD } from "./guild.js";
 
 // ---------------------------------------------------------------------------
-// Passe de saison gratuit : 100 niveaux par saison mensuelle, tout le monde repart de 0.
+// Passe de saison gratuit : 200 niveaux par saison mensuelle, tout le monde repart de 0.
 // L'XP vient des actions (paquets, quêtes, article du jour, boss, duels…) ; chaque niveau donne
-// des PW ou des paquets bonus, avec un gros palier tous les 10 niveaux.
+// des PW ou des paquets bonus, avec un gros palier tous les 10 niveaux. Après le niveau 200, l'XP
+// continue de compter : chaque niveau supplémentaire donne quelques PW, sans limite.
 // ---------------------------------------------------------------------------
 
-export const PASS_MAX_LEVEL = 100;
+/** Dernier niveau de la carte de saison (cases à tamponner). */
+export const PASS_MAX_LEVEL = 200;
+/** Fin du recto de la carte (niveaux 1 à 100) ; le verso va de 101 à 200. */
+export const PASS_HALF_LEVEL = 100;
+/** XP de chaque niveau à partir du niveau 100 (verso de la carte et niveaux supplémentaires). */
+export const PASS_LATE_LEVEL_XP = 500;
+/** PW de chaque niveau supplémentaire, au-delà du niveau 200. */
+export const PASS_OVERFLOW_PW = 25;
 
-/** XP pour passer du niveau `level - 1` au niveau `level` (302 au début, 500 à la fin). */
+/** XP pour passer du niveau `level - 1` au niveau `level` (302 au début, 500 à partir du niveau 100). */
 export function xpForLevel(level: number): number {
-  return 300 + 2 * level;
+  return level >= PASS_HALF_LEVEL ? PASS_LATE_LEVEL_XP : 300 + 2 * level;
 }
 
-/** XP cumulée pour atteindre un niveau (40 100 XP pour le niveau 100). */
+/** XP cumulée pour finir le recto (40 100 XP). */
+const XP_TO_HALF = Array.from({ length: PASS_HALF_LEVEL }, (_, i) => xpForLevel(i + 1)).reduce((a, b) => a + b, 0);
+
+/** XP cumulée pour atteindre un niveau (40 100 XP pour le niveau 100, 90 100 pour le niveau 200). */
 export function xpToReach(level: number): number {
+  if (level >= PASS_HALF_LEVEL) return XP_TO_HALF + (level - PASS_HALF_LEVEL) * PASS_LATE_LEVEL_XP;
   let total = 0;
-  for (let n = 1; n <= Math.min(level, PASS_MAX_LEVEL); n++) total += xpForLevel(n);
+  for (let n = 1; n <= level; n++) total += xpForLevel(n);
   return total;
 }
 
 export interface PassProgress {
+  /** Niveau atteint ; dépasse `PASS_MAX_LEVEL` avec les niveaux supplémentaires. */
   level: number;
   /** XP gagnée dans le niveau en cours. */
   into: number;
-  /** XP du niveau en cours (0 au niveau maximal). */
+  /** XP du niveau en cours. */
   need: number;
 }
 
 export function passProgress(xp: number): PassProgress {
+  const total = Math.max(0, Math.floor(xp));
+  if (total >= XP_TO_HALF) {
+    const rest = total - XP_TO_HALF;
+    return {
+      level: PASS_HALF_LEVEL + Math.floor(rest / PASS_LATE_LEVEL_XP),
+      into: rest % PASS_LATE_LEVEL_XP,
+      need: PASS_LATE_LEVEL_XP,
+    };
+  }
   let level = 0;
-  let rest = Math.max(0, xp);
-  while (level < PASS_MAX_LEVEL && rest >= xpForLevel(level + 1)) {
+  let rest = total;
+  while (rest >= xpForLevel(level + 1)) {
     rest -= xpForLevel(level + 1);
     level++;
   }
-  return level >= PASS_MAX_LEVEL ? { level, into: 0, need: 0 } : { level, into: rest, need: xpForLevel(level + 1) };
+  return { level, into: rest, need: xpForLevel(level + 1) };
 }
 
 export interface PassReward {
@@ -46,46 +68,17 @@ export interface PassReward {
 
 /**
  * Récompense d'un niveau : en alternance des paquets bonus (niveaux impairs) et des PW (niveaux pairs),
- * 2 paquets tous les 5 niveaux, 3 paquets et 150 PW tous les 10, le niveau 100 donne 5 paquets et 1 000 PW.
- * Total d'une saison complète : 92 paquets bonus et environ 5 350 PW.
+ * 2 paquets tous les 5 niveaux, 3 paquets et 150 PW tous les 10, les niveaux 100 et 200 donnent 5 paquets
+ * et 1 000 PW. Total d'une carte complète : 184 paquets bonus et 12 700 PW. Au-delà du niveau 200,
+ * chaque niveau donne `PASS_OVERFLOW_PW`.
  */
 export function passReward(level: number): PassReward {
-  if (level === PASS_MAX_LEVEL) return { pw: 1_000, packs: 5 };
+  if (level > PASS_MAX_LEVEL) return { pw: PASS_OVERFLOW_PW, packs: 0 };
+  if (level % PASS_HALF_LEVEL === 0) return { pw: 1_000, packs: 5 };
   if (level % 10 === 0) return { pw: 150, packs: 3 };
   if (level % 5 === 0) return { pw: 0, packs: 2 };
   if (level % 2 === 0) return { pw: 50 + Math.floor(level / 2), packs: 0 };
   return { pw: 0, packs: 1 };
-}
-
-// ---------------------------------------------------------------------------
-// Après le niveau 100 : l'XP continue de compter et chaque tranche donne une récompense bonus
-// répétable, plafonnée par saison. Le compteur repart de 0 avec la saison, comme le reste du passe.
-// ---------------------------------------------------------------------------
-
-/** Une récompense bonus tous les `PASS_BONUS_LEVELS` niveaux d'XP (au prix du niveau 100). */
-export const PASS_BONUS_LEVELS = 5;
-/** XP d'une tranche bonus : 2 500 XP. */
-export const PASS_BONUS_XP = PASS_BONUS_LEVELS * xpForLevel(PASS_MAX_LEVEL);
-/** Plafond de récompenses bonus par saison (50 000 XP après le niveau 100). */
-export const PASS_BONUS_MAX = 20;
-/** Récompense de chaque tranche bonus. */
-export const PASS_BONUS_REWARD: PassReward = { pw: 0, packs: 1 };
-
-export interface PassBonusProgress {
-  /** Récompenses bonus gagnées cette saison (au plus `PASS_BONUS_MAX`). */
-  count: number;
-  /** XP gagnée dans la tranche en cours. */
-  into: number;
-  /** XP de la tranche en cours (0 une fois le plafond atteint). */
-  need: number;
-}
-
-/** Avancement des récompenses bonus pour une XP de saison (rien avant le niveau 100). */
-export function passBonus(xp: number): PassBonusProgress {
-  const extra = Math.max(0, xp - xpToReach(PASS_MAX_LEVEL));
-  const count = Math.min(PASS_BONUS_MAX, Math.floor(extra / PASS_BONUS_XP));
-  if (count >= PASS_BONUS_MAX) return { count, into: 0, need: 0 };
-  return { count, into: extra - count * PASS_BONUS_XP, need: PASS_BONUS_XP };
 }
 
 /** XP gagnée par événement (les quêtes ajoutent la leur à part). */

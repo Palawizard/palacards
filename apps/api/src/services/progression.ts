@@ -6,10 +6,6 @@ import {
   LUCK_MIN_PACKS,
   applyStatUpdates,
   newlyUnlocked,
-  PASS_BONUS_MAX,
-  PASS_BONUS_REWARD,
-  PASS_MAX_LEVEL,
-  passBonus,
   passProgress,
   passReward,
   questProgress,
@@ -111,43 +107,28 @@ async function addBonusPacks(
 
 /**
  * XP du passe de saison : l'XP d'une autre saison repart de 0. Chaque niveau franchi est récompensé une
- * seule fois (PW et paquets bonus dans le ledger), puis chaque tranche bonus après le niveau 100 (comptée
- * dans `pass_rewarded` au-delà de 100). Renvoie les niveaux et les tranches bonus gagnés.
+ * seule fois (PW et paquets bonus dans le ledger) ; renvoie les niveaux gagnés.
  */
-async function grantXp(
-  tx: Tx,
-  player: Player,
-  season: number,
-  xp: number,
-  fx: Effects,
-): Promise<{ levels: number[]; bonus: number[] }> {
+async function grantXp(tx: Tx, player: Player, season: number, xp: number, fx: Effects): Promise<number[]> {
   const fresh = player.passSeason !== season;
   const before = fresh ? 0 : player.seasonXp;
   const rewarded = fresh ? 0 : player.passRewarded;
-  if (xp <= 0 && !fresh) return { levels: [], bonus: [] };
+  if (xp <= 0 && !fresh) return [];
   const total = before + Math.max(0, xp);
   const { level } = passProgress(total);
-  const { count } = passBonus(total);
   const gained: number[] = [];
   for (let n = rewarded + 1; n <= level; n++) gained.push(n);
-  const bonus: number[] = [];
-  for (let k = Math.max(0, rewarded - PASS_MAX_LEVEL) + 1; k <= count; k++) bonus.push(k);
-  const reached = Math.max(rewarded, level + count);
   await tx
     .update(schema.players)
-    .set({ seasonXp: total, passSeason: season, passRewarded: reached })
+    .set({ seasonXp: total, passSeason: season, passRewarded: Math.max(rewarded, level) })
     .where(eq(schema.players.userId, player.userId));
   player.seasonXp = total;
   player.passSeason = season;
-  player.passRewarded = reached;
+  player.passRewarded = Math.max(rewarded, level);
   for (const n of gained) {
     const r = passReward(n);
     if (r.pw) await movePw(tx, player, r.pw, "season_pass", `s${season}:${n}`);
     await addBonusPacks(tx, player, r.packs, "season_pass", `s${season}:${n}`);
-  }
-  for (const k of bonus) {
-    if (PASS_BONUS_REWARD.pw) await movePw(tx, player, PASS_BONUS_REWARD.pw, "season_pass", `s${season}:bonus${k}`);
-    await addBonusPacks(tx, player, PASS_BONUS_REWARD.packs, "season_pass", `s${season}:bonus${k}`);
   }
   if (gained.length) {
     const last = gained.at(-1)!;
@@ -157,11 +138,7 @@ async function grantXp(
     });
     await fx.notify(tx, player.userId, "pass_level", { level: last, levels: gained.length, reward: total });
   }
-  if (bonus.length) {
-    const reward = { pw: PASS_BONUS_REWARD.pw * bonus.length, packs: PASS_BONUS_REWARD.packs * bonus.length };
-    await fx.notify(tx, player.userId, "pass_bonus", { count: bonus.at(-1)!, max: PASS_BONUS_MAX, reward });
-  }
-  return { levels: gained, bonus };
+  return gained;
 }
 
 /** Fait avancer les quêtes ouvertes ; renvoie les quêtes terminées par cet événement. */
@@ -270,7 +247,7 @@ export async function recordEvent(ctx: Ctx, userId: string, event: GameEvent) {
         reward: { pw: q.rewardPw, xp: q.rewardXp },
       });
 
-    const { levels, bonus } = await grantXp(tx, player, season, xp, fx);
+    const levels = await grantXp(tx, player, season, xp, fx);
     if (levels.length) merge({ type: "pass_level", level: levels.at(-1)! });
 
     const rewards = new Rewards();
@@ -278,7 +255,7 @@ export async function recordEvent(ctx: Ctx, userId: string, event: GameEvent) {
     await saveStats(tx, userId, changed);
     return {
       player,
-      paid: pw > 0 || levels.length > 0 || bonus.length > 0 || unlocked.length > 0,
+      paid: pw > 0 || levels.length > 0 || unlocked.length > 0,
       progressed: completed.length > 0 || xp > 0 || unlocked.length > 0,
     };
   });
@@ -547,7 +524,7 @@ export async function listAchievements(ctx: Ctx, userId: string) {
 /** État du passe de saison d'un joueur (l'XP d'une saison passée ne compte plus). */
 export function passState(player: Pick<Player, "seasonXp" | "passSeason">, season: number) {
   const xp = player.passSeason === season ? player.seasonXp : 0;
-  return { season, xp, ...passProgress(xp), bonus: passBonus(xp) };
+  return { season, xp, ...passProgress(xp) };
 }
 
 // ---------------------------------------------------------------------------
