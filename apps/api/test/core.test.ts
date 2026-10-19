@@ -368,7 +368,12 @@ describe("collection et recyclage", () => {
     const classic = (await p.get("/collection?theme=classic&limit=120")).body;
     const classicIds = classic.items.map((c: { cardId: number }) => c.cardId);
     expect(classicIds).not.toContain(card.cardId);
-    expect(classic.total).toBe(all.total - filtered.body.total);
+    // D'autres fichiers de test laissent des boosters à thème dans la base partagée : on les écarte tous.
+    const themed = await ctx.db.execute<{ card_id: string }>(sql`select distinct card_id from theme_cards`);
+    const themedIds = new Set(themed.map((r) => Number(r.card_id)));
+    expect(all.total).toBeLessThanOrEqual(120);
+    expect(classic.total).toBe(all.items.filter((c: { cardId: number }) => !themedIds.has(c.cardId)).length);
+    expect(classic.total).toBeLessThanOrEqual(all.total - filtered.body.total);
     const rarity = classic.items[0].rarity;
     const classicRarity = (await p.get(`/collection?theme=classic&rarity=${rarity}&limit=120`)).body;
     expect(classicRarity.total).toBe(classic.items.filter((c: { rarity: string }) => c.rarity === rarity).length);
