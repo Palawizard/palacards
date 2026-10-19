@@ -111,22 +111,33 @@ function QuestStamp({
 }
 
 /**
- * La carte de fidélité de la saison : 100 cases à tamponner, une par niveau du passe. Les cases atteintes
- * portent leur tampon (paquets ou PW), les dizaines un gros tampon or ; la prochaine case est entourée.
+ * La carte de fidélité de la saison : 200 cases à tamponner, une par niveau du passe, 100 au recto et
+ * 100 au verso. Les cases atteintes portent leur tampon (paquets ou PW), les dizaines un gros tampon or ;
+ * la prochaine case est entourée. Une fois la carte pleine, chaque niveau en plus rapporte des PW.
  */
 function LoyaltyCard({ pass }: { pass: PassDTO }) {
   const prevLevel = useRef(pass.level);
   const [fresh, setFresh] = useState<Set<number>>(new Set());
+  // Face choisie par le joueur ; sinon celle de la prochaine case à tamponner.
+  const [picked, setPicked] = useState<"recto" | "verso" | null>(null);
   useEffect(() => {
     if (pass.level > prevLevel.current) {
       const gained = new Set<number>();
       for (let n = prevLevel.current + 1; n <= pass.level; n++) gained.add(n);
       setFresh(gained);
       play("achievement");
+      // La carte se retourne d'elle-même quand le recto vient d'être rempli.
+      if (prevLevel.current < pass.halfLevel && pass.level >= pass.halfLevel) setPicked(null);
     }
     prevLevel.current = pass.level;
-  }, [pass.level]);
-  const next = pass.levels[pass.level];
+  }, [pass.level, pass.halfLevel]);
+  const face = picked ?? (pass.level >= pass.halfLevel ? "verso" : "recto");
+  const cells = pass.levels.filter(({ level }) => (face === "recto") === level <= pass.halfLevel);
+  const first = face === "recto" ? 1 : pass.halfLevel + 1;
+  const last = face === "recto" ? pass.halfLevel : pass.maxLevel;
+  const full = pass.level >= pass.maxLevel;
+  const extra = Math.max(0, pass.level - pass.maxLevel);
+  const nextReward = pass.levels[pass.level]?.reward ?? { pw: pass.overflowPw, packs: 0 };
   const pct = pass.need ? Math.round((pass.into / pass.need) * 100) : 100;
 
   return (
@@ -139,16 +150,22 @@ function LoyaltyCard({ pass }: { pass: PassDTO }) {
           <h2 id="pass-title" className="font-display text-[1.7rem] uppercase leading-none sm:text-[2.1rem]">
             Carte de saison <span className="text-accent">{pass.season}</span>
           </h2>
-          <p className="mt-1.5 text-sm text-cover-muted">
-            Un tampon par niveau, cent cases. La carte repart à zéro à chaque nouvelle saison.
+          <p className="mt-1.5 max-w-prose text-sm text-cover-muted">
+            Un tampon par niveau : cent cases au recto, cent au verso. Carte pleine, chaque niveau en plus rapporte{" "}
+            {fmt(pass.overflowPw)}&nbsp;PW. Tout repart à zéro à chaque nouvelle saison.
           </p>
         </div>
         <div className="text-right">
           <p className="font-display text-[3rem] uppercase leading-[0.85] sm:text-[3.6rem]">
             <span className="sr-only">Niveau </span>
-            {pass.level}
-            <span className="text-[1.2rem] text-cover-muted">/{pass.maxLevel}</span>
+            {fmt(pass.level)}
+            {!full && <span className="text-[1.2rem] text-cover-muted">/{pass.maxLevel}</span>}
           </p>
+          {extra > 0 && (
+            <p className="tnum mt-1 text-xs font-semibold text-accent">
+              +{fmt(extra)} {extra > 1 ? "niveaux" : "niveau"} après la carte
+            </p>
+          )}
         </div>
       </div>
 
@@ -161,16 +178,24 @@ function LoyaltyCard({ pass }: { pass: PassDTO }) {
         </div>
         <p className="tnum mt-1.5 flex flex-wrap justify-between gap-2 text-xs text-cover-muted">
           <span>
-            {pass.need
-              ? `${fmt(pass.into)} / ${fmt(pass.need)} XP vers le niveau ${pass.level + 1}`
-              : "Carte complète !"}
+            {fmt(pass.into)} / {fmt(pass.need)} XP vers le niveau {fmt(pass.level + 1)}
           </span>
-          {next && <span>Prochain tampon : {rewardText(next.reward)}</span>}
+          <span>
+            {full ? "Carte complète ! Niveau suivant" : "Prochain tampon"}&nbsp;: {rewardText(nextReward)}
+          </span>
         </p>
       </div>
 
-      <ol className="pc-loyalty-grid mt-5" aria-label="Niveaux du passe de saison">
-        {pass.levels.map(({ level, reward }) => {
+      <div className="pc-loyalty-faces mt-5 flex justify-center gap-2" role="group" aria-label="Face de la carte">
+        {(["recto", "verso"] as const).map((f) => (
+          <button key={f} type="button" className="chip" aria-pressed={face === f} onClick={() => setPicked(f)}>
+            {f === "recto" ? `Recto · 1 à ${pass.halfLevel}` : `Verso · ${pass.halfLevel + 1} à ${pass.maxLevel}`}
+          </button>
+        ))}
+      </div>
+
+      <ol className="pc-loyalty-grid mt-3" aria-label={`Niveaux ${first} à ${last} du passe de saison`}>
+        {cells.map(({ level, reward }) => {
           const reached = level <= pass.level;
           const milestone = level % 10 === 0;
           const label = `Niveau ${level} : ${rewardText(reward)}${reached ? " (obtenu)" : ""}`;

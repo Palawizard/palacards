@@ -2,17 +2,29 @@ import { describe, expect, it } from "vitest";
 import type { GameEvent } from "./achievements.js";
 import { autoRecyclePicks, isBetterCopy } from "./collection.js";
 import { weirdGenresOfTitle } from "./feed.js";
-import { PASS_MAX_LEVEL, passProgress, passReward, xpForEvent, xpToReach } from "./pass.js";
+import { PASS_MAX_LEVEL, PASS_OVERFLOW_PW, passProgress, passReward, xpForEvent, xpToReach } from "./pass.js";
 import { dailyQuests, QUEST_POOL, questLabel, questProgress, rerollQuest, weeklyQuest } from "./quests.js";
 import { recycleValue, rollShiny, SHINY_CHANCE } from "./shiny.js";
 
 describe("passe de saison", () => {
-  it("compte 100 niveaux, environ 40 000 XP au total", () => {
-    expect(xpToReach(PASS_MAX_LEVEL)).toBe(40_100);
+  it("compte 200 niveaux, 40 100 XP pour le recto et 500 XP par niveau ensuite", () => {
+    expect(PASS_MAX_LEVEL).toBe(200);
+    expect(xpToReach(100)).toBe(40_100);
+    expect(xpToReach(PASS_MAX_LEVEL)).toBe(90_100);
     expect(passProgress(0)).toEqual({ level: 0, into: 0, need: 302 });
     expect(passProgress(302)).toEqual({ level: 1, into: 0, need: 304 });
     expect(passProgress(xpToReach(37) + 10).level).toBe(37);
-    expect(passProgress(10_000_000)).toEqual({ level: 100, into: 0, need: 0 });
+    expect(passProgress(xpToReach(99))).toEqual({ level: 99, into: 0, need: 500 });
+    expect(passProgress(40_100)).toEqual({ level: 100, into: 0, need: 500 });
+    expect(passProgress(xpToReach(150) + 499)).toEqual({ level: 150, into: 499, need: 500 });
+    for (const level of [1, 37, 99, 100, 101, 200, 250]) expect(passProgress(xpToReach(level)).level).toBe(level);
+  });
+
+  it("continue de compter les niveaux après 200", () => {
+    expect(passProgress(xpToReach(200) + 1_250)).toEqual({ level: 202, into: 250, need: 500 });
+    expect(passProgress(10_000_000).level).toBe(100 + Math.floor((10_000_000 - 40_100) / 500));
+    expect(passReward(201)).toEqual({ pw: PASS_OVERFLOW_PW, packs: 0 });
+    expect(passReward(1_000)).toEqual({ pw: PASS_OVERFLOW_PW, packs: 0 });
   });
 
   it("alterne paquets et PW, gros paliers tous les 10 niveaux", () => {
@@ -24,12 +36,15 @@ describe("passe de saison", () => {
       packs += r.packs;
       pw += r.pw;
     }
-    expect(packs).toBe(92);
-    expect(pw).toBe(5_350);
+    expect(packs).toBe(184);
+    expect(pw).toBe(12_700);
     expect(passReward(1)).toEqual({ pw: 0, packs: 1 });
     expect(passReward(2)).toEqual({ pw: 51, packs: 0 });
     expect(passReward(10)).toEqual({ pw: 150, packs: 3 });
     expect(passReward(100)).toEqual({ pw: 1_000, packs: 5 });
+    expect(passReward(102)).toEqual({ pw: 101, packs: 0 });
+    expect(passReward(110)).toEqual({ pw: 150, packs: 3 });
+    expect(passReward(200)).toEqual({ pw: 1_000, packs: 5 });
   });
 
   it("donne de l'XP pour chaque paquet ouvert, plus pour un booster à thème", () => {
