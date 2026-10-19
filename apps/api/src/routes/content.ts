@@ -3,7 +3,9 @@ import {
   ARTICLE_SEARCH_MAX_LENGTH,
   BOSS_CARDS_PER_ASSAULT,
   FEED_REACTIONS,
+  PASS_HALF_LEVEL,
   PASS_MAX_LEVEL,
+  PASS_OVERFLOW_PW,
   passReward,
   WEIRD_GENRES,
   XP,
@@ -84,6 +86,8 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
     return {
       ...passState(p, season),
       maxLevel: PASS_MAX_LEVEL,
+      halfLevel: PASS_HALF_LEVEL,
+      overflowPw: PASS_OVERFLOW_PW,
       levels: Array.from({ length: PASS_MAX_LEVEL }, (_, i) => ({ level: i + 1, reward: passReward(i + 1) })),
       endsAt: s?.endsAt?.toISOString() ?? null,
       xpTable: XP_TABLE,

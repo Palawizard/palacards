@@ -274,11 +274,17 @@ export interface PassLevelDTO {
 export interface PassDTO {
   season: number;
   xp: number;
+  /** Niveau atteint ; dépasse `maxLevel` avec les niveaux supplémentaires. */
   level: number;
   into: number;
   need: number;
+  /** Dernier niveau de la carte (200). */
   maxLevel: number;
-  /** Les 100 paliers et leur récompense. */
+  /** Dernier niveau du recto de la carte (100) ; le verso porte les suivants. */
+  halfLevel: number;
+  /** PW de chaque niveau supplémentaire, au-delà de `maxLevel`. */
+  overflowPw: number;
+  /** Les 200 paliers de la carte et leur récompense. */
   levels: PassLevelDTO[];
   /** Fin de la saison (le passe repart de 0). */
   endsAt: string | null;
