@@ -204,6 +204,24 @@ describe("fil d'activité", () => {
     expect(undo.body.reactions).toEqual([]);
     expect((await q.post(`/feed/${id}/react`, { emoji: "🙂" })).status).toBe(400);
   });
+
+  it("montre un nouveau tirage dès la requête suivante, en tête des brillantes", async () => {
+    const p = await signUp(app);
+    const q = await signUp(app);
+    await openPacks(p, 1);
+    await ctx.db.execute(sql`update pulls set shiny = true where user_id = ${p.userId}`);
+    const before = (await q.get("/feed?kind=shiny")).body.items as { id: number }[];
+    expect(before.length).toBeGreaterThan(0);
+    // Un nouveau tirage de Q lui-même : il apparaît au rechargement du fil, avant les plus anciens.
+    await openPacks(q, 1);
+    const [last] = await ctx.db.execute<{ id: string }>(
+      sql`select id from pulls where user_id = ${q.userId} order by id desc limit 1`,
+    );
+    await ctx.db.execute(sql`update pulls set shiny = true where id = ${last!.id}`);
+    const shiny = (await q.get("/feed?kind=shiny")).body.items as { id: number }[];
+    expect(shiny[0]!.id).toBe(Number(last!.id));
+    expect(shiny.some((i) => i.id === before[0]!.id)).toBe(true);
+  });
 });
 
 describe("messages serveur", () => {
