@@ -362,6 +362,26 @@ describe("collection et recyclage", () => {
     expect(summary.body.themes).toContainEqual({ id: theme!.id, name: "Thème de test", owned: 1, cardCount: 1 });
     const sheet = await p.get(`/cards/${card.cardId}`);
     expect(sheet.body.themes).toContainEqual({ id: theme!.id, name: "Thème de test" });
+
+    // « Classique » : tout sauf les articles d'un booster à thème, combiné aux autres filtres.
+    const all = (await p.get("/collection?limit=120")).body;
+    const classic = (await p.get("/collection?theme=classic&limit=120")).body;
+    const classicIds = classic.items.map((c: { cardId: number }) => c.cardId);
+    expect(classicIds).not.toContain(card.cardId);
+    expect(classic.total).toBe(all.total - filtered.body.total);
+    const rarity = classic.items[0].rarity;
+    const classicRarity = (await p.get(`/collection?theme=classic&rarity=${rarity}&limit=120`)).body;
+    expect(classicRarity.total).toBe(classic.items.filter((c: { rarity: string }) => c.rarity === rarity).length);
+    // « Tout sélectionner » prend exactement les cartes listées.
+    const selectable = (await p.get("/collection/selectable?theme=classic")).body;
+    expect(new Set(selectable.items.map((i: { id: number }) => i.id))).toEqual(
+      new Set(classic.items.map((c: { instanceId: number }) => c.instanceId)),
+    );
+    // Même filtre sur la collection d'un autre joueur.
+    const other = await signUp(app);
+    const seen = (await other.get(`/players/${p.username}/collection?theme=classic&limit=120`)).body;
+    expect(seen.total).toBe(classic.total);
+    expect((await p.get("/collection?theme=autre")).status).toBe(400);
     await ctx.db.delete(schema.themes).where(eq(schema.themes.id, theme!.id));
   });
 

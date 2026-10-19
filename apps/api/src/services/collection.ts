@@ -10,7 +10,7 @@ import {
   type FusionCopy,
   type Rarity,
 } from "@palacards/game";
-import type { CardDTO, Page } from "@palacards/shared";
+import { CLASSIC_THEME, type CardDTO, type Page } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { seasonTotals, selectInstances, toCardDTO } from "./cards.js";
@@ -42,8 +42,8 @@ export interface CollectionQuery {
   tag?: string;
   /** Toutes sauf les cartes portant ce tag. */
   notTag?: string;
-  /** Booster à thème : seulement les articles qui en font partie. */
-  theme?: number;
+  /** Booster à thème : seulement les articles qui en font partie ; `classic` : ceux d'aucun booster à thème. */
+  theme?: number | typeof CLASSIC_THEME;
   favorites?: FilterMode;
   shiny?: FilterMode;
   /** Articles possédés en plusieurs exemplaires. */
@@ -87,7 +87,9 @@ function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
     where.push(sql`exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag = ${query.tag})`);
   if (query.notTag)
     where.push(sql`not exists (select 1 from user_tags t where t.instance_id = ${ci.id} and t.tag = ${query.notTag})`);
-  if (query.theme)
+  if (query.theme === CLASSIC_THEME)
+    where.push(sql`not exists (select 1 from theme_cards tc where tc.card_id = ${ci.cardId})`);
+  else if (query.theme)
     where.push(
       sql`exists (select 1 from theme_cards tc where tc.theme_id = ${query.theme} and tc.card_id = ${ci.cardId})`,
     );
