@@ -194,7 +194,7 @@ test("upgrader : favoris masqués par défaut, upgrade en série des doublons", 
   const series = page.getByRole("region", { name: "Upgrade en série" });
   await expect(series).toContainText("8 doublons → 2 upgrades");
   // Nombre d'upgrades au choix : 1, puis une valeur trop grande ramenée au maximum possible.
-  const count = series.getByLabel("Nombre d’upgrades");
+  const count = series.getByRole("textbox", { name: "Nombre d’upgrades" });
   await series.getByRole("button", { name: "1", exact: true }).click();
   await expect(series).toContainText("4 doublons → 1 upgrade");
   await expect(series.getByRole("button", { name: "Lancer 1 upgrade" })).toBeVisible();
