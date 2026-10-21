@@ -161,6 +161,28 @@ describe("upgrade en série", () => {
     await expectLedgerConsistent(p);
   });
 
+  it("lance exactement le nombre d'upgrades choisi, ramené au maximum possible", async () => {
+    const p = await signUp(app);
+    const lot = upgradeCardsToCap("C")!;
+    // Une carte de plus : le meilleur exemplaire, gardé. Restent 9 lots pleins.
+    const cardId = await cardOf("C", 0);
+    for (const count of [20, lot * 9 + 1 - 20]) await p.post("/test/grant-card", { cardId, count });
+    expect((await p.get("/upgrade/series?rarity=C")).body.lots).toHaveLength(9);
+
+    ctx.random = () => 9_999;
+    const seven = await p.post("/upgrade/series", { rarity: "C", lots: 7 });
+    expect(seven.status).toBe(200);
+    expect(seven.body.lots).toHaveLength(7);
+    expect(seven.body.remaining).toBe(lot * 2);
+
+    const tooMany = await p.post("/upgrade/series", { rarity: "C", lots: 23 });
+    expect(tooMany.status).toBe(200);
+    expect(tooMany.body.lots).toHaveLength(2);
+    expect(tooMany.body.remaining).toBe(0);
+    expect((await p.post("/upgrade/series", { rarity: "C", lots: 0 })).status).toBe(400);
+    await expectLedgerConsistent(p);
+  });
+
   it("avec la case cochée, prend aussi le dernier exemplaire de chaque carte (jamais les favoris)", async () => {
     const p = await signUp(app);
     const grant = async (skip: number, count: number) =>

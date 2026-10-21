@@ -193,6 +193,15 @@ test("upgrader : favoris masqués par défaut, upgrade en série des doublons", 
   // Le favori et le meilleur exemplaire restent : 8 doublons, deux lots au plafond.
   const series = page.getByRole("region", { name: "Upgrade en série" });
   await expect(series).toContainText("8 doublons → 2 upgrades");
+  // Nombre d'upgrades au choix : 1, puis une valeur trop grande ramenée au maximum possible.
+  const count = series.getByRole("textbox", { name: "Nombre d’upgrades" });
+  await series.getByRole("button", { name: "1", exact: true }).click();
+  await expect(series).toContainText("4 doublons → 1 upgrade");
+  await expect(series.getByRole("button", { name: "Lancer 1 upgrade" })).toBeVisible();
+  await count.fill("7");
+  await count.press("Enter");
+  await expect(count).toHaveValue("2");
+  await expect(series.getByRole("button", { name: "Max" })).toHaveAttribute("aria-pressed", "true");
   await series.getByRole("button", { name: "Lancer 2 upgrades" }).click();
   await expect(series).toContainText(/réussites? sur 2/, { timeout: 15_000 });
   await expect(series).toContainText("Aucun doublon de rareté commune à upgrader");
