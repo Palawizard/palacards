@@ -162,9 +162,12 @@ export interface UpgradeSeriesPreviewDTO {
   singles: number;
   /** Articles qui quitteraient la collection avec ce lancement (0 sans la case). */
   singlesUsed: number;
-  /** Lots du prochain lancement, chance en points de base (sur 10 000). */
+  /**
+   * Lots possibles au prochain lancement (au plus `maxLots`), chance en points de base (sur 10 000). Le joueur
+   * peut n'en lancer que les premiers (`lots` du POST).
+   */
   lots: { cards: number; chance: number }[];
-  /** Cartes engagées par ce lancement (au plus `maxLots` lots par clic). */
+  /** Cartes engagées si tous les lots possibles partent. */
   cards: number;
   /** Nombre moyen de réussites. */
   expectedSuccesses: number;

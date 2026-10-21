@@ -203,14 +203,19 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     return upgrade(ctx, req.user.id, instanceIds);
   });
   const seriesQuery = z.object({ rarity: z.enum(RARITIES), singles: z.enum(["0", "1"]).optional() });
-  const seriesBody = z.object({ rarity: z.enum(RARITIES), singles: z.boolean().optional() });
+  // `lots` : nombre d'upgrades voulu ; trop grand, il est ramené au maximum possible (pas d'erreur).
+  const seriesBody = z.object({
+    rarity: z.enum(RARITIES),
+    singles: z.boolean().optional(),
+    lots: z.number().int().positive().optional(),
+  });
   api.get("/upgrade/series", auth, async (req) => {
     const q = parse(seriesQuery, req.query);
     return upgradeSeriesPreview(ctx, req.user.id, q.rarity, q.singles === "1");
   });
   api.post("/upgrade/series", limited(10), async (req) => {
     const b = parse(seriesBody, req.body);
-    return upgradeSeries(ctx, req.user.id, b.rarity, b.singles ?? false);
+    return upgradeSeries(ctx, req.user.id, b.rarity, b.singles ?? false, b.lots);
   });
   api.get("/wheel", auth, async (req) => wheelState(ctx, req.user.id));
   api.post("/wheel/spin", limited(10), async (req) => spinWheel(ctx, req.user.id));

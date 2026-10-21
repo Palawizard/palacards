@@ -29,8 +29,8 @@ export type GameEvent =
       type: "collection";
       uniqueCards: number;
       uniqueLegendary: number;
-      uniqueUR: number;
-      totalUR: number;
+      /** Saison en cours, par rareté : articles différents possédés (`owned`) et cartes de la saison (`total`). */
+      season?: Partial<Record<Rarity, { owned: number; total: number }>>;
       /** Initiales différentes (A à Z) parmi ces articles. */
       initials?: number;
     }
@@ -71,6 +71,12 @@ export const STAT_KEYS = [
   "unique_cards",
   "unique_l",
   "ur_pct",
+  // Part de la saison par rareté, en dixièmes de pour cent (5 = 0,5 %) : les communes se comptent par millions.
+  "season_c",
+  "season_pc",
+  "season_r",
+  "season_sr",
+  "season_l",
   "initials",
   "sales",
   "big_sales",
@@ -139,6 +145,15 @@ export const isLongTitle = (title: string) => title.length >= 80;
 /** L'article « Wikipédia » lui-même. */
 export const isMetaTitle = (title: string) => strip(title).trim() === "wikipedia";
 
+/** Statistique de la part de la saison possédée, par rareté (dixièmes de pour cent ; UR : `ur_pct`, en pour cent). */
+const SEASON_SHARE_STAT: Record<Exclude<Rarity, "UR">, StatKey> = {
+  C: "season_c",
+  PC: "season_pc",
+  R: "season_r",
+  SR: "season_sr",
+  L: "season_l",
+};
+
 const atLeastRank = (r: Rarity, min: Rarity) =>
   ["C", "PC", "R", "SR", "UR", "L"].indexOf(r) >= ["C", "PC", "R", "SR", "UR", "L"].indexOf(min);
 
@@ -174,7 +189,11 @@ export function statUpdates(e: GameEvent): StatUpdate[] {
     }
     case "collection":
       out.push(max("unique_cards", e.uniqueCards), max("unique_l", e.uniqueLegendary));
-      if (e.totalUR > 0) out.push(max("ur_pct", Math.floor((e.uniqueUR * 100) / e.totalUR)));
+      for (const [r, share] of Object.entries(e.season ?? {}) as [Rarity, { owned: number; total: number }][]) {
+        if (share.total <= 0) continue;
+        if (r === "UR") out.push(max("ur_pct", Math.floor((share.owned * 100) / share.total)));
+        else out.push(max(SEASON_SHARE_STAT[r], Math.floor((share.owned * 1_000) / share.total)));
+      }
       if (e.initials !== undefined) out.push(max("initials", e.initials));
       break;
     case "sale":
@@ -274,13 +293,34 @@ export interface AchievementDef {
   reward: { pw: number; packs: number };
   /** Succès secret : nom et description cachés tant qu'il n'est pas débloqué. */
   secret?: boolean;
+  /**
+   * Palier retiré : plus jamais débloqué, mais gardé (et affiché) chez les joueurs qui l'ont déjà.
+   * Sa clé ne doit jamais être réutilisée.
+   */
+  retired?: boolean;
+  /** Objectif en pourcentage : 1 = en %, 10 = en dixièmes de % (5 = 0,5 %). Absent : un nombre. */
+  percent?: 1 | 10;
 }
 
-type Step = [key: string, target: number, name: string, reward: number | { pw?: number; packs?: number }];
+type Step = [
+  key: string,
+  target: number,
+  name: string,
+  reward: number | { pw?: number; packs?: number },
+  options?: { retired?: boolean },
+];
 
 /** Une famille de paliers sur une même statistique ; `describe` formule l'objectif de chaque palier. */
-function family(name: string, stat: StatKey, describe: (n: number) => string, steps: Step[]): AchievementDef[] {
-  return steps.map(([key, target, title, reward], tier) => ({
+function family(
+  name: string,
+  stat: StatKey,
+  describe: (n: number) => string,
+  steps: Step[],
+  options: { percent?: 1 | 10 } = {},
+): AchievementDef[] {
+  return steps.map(([key, target, title, reward, step], tier) => ({
+    ...(step?.retired ? { retired: true } : {}),
+    ...(options.percent ? { percent: options.percent } : {}),
     key,
     family: name,
     name: title,
@@ -294,6 +334,8 @@ function family(name: string, stat: StatKey, describe: (n: number) => string, st
 
 const n = (x: number) => x.toLocaleString("fr-FR");
 const plural = (x: number, one: string, many: string) => (x > 1 ? many : one);
+/** Dixièmes de pour cent → « 0,5 % ». */
+const tenths = (x: number) => `${n(x / 10)}\u00a0%`;
 const secret = (key: string, stat: StatKey, name: string, description: string, pw: number): AchievementDef => ({
   key,
   family: "Secrets",
@@ -305,6 +347,13 @@ const secret = (key: string, stat: StatKey, name: string, description: string, p
   reward: { pw, packs: 0 },
   secret: true,
 });
+
+/**
+ * Dernier palier des Ultra rares de la saison et sa récompense. L'ancien dernier palier (25 %), jugé
+ * inatteignable, est retiré : il reste chez qui l'avait débloqué.
+ */
+const UR_SEASON_TOP_PCT = 10;
+const UR_SEASON_TOP_REWARD = 3_000;
 
 /**
  * Tous les succès. Les clés des succès de la V1 (`first_pack`, `packs_100`, `legend_10`…) sont gardées :
@@ -383,16 +432,81 @@ export const ACHIEVEMENTS: AchievementDef[] = [
       ["legend_25", 25, "Mont Olympe", 5_000],
     ],
   ),
+  // Part de la saison par rareté : un joueur actif (2 000 à 3 000 paquets par saison) tire 0,5 à 1 % des communes
+  // et peu communes, 1,5 à 3 % des autres raretés. Le dernier palier demande une saison très assidue.
+  ...family(
+    "Communes de la saison",
+    "season_c",
+    (x) => `Posséder ${tenths(x)} des Communes de la saison, tirées de ses propres paquets.`,
+    [
+      ["c_0p1pct", 1, "Monsieur Tout-le-monde", 100],
+      ["c_0p2pct", 2, "Café du commerce", 250],
+      ["c_0p5pct", 5, "Bien commun", 600],
+      ["c_1pct", 10, "Sens commun", 1_500],
+    ],
+    { percent: 10 },
+  ),
+  ...family(
+    "Peu communes de la saison",
+    "season_pc",
+    (x) => `Posséder ${tenths(x)} des Peu communes de la saison, tirées de ses propres paquets.`,
+    [
+      ["pc_0p1pct", 1, "Sortir du lot", 100],
+      ["pc_0p2pct", 2, "Pas banal", 250],
+      ["pc_0p5pct", 5, "Hors du commun", 600],
+      ["pc_1pct", 10, "Singulier pluriel", 1_500],
+    ],
+    { percent: 10 },
+  ),
+  ...family(
+    "Rares de la saison",
+    "season_r",
+    (x) => `Posséder ${tenths(x)} des Rares de la saison, tirées de ses propres paquets.`,
+    [
+      ["r_0p5pct", 5, "Perle rare", 150],
+      ["r_1pct", 10, "Oiseau rare", 400],
+      ["r_2pct", 20, "Denrée rare", 1_000],
+      ["r_3pct", 30, "Rareté assumée", 2_500],
+    ],
+    { percent: 10 },
+  ),
+  ...family(
+    "Super rares de la saison",
+    "season_sr",
+    (x) => `Posséder ${tenths(x)} des Super rares de la saison, tirées de ses propres paquets.`,
+    [
+      ["sr_0p5pct", 5, "Supermarché", 200],
+      ["sr_1pct", 10, "Superproduction", 500],
+      ["sr_2pct", 20, "Superpuissance", 1_200],
+      ["sr_3pct", 30, "Superlatif", 3_000],
+    ],
+    { percent: 10 },
+  ),
   ...family(
     "Ultra rares de la saison",
     "ur_pct",
-    (x) => `Posséder ${x} % des Ultra rares de la saison, tirées de ses propres paquets.`,
+    (x) => `Posséder ${x}\u00a0% des Ultra rares de la saison, tirées de ses propres paquets.`,
     [
       ["ur_1pct", 1, "Un centième de l'Olympe", 200],
+      ["ur_2pct", 2, "Un cinquantième de l'Olympe", 400],
       ["ur_5pct", 5, "Un vingtième de l'Olympe", 600],
-      ["ur_10pct", 10, "Un dixième de l'Olympe", 1_000],
-      ["ur_25pct", 25, "Un quart de l'Olympe", 3_000],
+      // Dernier palier depuis que 25 % a été jugé inatteignable : il reprend sa récompense.
+      ["ur_10pct", UR_SEASON_TOP_PCT, "Un dixième de l'Olympe", UR_SEASON_TOP_REWARD],
+      ["ur_25pct", 25, "Un quart de l'Olympe", 3_000, { retired: true }],
     ],
+    { percent: 1 },
+  ),
+  ...family(
+    "Légendaires de la saison",
+    "season_l",
+    (x) => `Posséder ${tenths(x)} des Légendaires de la saison, tirées de ses propres paquets.`,
+    [
+      ["l_0p5pct", 5, "Conteur", 300],
+      ["l_1pct", 10, "Barde", 800],
+      ["l_2pct", 20, "Chroniqueur", 2_000],
+      ["l_3pct", 30, "Mythographe", 5_000],
+    ],
+    { percent: 10 },
   ),
   ...family(
     "Abécédaire",
@@ -628,9 +742,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
 
 export const ACHIEVEMENT_BY_KEY = new Map(ACHIEVEMENTS.map((a) => [a.key, a]));
 
-/** Succès atteints par ces statistiques et pas encore débloqués. */
+/** Succès atteints par ces statistiques et pas encore débloqués (jamais un palier retiré). */
 export function newlyUnlocked(stats: Map<StatKey, number>, unlocked: ReadonlySet<string>): AchievementDef[] {
-  return ACHIEVEMENTS.filter((a) => !unlocked.has(a.key) && (stats.get(a.stat) ?? 0) >= a.target);
+  return ACHIEVEMENTS.filter((a) => !a.retired && !unlocked.has(a.key) && (stats.get(a.stat) ?? 0) >= a.target);
 }
 
 /** Progression affichée d'un succès (plafonnée à l'objectif). */

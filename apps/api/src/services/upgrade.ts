@@ -8,6 +8,7 @@ import {
   upgradeChance,
   upgradeRefund,
   upgradeSeriesLots,
+  upgradeSeriesSummary,
   type Rarity,
 } from "@palacards/game";
 import type { UpgradeResultDTO, UpgradeSeriesPreviewDTO, UpgradeSeriesResultDTO } from "@palacards/shared";
@@ -144,19 +145,17 @@ export async function upgradeSeriesPreview(
 ): Promise<UpgradeSeriesPreviewDTO> {
   const target = seriesTarget(from);
   const c = await seriesCandidates(ctx, ownerId, from, singles);
-  const lots = upgradeSeriesLots(from, c.ids.length).map((cards) => ({ cards, chance: upgradeChance(from, cards) }));
-  const cards = lots.reduce((s, l) => s + l.cards, 0);
+  const plan = upgradeSeriesLots(from, c.ids.length);
+  const summary = upgradeSeriesSummary(from, plan);
   return {
     rarity: from,
     target,
     available: c.ids.length,
     duplicates: c.duplicates,
     singles: c.singles,
-    singlesUsed: Math.max(0, cards - c.duplicates),
-    lots,
-    cards,
-    expectedSuccesses: Math.round(lots.reduce((s, l) => s + l.chance, 0) / 1_000) / 10,
-    refundIfAllFail: lots.reduce((s, l) => s + upgradeRefund(from, l.cards), 0),
+    singlesUsed: Math.max(0, summary.cards - c.duplicates),
+    lots: plan.map((cards) => ({ cards, chance: upgradeChance(from, cards) })),
+    ...summary,
     maxLots: UPGRADE_SERIES_MAX_LOTS,
   };
 }
@@ -165,18 +164,20 @@ export async function upgradeSeriesPreview(
  * Upgrade en série : les doublons d'une rareté (jamais favoris, brillantes, épinglées ni cartes engagées ;
  * le meilleur exemplaire de chaque article reste, sauf avec `singles`) partent en lots au rendement maximal,
  * chacun tiré comme un upgrade normal. Une transaction pour tout le lancement ; une ligne de ledger par lot.
+ * `maxLots` : nombre d'upgrades choisi par le joueur, ramené à ce que ses cartes permettent (tous par défaut).
  */
 export async function upgradeSeries(
   ctx: Ctx,
   ownerId: string,
   from: Rarity,
   singles = false,
+  maxLots = UPGRADE_SERIES_MAX_LOTS,
 ): Promise<UpgradeSeriesResultDTO> {
   const target = seriesTarget(from);
   const res = await ctx.db.transaction(async (tx) => {
     const p = await lockPlayer(tx, ownerId);
     const candidates = (await seriesCandidates(ctx, ownerId, from, singles, tx)).ids;
-    const plan = upgradeSeriesLots(from, candidates.length);
+    const plan = upgradeSeriesLots(from, candidates.length, maxLots);
     if (!plan.length)
       throw badRequest(
         "no_duplicates",
