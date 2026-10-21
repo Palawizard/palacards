@@ -79,7 +79,7 @@ export function AutoRecycle() {
       <p className="text-xs leading-relaxed text-faint">
         {max === null
           ? "Toutes les cartes tirées restent dans ta collection."
-          : `À l’ouverture, les cartes ${max === "C" ? "communes" : `de ${RARITY_LABELS.C.toLowerCase()} à ${RARITY_LABELS[max].toLowerCase()}`} sont recyclées en points wiki.`}
+          : `À l’ouverture, les cartes ${max === "C" ? "communes" : `de ${RARITY_LABELS.C.toLowerCase()} à ${RARITY_LABELS[max].toLowerCase()}`} sont recyclées en points wiki, sauf celles de ta wishlist.`}
       </p>
       <label className={`flex items-center gap-2 text-sm ${max === null ? "text-faint" : "text-muted"}`}>
         <input
