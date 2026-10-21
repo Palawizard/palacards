@@ -99,14 +99,65 @@ describe("succès à paliers", () => {
 
   it("calcule la part des UR de la saison et l'abécédaire", () => {
     const stats = run([
-      { type: "collection", uniqueCards: 10, uniqueLegendary: 0, uniqueUR: 1, totalUR: 9, initials: 13 },
+      { type: "collection", uniqueCards: 10, uniqueLegendary: 0, season: { UR: { owned: 1, total: 9 } }, initials: 13 },
     ]);
     expect(stats.get("ur_pct")).toBe(11);
-    expect(unlockedKeys(stats)).toEqual(["abc_13", "ur_10pct", "ur_1pct", "ur_5pct"]);
+    expect(unlockedKeys(stats)).toEqual(["abc_13", "ur_10pct", "ur_1pct", "ur_2pct", "ur_5pct"]);
+  });
+
+  it("calcule la part de la saison des autres raretés en dixièmes de pour cent", () => {
+    const stats = run([
+      {
+        type: "collection",
+        uniqueCards: 0,
+        uniqueLegendary: 0,
+        season: {
+          C: { owned: 3_300, total: 1_600_000 },
+          PC: { owned: 7_500, total: 750_000 },
+          R: { owned: 999, total: 200_000 },
+          SR: { owned: 1_200, total: 40_000 },
+          L: { owned: 30, total: 1_000 },
+          UR: { owned: 5, total: 0 },
+        },
+      },
+    ]);
+    expect(Object.fromEntries(stats)).toEqual({ season_c: 2, season_pc: 10, season_r: 4, season_sr: 30, season_l: 30 });
+    expect(unlockedKeys(stats)).toEqual(
+      [
+        "c_0p1pct",
+        "c_0p2pct",
+        "pc_0p1pct",
+        "pc_0p2pct",
+        "pc_0p5pct",
+        "pc_1pct",
+        "sr_0p5pct",
+        "sr_1pct",
+        "sr_2pct",
+        "sr_3pct",
+        "l_0p5pct",
+        "l_1pct",
+        "l_2pct",
+        "l_3pct",
+      ].sort(),
+    );
+    expect(ACHIEVEMENTS.find((a) => a.key === "c_0p5pct")?.description).toBe(
+      "Posséder 0,5\u00a0% des Communes de la saison, tirées de ses propres paquets.",
+    );
+  });
+
+  it("plafonne les UR de la saison à 10 % et ne débloque plus l'ancien palier de 25 %", () => {
+    const ur = ACHIEVEMENTS.filter((a) => a.stat === "ur_pct" && !a.retired);
+    expect(ur.at(-1)).toMatchObject({ key: "ur_10pct", target: 10 });
+    expect(ACHIEVEMENTS.find((a) => a.key === "ur_25pct")).toMatchObject({ retired: true, target: 25 });
+    const stats = run([], [["ur_pct", 30]]);
+    expect(unlockedKeys(stats)).not.toContain("ur_25pct");
+    // Un joueur qui a déjà les anciens paliers ne reçoit que le nouveau.
+    expect(unlockedKeys(stats, ["ur_1pct", "ur_5pct", "ur_10pct", "ur_25pct"])).toEqual(["ur_2pct"]);
   });
 
   it("ne fait dépendre de l'état de la collection que des succès « tirés de ses propres paquets »", () => {
-    for (const a of ACHIEVEMENTS.filter((x) => ["unique_cards", "unique_l", "ur_pct", "initials"].includes(x.stat)))
+    const collectionStats = ["unique_cards", "unique_l", "ur_pct", "initials"];
+    for (const a of ACHIEVEMENTS.filter((x) => collectionStats.includes(x.stat) || x.stat.startsWith("season_")))
       expect(a.description).toMatch(/tiré(e)?s de ses propres paquets/);
   });
 
