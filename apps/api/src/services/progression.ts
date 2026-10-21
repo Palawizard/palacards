@@ -16,6 +16,7 @@ import {
   type GameEvent,
   type Leaderboard,
   type QuestKind,
+  type Rarity,
   type StatKey,
   type TitleRef,
 } from "@palacards/game";
@@ -294,8 +295,27 @@ export async function progressionIdle() {
   while (pending.size) await Promise.allSettled([...pending]);
 }
 
+/** Cartes de chaque rareté par saison, et date du comptage. */
+const seasonTotalsCache = new Map<number, { at: number; totals: Partial<Record<Rarity, number>> }>();
+const SEASON_TOTALS_TTL_MS = 10 * 60_000;
+
 /**
- * Événement « collection » : articles uniques, Légendaires différentes, part des UR de la saison, initiales.
+ * Cartes de la saison par rareté. Les communes se comptent par millions : le comptage est gardé en mémoire
+ * quelques minutes (les cartes d'une saison ne bougent presque pas, sauf ajout par l'admin).
+ */
+async function seasonTotals(db: DbOrTx, season: number): Promise<Partial<Record<Rarity, number>>> {
+  const hit = seasonTotalsCache.get(season);
+  if (hit && Date.now() - hit.at < SEASON_TOTALS_TTL_MS) return hit.totals;
+  const rows = await db.execute<{ rarity: Rarity; n: number }>(sql`
+    select rarity, count(*)::int as n from cards where season = ${season} group by rarity
+  `);
+  const totals = Object.fromEntries(rows.map((r) => [r.rarity, r.n]));
+  seasonTotalsCache.set(season, { at: Date.now(), totals });
+  return totals;
+}
+
+/**
+ * Événement « collection » : articles uniques, Légendaires différentes, part de la saison par rareté, initiales.
  * Anti-farm : seuls comptent les exemplaires que le joueur a tirés lui-même et toujours détenus
  * (`source` = `pack`, `upgrade`, `wheel` ou `boss` ; un transfert par échange ou vente la réécrit en `trade` /
  * `market`, un don admin vaut `admin`). Sinon des amis se prêteraient gratuitement leurs cartes pour débloquer
@@ -306,8 +326,7 @@ export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameE
   const [row] = await db.execute<{
     unique_cards: number;
     unique_l: number;
-    unique_ur: number;
-    total_ur: number;
+    season_owned: Partial<Record<Rarity, number>> | null;
     initials: number;
   }>(sql`
     with pulled as (
@@ -317,18 +336,22 @@ export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameE
     select
       (select count(distinct card_id)::int from pulled) as unique_cards,
       (select count(distinct card_id)::int from pulled where rarity = 'L') as unique_l,
-      (select count(distinct card_id)::int from pulled where rarity = 'UR' and season = ${season}) as unique_ur,
-      (select count(*)::int from cards where season = ${season} and rarity = 'UR') as total_ur,
+      (select json_object_agg(rarity, n) from (
+         select rarity, count(distinct card_id)::int as n from pulled where season = ${season} group by rarity
+       ) s) as season_owned,
       (select count(distinct upper(left(f_unaccent(c.title), 1)))::int from pulled p
          join cards c on c.season = p.season and c.id = p.card_id
          where upper(left(f_unaccent(c.title), 1)) between 'A' and 'Z') as initials
   `);
+  const totals = await seasonTotals(db, season);
+  const owned = row?.season_owned ?? {};
   return {
     type: "collection",
     uniqueCards: row?.unique_cards ?? 0,
     uniqueLegendary: row?.unique_l ?? 0,
-    uniqueUR: row?.unique_ur ?? 0,
-    totalUR: row?.total_ur ?? 0,
+    season: Object.fromEntries(
+      Object.entries(totals).map(([r, total]) => [r, { owned: owned[r as Rarity] ?? 0, total }]),
+    ),
     initials: row?.initials ?? 0,
   };
 }
@@ -363,7 +386,7 @@ export async function winStreak(db: DbOrTx, userId: string): Promise<number> {
 // ---------------------------------------------------------------------------
 
 /** À augmenter quand le rattrapage sait recalculer une statistique de plus. */
-export const STATS_VERSION = 1;
+export const STATS_VERSION = 2;
 
 /**
  * Statistiques déductibles de l'historique (ledger, enchères, échanges, duels, collection). Les cartes
@@ -503,8 +526,10 @@ export async function listAchievements(ctx: Ctx, userId: string) {
     loadStats(ctx.db, userId),
   ]);
   const by = new Map(rows.map((r) => [r.achievementKey, r]));
-  return ACHIEVEMENTS.map((a) => {
+  return ACHIEVEMENTS.flatMap((a) => {
     const unlockedAt = by.get(a.key)?.unlockedAt?.toISOString() ?? null;
+    // Palier retiré : seuls ceux qui l'ont débloqué le voient encore.
+    if (a.retired && !unlockedAt) return [];
     const hidden = !!a.secret && !unlockedAt;
     return {
       key: a.key,
@@ -514,6 +539,7 @@ export async function listAchievements(ctx: Ctx, userId: string) {
       name: hidden ? "Succès secret" : a.name,
       description: hidden ? "Continue à jouer pour le découvrir." : a.description,
       target: a.target,
+      percent: a.percent ?? null,
       reward: a.reward,
       progress: unlockedAt ? a.target : hidden ? 0 : achievementProgress(a, stats),
       unlockedAt,

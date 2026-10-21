@@ -62,6 +62,39 @@ describe("succès de collection", () => {
     const list = (await a.get("/achievements")).body as { key: string; progress: number }[];
     expect(list.find((x) => x.key === "collection_1000")!.progress).toBe(mineA.size);
   });
+
+  it("compte la part de la saison tirée par rareté", async () => {
+    const p = await signUp(app);
+    const pulled = (await p.post("/packs/open")).body.cards as { cardId: number; rarity: string }[];
+    await progressionIdle();
+    const e = await collectionEvent(ctx.db, p.userId);
+    if (e.type !== "collection") throw new Error("événement inattendu");
+    const totals = await ctx.db.execute<{ rarity: string; n: number }>(sql`
+      select rarity, count(*)::int as n from cards where season = (select id from seasons where status = 'active')
+      group by rarity
+    `);
+    for (const t of totals) {
+      const owned = new Set(pulled.filter((c) => c.rarity === t.rarity).map((c) => c.cardId)).size;
+      expect(e.season?.[t.rarity as keyof typeof e.season]).toEqual({ owned, total: t.n });
+    }
+    const list = (await p.get("/achievements")).body as { key: string; percent: number | null; progress: number }[];
+    const common = list.find((x) => x.key === "c_0p1pct")!;
+    expect(common.percent).toBe(10);
+    const owned = e.season?.C;
+    if (owned) expect(common.progress).toBe(Math.min(1, Math.floor((owned.owned * 1_000) / owned.total)));
+  });
+
+  it("cache l'ancien palier de 25 % des UR, sauf à qui l'a déjà débloqué", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    await ctx.db
+      .insert(schema.achievementsProgress)
+      .values({ userId: b.userId, achievementKey: "ur_25pct", progress: 25, unlockedAt: new Date() });
+    const keys = async (p: typeof a) => ((await p.get("/achievements")).body as { key: string }[]).map((x) => x.key);
+    expect(await keys(a)).not.toContain("ur_25pct");
+    expect(await keys(a)).toContain("ur_10pct");
+    expect(await keys(b)).toContain("ur_25pct");
+  });
 });
 
 describe("fusion et niveaux", () => {
