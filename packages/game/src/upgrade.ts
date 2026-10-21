@@ -66,12 +66,31 @@ export const UPGRADE_SERIES_MAX_LOTS = 50;
  * Découpe `cards` doublons d'une rareté en lots pour l'upgrade en série. La chance est proportionnelle au
  * nombre de cartes jusqu'au plafond : des lots juste au plafond (10 cartes s'il n'est jamais atteint)
  * tirent le meilleur de chaque carte, et le reste forme un dernier lot plus petit, au même rendement.
+ * `max` : nombre de lots voulu par le joueur, ramené entre 1 et `UPGRADE_SERIES_MAX_LOTS` (tous par défaut).
  */
-export function upgradeSeriesLots(from: Rarity, cards: number): number[] {
+export function upgradeSeriesLots(from: Rarity, cards: number, max = UPGRADE_SERIES_MAX_LOTS): number[] {
   if (!nextRarity(from) || cards < UPGRADE_MIN_CARDS) return [];
   const size = upgradeCardsToCap(from) ?? UPGRADE_MAX_CARDS;
+  const limit = clampSeriesLots(max);
   const lots: number[] = [];
-  for (let left = cards; left > 0 && lots.length < UPGRADE_SERIES_MAX_LOTS; left -= size)
-    lots.push(Math.min(size, left));
+  for (let left = cards; left > 0 && lots.length < limit; left -= size) lots.push(Math.min(size, left));
   return lots;
+}
+
+/**
+ * Bilan d'un plan d'upgrade en série (affiché avant lancement) : cartes engagées, réussites attendues
+ * (arrondies au dixième) et PW rendus si tous les lots échouent.
+ */
+export function upgradeSeriesSummary(from: Rarity, plan: number[]) {
+  return {
+    cards: plan.reduce((s, n) => s + n, 0),
+    expectedSuccesses: Math.round(plan.reduce((s, n) => s + upgradeChance(from, n), 0) / 1_000) / 10,
+    refundIfAllFail: plan.reduce((s, n) => s + upgradeRefund(from, n), 0),
+  };
+}
+
+/** Nombre de lots demandé ramené entre 1 et `UPGRADE_SERIES_MAX_LOTS` (entier ; maximum si invalide). */
+export function clampSeriesLots(n: number): number {
+  if (!Number.isFinite(n)) return UPGRADE_SERIES_MAX_LOTS;
+  return Math.min(UPGRADE_SERIES_MAX_LOTS, Math.max(1, Math.floor(n)));
 }

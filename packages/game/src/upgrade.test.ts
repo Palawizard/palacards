@@ -3,6 +3,7 @@ import { ECONOMY } from "./economy.js";
 import { CARDS_PER_PACK, DROP_TABLE_GUARANTEED, DROP_TABLE_STANDARD } from "./packs.js";
 import { RARITIES, type Rarity } from "./rarity.js";
 import {
+  clampSeriesLots,
   nextRarity,
   UPGRADE_MAX_CARDS,
   UPGRADE_MAX_CHANCE,
@@ -11,6 +12,7 @@ import {
   upgradeChancePerCard,
   upgradeRefund,
   upgradeSeriesLots,
+  upgradeSeriesSummary,
   UPGRADE_SERIES_MAX_LOTS,
 } from "./upgrade.js";
 
@@ -79,6 +81,39 @@ describe("upgrade en série", () => {
     expect(upgradeSeriesLots("C", 10_000)).toHaveLength(UPGRADE_SERIES_MAX_LOTS);
     expect(upgradeSeriesLots("L", 20)).toEqual([]);
     expect(upgradeSeriesLots("R", 0)).toEqual([]);
+  });
+
+  it("lance exactement le nombre de lots choisi, ramené au maximum possible", () => {
+    const cap = upgradeCardsToCap("C")!;
+    expect(upgradeSeriesLots("C", 10_000, 7)).toEqual(Array(7).fill(cap));
+    expect(upgradeSeriesLots("C", 10_000, 23)).toHaveLength(23);
+    // Pas assez de cartes : tous les lots possibles, le dernier avec le reste.
+    expect(upgradeSeriesLots("SR", 23, 10)).toEqual([10, 10, 3]);
+    expect(upgradeSeriesLots("C", 10_000, 999)).toHaveLength(UPGRADE_SERIES_MAX_LOTS);
+    expect(upgradeSeriesLots("C", 10_000, 0)).toHaveLength(1);
+    expect(upgradeSeriesLots("C", 10_000, 1)).toEqual([cap]);
+  });
+
+  it("borne le nombre de lots demandé entre 1 et le maximum par clic", () => {
+    expect([0, -3, 1, 7.8, 50, 51, Number.NaN].map(clampSeriesLots)).toEqual([
+      1,
+      1,
+      1,
+      7,
+      UPGRADE_SERIES_MAX_LOTS,
+      UPGRADE_SERIES_MAX_LOTS,
+      UPGRADE_SERIES_MAX_LOTS,
+    ]);
+  });
+
+  it("résume un plan : cartes, réussites attendues et PW rendus au pire", () => {
+    const plan = upgradeSeriesLots("SR", 23);
+    expect(upgradeSeriesSummary("SR", plan)).toEqual({
+      cards: 23,
+      expectedSuccesses: Math.round((2 * upgradeChance("SR", 10) + upgradeChance("SR", 3)) / 1_000) / 10,
+      refundIfAllFail: 2 * upgradeRefund("SR", 10) + upgradeRefund("SR", 3),
+    });
+    expect(upgradeSeriesSummary("SR", [])).toEqual({ cards: 0, expectedSuccesses: 0, refundIfAllFail: 0 });
   });
 
   it("aucun lot ne perd de rendement par carte (plafond mis à part)", () => {
