@@ -17,6 +17,8 @@ interface Achievement {
   name: string;
   description: string;
   target: number;
+  /** Objectif en pourcentage : 1 = en %, 10 = en dixièmes de % ; null : un nombre. */
+  percent: number | null;
   reward: { pw: number; packs: number };
   progress: number;
   unlockedAt: string | null;
@@ -38,7 +40,12 @@ const GROUPS: { title: string; families: string[] }[] = [
       "Brillantes",
       "Articles différents",
       "Légendaires différentes",
+      "Communes de la saison",
+      "Peu communes de la saison",
+      "Rares de la saison",
+      "Super rares de la saison",
       "Ultra rares de la saison",
+      "Légendaires de la saison",
       "Abécédaire",
       "Niveau de carte",
       "Fusions",
@@ -82,6 +89,9 @@ const reward = (r: Achievement["reward"]) =>
   [r.pw ? `${fmt(r.pw)} PW` : "", r.packs ? `${r.packs} paquet${r.packs > 1 ? "s" : ""} bonus` : ""]
     .filter(Boolean)
     .join(" + ");
+
+/** Objectif ou progression d'un palier : « 1 234 », ou « 0,5 % » pour une part de la saison. */
+const amount = (a: Achievement, v: number) => (a.percent ? `${fmt(v / a.percent)}\u00a0%` : fmt(v));
 
 const ROMAN = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII"];
 
@@ -170,7 +180,7 @@ function Family({ name, tiers, q, onOpen }: { name: string; tiers: Achievement[]
             <Progress a={shown} />
             <p className="tnum mt-1 flex justify-between gap-3 text-xs text-faint">
               <span>
-                {fmt(Math.min(shown.progress, shown.target))} / {fmt(shown.target)}
+                {amount(shown, Math.min(shown.progress, shown.target))} / {amount(shown, shown.target)}
               </span>
               <span>{reward(shown.reward)}</span>
             </p>
@@ -216,11 +226,11 @@ function TierRow({ a, step, current }: { a: Achievement; step: number; current: 
           <>
             <Progress a={a} />
             <p className="tnum mt-1 text-xs text-faint">
-              En cours · {fmt(Math.min(a.progress, a.target))} / {fmt(a.target)}
+              En cours · {amount(a, Math.min(a.progress, a.target))} / {amount(a, a.target)}
             </p>
           </>
         ) : (
-          <p className="tnum mt-1 text-xs text-faint">À venir · objectif {fmt(a.target)}</p>
+          <p className="tnum mt-1 text-xs text-faint">À venir · objectif {amount(a, a.target)}</p>
         )}
       </div>
     </li>
