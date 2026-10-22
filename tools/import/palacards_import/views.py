@@ -109,10 +109,11 @@ def write_month(month: str, totals: dict[int, int]) -> None:
 def merge_months(files: list[Path], out: Path) -> None:
     """Somme par page_id des mois agrégés, dans `out` (chemins échappés : apostrophes possibles)."""
     sources = "[" + ", ".join(sql_str(f) for f in files) + "]"
-    duckdb.sql(
-        f"COPY (SELECT page_id, sum(views)::BIGINT AS views FROM read_parquet({sources}) GROUP BY page_id) "
-        f"TO {sql_str(out)} (FORMAT parquet)"
-    )
+    with duckdb.connect() as con:
+        con.execute(
+            f"COPY (SELECT page_id, sum(views)::BIGINT AS views FROM read_parquet({sources}) GROUP BY page_id) "
+            f"TO {sql_str(out)} (FORMAT parquet)"
+        )
 
 
 def run(months: int = 12, today: dt.date | None = None) -> None:
