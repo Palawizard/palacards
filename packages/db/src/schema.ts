@@ -1279,6 +1279,10 @@ export const hlRuns = pgTable(
     /** Fin de l'essai : mauvaise réponse, temps écoulé, ou plus aucun article possible. */
     endReason: text("end_reason", { enum: ["wrong", "timeout", "exhausted"] }),
     reward: integer("reward").notNull().default(0),
+    /** Entraînement (après les 3 essais du jour) : ni PW, ni XP, ni quête, ni succès, ni classement. */
+    practice: boolean("practice").notNull().default(false),
+    /** La paire en cours remplace une paire impossible (aucun article dans le sens tiré) : les deux sont nouveaux. */
+    pairRenewed: boolean("pair_renewed").notNull().default(false),
     createdAt: tstz("created_at").notNull().defaultNow(),
     finishedAt: tstz("finished_at"),
   },
@@ -1289,6 +1293,33 @@ export const hlRuns = pgTable(
       .where(sql`${t.status} = 'playing'`),
     index("hl_runs_month_idx").on(t.day, t.streak),
   ],
+);
+
+/**
+ * Chaque réponse de « Plus ou moins vu » : la paire, les vues, le choix et le temps de réponse. Sert à vérifier
+ * une série suspecte après coup (le 22/10/2026, impossible de rejouer une série de 52 sans ce journal).
+ */
+export const hlSteps = pgTable(
+  "hl_steps",
+  {
+    runId: bigint("run_id", { mode: "number" })
+      .notNull()
+      .references(() => hlRuns.id, { onDelete: "cascade" }),
+    step: smallint("step").notNull(),
+    keptCardId: bigint("kept_card_id", { mode: "number" }).notNull(),
+    challengerCardId: bigint("challenger_card_id", { mode: "number" }).notNull(),
+    keptViews: bigint("kept_views", { mode: "number" }).notNull(),
+    challengerViews: bigint("challenger_views", { mode: "number" }).notNull(),
+    pick: text("pick", { enum: ["kept", "challenger"] }).notNull(),
+    correct: boolean("correct").notNull(),
+    timeout: boolean("timeout").notNull(),
+    /** Paire tirée de zéro (voir `hl_runs.pair_renewed`). */
+    renewed: boolean("renewed").notNull(),
+    /** Temps entre l'affichage de la paire et la réponse (ms). */
+    answerMs: integer("answer_ms").notNull(),
+    answeredAt: tstz("answered_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.step] })],
 );
 
 /** Articles déjà montrés au joueur ce jour-là : jamais deux fois le même dans la journée. */
