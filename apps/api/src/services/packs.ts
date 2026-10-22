@@ -109,6 +109,8 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       if (free) {
         update.packsStored = free.stored;
         update.packsUpdatedAt = free.updatedAt;
+        // Le stock repasse sous le plafond : le prochain remplissage aura sa notification.
+        update.packsFullNotified = false;
       } else if (p.bonusPacks > 0) {
         update.bonusPacks = p.bonusPacks - 1;
         usedBonus = true;
@@ -245,6 +247,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       notable,
       recycledRarities: picks.map((i) => drawn[i]!.rarity),
       usedBonus,
+      usedFree: !!free,
       pityTriggered: p.pityCounter >= PITY_THRESHOLD,
       state,
       theme: theme
@@ -265,7 +268,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     if (result.theme || result.autoRecycled) pushWallet(ctx, result.state);
   });
   await afterCommit(ctx, async () => {
-    await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
+    if (result.usedFree) await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
     await bumpObjective(ctx, userId, {
       open_packs: 1,
       pull_sr: result.drawn.filter((d) => d.rarity === "SR" || d.rarity === "UR" || d.rarity === "L").length,

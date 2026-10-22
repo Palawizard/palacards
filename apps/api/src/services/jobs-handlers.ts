@@ -19,7 +19,7 @@ export function registerJobs(ctx: Ctx) {
     await closeTrade(ctx, Number(data.tradeId), { kind: "expire" });
   });
   ctx.jobs.define(PACKS_FULL_JOB, async (data) => {
-    await notifyPacksFull(ctx, String(data.userId), String(data.fullAt));
+    await notifyPacksFull(ctx, String(data.userId));
   });
   // Objectifs de guilde : nouvelle semaine le lundi à 0 h (heure de Paris).
   ctx.jobs.schedule(GUILD_WEEKLY_JOB, "0 0 * * 1", async () => {

@@ -200,6 +200,8 @@ export const players = pgTable(
     packsStored: smallint("packs_stored").notNull().default(10),
     packsUpdatedAt: tstz("packs_updated_at").notNull().defaultNow(),
     bonusPacks: integer("bonus_packs").notNull().default(0),
+    /** Notification « stock plein » déjà envoyée pour ce remplissage (remis à false dès qu'un paquet du stock est ouvert). */
+    packsFullNotified: boolean("packs_full_notified").notNull().default(false),
     pityCounter: integer("pity_counter").notNull().default(0),
     elo: integer("elo").notNull().default(1000),
     eloPeak: integer("elo_peak").notNull().default(1000),
