@@ -2,13 +2,14 @@ import { and, eq, schema, sql } from "@palacards/db";
 import {
   parisDay,
   planShop,
+  rollSourceShiny,
   SHOP_PRICES,
   SHOP_RARITIES,
   SHOP_SIZE,
   type ShopPool,
   type ShopRarity,
 } from "@palacards/game";
-import type { ShopDTO } from "@palacards/shared";
+import type { ShopBuyDTO, ShopDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { conflict, notFound } from "../errors.js";
 import { arthropodFlags, loadMediaInBackground } from "./cards.js";
@@ -48,8 +49,8 @@ async function sample(ctx: Ctx, userId: string, season: number, rarity: ShopRari
 }
 
 /**
- * Compose et fige la boutique du jour du joueur (première visite du jour) : 20 cartes de la saison active,
- * jamais brillantes, rareté tirée pour chaque emplacement (SR 50 %, UR 35 %, L 15 %), les cartes non possédées
+ * Compose et fige la boutique du jour du joueur (première visite du jour) : 20 cartes de la saison active
+ * (présentées normales : la brillance se tire à l'achat), rareté tirée pour chaque emplacement (SR 50 %, UR 35 %, L 15 %), les cartes non possédées
  * d'abord. Option « masquer les arthropodes » : les arthropodes connus sont écartés (les autres restent
  * floutés à l'affichage comme partout). Tirage côté serveur avec `ctx.random`. Joueur verrouillé : deux
  * premières visites simultanées ne créent qu'une boutique.
@@ -115,7 +116,10 @@ async function ensureShop(ctx: Ctx, userId: string, day: string) {
     .orderBy(o.slot);
 }
 
-/** Boutique du jour du joueur : cartes (rendu habituel), prix, état « Achetée », renouvellement à minuit. */
+/**
+ * Boutique du jour du joueur : cartes (rendu habituel), prix, état « Achetée », renouvellement à minuit. Une carte
+ * achetée s'affiche comme l'exemplaire obtenu (brillant ou non).
+ */
 export async function getShop(ctx: Ctx, userId: string): Promise<ShopDTO> {
   const now = ctx.now();
   const day = parisDay(now);
@@ -135,13 +139,16 @@ export async function getShop(ctx: Ctx, userId: string): Promise<ShopDTO> {
         price: number;
         purchased_at: Date | string | null;
         owned: boolean;
+        shiny: boolean;
       }>(sql`
         select o.slot, o.card_id, o.season, c.title, o.rarity, c.atk, c.def, c.views_12m, s.thumb_url, s.page_url,
                o.price, o.purchased_at,
-               exists (select 1 from card_instances i where i.owner_id = ${userId} and i.card_id = o.card_id) as owned
+               exists (select 1 from card_instances i where i.owner_id = ${userId} and i.card_id = o.card_id) as owned,
+               coalesce(b.shiny, false) as shiny
         from shop_offers o
         join cards c on c.season = o.season and c.id = o.card_id
         left join wiki_summaries s on s.page_id = o.card_id
+        left join card_instances b on b.id = o.instance_id
         where o.user_id = ${userId} and o.day = ${day}
         order by o.slot
       `)
@@ -164,7 +171,7 @@ export async function getShop(ctx: Ctx, userId: string): Promise<ShopDTO> {
         atk: r.atk,
         def: r.def,
         level: 1,
-        shiny: false,
+        shiny: r.shiny,
         views12m: Number(r.views_12m),
         thumbUrl: r.thumb_url,
         pageUrl: r.page_url ?? articleUrl(r.title),
@@ -177,11 +184,12 @@ export async function getShop(ctx: Ctx, userId: string): Promise<ShopDTO> {
 /**
  * Achat d'une carte de la boutique du jour : une transaction (joueur verrouillé, offre verrouillée, solde
  * vérifié par `movePw`). Une offre déjà achetée est refusée : un double clic ou deux requêtes simultanées
- * n'achètent qu'une fois. La carte arrive avec la source `shop` : elle ne compte pas comme un tirage (succès
- * de collection et de part de saison, classement « Chance », objectif communautaire). Une légendaire apparaît
- * dans le fil d'activité comme « achetée en boutique ».
+ * n'achètent qu'une fois. La carte peut sortir brillante (tirée à l'achat, `SHINY_SOURCE_CHANCE.shop`). Elle
+ * arrive avec la source `shop` : elle ne compte pas comme un tirage (succès de collection et de part de saison,
+ * classement « Chance », objectif communautaire). Une légendaire ou une brillante apparaît dans le fil
+ * d'activité comme « achetée en boutique ».
  */
-export async function buyShopItem(ctx: Ctx, userId: string, slot: number) {
+export async function buyShopItem(ctx: Ctx, userId: string, slot: number): Promise<ShopBuyDTO> {
   const now = ctx.now();
   const day = parisDay(now);
   const res = await ctx.db.transaction(async (tx) => {
@@ -200,6 +208,7 @@ export async function buyShopItem(ctx: Ctx, userId: string, slot: number) {
     if (!card) throw notFound("Cette carte n'existe plus.");
     const ref = `shop:${day}:${offer.cardId}`;
     await movePw(tx, p, -offer.price, "shop_purchase", ref);
+    const shiny = rollSourceShiny("shop", ctx.random);
     const [inst] = await tx
       .insert(schema.cardInstances)
       .values({
@@ -209,7 +218,7 @@ export async function buyShopItem(ctx: Ctx, userId: string, slot: number) {
         rarity: card.rarity,
         atk: card.atk,
         def: card.def,
-        shiny: false,
+        shiny,
         source: "shop",
         obtainedAt: now,
       })
@@ -220,19 +229,19 @@ export async function buyShopItem(ctx: Ctx, userId: string, slot: number) {
       .where(and(eq(o.userId, userId), eq(o.day, day), eq(o.slot, slot)));
     await logMovement(tx, userId, "card", 1, await ownedCount(tx, userId), "shop_purchase", ref);
     const notable =
-      card.rarity === "L"
+      card.rarity === "L" || shiny
         ? await logPulls(tx, userId, "shop", [
-            { cardId: card.id, season: card.season, rarity: card.rarity, shiny: false, title: card.title },
+            { cardId: card.id, season: card.season, rarity: card.rarity, shiny, title: card.title },
           ])
         : [];
-    return { player: p, instanceId: inst!.id, card, notable };
+    return { player: p, instanceId: inst!.id, shiny, card, notable };
   });
   await afterCommit(ctx, async () => {
     pushWallet(ctx, res.player);
     loadMediaInBackground(ctx, userId, [{ cardId: res.card.id, title: res.card.title }]);
     await announcePulls(ctx, userId, res.notable);
   });
-  return { slot, instanceId: res.instanceId, wallet: wallet(res.player) };
+  return { slot, instanceId: res.instanceId, shiny: res.shiny, wallet: wallet(res.player) };
 }
 
 /** Purge de nuit : boutiques de plus de 30 jours. */

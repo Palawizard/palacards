@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, schema, sql } from "@palacards/db";
 import {
   nextRarity,
-  rollShiny,
+  rollSourceShiny,
   UPGRADE_MAX_CARDS,
   UPGRADE_MIN_CARDS,
   UPGRADE_SERIES_MAX_LOTS,
@@ -84,7 +84,7 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
     }
     const season = await activeSeason(tx);
     const drawn = await drawCard(tx, season, target, ctx.random);
-    const shiny = rollShiny(ctx.random);
+    const shiny = rollSourceShiny("upgrade", ctx.random);
     const [inserted] = await tx
       .insert(ci)
       .values({
@@ -345,7 +345,7 @@ export async function upgradeSeries(
         continue;
       }
       const drawn = await drawCard(tx, season, target, ctx.random);
-      const shiny = rollShiny(ctx.random);
+      const shiny = rollSourceShiny("upgrade", ctx.random);
       const [inserted] = await tx
         .insert(ci)
         .values({

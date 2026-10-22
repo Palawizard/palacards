@@ -1,7 +1,7 @@
 import { eq, schema } from "@palacards/db";
 import {
   parisDay,
-  rollShiny,
+  rollSourceShiny,
   rollWheel,
   WHEEL_GAP_MS,
   WHEEL_THEME_FALLBACK_PACKS,
@@ -147,7 +147,7 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
     } else {
       const season = await activeSeason(tx);
       drawn = await drawCard(tx, season, reward.rarity, ctx.random);
-      const shiny = rollShiny(ctx.random);
+      const shiny = rollSourceShiny("wheel", ctx.random);
       const [row] = await tx
         .insert(schema.cardInstances)
         .values({

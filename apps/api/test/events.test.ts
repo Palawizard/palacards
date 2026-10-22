@@ -1,5 +1,7 @@
 import { sql } from "@palacards/db";
 import {
+  SHINY_CHANCE,
+  SHINY_TOTAL,
   upgradeCardsToCap,
   upgradeChance,
   upgradeRefund,
@@ -97,6 +99,28 @@ describe("upgrader", () => {
     const res = await p.post("/upgrade", { instanceIds: ids });
     expect(res.body).toMatchObject({ success: true, chance, roll: chance - 1 });
     expect(res.body.card.rarity).toBe("UR");
+  });
+
+  it("la carte obtenue peut sortir brillante, tirage indépendant des cartes sacrifiées", async () => {
+    const p = await signUp(app);
+    const shinyRoll = (hit: boolean) => (max: number) =>
+      max === SHINY_TOTAL ? (hit ? SHINY_CHANCE - 1 : SHINY_CHANCE) : 0;
+    // Cartes normales, tirage réussi : brillante.
+    ctx.random = shinyRoll(true);
+    const won = await p.post("/upgrade", { instanceIds: await grantCards(p, "C", 3) });
+    expect(won.body.card).toMatchObject({ rarity: "PC", shiny: true });
+    // Cartes brillantes, tirage raté : carte normale (la brillance ne se transmet pas).
+    const shinies = await grantCards(p, "C", 3);
+    await ctx.db.execute(
+      sql`update card_instances set shiny = true where id in (${sql.join(
+        shinies.map((i) => sql`${i}`),
+        sql`, `,
+      )})`,
+    );
+    ctx.random = shinyRoll(false);
+    const plain = await p.post("/upgrade", { instanceIds: shinies });
+    expect(plain.body.success).toBe(true);
+    expect(plain.body.card.shiny).toBeUndefined();
   });
 
   it("refuse les raretés mélangées, les légendaires, le mauvais nombre et les cartes des autres", async () => {
@@ -429,6 +453,23 @@ describe("roues du jour", () => {
     );
     const spin = await p.post("/wheel/spin");
     expect(spin.body.card).toMatchObject({ rarity: "L" });
+    expect(spin.body.card.shiny).toBeUndefined();
+  });
+
+  it("une carte gagnée peut sortir brillante, au taux des paquets", async () => {
+    ctx.now = () => new Date(noon);
+    const p = await signUp(app);
+    landOn(
+      "small",
+      findSegment("small", (r) => r.kind === "card"),
+      (max) => (max === SHINY_TOTAL ? SHINY_CHANCE - 1 : 0),
+    );
+    const spin = await p.post("/wheel/spin");
+    expect(spin.body.card).toMatchObject({ shiny: true });
+    const [row] = await ctx.db.execute<{ shiny: boolean; source: string }>(
+      sql`select shiny, source from card_instances where id = ${spin.body.card.instanceId}`,
+    );
+    expect(row).toEqual({ shiny: true, source: "wheel" });
   });
 
   it("repart à minuit, heure de Paris", () => {
