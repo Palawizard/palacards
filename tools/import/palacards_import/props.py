@@ -23,7 +23,9 @@ GOOD = "Bon_article"
 
 
 def max_page_id(articles: Path) -> int:
-    return duckdb.sql(f"SELECT max(page_id) FROM read_parquet({sql_str(articles)})").fetchone()[0]
+    # Requête sur une connexion (DuckDB 2 a retiré fetchone() des relations de duckdb.sql).
+    with duckdb.connect() as con:
+        return con.execute(f"SELECT max(page_id) FROM read_parquet({sql_str(articles)})").fetchone()[0]
 
 
 def run(sample: bool = False) -> None:
