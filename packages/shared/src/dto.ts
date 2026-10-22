@@ -380,9 +380,13 @@ export interface HlPairDTO {
   /** Temps restant vu du serveur à l'envoi. */
   msLeft: number;
   durationMs: number;
-  /** PW si l'essai s'arrête maintenant, et après une réussite de plus. */
+  /** PW si l'essai s'arrête maintenant, et après une réussite de plus (0 à l'entraînement). */
   reward: number;
   nextReward: number;
+  /** Entraînement, après les 3 essais du jour : ni PW, ni XP, ni quête, ni succès, ni classement. */
+  practice: boolean;
+  /** Paire tirée de zéro : aucun article ne convenait face à l'article gardé, les deux sont nouveaux. */
+  renewed: boolean;
 }
 
 /** Journée de « Plus ou moins vu » du joueur. */
@@ -402,6 +406,8 @@ export interface HlStateDTO {
   resetsAt: string;
   /** Texte à partager sans spoiler, une fois les essais du jour joués. */
   share: string | null;
+  /** Entraînement du jour (après les 3 essais) : parties jouées et meilleure série, hors classement. */
+  practice: { played: number; todayBest: number };
 }
 
 /** Réponse à une paire : vues révélées, issue, paire suivante ou fin de l'essai. */
