@@ -3,7 +3,7 @@ import { GUILD_OBJECTIVE_REWARD } from "./guild.js";
 
 // ---------------------------------------------------------------------------
 // Passe de saison gratuit : 200 niveaux par saison mensuelle, tout le monde repart de 0.
-// L'XP vient des actions (paquets, quêtes, article du jour, boss, duels…) ; chaque niveau donne
+// L'XP vient des actions (paquets, quêtes, « Plus ou moins vu », boss, duels…) ; chaque niveau donne
 // des PW ou des paquets bonus, avec un gros palier tous les 10 niveaux. Après le niveau 200, l'XP
 // continue de compter : chaque niveau supplémentaire donne quelques PW, sans limite.
 // ---------------------------------------------------------------------------
@@ -89,8 +89,9 @@ export const XP = {
   login: 25,
   battleWin: 40,
   battleLoss: 15,
-  articleFound: 150,
-  articlePlayed: 30,
+  /** « Plus ou moins vu » : par essai terminé, plus par réussite (10 réussites au plus). */
+  hlPlayed: 20,
+  hlWin: 10,
   bossAssault: 60,
   /** Par phase du boss dont on touche la récompense (deux phases : l'ancienne chute, 300 XP). */
   bossPhase: 150,
@@ -110,8 +111,8 @@ export function xpForEvent(e: GameEvent): number {
       return XP.login;
     case "battle_finished":
       return e.won ? XP.battleWin : XP.battleLoss;
-    case "article_played":
-      return e.found ? XP.articleFound : XP.articlePlayed;
+    case "hl_finished":
+      return XP.hlPlayed + XP.hlWin * Math.min(e.streak, 10);
     case "boss_assault":
       return XP.bossAssault;
     case "boss_phase":

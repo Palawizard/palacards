@@ -48,7 +48,8 @@ export type GameEvent =
   | { type: "recycled"; rarities: Rarity[] }
   | { type: "upgrade"; success: boolean }
   | { type: "quest_completed"; period: "day" | "week" }
-  | { type: "article_played"; found: boolean; /** Essais utilisés (1 à 8). */ guesses: number }
+  /** Fin d'un essai de « Plus ou moins vu » : série atteinte (réussites de l'essai). */
+  | { type: "hl_finished"; streak: number }
   | { type: "boss_assault"; damage: number }
   /**
    * Récompense d'une phase du boss touchée (à minuit) : `phase` 1 = le boss est tombé une première fois ;
@@ -98,8 +99,12 @@ export const STAT_KEYS = [
   "upgrades_won",
   "quests_daily",
   "quests_weekly",
+  // Ancien article du jour (succès retirés, gardés par leurs détenteurs).
   "articles_found",
   "articles_first_try",
+  // « Plus ou moins vu » : meilleure série d'un essai, réussites cumulées.
+  "hl_best_streak",
+  "hl_wins",
   "boss_assaults",
   "boss_damage",
   "boss_kills",
@@ -237,11 +242,11 @@ export function statUpdates(e: GameEvent): StatUpdate[] {
     case "quest_completed":
       out.push(add(e.period === "day" ? "quests_daily" : "quests_weekly"));
       break;
-    case "article_played":
-      if (e.found) {
-        out.push(add("articles_found"));
-        if (e.guesses === 1) out.push(add("articles_first_try"));
-      } else out.push(add("article_failed"));
+    case "hl_finished":
+      if (e.streak > 0) {
+        out.push(max("hl_best_streak", e.streak));
+        out.push(add("hl_wins", e.streak));
+      }
       break;
     case "boss_assault":
       out.push(add("boss_assaults"));
@@ -336,7 +341,15 @@ const n = (x: number) => x.toLocaleString("fr-FR");
 const plural = (x: number, one: string, many: string) => (x > 1 ? many : one);
 /** Dixièmes de pour cent → « 0,5 % ». */
 const tenths = (x: number) => `${n(x / 10)}\u00a0%`;
-const secret = (key: string, stat: StatKey, name: string, description: string, pw: number): AchievementDef => ({
+const secret = (
+  key: string,
+  stat: StatKey,
+  name: string,
+  description: string,
+  pw: number,
+  options: { retired?: boolean } = {},
+): AchievementDef => ({
+  ...(options.retired ? { retired: true } : {}),
   key,
   family: "Secrets",
   name,
@@ -637,15 +650,16 @@ export const ACHIEVEMENTS: AchievementDef[] = [
       ["weekly_12", 12, "Trimestre de feu", 2_000],
     ],
   ),
+  // L'article du jour est remplacé par « Plus ou moins vu » : ses paliers restent chez leurs détenteurs.
   ...family(
     "Article du jour",
     "articles_found",
     (x) => `Trouver ${n(x)} ${plural(x, "article", "articles")} du jour.`,
     [
-      ["article_1", 1, "Détective", 50],
-      ["article_7", 7, "Limier", 200],
-      ["article_30", 30, "Sherlock", 800],
-      ["article_100", 100, "Wikipédia ambulante", 2_500],
+      ["article_1", 1, "Détective", 50, { retired: true }],
+      ["article_7", 7, "Limier", 200, { retired: true }],
+      ["article_30", 30, "Sherlock", 800, { retired: true }],
+      ["article_100", 100, "Wikipédia ambulante", 2_500, { retired: true }],
     ],
   ),
   ...family(
@@ -653,8 +667,25 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     "articles_first_try",
     (x) => `Trouver l'article du jour au premier essai ${n(x)} ${plural(x, "fois", "fois")}.`,
     [
-      ["article_first_1", 1, "Éclair de génie", 200],
-      ["article_first_10", 10, "Devin", 1_500],
+      ["article_first_1", 1, "Éclair de génie", 200, { retired: true }],
+      ["article_first_10", 10, "Devin", 1_500, { retired: true }],
+    ],
+  ),
+  ...family("Plus ou moins vu", "hl_best_streak", (x) => `Faire une série de ${n(x)} à « Plus ou moins vu ».`, [
+    ["hl_streak_5", 5, "Flair", 150],
+    ["hl_streak_10", 10, "Œil de lynx", 500],
+    ["hl_streak_15", 15, "Statisticien", 1_500],
+    ["hl_streak_20", 20, "Oracle de l'audience", 3_000],
+  ]),
+  ...family(
+    "Réussites à Plus ou moins vu",
+    "hl_wins",
+    (x) => `Cumuler ${n(x)} ${plural(x, "réussite", "réussites")} à « Plus ou moins vu ».`,
+    [
+      ["hl_wins_25", 25, "Curieux", 50],
+      ["hl_wins_100", 100, "Audimat", 200],
+      ["hl_wins_500", 500, "Pages vues", 800],
+      ["hl_wins_2000", 2_000, "Baromètre du web", 2_500],
     ],
   ),
   ...family(
@@ -736,7 +767,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
     "Porter le coup qui fait tomber une phase du boss du jour.",
     500,
   ),
-  secret("secret_article_fail", "article_failed", "Langue au chat", "Rater l'article du jour.", 50),
+  secret("secret_article_fail", "article_failed", "Langue au chat", "Rater l'article du jour.", 50, { retired: true }),
   secret("secret_recycle_l", "recycled_l", "Sacrilège", "Recycler une Légendaire.", 100),
 ];
 

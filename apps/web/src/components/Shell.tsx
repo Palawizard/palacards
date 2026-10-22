@@ -36,7 +36,7 @@ function packsToOpen(me: MeDTO): number {
 
 const DOT_LABEL = {
   wheel: "Une roue est prête",
-  article: "Article du jour à deviner",
+  hl: "Essais de « Plus ou moins vu » disponibles",
   boss: "Assauts disponibles contre le boss",
 } as const;
 
@@ -85,7 +85,7 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                   !active &&
                   !isNew &&
                   ((item.badge === "wheel" && !!me?.wheelReady) ||
-                    (item.badge === "article" && !!me?.articleReady) ||
+                    (item.badge === "hl" && !!me && me.hlTriesLeft > 0) ||
                     (item.badge === "boss" && !!me && me.boss.assaultsLeft > 0));
                 return (
                   <li key={item.href}>

@@ -1,5 +1,4 @@
 import type { GameEvent } from "./achievements.js";
-import { ARTICLE_FAST_GUESSES } from "./article.js";
 import { seededRandom } from "./battle.js";
 import { weekStart } from "./guild.js";
 import { RARITIES, type Rarity } from "./rarity.js";
@@ -20,9 +19,13 @@ export type QuestKind =
   | "pull_ur"
   | "recycle_cards"
   | "spin_wheel"
+  // Ancien article du jour : quêtes déjà tirées (en base), avancées par « Plus ou moins vu ».
   | "play_article"
   | "find_article"
   | "find_article_fast"
+  | "hl_play"
+  | "hl_streak"
+  | "hl_wins"
   | "boss_assault"
   | "boss_damage"
   | "win_battle"
@@ -50,14 +53,14 @@ export const QUEST_POOL: Record<QuestTier, QuestDef[]> = {
   easy: [
     { kind: "open_packs", target: 5 },
     { kind: "spin_wheel", target: 1 },
-    { kind: "play_article", target: 1 },
+    { kind: "hl_play", target: 1 },
     { kind: "boss_assault", target: 1 },
     { kind: "recycle_cards", target: 10 },
   ],
   medium: [
     { kind: "open_packs", target: 15 },
     { kind: "pull_sr", target: 2 },
-    { kind: "find_article", target: 1 },
+    { kind: "hl_play", target: 3 },
     { kind: "boss_damage", target: 200 },
     { kind: "upgrade", target: 1 },
     { kind: "recycle_cards", target: 40 },
@@ -66,14 +69,14 @@ export const QUEST_POOL: Record<QuestTier, QuestDef[]> = {
     { kind: "open_packs", target: 30 },
     { kind: "pull_sr", target: 5 },
     { kind: "pull_ur", target: 1 },
-    { kind: "find_article_fast", target: 1 },
+    { kind: "hl_streak", target: 5 },
     { kind: "boss_damage", target: 500 },
     { kind: "win_battle", target: 1 },
   ],
   weekly: [
     { kind: "daily_quests", target: 15 },
     { kind: "open_packs", target: 150 },
-    { kind: "find_article", target: 5 },
+    { kind: "hl_wins", target: 15 },
     { kind: "boss_damage", target: 2_500 },
     { kind: "pull_ur", target: 3 },
   ],
@@ -95,11 +98,19 @@ export function questLabel(q: QuestDef): string {
     case "spin_wheel":
       return "Tourner une roue du jour";
     case "play_article":
-      return "Jouer à l'article du jour";
+    case "hl_play":
+      return q.target >= 3
+        ? `Jouer tes ${n} essais de « Plus ou moins vu »`
+        : q.target > 1
+          ? `Jouer ${n} essais de « Plus ou moins vu »`
+          : "Jouer un essai de « Plus ou moins vu »";
     case "find_article":
-      return q.target > 1 ? `Trouver ${n} articles du jour` : "Trouver l'article du jour";
+      return "Faire une série de 3 à « Plus ou moins vu »";
     case "find_article_fast":
-      return `Trouver l'article du jour en ${ARTICLE_FAST_GUESSES} essais ou moins`;
+    case "hl_streak":
+      return `Faire une série de ${q.kind === "hl_streak" ? n : "5"} à « Plus ou moins vu »`;
+    case "hl_wins":
+      return `Cumuler ${n} réussite${s} à « Plus ou moins vu »`;
     case "boss_assault":
       return q.target > 1 ? `Lancer ${n} assauts contre le boss` : "Lancer un assaut contre le boss";
     case "boss_damage":
@@ -120,9 +131,12 @@ export const QUEST_HREF: Record<QuestKind, string> = {
   pull_ur: "/pulls",
   recycle_cards: "/collection",
   spin_wheel: "/wheel",
-  play_article: "/article",
-  find_article: "/article",
-  find_article_fast: "/article",
+  play_article: "/plus-ou-moins",
+  find_article: "/plus-ou-moins",
+  find_article_fast: "/plus-ou-moins",
+  hl_play: "/plus-ou-moins",
+  hl_streak: "/plus-ou-moins",
+  hl_wins: "/plus-ou-moins",
   boss_assault: "/boss",
   boss_damage: "/boss",
   win_battle: "/battle",
@@ -131,6 +145,9 @@ export const QUEST_HREF: Record<QuestKind, string> = {
 };
 
 const rank = (r: Rarity) => RARITIES.indexOf(r);
+
+/** Quêtes « record » : l'avancement garde la meilleure valeur (une série de 5) au lieu de s'additionner. */
+export const QUEST_RECORD_KINDS: readonly QuestKind[] = ["hl_streak"];
 
 /** Avancement d'une quête apporté par un événement (0 : sans effet). */
 export function questProgress(kind: QuestKind, e: GameEvent): number {
@@ -146,11 +163,17 @@ export function questProgress(kind: QuestKind, e: GameEvent): number {
     case "spin_wheel":
       return e.type === "wheel_spun" ? 1 : 0;
     case "play_article":
-      return e.type === "article_played" ? 1 : 0;
+    case "hl_play":
+      return e.type === "hl_finished" ? 1 : 0;
     case "find_article":
-      return e.type === "article_played" && e.found ? 1 : 0;
+      return e.type === "hl_finished" && e.streak >= 3 ? 1 : 0;
     case "find_article_fast":
-      return e.type === "article_played" && e.found && e.guesses <= ARTICLE_FAST_GUESSES ? 1 : 0;
+      return e.type === "hl_finished" && e.streak >= 5 ? 1 : 0;
+    case "hl_streak":
+      // Quête record (QUEST_RECORD_KINDS) : la meilleure série de la journée compte.
+      return e.type === "hl_finished" ? e.streak : 0;
+    case "hl_wins":
+      return e.type === "hl_finished" ? e.streak : 0;
     case "boss_assault":
       return e.type === "boss_assault" ? 1 : 0;
     case "boss_damage":

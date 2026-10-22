@@ -62,6 +62,8 @@ const GROUPS: { title: string; families: string[] }[] = [
       "Roue du jour",
       "Quêtes du jour",
       "Quêtes de la semaine",
+      "Plus ou moins vu",
+      "Réussites à Plus ou moins vu",
       "Article du jour",
       "Du premier coup",
       "Passe de saison",
