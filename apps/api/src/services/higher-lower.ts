@@ -1,6 +1,7 @@
 import { and, desc, eq, schema, sql } from "@palacards/db";
 import {
   HL_CHOICE_MS,
+  HL_RENEW_ATTEMPTS,
   HL_REVEAL_MS,
   HL_RARITIES,
   HL_TRIES_PER_DAY,
@@ -8,6 +9,7 @@ import {
   hlEligibleDescription,
   hlEligibleTitle,
   hlExpired,
+  hlNewIsHigher,
   hlReward,
   hlShareText,
   hlViewRange,
@@ -110,9 +112,9 @@ async function firstArticle(ctx: Ctx, db: DbOrTx, userId: string, day: string, s
 }
 
 /**
- * Nouvel article face à l'article gardé : candidats lus autour d'un point tiré au hasard dans chaque fourchette
- * de vues (la voulue pour la série, puis les élargies), au-dessus et en dessous ; `pickChallenger` décide
- * (50 % plus vu, fourchette la plus serrée possible, jamais à moins de ×1,05).
+ * Nouvel article face à l'article gardé, **dans le sens tiré** (`higher`) : candidats lus autour d'un point tiré
+ * au hasard dans chaque fourchette de vues (la voulue pour la série, puis les élargies) ; `pickChallenger` décide
+ * (fourchette la plus serrée possible, jamais à moins de ×1,05). `null` : rien dans ce sens.
  */
 async function challengerFor(
   ctx: Ctx,
@@ -123,34 +125,66 @@ async function challengerFor(
   hide: boolean,
   keptViews: number,
   streak: number,
+  higher: boolean,
 ) {
   const candidates = new Map<number, PoolRow>();
   for (const band of hlWidenedBands(streak)) {
-    for (const higher of [true, false]) {
-      const range = hlViewRange(keptViews, band, higher);
-      if (range.from > range.to) continue;
-      // Point de départ tiré en échelle logarithmique : toute la fourchette a sa chance.
-      const to = Math.min(range.to, 1e12);
-      const pivot = Math.floor(range.from * (to / Math.max(1, range.from)) ** (ctx.random(1_000) / 1_000));
-      for (const [lo, hi] of [
-        [pivot, to],
-        [range.from, pivot],
-      ] as const) {
-        const rows = await poolRows(
-          db,
-          userId,
-          day,
-          season,
-          hide,
-          sql`c.views_12m between ${lo} and ${hi}`,
-          sql`c.views_12m, c.id`,
-        );
-        for (const r of rows) candidates.set(r.id, r);
-        if (rows.length) break;
-      }
+    const range = hlViewRange(keptViews, band, higher);
+    if (range.from > range.to) continue;
+    // Point de départ tiré en échelle logarithmique : toute la fourchette a sa chance.
+    const to = Math.min(range.to, 1e12);
+    const pivot = Math.floor(range.from * (to / Math.max(1, range.from)) ** (ctx.random(1_000) / 1_000));
+    for (const [lo, hi] of [
+      [pivot, to],
+      [range.from, pivot],
+    ] as const) {
+      const rows = await poolRows(
+        db,
+        userId,
+        day,
+        season,
+        hide,
+        sql`c.views_12m between ${lo} and ${hi}`,
+        sql`c.views_12m, c.id`,
+      );
+      for (const r of rows) candidates.set(r.id, r);
+      if (rows.length) break;
     }
-    const pick = pickChallenger(keptViews, [...candidates.values()], streak, ctx.random);
+    const pick = pickChallenger(keptViews, [...candidates.values()], streak, ctx.random, higher);
     if (pick) return pick;
+  }
+  return null;
+}
+
+/**
+ * Paire tirée de zéro pour une série donnée : un article au hasard, puis le nouvel article dans un sens tiré à
+ * pile ou face. Sert au début d'un essai et quand l'article gardé n'a plus d'adversaire dans le sens tiré (en
+ * haut ou en bas du pool). Quelques tentatives, puis `null`.
+ */
+async function freshPair(
+  ctx: Ctx,
+  db: DbOrTx,
+  userId: string,
+  day: string,
+  season: number,
+  hide: boolean,
+  streak: number,
+) {
+  for (let i = 0; i < HL_RENEW_ATTEMPTS; i++) {
+    const kept = await firstArticle(ctx, db, userId, day, season, hide);
+    if (!kept) return null;
+    const challenger = await challengerFor(
+      ctx,
+      db,
+      userId,
+      day,
+      season,
+      hide,
+      kept.views,
+      streak,
+      hlNewIsHigher(ctx.random),
+    );
+    if (challenger) return { kept, challenger };
   }
   return null;
 }
@@ -192,8 +226,10 @@ async function pairOf(db: DbOrTx, run: Run, now: Date): Promise<HlPairDTO> {
     // Temps restant vu du serveur : le chrono du navigateur s'y cale (horloges décalées).
     msLeft: Math.max(0, run.deadline.getTime() - now.getTime()),
     durationMs: HL_CHOICE_MS,
-    reward: hlReward(run.streak),
-    nextReward: hlReward(run.streak + 1),
+    reward: run.practice ? 0 : hlReward(run.streak),
+    nextReward: run.practice ? 0 : hlReward(run.streak + 1),
+    practice: run.practice,
+    renewed: run.pairRenewed,
   };
 }
 
@@ -208,24 +244,26 @@ async function hideOf(db: DbOrTx, userId: string) {
 /**
  * Termine un essai verrouillé (mauvaise réponse, temps écoulé, plus d'article possible) : PW selon la série,
  * versés dans la même transaction que le passage à « over ». Le verrou de la ligne garantit un seul versement.
+ * Entraînement : rien n'est versé.
  */
 async function finish(ctx: Ctx, tx: Tx, run: Run, reason: "wrong" | "timeout" | "exhausted") {
-  const reward = hlReward(run.streak);
+  const reward = run.practice ? 0 : hlReward(run.streak);
   const p = await lockPlayer(tx, run.userId);
   await tx
     .update(runs)
     .set({ status: "over", endReason: reason, reward, finishedAt: ctx.now() })
     .where(eq(runs.id, run.id));
   if (reward) await movePw(tx, p, reward, "higher_lower", `hl:${run.id}`);
-  return { player: p, reward, streak: run.streak };
+  return { player: p, reward, streak: run.streak, practice: run.practice };
 }
 
-/** Après la fin d'un essai : solde poussé, progression (succès, quêtes, passe). */
+/** Après la fin d'un essai : solde poussé, progression (succès, quêtes, passe). Entraînement : rien. */
 async function afterFinish(
   ctx: Ctx,
   userId: string,
-  done: { player: Parameters<typeof pushWallet>[1]; streak: number },
+  done: { player: Parameters<typeof pushWallet>[1]; streak: number; practice: boolean },
 ) {
+  if (done.practice) return;
   await afterCommit(ctx, async () => {
     pushWallet(ctx, done.player);
     void emit(ctx, userId, { type: "hl_finished", streak: done.streak });
@@ -283,12 +321,15 @@ export async function hlState(ctx: Ctx, userId: string): Promise<HlStateDTO> {
       .limit(1)
   )[0];
   const [stats] = await ctx.db.execute<{ best: number | null; wins: number | null }>(sql`
-    select max(streak)::int as best, sum(streak)::int as wins from hl_runs where user_id = ${userId} and status = 'over'
+    select max(streak)::int as best, sum(streak)::int as wins
+    from hl_runs where user_id = ${userId} and status = 'over' and not practice
   `);
-  const finished = today.filter((r) => r.status === "over");
-  const used = today.length;
+  const official = today.filter((r) => !r.practice);
+  const practice = today.filter((r) => r.practice && r.status === "over");
+  const finished = official.filter((r) => r.status === "over");
+  const used = official.length;
   const best = stats?.best ?? 0;
-  const allDone = used >= HL_TRIES_PER_DAY && !playing;
+  const allDone = used >= HL_TRIES_PER_DAY && !(playing && !playing.practice);
   return {
     day,
     maxTries: HL_TRIES_PER_DAY,
@@ -307,12 +348,14 @@ export async function hlState(ctx: Ctx, userId: string): Promise<HlStateDTO> {
           best,
         )
       : null,
+    practice: { played: practice.length, todayBest: Math.max(0, ...practice.map((r) => r.streak)) },
   };
 }
 
 /**
- * Nouvel essai (3 par jour de Paris) : premier article au hasard, nouvel article à ×2 à ×20, échéance dans 15 s.
- * Joueur verrouillé : deux clics simultanés ne lancent qu'un essai. Un essai déjà en cours est simplement repris.
+ * Nouvel essai (3 par jour de Paris), puis entraînement illimité (ni PW, ni XP, ni quête, ni succès, ni
+ * classement) : premier article au hasard, nouvel article à ×2 à ×20, échéance dans 15 s. Joueur verrouillé :
+ * deux clics simultanés ne lancent qu'un essai. Un essai déjà en cours est simplement repris.
  */
 export async function hlStart(ctx: Ctx, userId: string): Promise<HlStateDTO> {
   await expireIfDue(ctx, userId);
@@ -326,27 +369,29 @@ export async function hlStart(ctx: Ctx, userId: string): Promise<HlStateDTO> {
       .where(and(eq(runs.userId, userId), eq(runs.status, "playing")));
     if (playing) return;
     const [count] = await tx
-      .select({ n: sql<number>`count(*)::int` })
+      .select({
+        all: sql<number>`count(*)::int`,
+        official: sql<number>`(count(*) filter (where not ${runs.practice}))::int`,
+      })
       .from(runs)
       .where(and(eq(runs.userId, userId), eq(runs.day, day)));
-    if ((count?.n ?? 0) >= HL_TRIES_PER_DAY)
-      throw conflict("hl_no_tries", "Tu as joué tes 3 essais du jour : reviens demain !");
+    const practice = (count?.official ?? 0) >= HL_TRIES_PER_DAY;
     const season = await activeSeason(tx);
     const hide = await hideOf(tx, userId);
-    const kept = await firstArticle(ctx, tx, userId, day, season, hide);
-    const challenger = kept && (await challengerFor(ctx, tx, userId, day, season, hide, kept.views, 0));
-    if (!kept || !challenger) throw conflict("hl_empty", "Plus d'article à comparer aujourd'hui : reviens demain !");
+    const pair = await freshPair(ctx, tx, userId, day, season, hide, 0);
+    if (!pair) throw conflict("hl_empty", "Plus d'article à comparer aujourd'hui : reviens demain !");
     await tx.insert(schema.hlSeen).values([
-      { userId, day, cardId: kept.id },
-      { userId, day, cardId: challenger.id },
+      { userId, day, cardId: pair.kept.id },
+      { userId, day, cardId: pair.challenger.id },
     ]);
     await tx.insert(runs).values({
       userId,
       day,
-      tryNo: (count?.n ?? 0) + 1,
+      tryNo: (count?.all ?? 0) + 1,
       season,
-      keptCardId: kept.id,
-      challengerCardId: challenger.id,
+      practice,
+      keptCardId: pair.kept.id,
+      challengerCardId: pair.challenger.id,
       deadline: new Date(now.getTime() + HL_CHOICE_MS),
     });
   });
@@ -387,21 +432,55 @@ export async function hlAnswer(
     const timeout = hlExpired(run.deadline, now);
     const [picked, other] = pick === "kept" ? [kept, challenger] : [challenger, kept];
     const correct = !timeout && hlCorrect(picked.views, other.views);
+    // Journal de chaque réponse : la paire est affichée à `deadline - 15 s` (révélation précédente comprise).
+    await tx.insert(schema.hlSteps).values({
+      runId: run.id,
+      step: run.step,
+      keptCardId: run.keptCardId,
+      challengerCardId: run.challengerCardId,
+      keptViews: kept.views,
+      challengerViews: challenger.views,
+      pick,
+      correct,
+      timeout,
+      renewed: run.pairRenewed,
+      answerMs: Math.max(0, now.getTime() - (run.deadline.getTime() - HL_CHOICE_MS)),
+    });
     if (!correct) {
       const done = await finish(ctx, tx, run, timeout ? "timeout" : "wrong");
       return { reveal, correct, timeout, run, done };
     }
-    // Bonne réponse : l'article choisi (le plus vu) reste, un nouveau arrive en face.
+    // Bonne réponse : l'article choisi (le plus vu) reste, un nouveau arrive en face, plus vu une fois sur deux.
+    // Rien dans le sens tiré (article gardé en haut ou en bas du pool) : nouvelle paire entière, jamais l'autre
+    // sens (sinon « garder » gagnerait à coup sûr en haut du pool).
     const streak = run.streak + 1;
-    const newKept = pick === "kept" ? run.keptCardId : run.challengerCardId;
     const hide = await hideOf(tx, userId);
-    const next = await challengerFor(ctx, tx, userId, run.day, run.season, hide, picked.views, streak);
+    const follow = await challengerFor(
+      ctx,
+      tx,
+      userId,
+      run.day,
+      run.season,
+      hide,
+      picked.views,
+      streak,
+      hlNewIsHigher(ctx.random),
+    );
+    const renewed = follow ? null : await freshPair(ctx, tx, userId, run.day, run.season, hide, streak);
+    const next = follow ?? renewed?.challenger ?? null;
+    const newKept = renewed ? renewed.kept.id : pick === "kept" ? run.keptCardId : run.challengerCardId;
     if (!next) {
       const done = await finish(ctx, tx, { ...run, streak }, "exhausted");
       await tx.update(runs).set({ streak }).where(eq(runs.id, run.id));
       return { reveal, correct, timeout, run: { ...run, streak }, done };
     }
-    await tx.insert(schema.hlSeen).values({ userId, day: run.day, cardId: next.id }).onConflictDoNothing();
+    await tx
+      .insert(schema.hlSeen)
+      .values([
+        { userId, day: run.day, cardId: next.id },
+        ...(renewed ? [{ userId, day: run.day, cardId: renewed.kept.id }] : []),
+      ])
+      .onConflictDoNothing();
     const [updated] = await tx
       .update(runs)
       .set({
@@ -409,6 +488,7 @@ export async function hlAnswer(
         step: run.step + 1,
         keptCardId: newKept,
         challengerCardId: next.id,
+        pairRenewed: !!renewed,
         // La paire suivante s'affiche après la révélation des vues : son chrono part à ce moment-là.
         deadline: new Date(now.getTime() + HL_REVEAL_MS + HL_CHOICE_MS),
       })
@@ -433,6 +513,6 @@ export async function hlTriesLeft(ctx: Ctx, userId: string): Promise<number> {
   const [row] = await ctx.db
     .select({ n: sql<number>`count(*)::int` })
     .from(runs)
-    .where(and(eq(runs.userId, userId), eq(runs.day, parisDay(ctx.now()))));
+    .where(and(eq(runs.userId, userId), eq(runs.day, parisDay(ctx.now())), eq(runs.practice, false)));
   return Math.max(0, HL_TRIES_PER_DAY - (row?.n ?? 0));
 }
