@@ -3,7 +3,15 @@ import type { GameEvent } from "./achievements.js";
 import { autoRecyclePicks, isBetterCopy } from "./collection.js";
 import { weirdGenresOfTitle } from "./feed.js";
 import { PASS_MAX_LEVEL, PASS_OVERFLOW_PW, passProgress, passReward, xpForEvent, xpToReach } from "./pass.js";
-import { dailyQuests, QUEST_POOL, questLabel, questProgress, rerollQuest, weeklyQuest } from "./quests.js";
+import {
+  dailyQuests,
+  QUEST_POOL,
+  QUEST_RECORD_KINDS,
+  questLabel,
+  questProgress,
+  rerollQuest,
+  weeklyQuest,
+} from "./quests.js";
 import { recycleValue, rollShiny, SHINY_CHANCE } from "./shiny.js";
 
 describe("passe de saison", () => {
@@ -94,8 +102,19 @@ describe("quêtes", () => {
     expect(questProgress("pull_sr", pack)).toBe(3);
     expect(questProgress("pull_ur", pack)).toBe(2);
     expect(questProgress("boss_damage", { type: "boss_assault", damage: 250 })).toBe(250);
-    expect(questProgress("find_article_fast", { type: "article_played", found: true, guesses: 5 })).toBe(0);
-    expect(questProgress("find_article_fast", { type: "article_played", found: true, guesses: 4 })).toBe(1);
+    expect(questProgress("hl_play", { type: "hl_finished", streak: 0 })).toBe(1);
+    expect(questProgress("hl_streak", { type: "hl_finished", streak: 6 })).toBe(6);
+    expect(questProgress("hl_wins", { type: "hl_finished", streak: 4 })).toBe(4);
+    // Anciennes quêtes de l'article du jour déjà tirées : avancées par « Plus ou moins vu ».
+    expect(questProgress("play_article", { type: "hl_finished", streak: 0 })).toBe(1);
+    expect(questProgress("find_article_fast", { type: "hl_finished", streak: 4 })).toBe(0);
+    expect(questProgress("find_article_fast", { type: "hl_finished", streak: 5 })).toBe(1);
+    expect(questLabel({ kind: "hl_play", target: 3 })).toBe("Jouer tes 3 essais de « Plus ou moins vu »");
+    expect(questLabel({ kind: "hl_streak", target: 5 })).toBe("Faire une série de 5 à « Plus ou moins vu »");
+    expect(questLabel({ kind: "hl_wins", target: 15 })).toBe("Cumuler 15 réussites à « Plus ou moins vu »");
+    expect(QUEST_RECORD_KINDS).toContain("hl_streak");
+    for (const tier of Object.values(QUEST_POOL))
+      expect(tier.some((q) => ["play_article", "find_article", "find_article_fast"].includes(q.kind))).toBe(false);
     expect(questProgress("daily_quests", { type: "quest_completed", period: "week" })).toBe(0);
     expect(questLabel({ kind: "open_packs", target: 5 })).toBe("Ouvrir 5 paquets");
   });

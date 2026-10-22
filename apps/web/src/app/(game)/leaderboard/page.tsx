@@ -46,10 +46,11 @@ const BOARDS: { value: Board; label: string; unit: string }[] = [
   { value: "pass", label: "Passe de saison", unit: "niv." },
   { value: "achievements", label: "Succès", unit: "Paliers" },
   { value: "shiny", label: "Brillantes", unit: "Brillantes" },
+  { value: "hl_streak", label: "Meilleure série du mois", unit: "Série" },
 ];
 
-/** Classements cumulés depuis l'inscription : pas de saison (ni de titre), le choix de période est masqué. */
-const ALL_TIME_BOARDS: readonly Board[] = ["achievements"];
+/** Classements sans choix de période (cumulés depuis l'inscription, ou au mois pour « Plus ou moins vu ») : pas de titre. */
+const ALL_TIME_BOARDS: readonly Board[] = ["achievements", "hl_streak"];
 
 export default function LeaderboardPage() {
   useSeenFeature("leaderboard-achievements");
@@ -96,6 +97,13 @@ export default function LeaderboardPage() {
           <p className="hatnote mt-2">
             Nombre de paliers de succès débloqués depuis ton inscription, secrets compris. Ce classement ne repart pas à
             zéro et ne donne pas de titre. À égalité, le premier à avoir atteint ce nombre passe devant.
+          </p>
+        )}
+        {board === "hl_streak" && (
+          <p className="hatnote mt-2">
+            Meilleure série d’un essai à «&nbsp;Plus ou moins vu&nbsp;» depuis le 1er du mois (heure de Paris). Ce
+            classement repart à zéro chaque mois et ne donne pas de titre. À égalité, le premier à l’avoir atteinte
+            passe devant.
           </p>
         )}
         {board === "shiny" && (
@@ -149,9 +157,11 @@ export default function LeaderboardPage() {
               ? `Personne n’a encore de carte légendaire${period === "season" ? " cette saison" : ""}.`
               : board === "achievements"
                 ? "Personne n’a encore débloqué de succès."
-                : board === "shiny"
-                  ? `Personne n’a encore de carte brillante${period === "season" ? " cette saison" : ""}.`
-                  : "Personne au classement pour l’instant."}
+                : board === "hl_streak"
+                  ? "Personne n’a encore fait de série ce mois-ci."
+                  : board === "shiny"
+                    ? `Personne n’a encore de carte brillante${period === "season" ? " cette saison" : ""}.`
+                    : "Personne au classement pour l’instant."}
         </p>
       ) : (
         <table

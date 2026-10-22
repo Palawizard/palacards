@@ -1255,6 +1255,53 @@ export const shopOffers = pgTable(
   ],
 );
 
+/**
+ * « Plus ou moins vu » (remplace l'article du jour) : un essai par ligne, trois par jour de Paris. Le serveur
+ * garde la paire en cours (`kept` reste à l'écran, `challenger` arrive en face), l'échéance du choix et la série ;
+ * `step` numérote les paires pour qu'une réponse en double ne compte jamais pour la paire suivante.
+ */
+export const hlRuns = pgTable(
+  "hl_runs",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    day: date("day").notNull(),
+    tryNo: smallint("try_no").notNull(),
+    status: text("status", { enum: ["playing", "over"] })
+      .notNull()
+      .default("playing"),
+    step: smallint("step").notNull().default(0),
+    streak: smallint("streak").notNull().default(0),
+    season: smallint("season").notNull(),
+    keptCardId: bigint("kept_card_id", { mode: "number" }).notNull(),
+    challengerCardId: bigint("challenger_card_id", { mode: "number" }).notNull(),
+    deadline: tstz("deadline").notNull(),
+    /** Fin de l'essai : mauvaise réponse, temps écoulé, ou plus aucun article possible. */
+    endReason: text("end_reason", { enum: ["wrong", "timeout", "exhausted"] }),
+    reward: integer("reward").notNull().default(0),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    finishedAt: tstz("finished_at"),
+  },
+  (t) => [
+    uniqueIndex("hl_runs_try_uq").on(t.userId, t.day, t.tryNo),
+    index("hl_runs_playing_idx")
+      .on(t.deadline)
+      .where(sql`${t.status} = 'playing'`),
+    index("hl_runs_month_idx").on(t.day, t.streak),
+  ],
+);
+
+/** Articles déjà montrés au joueur ce jour-là : jamais deux fois le même dans la journée. */
+export const hlSeen = pgTable(
+  "hl_seen",
+  {
+    userId: userRef("user_id").notNull(),
+    day: date("day").notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day, t.cardId] })],
+);
+
 export const pullReactions = pgTable(
   "pull_reactions",
   {

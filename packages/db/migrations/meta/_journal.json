@@ -302,6 +302,13 @@
       "when": 1792661272560,
       "tag": "0042_shop_offers",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792662051880,
+      "tag": "0043_higher_lower",
+      "breakpoints": true
     }
   ]
 }
