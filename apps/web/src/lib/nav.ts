@@ -18,6 +18,7 @@ import {
   Shield,
   Skull,
   Stamp,
+  Store,
   Swords,
   Trophy,
   UserRound,
@@ -61,6 +62,7 @@ export const NAV: NavGroup[] = [
   {
     title: "Commerce",
     items: [
+      { href: "/shop", label: "Boutique du jour", icon: Store, feature: "shop" },
       { href: "/market", label: "Marché", icon: Gavel },
       { href: "/trades", label: "Échanges", icon: Repeat },
       { href: "/wishlist", label: "Wishlist", icon: Heart },

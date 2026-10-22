@@ -21,7 +21,7 @@ export const COMMUNITY_GOAL_JOB = "community-goal";
 export async function refreshCommunityGoal(ctx: Ctx) {
   const season = await activeSeason(ctx.db);
   const [row] = await ctx.db.execute<{ n: number; total: number }>(sql`
-    select (select count(distinct card_id)::int from pulls where season = ${season}) as n,
+    select (select count(distinct card_id)::int from pulls where season = ${season} and source <> 'shop') as n,
            (select count(*)::int from cards where season = ${season}) as total
   `);
   const distinct = row?.n ?? 0;

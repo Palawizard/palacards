@@ -150,6 +150,15 @@ export interface WheelSpinDTO {
   wheel: WheelDTO;
 }
 
+/** Boutique du jour du joueur (sélection figée à la première visite, renouvelée à minuit heure de Paris). */
+export interface ShopDTO {
+  /** Jour de Paris (AAAA-MM-JJ). */
+  day: string;
+  /** Prochain renouvellement (minuit, heure de Paris). */
+  resetsAt: string;
+  items: { slot: number; price: number; purchased: boolean; card: CardDTO }[];
+}
+
 /** Objectif communautaire de la saison (page Succès), lu dans le cache recalculé toutes les 10 minutes. */
 export interface CommunityGoalDTO {
   season: number;
