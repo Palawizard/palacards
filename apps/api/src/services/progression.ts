@@ -725,7 +725,7 @@ export async function boardRows(db: DbOrTx, board: Board, period: "season" | "al
       from (
         select distinct on (user_id) user_id, streak::int as value, finished_at
         from hl_runs
-        where status = 'over' and streak > 0
+        where status = 'over' and streak > 0 and not practice
           and day >= date_trunc('month', now() at time zone 'Europe/Paris')::date
         order by user_id, streak desc, finished_at
       ) s join "user" u on u.id = s.user_id left join players p on p.user_id = s.user_id
