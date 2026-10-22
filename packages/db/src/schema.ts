@@ -332,6 +332,45 @@ export const cardInstances = pgTable(
   ],
 );
 
+/** Carte d'un lot d'upgrade en série, figée au lancement (pour le récapitulatif consultable après coup). */
+export interface UpgradeSeriesCardRecord {
+  instanceId: number;
+  cardId: number;
+  title: string;
+  rarity: "C" | "PC" | "R" | "SR" | "UR" | "L";
+  shiny: boolean;
+}
+
+/**
+ * Upgrade en série lancé : cartes parties et résultat de chaque lot (suggestion n° 107). Lu par la page
+ * Upgrader (dernières séries) ; les lignes ne servent qu'à l'affichage, le ledger reste la référence.
+ */
+export const upgradeSeriesRuns = pgTable(
+  "upgrade_series_runs",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    target: rarityEnum("target").notNull(),
+    lots: jsonb("lots")
+      .$type<
+        {
+          chance: number;
+          roll: number;
+          success: boolean;
+          refund: number;
+          consumed: UpgradeSeriesCardRecord[];
+          won: UpgradeSeriesCardRecord | null;
+        }[]
+      >()
+      .notNull(),
+    successes: smallint("successes").notNull(),
+    refund: integer("refund").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("upgrade_series_runs_user_idx").on(t.userId, t.createdAt)],
+);
+
 export const userTags = pgTable(
   "user_tags",
   {

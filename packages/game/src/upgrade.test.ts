@@ -33,6 +33,16 @@ describe("upgrader", () => {
     expect(upgradeChance("C", 10)).toBe(UPGRADE_MAX_CHANCE);
   });
 
+  it("garde exactement les mêmes chances qu'avant l'upgrade en série transparent (suggestion n° 107)", () => {
+    // Table figée : toute évolution des chances doit être voulue et visible ici.
+    const table = Object.fromEntries(
+      RARITIES.slice(0, -1).map((r) => [r, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => upgradeChance(r, n))]),
+    );
+    expect(table).toMatchSnapshot();
+    expect(UPGRADE_MAX_CHANCE).toBe(7_500);
+    for (const r of RARITIES.slice(0, -1)) expect(Math.max(...table[r]!)).toBeLessThanOrEqual(7_500);
+  });
+
   it("est toujours perdant en moyenne : moins de la moitié de la valeur en rareté des cartes", () => {
     for (const from of RARITIES.slice(0, -1)) {
       const to = nextRarity(from)!;
