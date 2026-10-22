@@ -150,6 +150,23 @@ export interface WheelSpinDTO {
   wheel: WheelDTO;
 }
 
+/** Objectif communautaire de la saison (page Succès), lu dans le cache recalculé toutes les 10 minutes. */
+export interface CommunityGoalDTO {
+  season: number;
+  /** Articles différents de la saison tirés par au moins un joueur. */
+  distinctCards: number;
+  /** Articles de la saison. */
+  seasonCards: number;
+  tiersReached: number;
+  /** Heure du dernier calcul (null : pas encore calculé). */
+  computedAt: string | null;
+  /** Le joueur a ouvert au moins un paquet cette saison (condition pour les récompenses). */
+  eligible: boolean;
+  /** Paliers déjà versés au joueur (1 = premier). */
+  rewardedTiers: number[];
+  tiers: { cards: number; pw: number; packs: number }[];
+}
+
 /** Carte engagée dans un upgrade en série (aperçu, récapitulatif et historique). */
 export interface UpgradeSeriesCardDTO {
   instanceId: number;
