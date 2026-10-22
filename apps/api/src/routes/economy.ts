@@ -29,6 +29,7 @@ import { findUserByName } from "../services/profiles.js";
 import { acceptTrade, closeTrade, counterTrade, listTrades, proposeTrade } from "../services/trades.js";
 import { redeemCode } from "../services/codes.js";
 import { listThemes } from "../services/themes.js";
+import { claimCommunityRewards, communityGoal } from "../services/community.js";
 import {
   upgrade,
   UPGRADE_SERIES_MAX_CARDS,
@@ -241,7 +242,16 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   });
 
   // --- Portefeuille ---
-  api.post("/daily", auth, async (req) => claimDaily(ctx, req.user.id));
+  // Connexion : bonus du jour, puis paliers de l'objectif communautaire atteints pendant l'absence.
+  api.post("/daily", auth, async (req) => {
+    const daily = await claimDaily(ctx, req.user.id);
+    const community = await claimCommunityRewards(ctx, req.user.id).catch((err) => {
+      ctx.log.error({ err }, "objectif communautaire");
+      return null;
+    });
+    return community ? { ...daily, community } : daily;
+  });
+  api.get("/community-goal", auth, async (req) => communityGoal(ctx, req.user.id));
   api.post("/packs/buy", limited(20), async (req) => buyBonusPack(ctx, req.user.id));
   api.get("/wallet/history", auth, async (req) => ledgerHistory(ctx, req.user.id));
 }

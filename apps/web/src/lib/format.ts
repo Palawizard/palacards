@@ -62,6 +62,7 @@ const REASONS: Record<string, string> = {
   season_pass: "Passe de saison",
   daily_article: "Article du jour",
   boss: "Boss du jour",
+  community_goal: "Objectif communautaire",
   test: "Test",
 };
 /** Motif d'une ligne du ledger, en français (code brut si inconnu). */

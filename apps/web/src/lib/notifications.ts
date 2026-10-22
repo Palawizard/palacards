@@ -51,6 +51,17 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
         text: p.won ? `Victoire contre ${s(p.opponent)} !` : `Défaite contre ${s(p.opponent)}.`,
         href: `/battle/${n(p.battleId)}`,
       };
+    case "community_goal": {
+      const r = (p.reward ?? {}) as { pw?: unknown; packs?: unknown };
+      const packs = n(r.packs);
+      const gain = [`+${fmt(n(r.pw))} PW`, packs ? `${packs} paquet${packs > 1 ? "s" : ""} bonus` : ""]
+        .filter(Boolean)
+        .join(" et ");
+      return {
+        text: `Objectif communautaire : ${fmt(n(p.cards))} cartes différentes tirées cette saison ! ${gain} pour toi.`,
+        href: "/achievements",
+      };
+    }
     case "packs_full":
       return { text: "Ton stock de paquets est plein : ouvre-les pour relancer le minuteur.", href: "/pulls" };
     case "achievement":

@@ -1194,8 +1194,37 @@ export const pulls = pgTable(
   (t) => [
     index("pulls_created_idx").on(t.createdAt),
     index("pulls_card_idx").on(t.cardId),
+    // Objectif communautaire : articles différents de la saison (parcours d'index seul).
+    index("pulls_season_card_idx").on(t.season, t.cardId),
     index("pulls_user_idx").on(t.userId, t.createdAt),
   ],
+);
+
+/**
+ * Objectif communautaire (suggestion n° 105) : articles différents de la saison tirés par au moins un joueur,
+ * recalculé toutes les 10 minutes par un job (la page Succès ne lit que cette ligne). Une ligne par saison :
+ * le compteur repart de zéro à chaque saison.
+ */
+export const communityGoals = pgTable("community_goals", {
+  season: smallint("season").primaryKey(),
+  distinctCards: integer("distinct_cards").notNull().default(0),
+  /** Articles de la saison (dénominateur affiché). */
+  seasonCards: integer("season_cards").notNull().default(0),
+  /** Paliers atteints (0 à 5) : le versement aux joueurs part de là. */
+  tiersReached: smallint("tiers_reached").notNull().default(0),
+  computedAt: tstz("computed_at").notNull().defaultNow(),
+});
+
+/** Palier de l'objectif communautaire déjà récompensé pour un joueur (clé primaire : versé une seule fois). */
+export const communityGoalRewards = pgTable(
+  "community_goal_rewards",
+  {
+    season: smallint("season").notNull(),
+    tier: smallint("tier").notNull(),
+    userId: userRef("user_id").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.season, t.tier, t.userId] })],
 );
 
 export const pullReactions = pgTable(
