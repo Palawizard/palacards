@@ -83,6 +83,27 @@ describe("autoRecyclePicks", () => {
     });
   });
 
+  it("une carte de la wishlist n'est jamais recyclée, brillante ou non, sur une série de paquets", () => {
+    const wishlist = new Set([7]);
+    const packs = [
+      [
+        { cardId: 7, rarity: "C" as const },
+        { cardId: 8, rarity: "C" as const },
+      ],
+      [
+        { cardId: 7, rarity: "SR" as const, shiny: true },
+        { cardId: 7, rarity: "C" as const },
+      ],
+      [{ cardId: 7, rarity: "R" as const }],
+    ];
+    const owned = new Set<number>();
+    for (const pack of packs) {
+      const { picks } = autoRecyclePicks(pack, "SR", true, owned, wishlist);
+      expect(picks.every((i) => pack[i]!.cardId !== 7)).toBe(true);
+      pack.forEach((d) => owned.add(d.cardId));
+    }
+  });
+
   it("ne signale pas un article de la wishlist qui n'aurait pas été recyclé", () => {
     expect(autoRecyclePicks(drawn, "C", false, new Set(), new Set([3, 4])).wished).toEqual([]);
   });
