@@ -52,21 +52,35 @@ export async function buyBonusPack(ctx: Ctx, userId: string) {
   return { packs };
 }
 
-/** Programme la notification « stock plein » au moment où le minuteur remplira le stock. */
+/**
+ * Programme la notification « stock plein » au moment où le minuteur remplira le stock. À n'appeler que quand
+ * le stock gratuit change : un paquet bonus ou un booster à thème laisse l'échéance identique, et chaque
+ * ouverture programmait un job de plus pour la même heure (7 notifications d'un coup, suggestion n° 106).
+ */
 export async function schedulePacksFull(ctx: Ctx, userId: string, stored: number, updatedAt: Date) {
   if (stored >= MAX_STORED_PACKS) return;
   const fullAt = new Date(updatedAt.getTime() + (MAX_STORED_PACKS - stored) * PACK_REGEN_MS);
   await ctx.jobs.sendAt(PACKS_FULL_JOB, { userId, fullAt: fullAt.toISOString() }, fullAt);
 }
 
-/** Job : prévient si le stock est bien plein à l'heure prévue (sinon un paquet a été ouvert entre-temps). */
-export async function notifyPacksFull(ctx: Ctx, userId: string, fullAt: string) {
-  const [p] = await ctx.db.select().from(schema.players).where(eq(schema.players.userId, userId));
-  if (!p) return;
-  const expected = new Date(p.packsUpdatedAt.getTime() + (MAX_STORED_PACKS - p.packsStored) * PACK_REGEN_MS);
-  if (p.packsStored >= MAX_STORED_PACKS || Math.abs(expected.getTime() - new Date(fullAt).getTime()) > 1000) return;
+/**
+ * Job : prévient une seule fois par remplissage. Le drapeau `packs_full_notified` est posé par une mise à jour
+ * conditionnelle (un seul appel gagne, même en parallèle ou en rattrapage de jobs en retard) et retombé à
+ * l'ouverture d'un paquet du stock. Seul l'état du stock compte (le `fullAt` du job reste une trace).
+ */
+export async function notifyPacksFull(ctx: Ctx, userId: string) {
+  const now = ctx.now();
   const fx = new Effects();
-  await fx.notify(ctx.db, userId, "packs_full", { max: MAX_STORED_PACKS });
+  await ctx.db.transaction(async (tx) => {
+    const p = schema.players;
+    const full = sql`${p.packsStored} + floor(extract(epoch from (${now.toISOString()}::timestamptz - ${p.packsUpdatedAt})) * 1000 / ${PACK_REGEN_MS}) >= ${MAX_STORED_PACKS}`;
+    const [won] = await tx
+      .update(p)
+      .set({ packsFullNotified: true })
+      .where(and(eq(p.userId, userId), eq(p.packsFullNotified, false), full))
+      .returning({ userId: p.userId });
+    if (won) await fx.notify(tx, userId, "packs_full", { max: MAX_STORED_PACKS });
+  });
   await fx.flush(ctx);
 }
 
