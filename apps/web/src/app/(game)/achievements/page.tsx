@@ -4,6 +4,7 @@ import { TIER_NAMES } from "@palacards/game";
 import { Check, Lock, Search, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
+import { CommunityGoal } from "@/components/CommunityGoal";
 import { Empty, ErrorBox } from "@/components/ui";
 import { useSeenFeature } from "@/lib/features";
 import { fmt } from "@/lib/format";
@@ -334,6 +335,7 @@ export default function AchievementsPage() {
             : "Chargement…"}
         </p>
       </div>
+      <CommunityGoal />
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />
       ) : !data ? (
