@@ -3,6 +3,7 @@ import { sweepBattles } from "./battles.js";
 import { backfillOwnedSummaries, SUMMARY_BACKFILL_JOB } from "./collection.js";
 import { BOSS_FINALIZE_JOB, finalizeBosses } from "./boss.js";
 import { purgeOldPulls, startWeirdRefresh, WEIRD_REFRESH_JOB } from "./feed.js";
+import { COMMUNITY_GOAL_JOB, refreshCommunityGoal } from "./community.js";
 import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
 import { GUILD_WEEKLY_JOB, weeklyJob } from "./guilds.js";
 import { CARDS_PURGE_JOB, purgeOldCards, rolloverSeason, SEASON_ROLLOVER_JOB } from "./seasons.js";
@@ -58,6 +59,11 @@ export function registerJobs(ctx: Ctx) {
   });
   ctx.jobs.schedule("pulls-purge", "45 4 * * *", async () => {
     ctx.log.info({ deleted: await purgeOldPulls(ctx) }, "purge du fil d'activité");
+  });
+  // Objectif communautaire : articles différents de la saison recomptés toutes les 10 minutes (cache lu par
+  // la page Succès), et versement des paliers atteints.
+  ctx.jobs.schedule(COMMUNITY_GOAL_JOB, "*/10 * * * *", async () => {
+    await refreshCommunityGoal(ctx);
   });
   // Filet de sécurité : rattrape toute échéance manquée (redémarrage, job perdu).
   ctx.jobs.schedule("market-sweep", "* * * * *", async () => {
