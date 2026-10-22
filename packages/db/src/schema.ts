@@ -200,6 +200,8 @@ export const players = pgTable(
     packsStored: smallint("packs_stored").notNull().default(10),
     packsUpdatedAt: tstz("packs_updated_at").notNull().defaultNow(),
     bonusPacks: integer("bonus_packs").notNull().default(0),
+    /** Notification « stock plein » déjà envoyée pour ce remplissage (remis à false dès qu'un paquet du stock est ouvert). */
+    packsFullNotified: boolean("packs_full_notified").notNull().default(false),
     pityCounter: integer("pity_counter").notNull().default(0),
     elo: integer("elo").notNull().default(1000),
     eloPeak: integer("elo_peak").notNull().default(1000),
@@ -313,7 +315,9 @@ export const cardInstances = pgTable(
     lockedBy: text("locked_by", { enum: ["auction", "trade"] }),
     pinnedSlot: smallint("pinned_slot"),
     /** `upgrade` (upgrader) et `wheel` (roue quotidienne) comptent, comme `pack`, pour les succès de collection. */
-    source: text("source", { enum: ["pack", "market", "trade", "admin", "upgrade", "wheel", "boss"] }).notNull(),
+    source: text("source", {
+      enum: ["pack", "market", "trade", "admin", "upgrade", "wheel", "boss", "shop"],
+    }).notNull(),
     obtainedAt: tstz("obtained_at").notNull().defaultNow(),
   },
   (t) => [
@@ -328,6 +332,45 @@ export const cardInstances = pgTable(
     check("card_instances_level_ok", sql`${t.level} BETWEEN 1 AND 5`),
     check("card_instances_pinned_ok", sql`${t.pinnedSlot} IS NULL OR ${t.pinnedSlot} BETWEEN 1 AND 5`),
   ],
+);
+
+/** Carte d'un lot d'upgrade en série, figée au lancement (pour le récapitulatif consultable après coup). */
+export interface UpgradeSeriesCardRecord {
+  instanceId: number;
+  cardId: number;
+  title: string;
+  rarity: "C" | "PC" | "R" | "SR" | "UR" | "L";
+  shiny: boolean;
+}
+
+/**
+ * Upgrade en série lancé : cartes parties et résultat de chaque lot (suggestion n° 107). Lu par la page
+ * Upgrader (dernières séries) ; les lignes ne servent qu'à l'affichage, le ledger reste la référence.
+ */
+export const upgradeSeriesRuns = pgTable(
+  "upgrade_series_runs",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    target: rarityEnum("target").notNull(),
+    lots: jsonb("lots")
+      .$type<
+        {
+          chance: number;
+          roll: number;
+          success: boolean;
+          refund: number;
+          consumed: UpgradeSeriesCardRecord[];
+          won: UpgradeSeriesCardRecord | null;
+        }[]
+      >()
+      .notNull(),
+    successes: smallint("successes").notNull(),
+    refund: integer("refund").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("upgrade_series_runs_user_idx").on(t.userId, t.createdAt)],
 );
 
 export const userTags = pgTable(
@@ -1142,7 +1185,8 @@ export const pulls = pgTable(
     season: smallint("season").notNull(),
     rarity: rarityEnum("rarity").notNull(),
     shiny: boolean("shiny").notNull().default(false),
-    source: text("source", { enum: ["pack", "theme", "wheel", "upgrade", "boss"] }).notNull(),
+    /** `shop` : légendaire achetée en boutique (fil d'activité « achetée en boutique », jamais comptée comme un tirage). */
+    source: text("source", { enum: ["pack", "theme", "wheel", "upgrade", "boss", "shop"] }).notNull(),
     /** Genres « bizarres » repérés au tirage par les mots-clés du titre (les catégories sont lues à part). */
     genres: text("genres")
       .array()
@@ -1153,8 +1197,109 @@ export const pulls = pgTable(
   (t) => [
     index("pulls_created_idx").on(t.createdAt),
     index("pulls_card_idx").on(t.cardId),
+    // Objectif communautaire : articles différents de la saison (parcours d'index seul).
+    index("pulls_season_card_idx").on(t.season, t.cardId),
     index("pulls_user_idx").on(t.userId, t.createdAt),
   ],
+);
+
+/**
+ * Objectif communautaire (suggestion n° 105) : articles différents de la saison tirés par au moins un joueur,
+ * recalculé toutes les 10 minutes par un job (la page Succès ne lit que cette ligne). Une ligne par saison :
+ * le compteur repart de zéro à chaque saison.
+ */
+export const communityGoals = pgTable("community_goals", {
+  season: smallint("season").primaryKey(),
+  distinctCards: integer("distinct_cards").notNull().default(0),
+  /** Articles de la saison (dénominateur affiché). */
+  seasonCards: integer("season_cards").notNull().default(0),
+  /** Paliers atteints (0 à 5) : le versement aux joueurs part de là. */
+  tiersReached: smallint("tiers_reached").notNull().default(0),
+  computedAt: tstz("computed_at").notNull().defaultNow(),
+});
+
+/** Palier de l'objectif communautaire déjà récompensé pour un joueur (clé primaire : versé une seule fois). */
+export const communityGoalRewards = pgTable(
+  "community_goal_rewards",
+  {
+    season: smallint("season").notNull(),
+    tier: smallint("tier").notNull(),
+    userId: userRef("user_id").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.season, t.tier, t.userId] })],
+);
+
+/**
+ * Boutique du jour (une sélection par joueur et par jour de Paris), figée à la première visite du jour.
+ * Chaque carte s'achète une fois : `purchased_at` posé dans la transaction d'achat (joueur verrouillé).
+ */
+export const shopOffers = pgTable(
+  "shop_offers",
+  {
+    userId: userRef("user_id").notNull(),
+    day: date("day").notNull(),
+    slot: smallint("slot").notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    season: smallint("season").notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    price: integer("price").notNull(),
+    purchasedAt: tstz("purchased_at"),
+    instanceId: bigint("instance_id", { mode: "number" }),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.day, t.slot] }),
+    uniqueIndex("shop_offers_card_uq").on(t.userId, t.day, t.cardId),
+    check("shop_offers_price_ok", sql`${t.price} > 0`),
+  ],
+);
+
+/**
+ * « Plus ou moins vu » (remplace l'article du jour) : un essai par ligne, trois par jour de Paris. Le serveur
+ * garde la paire en cours (`kept` reste à l'écran, `challenger` arrive en face), l'échéance du choix et la série ;
+ * `step` numérote les paires pour qu'une réponse en double ne compte jamais pour la paire suivante.
+ */
+export const hlRuns = pgTable(
+  "hl_runs",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    day: date("day").notNull(),
+    tryNo: smallint("try_no").notNull(),
+    status: text("status", { enum: ["playing", "over"] })
+      .notNull()
+      .default("playing"),
+    step: smallint("step").notNull().default(0),
+    streak: smallint("streak").notNull().default(0),
+    season: smallint("season").notNull(),
+    keptCardId: bigint("kept_card_id", { mode: "number" }).notNull(),
+    challengerCardId: bigint("challenger_card_id", { mode: "number" }).notNull(),
+    deadline: tstz("deadline").notNull(),
+    /** Fin de l'essai : mauvaise réponse, temps écoulé, ou plus aucun article possible. */
+    endReason: text("end_reason", { enum: ["wrong", "timeout", "exhausted"] }),
+    reward: integer("reward").notNull().default(0),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    finishedAt: tstz("finished_at"),
+  },
+  (t) => [
+    uniqueIndex("hl_runs_try_uq").on(t.userId, t.day, t.tryNo),
+    index("hl_runs_playing_idx")
+      .on(t.deadline)
+      .where(sql`${t.status} = 'playing'`),
+    index("hl_runs_month_idx").on(t.day, t.streak),
+  ],
+);
+
+/** Articles déjà montrés au joueur ce jour-là : jamais deux fois le même dans la journée. */
+export const hlSeen = pgTable(
+  "hl_seen",
+  {
+    userId: userRef("user_id").notNull(),
+    day: date("day").notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day, t.cardId] })],
 );
 
 export const pullReactions = pgTable(

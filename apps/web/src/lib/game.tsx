@@ -116,6 +116,7 @@ const NOTIFICATION_SFX: Partial<Record<string, Sfx>> = {
   title_won: "achievement",
   quest_completed: "coin",
   pass_level: "achievement",
+  community_goal: "achievement",
   boss_killed: "victory",
   boss_phase: "victory",
   boss_mvp: "achievement",
@@ -238,7 +239,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (item.user.id === meId.current) return;
         if (item.card.rarity !== "L" && !item.card.shiny) return;
         const what = `${RARITY_LABELS[item.card.rarity]}${item.card.shiny ? " brillante" : ""}`;
-        toast(`${item.user.name} a tiré ${item.card.title} (${what}) !`, {
+        const verb = item.source === "shop" ? "a acheté en boutique" : "a tiré";
+        toast(`${item.user.name} ${verb} ${item.card.title} (${what}) !`, {
           action: { label: "Voir", onClick: () => router.push("/feed") },
         });
       }),

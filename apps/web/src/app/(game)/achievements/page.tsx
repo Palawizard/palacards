@@ -4,6 +4,7 @@ import { TIER_NAMES } from "@palacards/game";
 import { Check, Lock, Search, Sparkles, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
+import { CommunityGoal } from "@/components/CommunityGoal";
 import { Empty, ErrorBox } from "@/components/ui";
 import { useSeenFeature } from "@/lib/features";
 import { fmt } from "@/lib/format";
@@ -61,6 +62,8 @@ const GROUPS: { title: string; families: string[] }[] = [
       "Roue du jour",
       "Quêtes du jour",
       "Quêtes de la semaine",
+      "Plus ou moins vu",
+      "Réussites à Plus ou moins vu",
       "Article du jour",
       "Du premier coup",
       "Passe de saison",
@@ -334,6 +337,7 @@ export default function AchievementsPage() {
             : "Chargement…"}
         </p>
       </div>
+      <CommunityGoal />
       {error ? (
         <ErrorBox error={error} retry={() => mutate()} />
       ) : !data ? (

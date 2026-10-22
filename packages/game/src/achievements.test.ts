@@ -206,14 +206,15 @@ describe("succès à paliers", () => {
     expect(isShortTitle("Ré")).toBe(true);
   });
 
-  it("compte boss, article du jour, quêtes, recyclage et upgrades", () => {
+  it("compte boss, « Plus ou moins vu », quêtes, recyclage et upgrades", () => {
     const stats = run([
       { type: "boss_assault", damage: 320 },
       { type: "boss_phase", phase: 1, lastHit: false },
       { type: "boss_phase", phase: 2, lastHit: true },
       { type: "boss_mvp" },
-      { type: "article_played", found: true, guesses: 1 },
-      { type: "article_played", found: false, guesses: 8 },
+      { type: "hl_finished", streak: 7 },
+      { type: "hl_finished", streak: 0 },
+      { type: "hl_finished", streak: 4 },
       { type: "quest_completed", period: "day" },
       { type: "recycled", rarities: ["C", "L"] },
       { type: "upgrade", success: true },
@@ -225,14 +226,38 @@ describe("succès à paliers", () => {
       boss_phases: 2,
       boss_last_hit: 1,
       boss_mvp: 1,
-      articles_found: 1,
-      articles_first_try: 1,
-      article_failed: 1,
+      hl_best_streak: 7,
+      hl_wins: 11,
       quests_daily: 1,
       recycled: 2,
       recycled_l: 1,
       upgrades: 1,
       upgrades_won: 1,
     });
+  });
+
+  it("retire les succès de l'article du jour (gardés par leurs détenteurs), ajoute ceux de « Plus ou moins vu »", () => {
+    const retired = ACHIEVEMENTS.filter((a) => a.retired).map((a) => a.key);
+    for (const key of [
+      "article_1",
+      "article_7",
+      "article_30",
+      "article_100",
+      "article_first_1",
+      "article_first_10",
+      "secret_article_fail",
+    ])
+      expect(retired).toContain(key);
+    const streaks = ACHIEVEMENTS.filter((a) => a.stat === "hl_best_streak");
+    expect(streaks.map((a) => a.target)).toEqual([5, 10, 15, 20]);
+    expect(ACHIEVEMENTS.filter((a) => a.stat === "hl_wins").map((a) => a.target)).toEqual([25, 100, 500, 2_000]);
+    // Jamais débloqués à nouveau, même avec la statistique.
+    expect(newlyUnlocked(new Map([["articles_found", 500]]), new Set()).some((a) => a.stat === "articles_found")).toBe(
+      false,
+    );
+    expect(newlyUnlocked(new Map([["hl_best_streak", 10]]), new Set()).map((a) => a.key)).toEqual([
+      "hl_streak_5",
+      "hl_streak_10",
+    ]);
   });
 });

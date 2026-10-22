@@ -104,24 +104,32 @@ export type AutoRecycleRarity = (typeof AUTO_RECYCLE_RARITIES)[number];
 /**
  * Recyclage automatique d'un paquet : indices des cartes tirées à recycler, celles dont la rareté est
  * au plus `max`. Avec `keepNew`, un article jamais possédé est gardé (une seule fois s'il sort en double).
- * Une brillante n'est jamais recyclée automatiquement.
+ * Une brillante n'est jamais recyclée automatiquement, ni un article de la wishlist (`wished`), doublons
+ * compris : `wished` liste les indices ainsi épargnés (pour le signaler au joueur).
  */
 export function autoRecyclePicks(
   drawn: readonly { cardId: number; rarity: Rarity; shiny?: boolean }[],
   max: AutoRecycleRarity | null,
   keepNew: boolean,
   ownedBefore: ReadonlySet<number>,
-): number[] {
-  if (!max) return [];
-  const kept = new Set(ownedBefore);
+  wishlist: ReadonlySet<number> = new Set(),
+): { picks: number[]; wished: number[] } {
   const picks: number[] = [];
+  const wished: number[] = [];
+  if (!max) return { picks, wished };
+  const kept = new Set(ownedBefore);
   drawn.forEach((d, i) => {
     if (d.shiny || rarityRank(d.rarity) > rarityRank(max)) return;
+    if (wishlist.has(d.cardId)) {
+      kept.add(d.cardId);
+      wished.push(i);
+      return;
+    }
     if (keepNew && !kept.has(d.cardId)) {
       kept.add(d.cardId);
       return;
     }
     picks.push(i);
   });
-  return picks;
+  return { picks, wished };
 }

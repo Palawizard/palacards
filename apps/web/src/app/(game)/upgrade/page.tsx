@@ -33,7 +33,7 @@ import {
 } from "@/components/CollectionFilters";
 import { CardSkeletons, Empty, ErrorBox, LoadMore, Toggle } from "@/components/ui";
 import { chanceText, UpgradeDial, type DialState } from "@/components/UpgradeDial";
-import { UpgradeSeries } from "@/components/UpgradeSeries";
+import { UpgradeSeries, type SeriesPick } from "@/components/UpgradeSeries";
 import { api, ApiError, thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
 import { useHoldNews, useMe } from "@/lib/game";
@@ -135,6 +135,9 @@ export default function UpgradePage() {
     if (!v) setPicked((p) => (p.some((c) => c.favorite) ? p.filter((c) => !c.favorite) : p));
   }
   const [picked, setPicked] = useState<CardDTO[]>([]);
+  /** Upgrade en série : sélection manuelle (null : choix automatique) et grille en mode « ajouter à la série ». */
+  const [series, setSeries] = useState<SeriesPick[] | null>(null);
+  const [seriesAdding, setSeriesAdding] = useState(false);
   const [phase, setPhase] = useState<Phase>("idle");
   const [result, setResult] = useState<UpgradeResultDTO | null>(null);
   const [revealed, setRevealed] = useState(false);
@@ -228,7 +231,34 @@ export default function UpgradePage() {
   function chooseRarity(r: Rarity) {
     if (phase === "fusing" || phase === "spinning") return;
     setRarity(r);
+    setSeries(null);
+    setSeriesAdding(false);
     reset();
+  }
+
+  /** Mode « ajouter à la série » : la carte entre dans la sélection de la série ou en sort. */
+  function toggleSeries(card: CardDTO) {
+    if (!card.instanceId || card.locked) return;
+    const id = card.instanceId;
+    setSeries((cur) => {
+      const list = cur ?? [];
+      if (list.some((c) => c.instanceId === id)) return list.filter((c) => c.instanceId !== id);
+      // Dernier exemplaire : tous les exemplaires de l'article possédés seraient dans la série.
+      const same = list.filter((c) => c.cardId === card.cardId).length + 1;
+      const next: SeriesPick = {
+        instanceId: id,
+        cardId: card.cardId,
+        title: card.title,
+        rarity: card.rarity,
+        shiny: !!card.shiny,
+        favorite: !!card.favorite,
+        lastCopy: (card.copies ?? 1) <= same,
+      };
+      return [
+        ...list.map((c) => (c.cardId === card.cardId ? { ...c, lastCopy: (card.copies ?? 1) <= same } : c)),
+        next,
+      ];
+    });
   }
 
   function toggle(card: CardDTO) {
@@ -561,6 +591,18 @@ export default function UpgradePage() {
       <UpgradeSeries
         rarity={rarity}
         disabled={busy}
+        selection={series}
+        onSelection={setSeries}
+        adding={seriesAdding}
+        onAdding={(v) => {
+          setSeriesAdding(v);
+          if (v)
+            requestAnimationFrame(() =>
+              document
+                .getElementById("upgrade-cards")
+                ?.scrollIntoView({ block: "start", behavior: reduce ? "auto" : "smooth" }),
+            );
+        }}
         onDone={() => {
           setPicked([]);
           void list.mutate();
@@ -568,7 +610,23 @@ export default function UpgradePage() {
       />
 
       <section className="flex flex-col gap-3">
-        <h2 className="section-title m-0">Tes cartes {RARITY_LABELS[rarity].toLowerCase()}s</h2>
+        <h2 id="upgrade-cards" className="section-title m-0 scroll-mt-20">
+          Tes cartes {RARITY_LABELS[rarity].toLowerCase()}s
+        </h2>
+        {seriesAdding && (
+          <div
+            role="status"
+            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-accent bg-[color-mix(in_oklab,var(--color-accent)_10%,transparent)] px-3 py-2 text-sm"
+          >
+            <span>
+              Touche une carte pour l’ajouter à la série ou l’en retirer ({fmt(series?.length ?? 0)} choisie
+              {(series?.length ?? 0) > 1 ? "s" : ""}).
+            </span>
+            <button type="button" className="btn btn-sm" onClick={() => setSeriesAdding(false)}>
+              Terminer l’ajout
+            </button>
+          </div>
+        )}
         <CollectionFilterBar
           value={f}
           onChange={setFilter}
@@ -616,8 +674,10 @@ export default function UpgradePage() {
           <>
             <CardGrid dense>
               {items.map((card) => {
-                const on = picked.some((c) => c.instanceId === card.instanceId);
-                const full = !on && picked.length >= useful;
+                const on = seriesAdding
+                  ? !!series?.some((c) => c.instanceId === card.instanceId)
+                  : picked.some((c) => c.instanceId === card.instanceId);
+                const full = !seriesAdding && !on && picked.length >= useful;
                 return (
                   <div key={card.instanceId} className="group/card relative">
                     <button
@@ -626,7 +686,10 @@ export default function UpgradePage() {
                       disabled={!!card.locked || busy || (full && phase === "idle")}
                       title={card.locked ? "Engagée dans une vente ou un échange" : undefined}
                       className="w-full text-left transition-[transform,opacity] duration-150 active:scale-[0.98] disabled:opacity-40"
-                      onClick={() => toggle(card)}
+                      aria-label={
+                        seriesAdding ? `${on ? "Retirer de" : "Ajouter à"} la série : ${card.title}` : undefined
+                      }
+                      onClick={() => (seriesAdding ? toggleSeries(card) : toggle(card))}
                     >
                       <Card card={card} href={null} selected={on} />
                     </button>

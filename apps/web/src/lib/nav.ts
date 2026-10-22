@@ -1,5 +1,6 @@
 import {
   ArrowBigUpDash,
+  ChartNoAxesColumn,
   Award,
   CircleDot,
   Gavel,
@@ -11,13 +12,13 @@ import {
   MessageSquare,
   Newspaper,
   Package,
-  Puzzle,
   Radio,
   Repeat,
   Settings,
   Shield,
   Skull,
   Stamp,
+  Store,
   Swords,
   Trophy,
   UserRound,
@@ -31,7 +32,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   /** Badge alimenté par /me : non-lus, roue prête, paquets à ouvrir, quêtes, article, boss, file des duels. */
-  badge?: "messages" | "wheel" | "packs" | "quests" | "article" | "boss" | "suggestions" | "battle";
+  badge?: "messages" | "wheel" | "packs" | "quests" | "hl" | "boss" | "suggestions" | "battle";
   /** Clé de nouveauté (`/me.newFeatures`) : pastille « Nouveau » jusqu'à la première visite. */
   feature?: string;
   admin?: boolean;
@@ -50,7 +51,13 @@ export const NAV: NavGroup[] = [
       { href: "/pulls", label: "Paquets", icon: Package, badge: "packs" },
       { href: "/quests", label: "Quêtes et passe", icon: Stamp, badge: "quests", feature: "quests" },
       { href: "/wheel", label: "Roues du jour", icon: CircleDot, badge: "wheel", feature: "wheels" },
-      { href: "/article", label: "Article du jour", icon: Puzzle, badge: "article", feature: "article-v2" },
+      {
+        href: "/plus-ou-moins",
+        label: "Plus ou moins vu",
+        icon: ChartNoAxesColumn,
+        badge: "hl",
+        feature: "plus-ou-moins",
+      },
       { href: "/boss", label: "Boss du jour", icon: Skull, badge: "boss", feature: "boss-v2" },
       { href: "/collection", label: "Collection", icon: Layers },
       { href: "/upgrade", label: "Upgrader", icon: ArrowBigUpDash },
@@ -61,6 +68,7 @@ export const NAV: NavGroup[] = [
   {
     title: "Commerce",
     items: [
+      { href: "/shop", label: "Boutique du jour", icon: Store, feature: "shop" },
       { href: "/market", label: "Marché", icon: Gavel },
       { href: "/trades", label: "Échanges", icon: Repeat },
       { href: "/wishlist", label: "Wishlist", icon: Heart },

@@ -2,6 +2,7 @@ import {
   ECONOMY,
   MAX_PRICE,
   RARITIES,
+  SHOP_SIZE,
   TRADE_MAX_CARDS_PER_SIDE,
   UPGRADE_MAX_CARDS,
   UPGRADE_MIN_CARDS,
@@ -29,7 +30,15 @@ import { findUserByName } from "../services/profiles.js";
 import { acceptTrade, closeTrade, counterTrade, listTrades, proposeTrade } from "../services/trades.js";
 import { redeemCode } from "../services/codes.js";
 import { listThemes } from "../services/themes.js";
-import { upgrade, upgradeSeries, upgradeSeriesPreview } from "../services/upgrade.js";
+import { claimCommunityRewards, communityGoal } from "../services/community.js";
+import { buyShopItem, getShop } from "../services/shop.js";
+import {
+  upgrade,
+  UPGRADE_SERIES_MAX_CARDS,
+  upgradeSeries,
+  upgradeSeriesHistory,
+  upgradeSeriesPreview,
+} from "../services/upgrade.js";
 import { spinWheel, wheelState } from "../services/wheel.js";
 
 const id = z.coerce.number().int().positive();
@@ -208,6 +217,9 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     rarity: z.enum(RARITIES),
     singles: z.boolean().optional(),
     lots: z.number().int().positive().optional(),
+    // Sélection du joueur (ordre des lots) ; `confirm` : favoris, brillantes et derniers exemplaires acceptés.
+    instanceIds: z.array(z.number().int().positive()).min(1).max(UPGRADE_SERIES_MAX_CARDS).optional(),
+    confirm: z.boolean().optional(),
   });
   api.get("/upgrade/series", auth, async (req) => {
     const q = parse(seriesQuery, req.query);
@@ -215,8 +227,14 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   });
   api.post("/upgrade/series", limited(10), async (req) => {
     const b = parse(seriesBody, req.body);
-    return upgradeSeries(ctx, req.user.id, b.rarity, b.singles ?? false, b.lots);
+    return upgradeSeries(ctx, req.user.id, b.rarity, {
+      singles: b.singles,
+      maxLots: b.lots,
+      instanceIds: b.instanceIds,
+      confirm: b.confirm,
+    });
   });
+  api.get("/upgrade/series/history", auth, async (req) => upgradeSeriesHistory(ctx, req.user.id));
   api.get("/wheel", auth, async (req) => wheelState(ctx, req.user.id));
   api.post("/wheel/spin", limited(10), async (req) => spinWheel(ctx, req.user.id));
   // Limite serrée : pas de devinette de codes à la chaîne.
@@ -226,7 +244,32 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   });
 
   // --- Portefeuille ---
-  api.post("/daily", auth, async (req) => claimDaily(ctx, req.user.id));
+  // Connexion : bonus du jour, puis paliers de l'objectif communautaire atteints pendant l'absence.
+  api.post("/daily", auth, async (req) => {
+    const daily = await claimDaily(ctx, req.user.id);
+    const community = await claimCommunityRewards(ctx, req.user.id).catch((err) => {
+      ctx.log.error({ err }, "objectif communautaire");
+      return null;
+    });
+    return community ? { ...daily, community } : daily;
+  });
+  api.get("/community-goal", auth, async (req) => communityGoal(ctx, req.user.id));
+
+  // --- Boutique du jour ---
+  api.get("/shop", auth, async (req) => getShop(ctx, req.user.id));
+  api.post("/shop/buy", limited(30), async (req) => {
+    const { slot } = parse(
+      z.object({
+        slot: z
+          .number()
+          .int()
+          .min(0)
+          .max(SHOP_SIZE - 1),
+      }),
+      req.body,
+    );
+    return buyShopItem(ctx, req.user.id, slot);
+  });
   api.post("/packs/buy", limited(20), async (req) => buyBonusPack(ctx, req.user.id));
   api.get("/wallet/history", auth, async (req) => ledgerHistory(ctx, req.user.id));
 }

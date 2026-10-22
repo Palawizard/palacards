@@ -76,8 +76,8 @@ export interface MeDTO {
   pass: { level: number; into: number; need: number; xp: number };
   /** Quêtes terminées (jour + semaine) sur le total. */
   quests: { done: number; total: number };
-  /** Article du jour pas encore joué. */
-  articleReady: boolean;
+  /** Essais de « Plus ou moins vu » restants aujourd'hui. */
+  hlTriesLeft: number;
   /** Boss du jour : assauts restants pour le joueur, phase en cours. */
   boss: { assaultsLeft: number; phase: number };
 }
@@ -150,6 +150,67 @@ export interface WheelSpinDTO {
   wheel: WheelDTO;
 }
 
+/** Boutique du jour du joueur (sélection figée à la première visite, renouvelée à minuit heure de Paris). */
+export interface ShopDTO {
+  /** Jour de Paris (AAAA-MM-JJ). */
+  day: string;
+  /** Prochain renouvellement (minuit, heure de Paris). */
+  resetsAt: string;
+  items: { slot: number; price: number; purchased: boolean; card: CardDTO }[];
+}
+
+/** Objectif communautaire de la saison (page Succès), lu dans le cache recalculé toutes les 10 minutes. */
+export interface CommunityGoalDTO {
+  season: number;
+  /** Articles différents de la saison tirés par au moins un joueur. */
+  distinctCards: number;
+  /** Articles de la saison. */
+  seasonCards: number;
+  tiersReached: number;
+  /** Heure du dernier calcul (null : pas encore calculé). */
+  computedAt: string | null;
+  /** Le joueur a ouvert au moins un paquet cette saison (condition pour les récompenses). */
+  eligible: boolean;
+  /** Paliers déjà versés au joueur (1 = premier). */
+  rewardedTiers: number[];
+  tiers: { cards: number; pw: number; packs: number }[];
+}
+
+/** Carte engagée dans un upgrade en série (aperçu, récapitulatif et historique). */
+export interface UpgradeSeriesCardDTO {
+  instanceId: number;
+  cardId: number;
+  title: string;
+  rarity: Rarity;
+  shiny: boolean;
+  /** Aperçu seulement : favori (jamais pris sans que le joueur l'ajoute lui-même). */
+  favorite?: boolean;
+  /** Aperçu seulement : dernier exemplaire de l'article (il quitterait la collection). */
+  lastCopy?: boolean;
+}
+
+/** Lot d'un upgrade en série lancé : cartes parties, tirage, carte obtenue ou PW rendus. */
+export interface UpgradeSeriesLotDTO {
+  cards: number;
+  chance: number;
+  roll: number;
+  success: boolean;
+  refund: number;
+  consumed: UpgradeSeriesCardDTO[];
+  won: UpgradeSeriesCardDTO | null;
+}
+
+/** Upgrade en série déjà lancé (liste des dernières séries de la page Upgrader). */
+export interface UpgradeSeriesRunDTO {
+  id: number;
+  rarity: Rarity;
+  target: Rarity;
+  createdAt: string;
+  successes: number;
+  refund: number;
+  lots: UpgradeSeriesLotDTO[];
+}
+
 /** Upgrade en série : lots prévus avec les doublons d'une rareté (jamais favoris, brillantes ni cartes engagées). */
 export interface UpgradeSeriesPreviewDTO {
   rarity: Rarity;
@@ -174,12 +235,16 @@ export interface UpgradeSeriesPreviewDTO {
   /** PW rendus si tous les lots échouent. */
   refundIfAllFail: number;
   maxLots: number;
+  /** Cartes prises automatiquement, dans l'ordre des lots (les `cards` premières partent si tout est lancé). */
+  candidates: UpgradeSeriesCardDTO[];
 }
 
 export interface UpgradeSeriesResultDTO {
+  /** Ligne de l'historique (dernières séries). */
+  id: number;
   rarity: Rarity;
   target: Rarity;
-  lots: { cards: number; chance: number; roll: number; success: boolean }[];
+  lots: UpgradeSeriesLotDTO[];
   successes: number;
   /** Cartes gagnées, dans l'ordre des lots. */
   cards: CardDTO[];
@@ -295,65 +360,60 @@ export interface PassDTO {
   xpTable: { label: string; xp: number }[];
 }
 
-/** Case d'un attribut dans le tableau de l'article du jour. */
-export interface ArticleCellDTO {
-  /** Valeur affichée (« ? » si inconnue). */
-  value: string;
-  state: "good" | "near" | "bad" | "unknown";
-  /** La réponse est au-dessus (`up`) ou en dessous (`down`). */
-  arrow: "up" | "down" | null;
-}
-
-export type ArticleAttrKey = "category" | "type" | "country" | "year" | "rarity" | "views";
-
-/** Essai à l'article du jour : un article du jeu et sa comparaison à la réponse. */
-export interface ArticleGuessDTO {
-  cardId: number;
+/** Article montré par « Plus ou moins vu » : titre, image, description courte. Jamais sa rareté ni ses vues. */
+export interface HlArticleDTO {
   title: string;
-  cells: Record<ArticleAttrKey, ArticleCellDTO>;
+  thumbUrl: string | null;
+  description: string | null;
 }
 
-/** Suggestion de l'autocomplétion. */
-export interface ArticleSearchItemDTO {
-  cardId: number;
-  title: string;
-  rarity: Rarity;
-}
-
-export interface DailyArticleDTO {
-  day: string;
-  /** Numéro de l'article du jour (depuis le premier). */
-  number: number;
-  maxGuesses: number;
-  guesses: ArticleGuessDTO[];
-  /** Titre en grille : mots séparés par trois espaces, cases par une espace, `_` pour une lettre cachée. */
-  pattern: string;
-  /**
-   * Indices de secours : catégories Wikipédia de la réponse (visibles dès le départ), description masquée
-   * (après le 4e essai), première lettre (après le 6e).
-   */
-  hints: { categories: string[]; description: string | null; firstLetter: string | null };
-  /** Essais après lesquels chaque indice se dévoile (`categories` : une entrée par catégorie disponible). */
-  hintsAfter: { categories: number[]; description: number; firstLetter: number };
-  /** Image de la réponse servie pixelisée par l'API (`/article/image`) ; false : pas d'image utilisable. */
-  image: boolean;
-  /** Largeur de l'image pixelisée (px) ; null : image entière (partie finie). */
-  imageWidth: number | null;
-  found: boolean;
-  finished: boolean;
+/** Paire en cours d'un essai : l'article resté à l'écran (`kept`) et le nouveau (`challenger`). */
+export interface HlPairDTO {
+  tryNo: number;
+  /** Numéro de la paire dans l'essai : à renvoyer avec la réponse. */
+  step: number;
+  streak: number;
+  kept: HlArticleDTO;
+  challenger: HlArticleDTO;
+  /** Échéance du choix (le serveur ajoute 1 s de marge). */
+  deadline: string;
+  /** Temps restant vu du serveur à l'envoi. */
+  msLeft: number;
+  durationMs: number;
+  /** PW si l'essai s'arrête maintenant, et après une réussite de plus. */
   reward: number;
-  /** Gain possible au prochain essai. */
   nextReward: number;
-  /** Une fois la partie finie : la carte à deviner et ses attributs. */
-  answer: CardDTO | null;
-  answerCells: Record<ArticleAttrKey, string> | null;
-  /** Grille de partage (lignes de carrés de couleur). */
+}
+
+/** Journée de « Plus ou moins vu » du joueur. */
+export interface HlStateDTO {
+  day: string;
+  maxTries: number;
+  triesLeft: number;
+  current: HlPairDTO | null;
+  /** Essais finis du jour. */
+  runs: { tryNo: number; streak: number; reward: number; endReason: "wrong" | "timeout" | "exhausted" | null }[];
+  todayBest: number;
+  /** Série record du joueur (tous jours confondus). */
+  best: number;
+  /** Réussites cumulées depuis le début. */
+  totalWins: number;
+  earnedToday: number;
+  resetsAt: string;
+  /** Texte à partager sans spoiler, une fois les essais du jour joués. */
   share: string | null;
-  /** Statistiques du jour, une fois sa partie finie : joueurs, trouvés, essais des gagnants (index 0 = 1 essai). */
-  stats: { played: number; found: number; distribution: number[] } | null;
-  /** Partie finie avec l'ancien format (jour de la mise à jour) : ses essais tapés. */
-  legacy: { guesses: string[] } | null;
-  nextAt: string;
+}
+
+/** Réponse à une paire : vues révélées, issue, paire suivante ou fin de l'essai. */
+export interface HlAnswerDTO {
+  correct: boolean;
+  timeout: boolean;
+  reveal: { kept: { title: string; views: number }; challenger: { title: string; views: number } };
+  streak: number;
+  /** PW gagnés à la fin de l'essai (null : l'essai continue). */
+  reward: number | null;
+  next: HlPairDTO | null;
+  state: HlStateDTO;
 }
 
 export type ArticleCategoryKey = "personne" | "lieu" | "oeuvre" | "organisation" | "autre";
