@@ -121,7 +121,7 @@ describe("brillantes", () => {
         "R",
         false,
         new Set(),
-      ),
+      ).picks,
     ).toEqual([1]);
   });
 });
