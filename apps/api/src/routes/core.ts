@@ -32,7 +32,7 @@ import {
 } from "../services/collection.js";
 import { getPackState, openPack } from "../services/packs.js";
 import { themesOnSale } from "../services/themes.js";
-import { articleReady } from "../services/article.js";
+import { hlTriesLeft } from "../services/higher-lower.js";
 import { bossSummary } from "../services/boss.js";
 import { emit, ensureBackfill, passState } from "../services/progression.js";
 import { activeSeason, getPlayer, packState, wallet } from "../services/players.js";
@@ -85,9 +85,10 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "wheels", until: "2026-12-01T00:00:00+01:00" },
   { key: "battle-decks", until: "2026-12-15T00:00:00+01:00" },
   { key: "boss-v2", until: "2026-12-31T00:00:00+01:00" },
-  { key: "article-v2", until: "2026-12-31T00:00:00+01:00" },
   { key: "leaderboard-achievements", until: "2026-12-31T00:00:00+01:00" },
   { key: "leaderboard-shiny", until: "2027-01-15T00:00:00+01:00" },
+  { key: "shop", until: "2027-01-31T00:00:00+01:00" },
+  { key: "plus-ou-moins", until: "2027-01-31T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */
@@ -137,7 +138,7 @@ export async function me(
     newSuggestions: user.isAdmin ? await newSuggestionsCount(ctx) : 0,
     pass: { level: pass.level, into: pass.into, need: pass.need, xp: pass.xp },
     quests: { done: quests.filter((q) => q.completedAt).length, total: quests.length },
-    articleReady: await articleReady(ctx, user.id),
+    hlTriesLeft: await hlTriesLeft(ctx, user.id),
     boss: await bossSummary(ctx, user.id),
   };
 }

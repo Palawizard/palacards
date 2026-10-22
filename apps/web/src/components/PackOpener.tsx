@@ -2,7 +2,7 @@
 
 import { RARITY_LABELS, rarityRank, recycleValue } from "@palacards/game";
 import type { CardDTO, PackState, ThemeDTO } from "@palacards/shared";
-import { ChevronRight, Recycle, Scissors } from "lucide-react";
+import { ChevronRight, Heart, Recycle, Scissors } from "lucide-react";
 import {
   animate,
   AnimatePresence,
@@ -36,6 +36,8 @@ interface OpenResponse {
   pityTriggered: boolean;
   theme?: { id: number; name: string; themedCardIds: number[]; owned: number; opened: number };
   autoRecycled?: { instanceIds: number[]; gain: number };
+  /** Exemplaires épargnés par le recyclage automatique parce que l'article est dans la wishlist. */
+  wishlistKept?: number[];
 }
 
 const EASE_OUT = [0.23, 1, 0.32, 1] as const;
@@ -676,9 +678,14 @@ function Thumb({ card }: { card: CardDTO }) {
 function DeckRecap({
   cards,
   recycled,
+  wished,
   onRecycle,
   onShow,
-}: Pick<DealtProps, "cards" | "recycled" | "onRecycle"> & { onShow: (i: number) => void }) {
+}: Pick<DealtProps, "cards" | "recycled" | "onRecycle"> & {
+  /** Gardées malgré le recyclage automatique, parce qu'elles sont dans la wishlist. */
+  wished: Record<number, true>;
+  onShow: (i: number) => void;
+}) {
   const best = cards.reduce((a, b) => (rarityRank(b.rarity) > rarityRank(a.rarity) ? b : a));
   return (
     <div className="flex w-full flex-col gap-3">
@@ -714,6 +721,12 @@ function DeckRecap({
                       <span className="inline-flex items-center gap-1 font-bold text-[#c4b5fd]">
                         <SparkStar className="size-3" />
                         Brillante
+                      </span>
+                    )}
+                    {isRecycled(card, wished) && !gone && (
+                      <span className="inline-flex items-center gap-1 font-bold text-good">
+                        <Heart aria-hidden className="size-3 fill-current" />
+                        Wishlist
                       </span>
                     )}
                     <span>
@@ -756,6 +769,7 @@ export const PackOpener = memo(function PackOpener({
   const [cards, setCards] = useState<CardDTO[]>([]);
   const [revealed, setRevealed] = useState<boolean[]>([]);
   const [recycled, setRecycled] = useState<Record<number, true>>({});
+  const [wished, setWished] = useState<Record<number, true>>({});
   const [cursor, setCursor] = useState(0);
   const [busy, setBusy] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -836,10 +850,15 @@ export const PackOpener = memo(function PackOpener({
         else if (isFxTier(best.rarity)) play(JINGLE[best.rarity], 60);
       }
       if (res.pityTriggered) toast("Pity déclenchée : UR ou mieux garantie !");
+      setWished(Object.fromEntries((res.wishlistKept ?? []).map((id) => [id, true])));
+      const kept = res.wishlistKept?.length ?? 0;
+      const keptNote = kept ? `${kept} carte${kept > 1 ? "s" : ""} de ta wishlist gardée${kept > 1 ? "s" : ""}` : "";
       if (res.autoRecycled) {
         const n = res.autoRecycled.instanceIds.length;
-        toast.success(`Recyclage auto : ${n} carte${n > 1 ? "s" : ""}, +${fmt(res.autoRecycled.gain)} PW`);
-      }
+        toast.success(
+          `Recyclage auto : ${n} carte${n > 1 ? "s" : ""}, +${fmt(res.autoRecycled.gain)} PW${kept ? ` · ${keptNote}` : ""}`,
+        );
+      } else if (kept) toast.success(`Recyclage auto : ${keptNote}`);
       if (buying) play("coin");
       onOpened?.();
       void mutateMe((m) => (m ? { ...m, packs: res.packs } : m), { revalidate: false });
@@ -904,7 +923,7 @@ export const PackOpener = memo(function PackOpener({
             ) : cursor < cards.length ? (
               <PackDeck {...dealt} onRevealAll={revealAll} cursor={cursor} onCursor={setCursor} />
             ) : (
-              <DeckRecap cards={cards} recycled={recycled} onRecycle={recycleOne} onShow={setCursor} />
+              <DeckRecap cards={cards} recycled={recycled} wished={wished} onRecycle={recycleOne} onShow={setCursor} />
             )}
           </motion.div>
         )}

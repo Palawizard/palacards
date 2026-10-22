@@ -216,6 +216,92 @@ describe("upgrade en série", () => {
   });
 });
 
+describe("upgrade en série transparent (suggestion n° 107)", () => {
+  it("une série de 5 upgrades : chaque lot dit quelles cartes sont parties, réussite ou échec, carte obtenue", async () => {
+    const p = await signUp(app);
+    const lot = upgradeCardsToCap("C")!;
+    const cardId = await cardOf("C", 4);
+    // 21 exemplaires (20 + 1) : le meilleur reste, 5 lots pleins partent.
+    const ids: number[] = [];
+    for (const count of [20, lot * 5 + 1 - 20])
+      ids.push(...((await p.post("/test/grant-card", { cardId, count })).body.instanceIds as number[]));
+    await ctx.db.execute(sql`update card_instances set shiny = false where owner_id = ${p.userId}`);
+    // Tirages sur 10 000 : chaque réussite est suivie du tirage de la brillance (9 999 : pas brillante).
+    const rolls = [0, 9_999, 9_999, 0, 9_999, 9_999, 9_999];
+    let call = 0;
+    ctx.random = (max) => (max === 10_000 ? rolls[call++]! : 0);
+    const run = await p.post("/upgrade/series", { rarity: "C", lots: 5 });
+    expect(run.status).toBe(200);
+    expect(run.body.lots.map((l: { success: boolean }) => l.success)).toEqual([true, false, true, false, false]);
+    const consumed = run.body.lots.flatMap((l: { consumed: { instanceId: number }[] }) =>
+      l.consumed.map((c) => c.instanceId),
+    );
+    expect(consumed).toHaveLength(lot * 5);
+    expect(new Set(consumed).size).toBe(lot * 5);
+    expect(consumed.every((id: number) => ids.includes(id))).toBe(true);
+    for (const l of run.body.lots) {
+      expect(l.consumed).toHaveLength(lot);
+      if (l.success) expect(l.won).toMatchObject({ rarity: "PC" });
+      else expect(l).toMatchObject({ won: null, refund: upgradeRefund("C", lot) });
+    }
+    const history = (await p.get("/upgrade/series/history")).body;
+    expect(history[0].lots).toEqual(run.body.lots);
+  });
+
+  it("sélection manuelle : n'importe quelles cartes, confirmation pour le dernier exemplaire, favoris et brillantes", async () => {
+    const p = await signUp(app);
+    const grant = async (skip: number, count: number) =>
+      (await p.post("/test/grant-card", { cardId: await cardOf("R", skip), count })).body.instanceIds as number[];
+    const single = (await grant(0, 1))[0]!;
+    const pair = await grant(1, 2);
+    const [fav] = await grant(2, 1);
+    const [shiny] = await grant(3, 1);
+    await ctx.db.execute(sql`update card_instances set shiny = (id = ${shiny!}) where owner_id = ${p.userId}`);
+    await p.post(`/collection/${fav}/favorite`, { favorite: true });
+
+    // Un doublon seul : pas de confirmation nécessaire.
+    ctx.random = () => 9_999;
+    const ok = await p.post("/upgrade/series", { rarity: "R", instanceIds: [pair[0]!] });
+    expect(ok.status).toBe(200);
+    // Dernier exemplaire, favori, brillante : refusés sans confirmation, rien ne part.
+    for (const id of [single, pair[1]!, fav!, shiny!]) {
+      const res = await p.post("/upgrade/series", { rarity: "R", instanceIds: [id] });
+      expect(res.body.error).toBe("series_confirm");
+    }
+    const [row] = await ctx.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from card_instances where owner_id = ${p.userId} and rarity = 'R'`,
+    );
+    expect(row!.n).toBe(4);
+    const confirmed = await p.post("/upgrade/series", {
+      rarity: "R",
+      instanceIds: [single, pair[1]!, fav!, shiny!],
+      confirm: true,
+    });
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body.lots[0].consumed.map((c: { instanceId: number }) => c.instanceId)).toEqual([
+      single,
+      pair[1],
+      fav,
+      shiny,
+    ]);
+    expect(confirmed.body.lots[0].consumed[3].shiny).toBe(true);
+    await expectLedgerConsistent(p);
+  });
+
+  it("sélection manuelle : jamais une carte engagée ni d'une autre rareté", async () => {
+    const p = await signUp(app);
+    const ids = await grantCards(p, "C", 3);
+    const pc = await grantCards(p, "PC", 1);
+    await ctx.db.execute(sql`update card_instances set locked_by = 'auction' where id = ${ids[0]!}`);
+    expect((await p.post("/upgrade/series", { rarity: "C", instanceIds: [ids[0]!], confirm: true })).body.error).toBe(
+      "card_locked",
+    );
+    expect(
+      (await p.post("/upgrade/series", { rarity: "C", instanceIds: [ids[1]!, pc[0]!], confirm: true })).body.error,
+    ).toBe("mixed_rarities");
+  });
+});
+
 describe("roues du jour", () => {
   /** Premier tirage aléatoire : la case `segment` de la roue `tier` ; les suivants : `then`. */
   function landOn(tier: WheelTier, segment: number, then: (max: number) => number = (max) => Math.floor(max / 2)) {

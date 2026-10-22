@@ -87,7 +87,7 @@ Pages et systèmes existants :
 - Social : amis, messages privés, guildes (objectifs hebdomadaires), fil d'activité, profils publics.
 - Bataille : duels en direct contre un ami (attaque, bouclier, questions sur les articles).
 - Quêtes du jour et de la semaine, passe de saison (200 niveaux, puis des PW à chaque niveau supplémentaire), succès à paliers.
-- Article du jour à deviner, boss du jour coopératif.
+- « Plus ou moins vu » (quel article a le plus de vues ?), boss du jour coopératif, boutique du jour.
 - Classements (collection, boosters ouverts, chance, Elo, richesse, guildes, passe), badge « Créateur » de l'admin.
 - Mises à jour (historique des messages serveur), Suggestions (cette page), Paramètres (thème, sons, flouter les arthropodes…), Admin.
 

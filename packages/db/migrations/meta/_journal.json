@@ -274,6 +274,41 @@
       "when": 1791808993585,
       "tag": "0038_suggestion_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792658906328,
+      "tag": "0039_packs_full_notified",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792659245202,
+      "tag": "0040_upgrade_series_runs",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792660297126,
+      "tag": "0041_community_goals",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792661272560,
+      "tag": "0042_shop_offers",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792662051880,
+      "tag": "0043_higher_lower",
+      "breakpoints": true
     }
   ]
 }

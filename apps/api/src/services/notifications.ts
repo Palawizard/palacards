@@ -30,7 +30,8 @@ export type NotificationType =
   | "boss_mvp"
   | "guild_objective"
   | "gift"
-  | "suggestion_update";
+  | "suggestion_update"
+  | "community_goal";
 
 /** Catégories réglables dans les paramètres (une notification désactivée n'est ni stockée ni envoyée). */
 export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {
@@ -40,7 +41,7 @@ export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {
   battles: ["battle_challenge", "battle_result"],
   packs: ["packs_full", "gift"],
   achievements: ["achievement", "achievement_backfill", "title_won"],
-  progress: ["quest_completed", "pass_level"],
+  progress: ["quest_completed", "pass_level", "community_goal"],
   boss: ["boss_killed", "boss_phase", "boss_consolation", "boss_mvp"],
 };
 

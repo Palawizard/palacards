@@ -66,6 +66,8 @@ export interface OpenedPack {
   theme?: { id: number; name: string; themedCardIds: number[]; owned: number; opened: number };
   /** Recyclage automatique (réglage du joueur) : exemplaires recyclés dès l'ouverture et PW gagnés. */
   autoRecycled?: { instanceIds: number[]; gain: number };
+  /** Recyclage automatique : exemplaires gardés parce que l'article est dans la wishlist du joueur. */
+  wishlistKept?: number[];
 }
 
 export interface OpenPackOptions {
@@ -109,6 +111,8 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       if (free) {
         update.packsStored = free.stored;
         update.packsUpdatedAt = free.updatedAt;
+        // Le stock repasse sous le plafond : le prochain remplissage aura sa notification.
+        update.packsFullNotified = false;
       } else if (p.bonusPacks > 0) {
         update.bonusPacks = p.bonusPacks - 1;
         usedBonus = true;
@@ -171,6 +175,25 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
             ).map((r) => r.cardId),
           )
         : new Set<number>();
+    // Les articles de la wishlist échappent au recyclage automatique.
+    const wishlist = new Set(
+      p.autoRecycleMax
+        ? (
+            await tx
+              .select({ cardId: schema.wishlist.cardId })
+              .from(schema.wishlist)
+              .where(
+                and(
+                  eq(schema.wishlist.userId, userId),
+                  inArray(
+                    schema.wishlist.cardId,
+                    drawn.map((d) => d.id),
+                  ),
+                ),
+              )
+          ).map((r) => r.cardId)
+        : [],
+    );
 
     const inserted = await tx
       .insert(schema.cardInstances)
@@ -221,11 +244,12 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
 
     // Réponse lue dans la transaction : une fois le paquet consommé, plus rien ne peut faire échouer la requête.
     const cards = await instancesByIds(tx, ids, userId);
-    const picks = autoRecyclePicks(
+    const { picks, wished } = autoRecyclePicks(
       drawn.map((d) => ({ cardId: d.id, rarity: d.rarity, shiny: d.shiny })),
       p.autoRecycleMax,
       p.autoRecycleKeepNew,
       ownedBefore,
+      wishlist,
     );
     let autoRecycled: OpenedPack["autoRecycled"];
     if (picks.length) {
@@ -240,11 +264,13 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     return {
       cards,
       autoRecycled,
+      wishlistKept: wished.map((i) => ids[i]!),
       packs: packState(state, now),
       drawn,
       notable,
       recycledRarities: picks.map((i) => drawn[i]!.rarity),
       usedBonus,
+      usedFree: !!free,
       pityTriggered: p.pityCounter >= PITY_THRESHOLD,
       state,
       theme: theme
@@ -265,7 +291,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     if (result.theme || result.autoRecycled) pushWallet(ctx, result.state);
   });
   await afterCommit(ctx, async () => {
-    await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
+    if (result.usedFree) await schedulePacksFull(ctx, userId, result.state.packsStored, result.state.packsUpdatedAt);
     await bumpObjective(ctx, userId, {
       open_packs: 1,
       pull_sr: result.drawn.filter((d) => d.rarity === "SR" || d.rarity === "UR" || d.rarity === "L").length,
@@ -298,5 +324,6 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     pityTriggered: result.pityTriggered,
     ...(result.theme ? { theme: result.theme } : {}),
     ...(result.autoRecycled ? { autoRecycled: result.autoRecycled } : {}),
+    ...(result.wishlistKept.length ? { wishlistKept: result.wishlistKept } : {}),
   };
 }

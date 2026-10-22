@@ -1,6 +1,5 @@
 import { eq, schema } from "@palacards/db";
 import {
-  ARTICLE_SEARCH_MAX_LENGTH,
   BOSS_CARDS_PER_ASSAULT,
   FEED_REACTIONS,
   PASS_HALF_LEVEL,
@@ -15,7 +14,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
-import { articleImage, articleState, guessArticle, searchArticles } from "../services/article.js";
+import { hlAnswer, hlStart, hlState } from "../services/higher-lower.js";
 import { answerBoss, bossCards, bossState, serveNext, startAssault } from "../services/boss.js";
 import {
   adminBroadcasts,
@@ -40,8 +39,8 @@ const XP_TABLE: PassDTO["xpTable"] = [
   { label: "Connexion du jour", xp: XP.login },
   { label: "Tour de roue", xp: XP.wheel },
   { label: "Upgrade tenté", xp: XP.upgrade },
-  { label: "Article du jour trouvé", xp: XP.articleFound },
-  { label: "Article du jour raté", xp: XP.articlePlayed },
+  { label: "Essai de « Plus ou moins vu »", xp: XP.hlPlayed },
+  { label: "Réussite à « Plus ou moins vu » (10 par essai au plus)", xp: XP.hlWin },
   { label: "Assaut contre le boss", xp: XP.bossAssault },
   { label: "Phase du boss abattue", xp: XP.bossPhase },
   { label: "Duel gagné", xp: XP.battleWin },
@@ -94,32 +93,18 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
     };
   });
 
-  // --- Article du jour ---
-  api.get("/article", auth, async (req) => articleState(ctx, req.user.id));
-  api.post("/article/guess", { ...auth, config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (req) => {
-    const { cardId } = parse(z.object({ cardId: z.number().int().positive() }), req.body);
-    return guessArticle(ctx, req.user.id, cardId);
-  });
-  // Autocomplétion des essais : une requête par frappe (après une courte pause côté navigateur).
-  api.get("/article/search", { ...auth, config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req) => {
-    const { q } = parse(z.object({ q: z.string().max(ARTICLE_SEARCH_MAX_LENGTH * 2) }), req.query);
-    return searchArticles(ctx, q);
-  });
-  // Image de la réponse, pixelisée selon l'avancement du joueur : jamais mise en cache (elle change à chaque essai).
-  api.get(
-    "/article/image",
-    { ...auth, config: { rateLimit: { max: 120, timeWindow: "1 minute" } } },
-    async (req, reply) => {
-      const img = await articleImage(ctx, req.user.id);
-      return reply
-        .header("content-type", img.type)
-        .header("cache-control", "private, no-store")
-        .header("x-content-type-options", "nosniff")
-        .header("content-security-policy", "default-src 'none'; sandbox")
-        .header("cross-origin-resource-policy", "same-site")
-        .send(img.body);
-    },
+  // --- Plus ou moins vu (remplace l'article du jour) ---
+  api.get("/hl", auth, async (req) => hlState(ctx, req.user.id));
+  api.post("/hl/start", { ...auth, config: { rateLimit: { max: 20, timeWindow: "1 minute" } } }, async (req) =>
+    hlStart(ctx, req.user.id),
   );
+  api.post("/hl/answer", { ...auth, config: { rateLimit: { max: 120, timeWindow: "1 minute" } } }, async (req) => {
+    const b = parse(
+      z.object({ step: z.number().int().min(0).max(10_000), pick: z.enum(["kept", "challenger"]) }),
+      req.body,
+    );
+    return hlAnswer(ctx, req.user.id, b.step, b.pick);
+  });
 
   // --- Boss du jour ---
   api.get("/boss", auth, async (req) => bossState(ctx, req.user.id));

@@ -24,7 +24,7 @@ def quoted_dir(tmp_path: Path) -> Path:
 def test_sql_str_doubles_apostrophes():
     assert paths.sql_str("a'b") == "'a''b'"
     assert paths.sql_str(Path("/x/O'Neil/y.parquet")) == "'/x/O''Neil/y.parquet'"
-    assert duckdb.sql(f"SELECT {paths.sql_str(chr(39) * 3)}").fetchone()[0] == "'''"
+    assert duckdb.connect().execute(f"SELECT {paths.sql_str(chr(39) * 3)}").fetchone()[0] == "'''"
 
 
 def write_articles(path: Path, n: int) -> None:
@@ -68,9 +68,9 @@ def test_pipeline_sql_with_apostrophe_in_paths(quoted_dir: Path):
         months.append(f)
     views = quoted_dir / "views.parquet"
     merge_months(months, views)
-    assert duckdb.sql(f"SELECT sum(views) FROM read_parquet({paths.sql_str(views)})").fetchone()[
-        0
-    ] == 3 * sum(range(n))
+    con = duckdb.connect()
+    total = con.execute(f"SELECT sum(views) FROM read_parquet({paths.sql_str(views)})").fetchone()[0]
+    assert total == 3 * sum(range(n))
 
     flags = quoted_dir / "flags.parquet"
     pq.write_table(

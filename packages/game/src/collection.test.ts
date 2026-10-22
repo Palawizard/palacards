@@ -60,16 +60,52 @@ describe("autoRecyclePicks", () => {
   ];
 
   it("désactivé : ne recycle rien", () => {
-    expect(autoRecyclePicks(drawn, null, false, new Set())).toEqual([]);
+    expect(autoRecyclePicks(drawn, null, false, new Set(), new Set([1]))).toEqual({ picks: [], wished: [] });
   });
 
   it("recycle la rareté choisie et en dessous", () => {
-    expect(autoRecyclePicks(drawn, "PC", false, new Set())).toEqual([0, 1, 2]);
-    expect(autoRecyclePicks(drawn, "SR", false, new Set())).toEqual([0, 1, 2, 3]);
+    expect(autoRecyclePicks(drawn, "PC", false, new Set()).picks).toEqual([0, 1, 2]);
+    expect(autoRecyclePicks(drawn, "SR", false, new Set()).picks).toEqual([0, 1, 2, 3]);
   });
 
   it("garde les nouveaux articles, une seule fois", () => {
-    expect(autoRecyclePicks(drawn, "R", true, new Set([1]))).toEqual([0, 2]);
+    expect(autoRecyclePicks(drawn, "R", true, new Set([1])).picks).toEqual([0, 2]);
+  });
+
+  it("garde chaque exemplaire d'un article de la wishlist, même déjà possédé", () => {
+    expect(autoRecyclePicks(drawn, "SR", false, new Set([2]), new Set([2]))).toEqual({
+      picks: [0, 3],
+      wished: [1, 2],
+    });
+    expect(autoRecyclePicks(drawn, "SR", true, new Set([1, 2, 3]), new Set([2]))).toEqual({
+      picks: [0, 3],
+      wished: [1, 2],
+    });
+  });
+
+  it("une carte de la wishlist n'est jamais recyclée, brillante ou non, sur une série de paquets", () => {
+    const wishlist = new Set([7]);
+    const packs = [
+      [
+        { cardId: 7, rarity: "C" as const },
+        { cardId: 8, rarity: "C" as const },
+      ],
+      [
+        { cardId: 7, rarity: "SR" as const, shiny: true },
+        { cardId: 7, rarity: "C" as const },
+      ],
+      [{ cardId: 7, rarity: "R" as const }],
+    ];
+    const owned = new Set<number>();
+    for (const pack of packs) {
+      const { picks } = autoRecyclePicks(pack, "SR", true, owned, wishlist);
+      expect(picks.every((i) => pack[i]!.cardId !== 7)).toBe(true);
+      pack.forEach((d) => owned.add(d.cardId));
+    }
+  });
+
+  it("ne signale pas un article de la wishlist qui n'aurait pas été recyclé", () => {
+    expect(autoRecyclePicks(drawn, "C", false, new Set(), new Set([3, 4])).wished).toEqual([]);
   });
 });
 

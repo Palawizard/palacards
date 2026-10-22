@@ -86,7 +86,11 @@ function FeedItem({ item, fresh, now }: { item: FeedItemDTO; fresh: boolean; now
           </span>
           <span className="truncate">{item.user.name}</span>
         </Link>
-        <span className="ml-auto shrink-0 text-faint" title={`Tiré dans un ${SOURCE[item.source] ?? "paquet"}`}>
+        <span
+          className="ml-auto shrink-0 text-faint"
+          title={item.source === "shop" ? "Achetée en boutique" : `Tiré dans un ${SOURCE[item.source] ?? "paquet"}`}
+        >
+          {item.source === "shop" && <span className="font-semibold text-muted">Achetée en boutique · </span>}
           {relative(item.createdAt, now)}
         </span>
       </div>
