@@ -29,7 +29,13 @@ import { findUserByName } from "../services/profiles.js";
 import { acceptTrade, closeTrade, counterTrade, listTrades, proposeTrade } from "../services/trades.js";
 import { redeemCode } from "../services/codes.js";
 import { listThemes } from "../services/themes.js";
-import { upgrade, upgradeSeries, upgradeSeriesPreview } from "../services/upgrade.js";
+import {
+  upgrade,
+  UPGRADE_SERIES_MAX_CARDS,
+  upgradeSeries,
+  upgradeSeriesHistory,
+  upgradeSeriesPreview,
+} from "../services/upgrade.js";
 import { spinWheel, wheelState } from "../services/wheel.js";
 
 const id = z.coerce.number().int().positive();
@@ -208,6 +214,9 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     rarity: z.enum(RARITIES),
     singles: z.boolean().optional(),
     lots: z.number().int().positive().optional(),
+    // Sélection du joueur (ordre des lots) ; `confirm` : favoris, brillantes et derniers exemplaires acceptés.
+    instanceIds: z.array(z.number().int().positive()).min(1).max(UPGRADE_SERIES_MAX_CARDS).optional(),
+    confirm: z.boolean().optional(),
   });
   api.get("/upgrade/series", auth, async (req) => {
     const q = parse(seriesQuery, req.query);
@@ -215,8 +224,14 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   });
   api.post("/upgrade/series", limited(10), async (req) => {
     const b = parse(seriesBody, req.body);
-    return upgradeSeries(ctx, req.user.id, b.rarity, b.singles ?? false, b.lots);
+    return upgradeSeries(ctx, req.user.id, b.rarity, {
+      singles: b.singles,
+      maxLots: b.lots,
+      instanceIds: b.instanceIds,
+      confirm: b.confirm,
+    });
   });
+  api.get("/upgrade/series/history", auth, async (req) => upgradeSeriesHistory(ctx, req.user.id));
   api.get("/wheel", auth, async (req) => wheelState(ctx, req.user.id));
   api.post("/wheel/spin", limited(10), async (req) => spinWheel(ctx, req.user.id));
   // Limite serrée : pas de devinette de codes à la chaîne.
