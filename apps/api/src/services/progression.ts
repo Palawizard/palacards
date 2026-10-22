@@ -9,6 +9,7 @@ import {
   passProgress,
   passReward,
   questProgress,
+  QUEST_RECORD_KINDS,
   STAT_KEYS,
   statUpdates,
   xpForEvent,
@@ -149,7 +150,10 @@ async function advanceQuests(tx: Tx, quests: QuestRow[], event: GameEvent, now: 
     if (q.completedAt) continue;
     const inc = questProgress(q.kind as QuestKind, event);
     if (inc <= 0) continue;
-    const progress = Math.min(q.target, q.progress + inc);
+    const progress = Math.min(
+      q.target,
+      QUEST_RECORD_KINDS.includes(q.kind as QuestKind) ? Math.max(q.progress, inc) : q.progress + inc,
+    );
     const completedAt = progress >= q.target ? now : null;
     await tx
       .update(schema.playerQuests)
@@ -707,6 +711,27 @@ export async function boardRows(db: DbOrTx, board: Board, period: "season" | "al
       order by s.value desc, s.reached_at, u.username limit 100
     `);
     rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
+  } else if (board === "hl_streak") {
+    // « Plus ou moins vu » : meilleure série d'un essai pendant le mois en cours (heure de Paris), quelle que soit
+    // la période demandée. Égalité : le premier à l'avoir atteinte.
+    const res = await db.execute<{
+      user_id: string;
+      value: number;
+      username: string;
+      name: string;
+      avatar: string | null;
+    }>(sql`
+      select s.user_id, s.value, u.username, coalesce(u.display_username, u.name) as name, p.avatar
+      from (
+        select distinct on (user_id) user_id, streak::int as value, finished_at
+        from hl_runs
+        where status = 'over' and streak > 0
+          and day >= date_trunc('month', now() at time zone 'Europe/Paris')::date
+        order by user_id, streak desc, finished_at
+      ) s join "user" u on u.id = s.user_id left join players p on p.user_id = s.user_id
+      order by s.value desc, s.finished_at, u.username limit 100
+    `);
+    rows = res.map((r) => ({ id: r.user_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
   } else if (board === "achievements") {
     // Paliers de succès débloqués depuis l'inscription (même liste pour les deux périodes) ; seuls comptent les
     // succès qui existent encore. Égalité : le premier à avoir atteint ce nombre (date de son dernier palier).

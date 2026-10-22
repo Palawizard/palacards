@@ -4,7 +4,6 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
-import { dailyArticle } from "../services/article.js";
 import { closeAuctionIfDue } from "../services/market.js";
 import { setAdminRole } from "../services/roles.js";
 import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet } from "../services/players.js";
@@ -108,9 +107,37 @@ export function testRoutes(api: FastifyInstance, ctx: Ctx) {
     return { ok: true };
   });
 
-  /** Réponse de l'article du jour (parcours E2E : trouver l'article sans deviner). */
-  api.get("/test/article-answer", auth, async () => {
-    const a = await dailyArticle(ctx);
-    return { cardId: a.cardId, title: a.title };
+  /**
+   * « Plus ou moins vu » en E2E (pas de Wikipédia) : un résumé avec image pour les Super rares, Ultra rares et
+   * Légendaires de la saison qui n'en ont pas, et des vues étalées. Base E2E seulement (modifie les cartes).
+   */
+  api.post("/test/hl-seed", auth, async () => {
+    const rows = await ctx.db.execute(sql`
+      insert into wiki_summaries (page_id, extract, thumb_url, page_url, description, status, arthropod)
+      select c.id, 'Résumé de test.', 'https://upload.wikimedia.org/test/' || c.id || '.jpg', null, 'article de test', 'ok', false
+      from cards c
+      where c.season = (select id from seasons where status = 'active') and c.rarity in ('SR', 'UR', 'L')
+      on conflict (page_id) do nothing
+    `);
+    // Cartes synthétiques aux vues presque identiques : on les étale (×1,08 de l'une à l'autre, comme les vraies).
+    await ctx.db.execute(sql`
+      update cards c set views_12m = (22500 * power(1.08, r.n))::bigint
+      from (select id, season, row_number() over (order by views_12m, id) as n from cards where rarity in ('SR', 'UR', 'L')) r
+      where c.id = r.id and c.season = r.season
+    `);
+    return { seeded: rows.count };
+  });
+
+  /** Côté le plus vu de la paire en cours (parcours E2E : jouer une bonne puis une mauvaise réponse). */
+  api.get("/test/hl-answer", auth, async (req) => {
+    const [row] = await ctx.db.execute<{ kept: string; challenger: string }>(sql`
+      select k.views_12m as kept, c.views_12m as challenger
+      from hl_runs r
+      join cards k on k.season = r.season and k.id = r.kept_card_id
+      join cards c on c.season = r.season and c.id = r.challenger_card_id
+      where r.user_id = ${req.user.id} and r.status = 'playing'
+    `);
+    if (!row) return { higher: null };
+    return { higher: Number(row.kept) > Number(row.challenger) ? "kept" : "challenger" };
   });
 }
