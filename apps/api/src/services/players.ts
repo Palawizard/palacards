@@ -69,7 +69,8 @@ export type LedgerReason =
   | "daily_article"
   | "boss"
   | "community_goal"
-  | "shop_purchase";
+  | "shop_purchase"
+  | "higher_lower";
 
 /**
  * Change le solde de PW d'un joueur verrouillé et écrit la ligne de ledger correspondante.

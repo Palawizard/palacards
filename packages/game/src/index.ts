@@ -21,3 +21,4 @@ export * from "./status-note.js";
 export * from "./saved-decks.js";
 export * from "./community.js";
 export * from "./shop.js";
+export * from "./higher-lower.js";

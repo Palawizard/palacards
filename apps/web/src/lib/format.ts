@@ -61,6 +61,7 @@ const REASONS: Record<string, string> = {
   quest: "Quête",
   season_pass: "Passe de saison",
   daily_article: "Article du jour",
+  higher_lower: "Plus ou moins vu",
   boss: "Boss du jour",
   community_goal: "Objectif communautaire",
   shop_purchase: "Boutique du jour",

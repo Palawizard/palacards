@@ -7,6 +7,7 @@ import { COMMUNITY_GOAL_JOB, refreshCommunityGoal } from "./community.js";
 import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
 import { GUILD_WEEKLY_JOB, weeklyJob } from "./guilds.js";
 import { purgeOldShops } from "./shop.js";
+import { sweepHigherLower } from "./higher-lower.js";
 import { CARDS_PURGE_JOB, purgeOldCards, rolloverSeason, SEASON_ROLLOVER_JOB } from "./seasons.js";
 import { AUCTION_CLOSE_JOB, closeAuctionIfDue, sweepAuctions } from "./market.js";
 import { PRIVACY_PURGE_JOB, purgeExpired } from "./privacy.js";
@@ -72,5 +73,6 @@ export function registerJobs(ctx: Ctx) {
     await sweepAuctions(ctx);
     await sweepTrades(ctx);
     await sweepBattles(ctx);
+    await sweepHigherLower(ctx);
   });
 }
