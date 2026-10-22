@@ -281,6 +281,13 @@
       "when": 1792658906328,
       "tag": "0039_packs_full_notified",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792659245202,
+      "tag": "0040_upgrade_series_runs",
+      "breakpoints": true
     }
   ]
 }
