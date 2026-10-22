@@ -22,7 +22,8 @@ const WEIRD_DAYS = 14;
 const SHINY_DAYS = 60;
 export const FEED_PAGE = 24;
 
-export type PullSource = "pack" | "theme" | "wheel" | "upgrade" | "boss";
+/** `shop` : légendaire achetée en boutique (affichée « achetée en boutique », jamais comptée comme un tirage). */
+export type PullSource = "pack" | "theme" | "wheel" | "upgrade" | "boss" | "shop";
 
 export interface PullInput {
   cardId: number;

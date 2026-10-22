@@ -6,6 +6,7 @@ import { purgeOldPulls, startWeirdRefresh, WEIRD_REFRESH_JOB } from "./feed.js";
 import { COMMUNITY_GOAL_JOB, refreshCommunityGoal } from "./community.js";
 import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
 import { GUILD_WEEKLY_JOB, weeklyJob } from "./guilds.js";
+import { purgeOldShops } from "./shop.js";
 import { CARDS_PURGE_JOB, purgeOldCards, rolloverSeason, SEASON_ROLLOVER_JOB } from "./seasons.js";
 import { AUCTION_CLOSE_JOB, closeAuctionIfDue, sweepAuctions } from "./market.js";
 import { PRIVACY_PURGE_JOB, purgeExpired } from "./privacy.js";
@@ -59,6 +60,7 @@ export function registerJobs(ctx: Ctx) {
   });
   ctx.jobs.schedule("pulls-purge", "45 4 * * *", async () => {
     ctx.log.info({ deleted: await purgeOldPulls(ctx) }, "purge du fil d'activité");
+    ctx.log.info({ deleted: await purgeOldShops(ctx) }, "purge des boutiques du jour");
   });
   // Objectif communautaire : articles différents de la saison recomptés toutes les 10 minutes (cache lu par
   // la page Succès), et versement des paliers atteints.

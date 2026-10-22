@@ -315,7 +315,9 @@ export const cardInstances = pgTable(
     lockedBy: text("locked_by", { enum: ["auction", "trade"] }),
     pinnedSlot: smallint("pinned_slot"),
     /** `upgrade` (upgrader) et `wheel` (roue quotidienne) comptent, comme `pack`, pour les succès de collection. */
-    source: text("source", { enum: ["pack", "market", "trade", "admin", "upgrade", "wheel", "boss"] }).notNull(),
+    source: text("source", {
+      enum: ["pack", "market", "trade", "admin", "upgrade", "wheel", "boss", "shop"],
+    }).notNull(),
     obtainedAt: tstz("obtained_at").notNull().defaultNow(),
   },
   (t) => [
@@ -1183,7 +1185,8 @@ export const pulls = pgTable(
     season: smallint("season").notNull(),
     rarity: rarityEnum("rarity").notNull(),
     shiny: boolean("shiny").notNull().default(false),
-    source: text("source", { enum: ["pack", "theme", "wheel", "upgrade", "boss"] }).notNull(),
+    /** `shop` : légendaire achetée en boutique (fil d'activité « achetée en boutique », jamais comptée comme un tirage). */
+    source: text("source", { enum: ["pack", "theme", "wheel", "upgrade", "boss", "shop"] }).notNull(),
     /** Genres « bizarres » repérés au tirage par les mots-clés du titre (les catégories sont lues à part). */
     genres: text("genres")
       .array()
@@ -1225,6 +1228,31 @@ export const communityGoalRewards = pgTable(
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.season, t.tier, t.userId] })],
+);
+
+/**
+ * Boutique du jour (une sélection par joueur et par jour de Paris), figée à la première visite du jour.
+ * Chaque carte s'achète une fois : `purchased_at` posé dans la transaction d'achat (joueur verrouillé).
+ */
+export const shopOffers = pgTable(
+  "shop_offers",
+  {
+    userId: userRef("user_id").notNull(),
+    day: date("day").notNull(),
+    slot: smallint("slot").notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    season: smallint("season").notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    price: integer("price").notNull(),
+    purchasedAt: tstz("purchased_at"),
+    instanceId: bigint("instance_id", { mode: "number" }),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.day, t.slot] }),
+    uniqueIndex("shop_offers_card_uq").on(t.userId, t.day, t.cardId),
+    check("shop_offers_price_ok", sql`${t.price} > 0`),
+  ],
 );
 
 export const pullReactions = pgTable(

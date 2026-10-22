@@ -20,6 +20,7 @@ describe("menu : nouveautés et paquets à ouvrir", () => {
       "article-v2",
       "leaderboard-achievements",
       "leaderboard-shiny",
+      "shop",
     ];
     expect((await p.get("/me")).body.newFeatures).toEqual(all);
     expect((await p.post("/me/seen-feature", { key: "battle-v2" })).status).toBe(200);
