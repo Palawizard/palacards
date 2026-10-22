@@ -215,3 +215,39 @@ test("upgrader : favoris masqués par défaut, upgrade en série des doublons", 
   // Il ne reste que le favori : plus de doublon.
   await expect(cards).toHaveCount(0);
 });
+
+test("upgrader : série sur des cartes choisies, avec le récapitulatif de chaque upgrade", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "seriemain");
+  const common = await apiCall<{ items: { cardId: number }[] }>(page, "GET", "/cards?rarity=C&limit=1&sort=title");
+  await apiCall(page, "POST", "/test/grant-card", { cardId: common.items[0]!.cardId, count: 6 });
+  await page.goto("upgrade");
+  const series = page.getByRole("region", { name: "Upgrade en série" });
+  await expect(series).toContainText("5 doublons → 2 upgrades");
+
+  // La liste des cartes qui partiront : on en retire une, la série passe en sélection manuelle.
+  await series.getByText("Cartes utilisées (5)").click();
+  const used = series.getByRole("list", { name: "Cartes utilisées par la série" });
+  await expect(used.getByRole("listitem")).toHaveCount(5);
+  await used
+    .getByRole("button", { name: /^Retirer / })
+    .first()
+    .click();
+  await expect(series).toContainText("4 cartes → 1 upgrade");
+
+  // On en ajoute une depuis la liste de la page.
+  await series.getByRole("button", { name: "Ajouter des cartes" }).click();
+  await expect(page.getByText(/Touche une carte pour l’ajouter à la série/)).toBeVisible();
+  await page
+    .getByRole("button", { name: /^Ajouter à la série/ })
+    .first()
+    .click();
+  await expect(series).toContainText("5 cartes → 2 upgrades");
+  await page.getByRole("button", { name: "Terminer l’ajout" }).first().click();
+
+  await series.getByRole("button", { name: "Lancer 2 upgrades" }).click();
+  await expect(series).toContainText(/réussites? sur 2/, { timeout: 15_000 });
+  await expect(series.getByText("Upgrade 1", { exact: true }).first()).toBeVisible();
+  await expect(series.getByText("Upgrade 2", { exact: true }).first()).toBeVisible();
+  // Le récapitulatif reste consultable dans « Dernières séries ».
+  await expect(series.getByText("Dernières séries (1)")).toBeVisible();
+});

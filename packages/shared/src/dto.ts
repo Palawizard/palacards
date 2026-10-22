@@ -150,6 +150,41 @@ export interface WheelSpinDTO {
   wheel: WheelDTO;
 }
 
+/** Carte engagée dans un upgrade en série (aperçu, récapitulatif et historique). */
+export interface UpgradeSeriesCardDTO {
+  instanceId: number;
+  cardId: number;
+  title: string;
+  rarity: Rarity;
+  shiny: boolean;
+  /** Aperçu seulement : favori (jamais pris sans que le joueur l'ajoute lui-même). */
+  favorite?: boolean;
+  /** Aperçu seulement : dernier exemplaire de l'article (il quitterait la collection). */
+  lastCopy?: boolean;
+}
+
+/** Lot d'un upgrade en série lancé : cartes parties, tirage, carte obtenue ou PW rendus. */
+export interface UpgradeSeriesLotDTO {
+  cards: number;
+  chance: number;
+  roll: number;
+  success: boolean;
+  refund: number;
+  consumed: UpgradeSeriesCardDTO[];
+  won: UpgradeSeriesCardDTO | null;
+}
+
+/** Upgrade en série déjà lancé (liste des dernières séries de la page Upgrader). */
+export interface UpgradeSeriesRunDTO {
+  id: number;
+  rarity: Rarity;
+  target: Rarity;
+  createdAt: string;
+  successes: number;
+  refund: number;
+  lots: UpgradeSeriesLotDTO[];
+}
+
 /** Upgrade en série : lots prévus avec les doublons d'une rareté (jamais favoris, brillantes ni cartes engagées). */
 export interface UpgradeSeriesPreviewDTO {
   rarity: Rarity;
@@ -174,12 +209,16 @@ export interface UpgradeSeriesPreviewDTO {
   /** PW rendus si tous les lots échouent. */
   refundIfAllFail: number;
   maxLots: number;
+  /** Cartes prises automatiquement, dans l'ordre des lots (les `cards` premières partent si tout est lancé). */
+  candidates: UpgradeSeriesCardDTO[];
 }
 
 export interface UpgradeSeriesResultDTO {
+  /** Ligne de l'historique (dernières séries). */
+  id: number;
   rarity: Rarity;
   target: Rarity;
-  lots: { cards: number; chance: number; roll: number; success: boolean }[];
+  lots: UpgradeSeriesLotDTO[];
   successes: number;
   /** Cartes gagnées, dans l'ordre des lots. */
   cards: CardDTO[];
