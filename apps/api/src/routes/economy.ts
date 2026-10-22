@@ -2,6 +2,7 @@ import {
   ECONOMY,
   MAX_PRICE,
   RARITIES,
+  SHOP_SIZE,
   TRADE_MAX_CARDS_PER_SIDE,
   UPGRADE_MAX_CARDS,
   UPGRADE_MIN_CARDS,
@@ -30,6 +31,7 @@ import { acceptTrade, closeTrade, counterTrade, listTrades, proposeTrade } from 
 import { redeemCode } from "../services/codes.js";
 import { listThemes } from "../services/themes.js";
 import { claimCommunityRewards, communityGoal } from "../services/community.js";
+import { buyShopItem, getShop } from "../services/shop.js";
 import {
   upgrade,
   UPGRADE_SERIES_MAX_CARDS,
@@ -252,6 +254,22 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
     return community ? { ...daily, community } : daily;
   });
   api.get("/community-goal", auth, async (req) => communityGoal(ctx, req.user.id));
+
+  // --- Boutique du jour ---
+  api.get("/shop", auth, async (req) => getShop(ctx, req.user.id));
+  api.post("/shop/buy", limited(30), async (req) => {
+    const { slot } = parse(
+      z.object({
+        slot: z
+          .number()
+          .int()
+          .min(0)
+          .max(SHOP_SIZE - 1),
+      }),
+      req.body,
+    );
+    return buyShopItem(ctx, req.user.id, slot);
+  });
   api.post("/packs/buy", limited(20), async (req) => buyBonusPack(ctx, req.user.id));
   api.get("/wallet/history", auth, async (req) => ledgerHistory(ctx, req.user.id));
 }

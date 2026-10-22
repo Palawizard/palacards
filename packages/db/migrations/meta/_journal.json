@@ -295,6 +295,13 @@
       "when": 1792660297126,
       "tag": "0041_community_goals",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792661272560,
+      "tag": "0042_shop_offers",
+      "breakpoints": true
     }
   ]
 }

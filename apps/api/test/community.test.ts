@@ -42,11 +42,11 @@ async function rewardsOf(userId: string) {
 }
 
 describe("objectif communautaire (suggestion n° 105)", () => {
-  it("compte les articles différents de la saison tirés au moins une fois", async () => {
+  it("compte les articles différents de la saison tirés au moins une fois (jamais les achats en boutique)", async () => {
     const p = await signUp(app);
     expect((await p.post("/packs/open")).status).toBe(200);
     const [row] = await ctx.db.execute<{ n: number }>(
-      sql`select count(distinct card_id)::int as n from pulls where season = ${season}`,
+      sql`select count(distinct card_id)::int as n from pulls where season = ${season} and source <> 'shop'`,
     );
     const res = await refreshCommunityGoal(ctx);
     expect(res.distinct).toBe(row!.n);
