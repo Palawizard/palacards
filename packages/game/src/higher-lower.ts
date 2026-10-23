@@ -136,13 +136,3 @@ export function hlEligibleTitle(title: string): boolean {
 /** Description courte d'une page d'homonymie (Wikidata) : écartée aussi. */
 export const hlEligibleDescription = (description: string | null | undefined) =>
   !description || !/page d['’]homonymie|liste (de|des|d['’])|wikimedia/i.test(description);
-
-/** Texte à partager en fin de journée, sans spoiler (aucun titre d'article). */
-export function hlShareText(day: string, streaks: readonly number[], best: number): string {
-  const tries = streaks.map((s, i) => `Essai ${i + 1} : ${"🟩".repeat(Math.min(s, 10))}${s > 10 ? "+" : ""} ${s}`);
-  return [
-    `PalaCards · Plus ou moins vu · ${day}`,
-    ...tries,
-    `Meilleure série du jour : ${Math.max(0, ...streaks)} · record : ${best}`,
-  ].join("\n");
-}
