@@ -497,13 +497,6 @@
 .pc-answer-attrs dd {
   font-weight: 600;
 }
-.pc-share {
-  font-family: inherit;
-  font-size: 1.05rem;
-  letter-spacing: 0.12em;
-  line-height: 1.3;
-  text-align: center;
-}
 .pc-dist {
   display: grid;
   gap: 0.25rem;

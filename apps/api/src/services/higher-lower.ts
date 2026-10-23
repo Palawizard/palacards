@@ -11,7 +11,6 @@ import {
   hlExpired,
   hlNewIsHigher,
   hlReward,
-  hlShareText,
   hlViewRange,
   hlWidenedBands,
   isArthropod,
@@ -303,7 +302,7 @@ export async function sweepHigherLower(ctx: Ctx) {
   for (const r of due) await expireRun(ctx, r.id);
 }
 
-/** État du jour : essais joués, essai en cours, résumé et texte à partager une fois les 3 essais finis. */
+/** État du jour : essais joués, essai en cours et résumé. */
 export async function hlState(ctx: Ctx, userId: string): Promise<HlStateDTO> {
   await expireIfDue(ctx, userId);
   const now = ctx.now();
@@ -329,7 +328,6 @@ export async function hlState(ctx: Ctx, userId: string): Promise<HlStateDTO> {
   const finished = official.filter((r) => r.status === "over");
   const used = official.length;
   const best = stats?.best ?? 0;
-  const allDone = used >= HL_TRIES_PER_DAY && !(playing && !playing.practice);
   return {
     day,
     maxTries: HL_TRIES_PER_DAY,
@@ -341,13 +339,6 @@ export async function hlState(ctx: Ctx, userId: string): Promise<HlStateDTO> {
     totalWins: stats?.wins ?? 0,
     earnedToday: finished.reduce((s, r) => s + r.reward, 0),
     resetsAt: nextParisMidnight(now).toISOString(),
-    share: allDone
-      ? hlShareText(
-          day,
-          finished.map((r) => r.streak),
-          best,
-        )
-      : null,
     practice: { played: practice.length, todayBest: Math.max(0, ...practice.map((r) => r.streak)) },
   };
 }
