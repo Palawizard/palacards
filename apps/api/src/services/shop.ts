@@ -15,6 +15,7 @@ import { conflict, notFound } from "../errors.js";
 import { arthropodFlags, loadMediaInBackground } from "./cards.js";
 import { announcePulls, logPulls } from "./feed.js";
 import { afterCommit } from "./notifications.js";
+import { emit } from "./progression.js";
 import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet, wallet } from "./players.js";
 import { nextParisMidnight } from "./wheel.js";
 import { articleUrl } from "./wiki.js";
@@ -184,7 +185,8 @@ export async function getShop(ctx: Ctx, userId: string): Promise<ShopDTO> {
 /**
  * Achat d'une carte de la boutique du jour : une transaction (joueur verrouillé, offre verrouillée, solde
  * vérifié par `movePw`). Une offre déjà achetée est refusée : un double clic ou deux requêtes simultanées
- * n'achètent qu'une fois. La carte peut sortir brillante (tirée à l'achat, `SHINY_SOURCE_CHANCE.shop`). Elle
+ * n'achètent qu'une fois. La carte peut sortir brillante (tirée à l'achat, `SHINY_SOURCE_CHANCE.shop`) : elle
+ * fait alors avancer les succès « Ça brille ! » (`SHINY_SOURCE_COUNTS.shop`). Elle
  * arrive avec la source `shop` : elle ne compte pas comme un tirage (succès de collection et de part de saison,
  * classement « Chance », objectif communautaire). Une légendaire ou une brillante apparaît dans le fil
  * d'activité comme « achetée en boutique ».
@@ -238,6 +240,7 @@ export async function buyShopItem(ctx: Ctx, userId: string, slot: number): Promi
   });
   await afterCommit(ctx, async () => {
     pushWallet(ctx, res.player);
+    if (res.shiny) void emit(ctx, userId, { type: "shiny_obtained", source: "shop", count: 1 });
     loadMediaInBackground(ctx, userId, [{ cardId: res.card.id, title: res.card.title }]);
     await announcePulls(ctx, userId, res.notable);
   });

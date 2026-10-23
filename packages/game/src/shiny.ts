@@ -29,6 +29,16 @@ export const SHINY_SOURCE_CHANCE: Record<ShinySource, number> = {
   shop: SHINY_CHANCE,
 };
 
+/**
+ * Systèmes hors paquets dont les brillantes font avancer les succès « Ça brille ! » (brillantes tirées) :
+ * tous, boutique comprise. Les brillantes des paquets comptent toujours.
+ */
+export const SHINY_SOURCE_COUNTS: Record<ShinySource, boolean> = {
+  upgrade: true,
+  wheel: true,
+  shop: true,
+};
+
 /** Tirage de brillance d'une carte donnée par un système hors paquets (aucun tirage si le système n'en donne pas). */
 export function rollSourceShiny(source: ShinySource, randomInt: RandomInt): boolean {
   const chance = SHINY_SOURCE_CHANCE[source];

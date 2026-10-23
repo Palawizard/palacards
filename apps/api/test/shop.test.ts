@@ -2,6 +2,7 @@ import { and, eq, schema, sql } from "@palacards/db";
 import { SHINY_CHANCE, SHINY_TOTAL, SHOP_PRICES, SHOP_SIZE } from "@palacards/game";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Ctx } from "../src/context.js";
+import { progressionIdle } from "../src/services/progression.js";
 import { makeApp, signUp, type Client } from "./helpers.js";
 
 let app: Awaited<ReturnType<typeof makeApp>>["app"];
@@ -129,6 +130,10 @@ describe("boutique du jour", () => {
       source: "shop",
       card: { cardId: item.card.cardId, shiny: true },
     });
+    // Fait avancer les succès « Ça brille ! » (brillantes tirées).
+    await progressionIdle();
+    const stats = await ctx.db.select().from(schema.playerStats).where(eq(schema.playerStats.userId, p.userId));
+    expect(stats.find((s) => s.key === "shiny_pulled")?.value).toBe(1);
   });
 
   it("solde insuffisant : refusé, rien ne bouge", async () => {

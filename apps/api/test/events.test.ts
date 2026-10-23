@@ -11,6 +11,7 @@ import {
   type WheelTier,
 } from "@palacards/game";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { progressionIdle } from "../src/services/progression.js";
 import { createTheme } from "../src/services/themes.js";
 import { nextParisMidnight } from "../src/services/wheel.js";
 import { cleanCategory, createWiki } from "../src/services/wiki.js";
@@ -36,6 +37,14 @@ async function cardOf(rarity: Rarity, skip = 0): Promise<number> {
 async function grantCards(p: Client, rarity: Rarity, count: number): Promise<number[]> {
   const res = await p.post("/test/grant-card", { cardId: await cardOf(rarity), count });
   return res.body.instanceIds;
+}
+/** Statistique « brillantes tirées » du joueur (succès « Ça brille ! »), une fois la progression appliquée. */
+async function shinyPulled(userId: string): Promise<number> {
+  await progressionIdle();
+  const [row] = await ctx.db.execute<{ value: string }>(
+    sql`select value from player_stats where user_id = ${userId} and key = 'shiny_pulled'`,
+  );
+  return Number(row?.value ?? 0);
 }
 async function balance(p: Client): Promise<number> {
   return (await p.get("/me")).body.wallet.balance;
@@ -121,6 +130,8 @@ describe("upgrader", () => {
     const plain = await p.post("/upgrade", { instanceIds: shinies });
     expect(plain.body.success).toBe(true);
     expect(plain.body.card.shiny).toBeUndefined();
+    // Seule la brillante obtenue fait avancer les succès « Ça brille ! ».
+    expect(await shinyPulled(p.userId)).toBe(1);
   });
 
   it("refuse les raretés mélangées, les légendaires, le mauvais nombre et les cartes des autres", async () => {
@@ -470,6 +481,7 @@ describe("roues du jour", () => {
       sql`select shiny, source from card_instances where id = ${spin.body.card.instanceId}`,
     );
     expect(row).toEqual({ shiny: true, source: "wheel" });
+    expect(await shinyPulled(p.userId)).toBe(1);
   });
 
   it("repart à minuit, heure de Paris", () => {

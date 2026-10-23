@@ -177,7 +177,13 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
   await afterCommit(ctx, async () => {
     pushWallet(ctx, res.player);
     ctx.rt.toUser(userId, "packs:update", packs);
-    void emit(ctx, userId, { type: "wheel_spun" }, ...(res.drawn ? (["collection"] as const) : []));
+    void emit(
+      ctx,
+      userId,
+      { type: "wheel_spun" },
+      ...(card?.shiny ? [{ type: "shiny_obtained" as const, source: "wheel" as const, count: 1 }] : []),
+      ...(res.drawn ? (["collection"] as const) : []),
+    );
     if (res.drawn) {
       loadMediaInBackground(ctx, userId, [{ cardId: res.drawn.id, title: res.drawn.title }]);
       await announcePulls(ctx, userId, res.notable);
