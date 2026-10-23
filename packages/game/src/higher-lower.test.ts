@@ -8,7 +8,6 @@ import {
   hlEligibleTitle,
   hlExpired,
   hlReward,
-  hlShareText,
   hlViewRange,
   hlWidenedBands,
   hlNewIsHigher,
@@ -143,12 +142,5 @@ describe("plus ou moins vu : réponses et pool", () => {
     expect(hlEligibleDescription("page d'homonymie de Wikimedia")).toBe(false);
     expect(hlEligibleDescription("monument de Paris")).toBe(true);
     expect(hlEligibleDescription(null)).toBe(true);
-  });
-
-  it("partage sans spoiler : séries du jour et record, aucun titre", () => {
-    const text = hlShareText("2026-10-22", [3, 0, 12], 14);
-    expect(text).toContain("Meilleure série du jour : 12");
-    expect(text).toContain("record : 14");
-    expect(text.split("\n")).toHaveLength(5);
   });
 });

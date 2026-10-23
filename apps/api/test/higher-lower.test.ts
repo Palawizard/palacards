@@ -153,10 +153,6 @@ describe("plus ou moins vu", () => {
     expect(new Set(shown).size).toBe(shown.length);
     const state = (await p.get("/hl")).body;
     expect(state).toMatchObject({ triesLeft: 0, current: null });
-    expect(state.share).toContain("Meilleure série du jour");
-    expect(state.share).not.toMatch(
-      new RegExp(shown.map((t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")),
-    );
   });
 
   it("nouvelle journée (minuit, heure de Paris) : 3 nouveaux essais", async () => {

@@ -404,8 +404,6 @@ export interface HlStateDTO {
   totalWins: number;
   earnedToday: number;
   resetsAt: string;
-  /** Texte à partager sans spoiler, une fois les essais du jour joués. */
-  share: string | null;
   /** Entraînement du jour (après les 3 essais) : parties jouées et meilleure série, hors classement. */
   practice: { played: number; todayBest: number };
 }

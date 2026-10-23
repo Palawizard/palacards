@@ -2,13 +2,13 @@
 
 import { HL_REVEAL_MS, HL_REWARD_CAP, hlReward } from "@palacards/game";
 import type { HlAnswerDTO, HlArticleDTO, HlPairDTO, HlStateDTO } from "@palacards/shared";
-import { Check, Clock, Copy, Eye, Flame, Trophy, X } from "lucide-react";
+import { Check, Clock, Eye, Flame, Trophy, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { ErrorBox } from "@/components/ui";
-import { api, ApiError, SITE_URL, thumbSrc } from "@/lib/api";
+import { api, ApiError, thumbSrc } from "@/lib/api";
 import { useSeenFeature } from "@/lib/features";
 import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
@@ -187,16 +187,6 @@ export default function HigherLowerPage() {
     }
   }
 
-  async function share() {
-    if (!data?.share) return;
-    try {
-      await navigator.clipboard.writeText(`${data.share}\n${SITE_URL}/plus-ou-moins`);
-      toast.success("Copié : colle-le à tes potes !");
-    } catch {
-      toast.error("Copie impossible sur ce navigateur.");
-    }
-  }
-
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
 
   return (
@@ -325,49 +315,6 @@ export default function HigherLowerPage() {
                 </button>
               </div>
             ))}
-
-          {data.runs.length > 0 && (
-            <section className="infobox" aria-labelledby="hl-day">
-              <h2 id="hl-day" className="infobox-head">
-                Ta journée
-              </h2>
-              <div className="flex flex-col gap-3 p-4">
-                <ol className="tnum flex flex-wrap gap-2 text-sm">
-                  {data.runs.map((r) => (
-                    <li key={r.tryNo} className="rounded-lg border border-line px-3 py-2">
-                      Essai {r.tryNo}
-                      {NBSP}: série <strong className="text-text">{r.streak}</strong>
-                      <span className="text-muted">
-                        {r.reward ? ` · +${fmt(r.reward)}${NBSP}PW` : ""}
-                        {r.endReason === "timeout" ? " · temps écoulé" : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-                <p className="tnum text-sm text-muted">
-                  Meilleure série du jour{NBSP}: <strong className="text-text">{data.todayBest}</strong> · série record
-                  {NBSP}: <strong className="text-text">{data.best}</strong> · {fmt(data.totalWins)} réussites en tout
-                </p>
-                {data.practice.played > 0 && (
-                  <p className="tnum text-sm text-muted">
-                    Entraînement{NBSP}: {data.practice.played} partie{data.practice.played > 1 ? "s" : ""} · meilleure
-                    série <strong className="text-text">{data.practice.todayBest}</strong> (hors classement)
-                  </p>
-                )}
-                {data.share && (
-                  <div className="flex flex-col gap-2">
-                    <pre className="pc-share whitespace-pre-wrap text-left text-sm" aria-label="Ton résumé à partager">
-                      {data.share}
-                    </pre>
-                    <button type="button" className="btn self-start" onClick={share}>
-                      <Copy aria-hidden className="size-4" />
-                      Copier le résumé
-                    </button>
-                  </div>
-                )}
-              </div>
-            </section>
-          )}
         </>
       )}
     </div>

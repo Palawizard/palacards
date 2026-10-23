@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { apiCall, newPlayer } from "./helpers";
 
-test("plus ou moins vu : un essai complet, bonne réponse puis erreur, résumé du jour", async ({ browser }) => {
+test("plus ou moins vu : un essai complet, bonne réponse puis erreur", async ({ browser }) => {
   const { page } = await newPlayer(browser, "plusmoins");
   await apiCall(page, "POST", "/test/hl-seed");
   // L'ancienne page de l'article du jour mène au nouveau jeu.
@@ -34,6 +34,5 @@ test("plus ou moins vu : un essai complet, bonne réponse puis erreur, résumé 
   await expect(end).toContainText("Raté");
   await expect(end).toContainText("Série de 1");
   await expect(end).toContainText("+10");
-  await expect(page.getByRole("region", { name: "Ta journée" })).toContainText("Essai 1 : série 1");
   await expect(page.getByRole("button", { name: "Essai suivant (2 restants)" })).toBeVisible();
 });
