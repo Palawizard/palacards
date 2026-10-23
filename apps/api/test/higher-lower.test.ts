@@ -24,7 +24,8 @@ beforeAll(async () => {
     on conflict (page_id) do nothing
   `);
   // Base de test : vues presque identiques (4 900 à 5 000). On les étale (×1,08 d'un article à l'autre, comme
-  // les vraies, de 22 500 à des millions), puis on les remet à la fin.
+  // les vraies, de 22 500 à des millions), puis on les remet à la fin. Saison par saison : d'autres fichiers en
+  // créent, et un seul classement toutes saisons confondues dépasserait 10¹² vues (hors de portée du serveur).
   await ctx.db.execute(sql`drop table if exists hl_test_views`);
   await ctx.db.execute(sql`
     create table hl_test_views as
@@ -32,7 +33,7 @@ beforeAll(async () => {
   `);
   await ctx.db.execute(sql`
     update cards c set views_12m = (22500 * power(1.08, r.n))::bigint
-    from (select id, season, row_number() over (order by views_12m, id) as n from cards where rarity in ('SR', 'UR', 'L')) r
+    from (select id, season, row_number() over (partition by season order by views_12m, id) as n from cards where rarity in ('SR', 'UR', 'L')) r
     where c.id = r.id and c.season = r.season
   `);
 });
@@ -72,8 +73,20 @@ describe("plus ou moins vu", () => {
     expect(raw).not.toMatch(/views|rarity|cardId|"SR"|"UR"|"L"/);
     expect(pair).toMatchObject({ tryNo: 1, step: 0, streak: 0, durationMs: 15_000 });
 
+    // Paire en milieu de pool : le plus vu a forcément un adversaire dans les deux sens (en haut du pool, il
+    // laisserait place à une paire entièrement nouvelle, cas testé plus bas).
+    const mid = await ctx.db.execute<{ id: string }>(sql`
+      select c.id from cards c join wiki_summaries s on s.page_id = c.id and s.extract = ${MARK}
+      where c.season = (select id from seasons where status = 'active') and c.rarity in ('SR', 'UR', 'L')
+      order by c.views_12m desc offset 40 limit 2
+    `);
+    await ctx.db
+      .update(schema.hlRuns)
+      .set({ keptCardId: Number(mid[0]!.id), challengerCardId: Number(mid[1]!.id) })
+      .where(eq(schema.hlRuns.userId, p.userId));
+    const current = (await p.get("/hl")).body.current;
     const side = await higherSide(p);
-    const winner = pair[side].title;
+    const winner = current[side].title;
     const res = await p.post("/hl/answer", { step: 0, pick: side });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ correct: true, timeout: false, streak: 1, reward: null });
