@@ -36,6 +36,8 @@ CMD ["node", "dist/automation/worker.js"]
 FROM node:22.23.3-alpine AS api
 ENV NODE_ENV=production
 COPY --from=build /repo /repo
+# Cache disque des vignettes (/thumb) : volume nommé, qui reprend ce dossier et son propriétaire à sa création.
+RUN mkdir -p /var/cache/palacards/thumbs && chown -R node:node /var/cache/palacards
 WORKDIR /repo/apps/api
 USER node
 EXPOSE 4000
