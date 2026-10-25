@@ -514,7 +514,8 @@ export default function PullsPage() {
   const { remaining, full } = usePackCountdown(me?.packs);
   const [saving, setSaving] = useState(false);
   const [buying, setBuying] = useState(false);
-  const themes = useSWR<ThemeDTO[]>("/themes");
+  // Boosters : changent rarement (création, fin de vente) ; pas de relecture à chaque retour sur l'onglet.
+  const themes = useSWR<ThemeDTO[]>("/themes", { revalidateOnFocus: false, dedupingInterval: 60_000 });
   const [themeId, setThemeId] = useState<number | null>(null);
   const opener = useRef<HTMLDivElement>(null);
   const theme = themes.data?.find((t) => t.id === themeId) ?? null;
@@ -620,7 +621,13 @@ export default function PullsPage() {
               packs={me.packs}
               season={me.season}
               theme={theme}
-              onOpened={theme ? () => void themes.mutate() : undefined}
+              onOpened={(t) =>
+                // Mise à jour locale du thème ouvert : relire tous les boosters à chaque paquet chargeait la base.
+                void themes.mutate(
+                  (list) => list?.map((x) => (x.id === t.id ? { ...x, owned: t.owned, opened: t.opened } : x)),
+                  { revalidate: false },
+                )
+              }
             />
           )}
           {me && theme && theme.owned === 0 && !theme.onSale && (
