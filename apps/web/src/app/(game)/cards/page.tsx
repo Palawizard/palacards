@@ -39,7 +39,7 @@ function Catalog() {
   const [minDef, setMinDef] = useState("");
   // Articles d'un booster à thème (lien « Voir les articles » de la page Paquets).
   const [theme, setTheme] = useState(search.get("theme") ?? "");
-  const themes = useSWR<ThemeDTO[]>("/themes");
+  const themes = useSWR<ThemeDTO[]>("/themes", { revalidateOnFocus: false, dedupingInterval: 60_000 });
   const themeOptions = useMemo(
     () => [
       { value: "", label: "Tous les articles" },

@@ -561,6 +561,15 @@ export const themes = pgTable(
     /** Admin qui a créé le thème (sans clé étrangère : le thème survit au compte). */
     createdBy: text("created_by"),
     createdAt: tstz("created_at").notNull().defaultNow(),
+    /**
+     * Saison pour laquelle `theme_cards.rarity/pos`, `byRarity` et `previewIds` sont calculés (null : à refaire,
+     * par exemple après un ajout d'articles en SQL). Recalculés tout seuls au premier usage d'une autre saison.
+     */
+    indexedSeason: smallint("indexed_season"),
+    /** Articles du thème par rareté dans `indexedSeason`. */
+    byRarity: jsonb("by_rarity").$type<Partial<Record<(typeof rarityEnum.enumValues)[number], number>>>(),
+    /** Cartes phares (les plus rares, puis les plus lues) dans `indexedSeason`, dans l'ordre d'affichage. */
+    previewIds: jsonb("preview_ids").$type<number[]>(),
   },
   (t) => [
     index("themes_ends_idx").on(t.endsAt),
@@ -577,9 +586,17 @@ export const themeCards = pgTable(
       .notNull()
       .references(() => themes.id, { onDelete: "cascade" }),
     cardId: bigint("card_id", { mode: "number" }).notNull(),
+    /** Rareté de l'article dans `themes.indexed_season` (null : absent de cette saison). */
+    rarity: rarityEnum("rarity"),
+    /** Rang de l'article parmi ceux de sa rareté (0, 1, 2…) : tirage direct d'un rang au hasard. */
+    pos: integer("pos"),
   },
-  // Index sur l'article seul : thèmes d'une carte (fiche carte).
-  (t) => [primaryKey({ columns: [t.themeId, t.cardId] }), index("theme_cards_card_idx").on(t.cardId)],
+  // Index sur l'article seul : thèmes d'une carte (fiche carte). Index de tirage : (thème, rareté, rang).
+  (t) => [
+    primaryKey({ columns: [t.themeId, t.cardId] }),
+    index("theme_cards_card_idx").on(t.cardId),
+    index("theme_cards_draw_idx").on(t.themeId, t.rarity, t.pos),
+  ],
 );
 
 /** Boosters à thème d'un joueur : achetés (ou reçus) pas encore ouverts, et nombre déjà ouverts. */

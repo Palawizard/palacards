@@ -22,6 +22,13 @@ const schema = z.object({
   BETTER_AUTH_URL: z.url().default("http://localhost:4000"),
   BETTER_AUTH_SECRET: z.string().min(32, "BETTER_AUTH_SECRET : 32 caractères minimum").optional(),
   WIKIMEDIA_USER_AGENT: z.string().default("PalaCards/0.1 (https://palawi.fr/palacards/)"),
+  /**
+   * Dossier du cache disque des vignettes relayées par /thumb (prod : volume Docker). Absent : pas de cache,
+   * chaque vignette est relue sur Wikimedia.
+   */
+  THUMB_CACHE_DIR: z.string().min(1).optional(),
+  /** Plafond du cache des vignettes, en Mo (les moins récemment lues partent en premier). */
+  THUMB_CACHE_MAX_MB: z.coerce.number().int().positive().default(2048),
   /** Désactive les appels Wikimedia (tests). */
   WIKIMEDIA_DISABLED: bool,
   /** Routes /api/test/* pour les E2E (jamais en prod). */
