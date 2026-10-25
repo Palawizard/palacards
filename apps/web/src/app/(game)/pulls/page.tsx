@@ -136,7 +136,132 @@ function EditionSwitch({
   );
 }
 
-/** Vitrine des boosters spéciaux : une bande « édition limitée » par booster, en tête de la page. */
+/** Un booster de moins de 3 jours, le plus récent : il porte la pastille « Nouveau ». */
+const NEW_FOR_MS = 3 * 86_400_000;
+
+/**
+ * Ordre de la vitrine : d'abord les boosters déjà achetés à ouvrir, puis du plus récent au plus ancien
+ * (ceux à venir en dernier).
+ */
+function showcaseOrder(list: ThemeDTO[], now: number): ThemeDTO[] {
+  const upcoming = (t: ThemeDTO) => new Date(t.startsAt).getTime() > now;
+  return [...list].sort(
+    (a, b) =>
+      Number(b.owned > 0) - Number(a.owned > 0) ||
+      Number(upcoming(a)) - Number(upcoming(b)) ||
+      new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime() ||
+      b.id - a.id,
+  );
+}
+
+/** Longueur du mot le plus long d'un nom : au-delà de 7 lettres, le nom rapetisse sur le paquet. */
+const longestWord = (name: string) => Math.max(...name.split(/[\s'’-]+/).map((w) => w.length));
+
+/** Le paquet violet incliné, avec son tampon « Édition limitée ». */
+function ShowcasePack({ name, size }: { name: string; size: "banner" | "tile" }) {
+  return (
+    <div className="relative shrink-0 self-start sm:self-center" aria-hidden>
+      <div className="pc-showcase-pack [filter:drop-shadow(0_10px_12px_rgb(4_8_30/0.45))]">
+        <div
+          className={`pc-pack pc-pack-foil relative aspect-[5/7.3] ${
+            size === "banner" ? "w-[4.6rem] sm:w-[5.6rem]" : "w-[4.6rem] @xl:w-[4.9rem]"
+          }`}
+        >
+          <span className="absolute inset-x-[10%] top-[34%] block font-display uppercase leading-[0.86] text-cover-ink [text-shadow:0_1px_0_var(--foil-2)]">
+            <span className="block text-[0.55rem] tracking-[0.06em] text-accent sm:text-[0.62rem]">Booster</span>
+            <span
+              lang="fr"
+              className={`line-clamp-3 block break-words hyphens-auto ${
+                longestWord(name) > 7 ? "text-[0.72rem] sm:text-[0.8rem]" : "text-[0.85rem] sm:text-[1rem]"
+              }`}
+            >
+              {name}
+            </span>
+          </span>
+        </div>
+      </div>
+      <span className="absolute -right-3 -top-2 grid size-[2.9rem] rotate-[-12deg] place-items-center rounded-full bg-accent text-center font-display text-[0.55rem] uppercase leading-[0.95] text-accent-ink shadow-[0_4px_10px_-4px_rgb(0_0_0/0.55)]">
+        <span className="absolute inset-[3px] rounded-full border border-dashed border-accent-ink/30" />
+        Édition
+        <br />
+        limitée
+      </span>
+    </div>
+  );
+}
+
+/** Fin de vente, prix et paquets à ouvrir d'un booster. */
+function ShowcaseFacts({ t, now }: { t: ThemeDTO; now: number }) {
+  const upcoming = new Date(t.startsAt).getTime() > now;
+  return (
+    <dl className="tnum flex flex-wrap gap-x-5 gap-y-2">
+      <div>
+        <dt className="text-xs font-semibold text-cover-ink/65">
+          {upcoming ? "En vente dans" : t.onSale ? "Fin dans" : "Vente"}
+        </dt>
+        <dd className="font-display text-xl leading-none">
+          {upcoming
+            ? timeLeft(new Date(t.startsAt).getTime() - now)
+            : t.onSale
+              ? timeLeft(new Date(t.endsAt).getTime() - now)
+              : "Terminée"}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-xs font-semibold text-cover-ink/65">Prix</dt>
+        <dd className="font-display text-xl leading-none">
+          {fmt(t.price)} <span className="text-sm">PW</span>
+        </dd>
+      </div>
+      {t.owned > 0 && (
+        <div>
+          <dt className="text-xs font-semibold text-cover-ink/65">À ouvrir</dt>
+          <dd className="font-display text-xl leading-none text-accent">{t.owned}</dd>
+        </div>
+      )}
+    </dl>
+  );
+}
+
+function ShowcasePick({
+  t,
+  on,
+  now,
+  onPick,
+  className = "",
+}: {
+  t: ThemeDTO;
+  on: boolean;
+  now: number;
+  onPick: (id: number) => void;
+  className?: string;
+}) {
+  const upcoming = new Date(t.startsAt).getTime() > now;
+  return (
+    <button
+      type="button"
+      className={`btn btn-sm ${on ? "pc-showcase-picked" : "btn-primary"} ${className}`}
+      aria-pressed={on}
+      onClick={() => onPick(t.id)}
+    >
+      {on ? "Booster choisi" : t.owned > 0 ? "Ouvrir ce booster" : upcoming ? "Voir le booster" : "Choisir ce booster"}
+    </button>
+  );
+}
+
+/** Pastille « Nouveau », posée sur le dernier booster sorti. */
+function NewTag() {
+  return (
+    <span className="pc-showcase-new rounded-full bg-accent px-2 py-0.5 font-display text-[0.7rem] uppercase leading-none tracking-[0.04em] text-accent-ink">
+      Nouveau
+    </span>
+  );
+}
+
+/**
+ * Vitrine des boosters spéciaux, en tête de la page : une grande bande « édition limitée » par booster quand
+ * il y en a un ou deux, une grille de tuiles à partir de trois (sinon la page devient une longue liste).
+ */
 function ThemeShowcase({
   themes,
   selected,
@@ -147,12 +272,73 @@ function ThemeShowcase({
   onPick: (id: number) => void;
 }) {
   const now = useNow(30_000);
-  const list = themes.filter((t) => t.onSale || t.owned > 0 || new Date(t.startsAt).getTime() > now);
+  const list = showcaseOrder(
+    themes.filter((t) => t.onSale || t.owned > 0 || new Date(t.startsAt).getTime() > now),
+    now,
+  );
   if (!list.length) return null;
+  const started = list.filter((t) => new Date(t.startsAt).getTime() <= now);
+  const newest = started.reduce<ThemeDTO | null>(
+    (a, t) => (!a || new Date(t.startsAt).getTime() > new Date(a.startsAt).getTime() ? t : a),
+    null,
+  );
+  const newId = newest && now - new Date(newest.startsAt).getTime() < NEW_FOR_MS ? newest.id : null;
+
+  if (list.length >= 3) {
+    // Grille selon la largeur de la colonne (pas de l'écran, la barre latérale en prend une partie) : une
+    // colonne de bandes compactes, puis 2 ou 3 tuiles avec l'éventail des cartes phares.
+    return (
+      <section aria-label="Boosters spéciaux" className="@container">
+        <div className="grid gap-3 @xl:grid-cols-2 @4xl:grid-cols-3">
+          {list.map((t) => {
+            const on = t.id === selected;
+            return (
+              <article
+                key={t.id}
+                data-edition="theme"
+                data-selected={on || undefined}
+                className="pc-showcase pc-showcase-tile group grid grid-cols-[auto_minmax(0,1fr)] gap-x-5 p-4 @xl:flex @xl:flex-col @xl:pt-5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <ShowcasePack name={t.name} size="tile" />
+                  {t.preview.length > 0 && (
+                    <div className="pc-fan pc-fan-tile hidden @xl:flex" aria-label="Cartes phares">
+                      {t.preview.slice(0, 3).map((c) => (
+                        <div key={c.cardId} className="w-[4.6rem] @4xl:w-[5.1rem]">
+                          <Card card={c} prefetch={false} />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col @xl:mt-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <h2 className="font-display text-[clamp(1.45rem,1.2rem+0.8vw,1.85rem)] uppercase leading-[0.9] text-balance">
+                      {t.name}
+                    </h2>
+                    {t.id === newId && <NewTag />}
+                  </div>
+                  {t.description && (
+                    <p className="mt-1.5 line-clamp-2 text-sm text-cover-ink/80 @xl:line-clamp-3" title={t.description}>
+                      {t.description}
+                    </p>
+                  )}
+                  <div className="mt-auto flex flex-wrap items-end justify-between gap-x-4 gap-y-3 pt-3 @xl:pt-4">
+                    <ShowcaseFacts t={t} now={now} />
+                    <ShowcasePick t={t} on={on} now={now} onPick={onPick} />
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section aria-label="Boosters spéciaux" className="flex flex-col gap-3">
       {list.map((t) => {
-        const upcoming = new Date(t.startsAt).getTime() > now;
         const on = t.id === selected;
         return (
           <article
@@ -161,70 +347,20 @@ function ThemeShowcase({
             data-selected={on || undefined}
             className="pc-showcase group grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 p-4 sm:gap-x-6 sm:px-6 md:grid-cols-[auto_minmax(0,1fr)_auto]"
           >
-            <div className="relative self-start sm:self-center" aria-hidden>
-              <div className="pc-showcase-pack [filter:drop-shadow(0_10px_12px_rgb(4_8_30/0.45))]">
-                <div className="pc-pack pc-pack-foil relative aspect-[5/7.3] w-[4.6rem] sm:w-[5.6rem]">
-                  <span className="absolute inset-x-[10%] top-[34%] block font-display uppercase leading-[0.86] text-cover-ink [text-shadow:0_1px_0_var(--foil-2)]">
-                    <span className="block text-[0.55rem] tracking-[0.06em] text-accent sm:text-[0.62rem]">
-                      Booster
-                    </span>
-                    <span className="line-clamp-3 block break-words text-[0.85rem] sm:text-[1rem]">{t.name}</span>
-                  </span>
-                </div>
-              </div>
-              <span className="absolute -right-3 -top-2 grid size-[2.9rem] rotate-[-12deg] place-items-center rounded-full bg-accent text-center font-display text-[0.55rem] uppercase leading-[0.95] text-accent-ink shadow-[0_4px_10px_-4px_rgb(0_0_0/0.55)]">
-                <span className="absolute inset-[3px] rounded-full border border-dashed border-accent-ink/30" />
-                Édition
-                <br />
-                limitée
-              </span>
-            </div>
+            <ShowcasePack name={t.name} size="banner" />
 
             <div className="min-w-0">
-              <h2 className="font-display text-[clamp(1.55rem,1.15rem+1.5vw,2.35rem)] uppercase leading-[0.9] text-balance">
-                {t.name}
-              </h2>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <h2 className="font-display text-[clamp(1.55rem,1.15rem+1.5vw,2.35rem)] uppercase leading-[0.9] text-balance">
+                  {t.name}
+                </h2>
+                {t.id === newId && <NewTag />}
+              </div>
               {t.description && <p className="mt-1.5 line-clamp-2 text-sm text-cover-ink/80">{t.description}</p>}
-              <dl className="tnum mt-3 flex flex-wrap gap-x-5 gap-y-2">
-                <div>
-                  <dt className="text-xs font-semibold text-cover-ink/65">
-                    {upcoming ? "En vente dans" : t.onSale ? "Fin dans" : "Vente"}
-                  </dt>
-                  <dd className="font-display text-xl leading-none">
-                    {upcoming
-                      ? timeLeft(new Date(t.startsAt).getTime() - now)
-                      : t.onSale
-                        ? timeLeft(new Date(t.endsAt).getTime() - now)
-                        : "Terminée"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-semibold text-cover-ink/65">Prix</dt>
-                  <dd className="font-display text-xl leading-none">
-                    {fmt(t.price)} <span className="text-sm">PW</span>
-                  </dd>
-                </div>
-                {t.owned > 0 && (
-                  <div>
-                    <dt className="text-xs font-semibold text-cover-ink/65">À ouvrir</dt>
-                    <dd className="font-display text-xl leading-none text-accent">{t.owned}</dd>
-                  </div>
-                )}
-              </dl>
-              <button
-                type="button"
-                className={`btn btn-sm mt-3 ${on ? "pc-showcase-picked" : "btn-primary"}`}
-                aria-pressed={on}
-                onClick={() => onPick(t.id)}
-              >
-                {on
-                  ? "Booster choisi"
-                  : t.owned > 0
-                    ? "Ouvrir ce booster"
-                    : upcoming
-                      ? "Voir le booster"
-                      : "Choisir ce booster"}
-              </button>
+              <div className="mt-3">
+                <ShowcaseFacts t={t} now={now} />
+              </div>
+              <ShowcasePick t={t} on={on} now={now} onPick={onPick} className="mt-3" />
             </div>
 
             {t.preview.length > 0 && (
