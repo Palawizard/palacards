@@ -106,7 +106,7 @@ async function buildTheme(ctx: Ctx, adminId: string, input: ThemeInput) {
       ...theme!,
       categories,
       cardCount: inserted.length,
-      byRarity: await rarityCounts(tx, theme!.id, season),
+      byRarity: (await indexTheme(tx, theme!.id, season)).byRarity,
       dryRun: !!input.dryRun,
     };
     if (input.dryRun) throw new DryRun(result);
@@ -149,17 +149,81 @@ export async function endingSoonestTheme(db: DbOrTx, now: Date): Promise<{ id: n
   return row ?? null;
 }
 
-/** Articles du thème par rareté, dans la saison active. */
-async function rarityCounts(db: DbOrTx, themeId: number, season: number): Promise<Record<Rarity, number>> {
-  const rows = await db.execute<{ rarity: Rarity; n: number }>(sql`
-    select c.rarity, count(*)::int as n
-    from theme_cards tc join cards c on c.season = ${season} and c.id = tc.card_id
-    where tc.theme_id = ${themeId}
-    group by c.rarity
+/** Clé (premier entier) des verrous consultatifs « index d'un thème ». */
+const THEME_INDEX_LOCK = 7_301;
+
+/** Index de tirage d'un thème pour une saison : articles par rareté et cartes phares. */
+export interface ThemeIndex {
+  byRarity: Record<Rarity, number>;
+  previewIds: number[];
+}
+
+const fullCounts = (partial: Partial<Record<Rarity, number>> | null | undefined): Record<Rarity, number> =>
+  Object.fromEntries(RARITIES.map((r) => [r, partial?.[r] ?? 0])) as Record<Rarity, number>;
+
+type IndexedTheme = Pick<Theme, "id" | "indexedSeason" | "byRarity" | "previewIds">;
+
+/** L'index enregistré du thème vaut-il pour cette saison ? */
+const indexFresh = (t: IndexedTheme, season: number) =>
+  t.indexedSeason === season && t.byRarity != null && t.previewIds != null;
+
+/**
+ * Index de tirage d'un thème, recalculé s'il date d'une autre saison (ou s'il a été remis à null, par
+ * exemple après un ajout d'articles en SQL : `update themes set indexed_season = null where id = …`).
+ *
+ * Avant cet index, chaque ouverture comptait les articles par rareté puis tirait chaque carte par un décalage
+ * aléatoire, en joignant tout le thème aux 2,6 millions de cartes : 3 à 4 s de calcul par booster sur 2 cœurs,
+ * et la liste des boosters refaisait ces comptes pour chaque thème. Ici, une seule fois par saison : chaque
+ * article reçoit sa rareté et son rang (0, 1, 2…) parmi ceux de sa rareté, et le tirage lit un rang au hasard.
+ */
+export async function themeIndex(db: DbOrTx, theme: IndexedTheme, season: number): Promise<ThemeIndex> {
+  if (indexFresh(theme, season)) return { byRarity: fullCounts(theme.byRarity), previewIds: theme.previewIds! };
+  return db.transaction((tx) => indexTheme(tx, theme.id, season));
+}
+
+async function indexTheme(tx: Tx, themeId: number, season: number): Promise<ThemeIndex> {
+  // Deux requêtes simultanées sur un thème à indexer : la seconde attend puis lit l'index de la première.
+  await tx.execute(sql`select pg_advisory_xact_lock(${THEME_INDEX_LOCK}, ${themeId}::int)`);
+  const [t] = await tx
+    .select({
+      id: schema.themes.id,
+      indexedSeason: schema.themes.indexedSeason,
+      byRarity: schema.themes.byRarity,
+      previewIds: schema.themes.previewIds,
+    })
+    .from(schema.themes)
+    .where(eq(schema.themes.id, themeId));
+  if (!t) throw notFound("Ce booster à thème n'existe pas.");
+  if (indexFresh(t, season)) return { byRarity: fullCounts(t.byRarity), previewIds: t.previewIds! };
+
+  await tx.execute(sql`update theme_cards set rarity = null, pos = null where theme_id = ${themeId}`);
+  await tx.execute(sql`
+    with ranked as (
+      select tc.card_id, c.rarity,
+        (row_number() over (partition by c.rarity order by tc.card_id) - 1)::int as pos
+      from theme_cards tc join cards c on c.season = ${season} and c.id = tc.card_id
+      where tc.theme_id = ${themeId}
+    )
+    update theme_cards tc set rarity = r.rarity, pos = r.pos
+    from ranked r where tc.theme_id = ${themeId} and tc.card_id = r.card_id
   `);
-  const out = Object.fromEntries(RARITIES.map((r) => [r, 0])) as Record<Rarity, number>;
-  for (const r of rows) out[r.rarity] = r.n;
-  return out;
+  const counts = await tx.execute<{ rarity: Rarity; n: number }>(sql`
+    select rarity, count(*)::int as n from theme_cards
+    where theme_id = ${themeId} and rarity is not null group by rarity
+  `);
+  const byRarity = fullCounts(Object.fromEntries(counts.map((r) => [r.rarity, r.n])));
+  const preview = await tx.execute<{ id: string }>(sql`
+    select c.id from theme_cards tc join cards c on c.season = ${season} and c.id = tc.card_id
+    where tc.theme_id = ${themeId}
+    order by c.rarity desc, c.views_12m desc
+    limit ${PREVIEW_SIZE}
+  `);
+  const previewIds = preview.map((r) => Number(r.id));
+  await tx
+    .update(schema.themes)
+    .set({ indexedSeason: season, byRarity, previewIds })
+    .where(eq(schema.themes.id, themeId));
+  return { byRarity, previewIds };
 }
 
 /**
@@ -178,11 +242,14 @@ export async function listThemes(ctx: Ctx, userId: string): Promise<ThemeDTO[]> 
     starts_at: Date;
     ends_at: Date;
     card_count: number;
+    indexed_season: number | null;
+    by_rarity: Partial<Record<Rarity, number>> | null;
+    preview_ids: number[] | null;
     owned: number | null;
     opened: number | null;
   }>(sql`
-    select t.id, t.name, t.description, t.category, t.price, t.starts_at, t.ends_at, t.card_count, p.count as owned,
-      p.opened
+    select t.id, t.name, t.description, t.category, t.price, t.starts_at, t.ends_at, t.card_count,
+      t.indexed_season, t.by_rarity, t.preview_ids, p.count as owned, p.opened
     from themes t
     left join player_theme_packs p on p.theme_id = t.id and p.user_id = ${userId}
     where (t.ends_at > ${now.toISOString()}::timestamptz
@@ -190,29 +257,43 @@ export async function listThemes(ctx: Ctx, userId: string): Promise<ThemeDTO[]> 
       or p.count > 0
     order by t.starts_at, t.id
   `);
-  const out: ThemeDTO[] = [];
+  const indexes = new Map<number, ThemeIndex>();
   for (const r of rows) {
     const id = Number(r.id);
-    const preview = await ctx.db.execute<{
-      id: string;
-      title: string;
-      rarity: Rarity;
-      atk: number;
-      def: number;
-      thumb_url: string | null;
-      page_url: string | null;
-    }>(sql`
-      select c.id, c.title, c.rarity, c.atk, c.def, s.thumb_url, s.page_url
-      from theme_cards tc
-      join cards c on c.season = ${season} and c.id = tc.card_id
-      left join wiki_summaries s on s.page_id = c.id
-      where tc.theme_id = ${id}
-      order by c.rarity desc, c.views_12m desc
-      limit ${PREVIEW_SIZE}
-    `);
+    indexes.set(
+      id,
+      await themeIndex(
+        ctx.db,
+        { id, indexedSeason: r.indexed_season, byRarity: r.by_rarity, previewIds: r.preview_ids },
+        season,
+      ),
+    );
+  }
+  // Les cartes phares de tous les thèmes en une requête (par clé primaire).
+  const ids = [...new Set([...indexes.values()].flatMap((i) => i.previewIds))];
+  const cards = ids.length
+    ? await ctx.db.execute<{
+        id: string;
+        title: string;
+        rarity: Rarity;
+        atk: number;
+        def: number;
+        thumb_url: string | null;
+        page_url: string | null;
+      }>(sql`
+        select c.id, c.title, c.rarity, c.atk, c.def, s.thumb_url, s.page_url
+        from cards c left join wiki_summaries s on s.page_id = c.id
+        where c.season = ${season}
+          and c.id in (select jsonb_array_elements_text(${JSON.stringify(ids)}::jsonb)::bigint)
+      `)
+    : [];
+  const byId = new Map(cards.map((c) => [Number(c.id), c]));
+  return rows.map((r) => {
+    const id = Number(r.id);
+    const index = indexes.get(id)!;
     const startsAt = new Date(r.starts_at);
     const endsAt = new Date(r.ends_at);
-    out.push({
+    return {
       id,
       name: r.name,
       description: r.description,
@@ -224,22 +305,28 @@ export async function listThemes(ctx: Ctx, userId: string): Promise<ThemeDTO[]> 
       cardCount: r.card_count,
       owned: r.owned ?? 0,
       opened: r.opened ?? 0,
-      byRarity: await rarityCounts(ctx.db, id, season),
-      preview: preview.map((c) => ({
-        instanceId: null,
-        cardId: Number(c.id),
-        season,
-        title: c.title,
-        rarity: c.rarity,
-        atk: c.atk,
-        def: c.def,
-        level: 1,
-        thumbUrl: c.thumb_url,
-        pageUrl: c.page_url ?? articleUrl(c.title),
-      })),
-    });
-  }
-  return out;
+      byRarity: index.byRarity,
+      preview: index.previewIds.flatMap((cardId) => {
+        const c = byId.get(cardId);
+        return c
+          ? [
+              {
+                instanceId: null,
+                cardId,
+                season,
+                title: c.title,
+                rarity: c.rarity,
+                atk: c.atk,
+                def: c.def,
+                level: 1,
+                thumbUrl: c.thumb_url,
+                pageUrl: c.page_url ?? articleUrl(c.title),
+              },
+            ]
+          : [];
+      }),
+    };
+  });
 }
 
 /** Thèmes pour l'admin (les plus récents d'abord), avec les ventes. */
@@ -313,8 +400,8 @@ export async function lockThemeStock(tx: Tx, userId: string, themeId: number): P
 }
 
 /**
- * Tire un article du thème de cette rareté (tirage uniforme par décalage : le thème compte au plus
- * quelques milliers d'articles). Aucun article du thème à cette rareté : tirage dans toute la saison.
+ * Tire un article du thème de cette rareté : un rang au hasard, lu par l'index (thème, rareté, rang).
+ * Aucun article du thème à cette rareté : tirage dans toute la saison.
  */
 export async function drawThemeCard(
   tx: DbOrTx,
@@ -329,12 +416,9 @@ export async function drawThemeCard(
     const [row] = await tx.execute<{ id: string; title: string; atk: number; def: number }>(sql`
       select c.id, c.title, c.atk, c.def
       from theme_cards tc join cards c on c.season = ${season} and c.id = tc.card_id
-      where tc.theme_id = ${themeId} and c.rarity = ${rarity}::rarity
-      order by c.id offset ${random(n)} limit 1
+      where tc.theme_id = ${themeId} and tc.rarity = ${rarity}::rarity and tc.pos = ${random(n)}
     `);
     if (row) return { id: Number(row.id), title: row.title, atk: row.atk, def: row.def, themed: true };
   }
   return { ...(await drawCard(tx, season, rarity, random)), themed: false };
 }
-
-export { rarityCounts as themeRarityCounts };
