@@ -30,7 +30,7 @@ import {
   pushWallet,
   type DbOrTx,
 } from "./players.js";
-import { addThemePacks, drawThemeCard, getTheme, isOnSale, lockThemeStock, themeRarityCounts } from "./themes.js";
+import { addThemePacks, drawThemeCard, getTheme, isOnSale, lockThemeStock, themeIndex } from "./themes.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
 
@@ -144,7 +144,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
       def: number;
       themed: boolean;
     }[] = [];
-    const counts = theme ? await themeRarityCounts(tx, theme.id, season) : null;
+    const counts = theme ? (await themeIndex(tx, theme, season)).byRarity : null;
     for (const rarity of roll.rarities) {
       // Brillante : tirée carte par carte, indépendamment de la rareté.
       const shiny = rollShiny(ctx.random);
