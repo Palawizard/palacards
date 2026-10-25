@@ -80,6 +80,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       BASE_PATH: /palacards
       NODE_ENV: production
+      THUMB_CACHE_DIR: /var/cache/palacards/thumbs
+    volumes:
+      # Vignettes Wikimedia déjà téléchargées (2 Go au plus, THUMB_CACHE_MAX_MB) : survivent aux déploiements.
+      - thumbs:/var/cache/palacards/thumbs
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,3 +151,7 @@ networks:
     # branché pour joindre palacards-api et palacards-web par leur nom (deploy/Caddyfile.palacards).
     # Nom réel du réseau (docker network ls) : CADDY_NETWORK dans le .env (`web` sur vm-apps).
     name: ${CADDY_NETWORK:-caddy}
+
+volumes:
+  # Cache des vignettes de l'API (docker volume : palacards_thumbs).
+  thumbs: {}
