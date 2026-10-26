@@ -33,10 +33,10 @@ const runs = schema.hlRuns;
 /** Articles lus par requête de candidats (filtrés ensuite : image, listes, homonymie, arthropodes). */
 const SAMPLE = 40;
 const RAND_SCALE = 2 ** 30;
-const rarities = sql.join(
-  HL_RARITIES.map((r) => sql`${r}::rarity`),
-  sql`, `,
-);
+// En clair (pas en paramètres) : Postgres peut alors utiliser l'index partiel cards_hl_views_idx, réservé à ces
+// raretés. Sans lui, une fourchette de vues basse parcourait des centaines de milliers de Communes (0,3 s par
+// requête, jusqu'à 8 s pour commencer un essai).
+const rarities = sql.raw(HL_RARITIES.map((r) => `'${r}'::rarity`).join(", "));
 
 /** Vignette utilisable (reprise de l'article du jour) : pas de SVG, de logo ni d'image par défaut. */
 const usableImage = (url: string | null) => (url && !unusableQuizImage(url) ? url : null);
