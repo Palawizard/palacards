@@ -56,6 +56,10 @@ export const cards = pgTable(
     index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey),
     // Tris du catalogue paginé par curseur (keyset).
     index("cards_views_idx").on(t.season, t.views12m, t.id),
+    // « Plus ou moins vu » : candidats par fourchette de vues parmi les SR, UR et L seulement.
+    index("cards_hl_views_idx")
+      .on(t.season, t.views12m, t.id)
+      .where(sql`${t.rarity} in ('SR', 'UR', 'L')`),
     index("cards_atk_idx").on(t.season, t.atk, t.id),
     index("cards_def_idx").on(t.season, t.def, t.id),
     index("cards_title_idx").on(t.season, t.title, t.id),
