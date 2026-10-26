@@ -1,0 +1,1 @@
+CREATE INDEX "cards_hl_views_idx" ON "cards" USING btree ("season","views_12m","id") WHERE "cards"."rarity" in ('SR', 'UR', 'L');
