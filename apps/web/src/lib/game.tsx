@@ -171,6 +171,15 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const s: GameSocket = io(API_URL || undefined, { path: SOCKET_PATH, withCredentials: true });
+    // Relecture complète de /me regroupée : une rafale d'événements (upgrade en série : un par lot, libérés
+    // d'un coup après l'animation) faisait jusqu'à 300 relectures en une seconde, qui ralentissaient tout le jeu.
+    let meTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshMe = () => {
+      meTimer ??= setTimeout(() => {
+        meTimer = null;
+        void mutateMe();
+      }, 800);
+    };
     // Nouvelles d'un tirage : rien ne doit s'afficher avant la fin de son animation.
     const news =
       <A extends unknown[]>(fn: (...a: A) => void) =>
@@ -194,7 +203,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         toast(text, { action: { label: "Voir", onClick: () => router.push(href) } });
       }),
     );
-    s.on("message:new", () => void mutateMe());
+    s.on("message:new", refreshMe);
     // Défi accepté : le duel attend le challenger sur son écran (2 minutes pour le rejoindre).
     s.on("battle:update", ({ battleId, started, opponent, matched }) => {
       if (!started || window.location.pathname.endsWith(`/battle/${battleId}`)) return;
@@ -223,10 +232,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       pushMedia(m);
     });
     // Quêtes, passe, succès : les compteurs du menu suivent.
-    s.on(
-      "progress:update",
-      news(() => void mutateMe()),
-    );
+    s.on("progress:update", news(refreshMe));
     // Boss du jour : la phase en cours suit les coups de toute la bande.
     s.on("boss:update", (b) => {
       if (b.fell.length)
@@ -252,6 +258,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       void mutateMe();
     });
     return () => {
+      if (meTimer) clearTimeout(meTimer);
       s.disconnect();
     };
   }, [mutateMe, router, afterHold]);
