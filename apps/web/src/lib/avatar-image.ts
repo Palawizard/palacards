@@ -89,3 +89,8 @@ export function prepareAvatar(file: File): Promise<string> {
 export function prepareBanner(file: File): Promise<string> {
   return prepareImage(file, BANNER_IMAGE_WIDTH, BANNER_IMAGE_HEIGHT, BANNER_IMAGE_MAX_BYTES);
 }
+
+/** Fond de portfolio : 16:10 au centre, 1280 × 800 px, même poids maximal que les bannières (PUT /portfolios/:id/background). */
+export function preparePortfolioBackground(file: File): Promise<string> {
+  return prepareImage(file, 1280, 800, BANNER_IMAGE_MAX_BYTES);
+}

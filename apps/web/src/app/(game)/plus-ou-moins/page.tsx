@@ -1,6 +1,6 @@
 "use client";
 
-import { HL_REVEAL_MS, HL_REWARD_CAP, hlReward } from "@palacards/game";
+import { HL_REVEAL_MS, HL_REWARD_CAP, hlReward, IMAGE_THEME_VEILS } from "@palacards/game";
 import type { HlAnswerDTO, HlArticleDTO, HlPairDTO, HlStateDTO } from "@palacards/shared";
 import { Check, Clock, Eye, Flame, Trophy, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -45,44 +45,59 @@ function ArticleChoice({
 }) {
   // Vignette introuvable : l'initiale du titre, comme une carte sans image.
   const [broken, setBroken] = useState(false);
+  // Filtre d'images (blessures, nudité) : floue jusqu'au clic sur « Afficher », hors du bouton de réponse.
+  const [shown, setShown] = useState(false);
+  const veiled = !!article.veil && !shown && !!article.thumbUrl && !broken;
   return (
-    <button
-      type="button"
-      onClick={() => onPick(side)}
-      disabled={disabled}
-      aria-label={`${article.title}${revealed !== null ? ` : ${views(revealed)}` : " : le plus vu ?"}`}
-      className={`group relative flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border-2 bg-panel text-left shadow-[var(--shadow-lift)] transition-[transform,border-color] duration-150 ease-(--ease-out) active:scale-[0.98] disabled:active:scale-100 pointer-fine:hover:enabled:border-line-strong ${
-        winner === true ? "border-good" : winner === false ? "border-danger" : "border-line"
-      }`}
-    >
-      <div className="relative aspect-[4/3] w-full overflow-hidden bg-panel-2">
-        {article.thumbUrl && !broken ? (
-          // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API
-          <img
-            src={thumbSrc(article.thumbUrl)}
-            alt=""
-            className="size-full object-cover"
-            decoding="async"
-            onError={() => setBroken(true)}
-          />
-        ) : (
-          <span className="grid size-full place-items-center font-display text-5xl uppercase text-faint">
-            {article.title.slice(0, 1)}
-          </span>
-        )}
-      </div>
-      <div className="flex flex-1 flex-col gap-1 p-3 sm:p-4">
-        <p className="font-display text-xl uppercase leading-tight text-text sm:text-2xl">{article.title}</p>
-        {article.description && <p className="line-clamp-2 text-sm text-muted">{article.description}</p>}
-        <p className="tnum mt-auto pt-2 text-base font-bold" aria-live="polite">
-          {revealed !== null ? (
-            <span className={winner ? "text-good" : "text-text"}>{views(revealed)}</span>
+    <div className="relative flex min-h-0 w-full">
+      <button
+        type="button"
+        onClick={() => onPick(side)}
+        disabled={disabled}
+        aria-label={`${article.title}${revealed !== null ? ` : ${views(revealed)}` : " : le plus vu ?"}`}
+        className={`group relative flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border-2 bg-panel text-left shadow-[var(--shadow-lift)] transition-[transform,border-color] duration-150 ease-(--ease-out) active:scale-[0.98] disabled:active:scale-100 pointer-fine:hover:enabled:border-line-strong ${
+          winner === true ? "border-good" : winner === false ? "border-danger" : "border-line"
+        }`}
+      >
+        <div className="relative aspect-[4/3] w-full overflow-hidden bg-panel-2">
+          {article.thumbUrl && !broken ? (
+            // eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API
+            <img
+              src={thumbSrc(article.thumbUrl)}
+              alt=""
+              className="pc-veil-img size-full object-cover"
+              data-veil={veiled ? "veiled" : undefined}
+              decoding="async"
+              onError={() => setBroken(true)}
+            />
           ) : (
-            <span className="text-faint">? vues sur 12 mois</span>
+            <span className="grid size-full place-items-center font-display text-5xl uppercase text-faint">
+              {article.title.slice(0, 1)}
+            </span>
           )}
-        </p>
-      </div>
-    </button>
+        </div>
+        <div className="flex flex-1 flex-col gap-1 p-3 sm:p-4">
+          <p className="font-display text-xl uppercase leading-tight text-text sm:text-2xl">{article.title}</p>
+          {article.description && <p className="line-clamp-2 text-sm text-muted">{article.description}</p>}
+          <p className="tnum mt-auto pt-2 text-base font-bold" aria-live="polite">
+            {revealed !== null ? (
+              <span className={winner ? "text-good" : "text-text"}>{views(revealed)}</span>
+            ) : (
+              <span className="text-faint">? vues sur 12 mois</span>
+            )}
+          </p>
+        </div>
+      </button>
+      {veiled && (
+        <span className="pc-veil absolute inset-x-0 top-0 aspect-[4/3] overflow-hidden rounded-t-2xl">
+          <button type="button" className="pc-veil-btn" onClick={() => setShown(true)}>
+            <Eye aria-hidden className="size-[1.1em]" strokeWidth={2.25} />
+            Afficher
+          </button>
+          <span className="pc-veil-note">{IMAGE_THEME_VEILS[article.veil!]}</span>
+        </span>
+      )}
+    </div>
   );
 }
 

@@ -490,3 +490,35 @@ describe("paramètres et admin", () => {
     expect((await call("🦉")).json().avatar).toBe("🦉");
   });
 });
+
+describe("succès sur le profil d'un autre joueur (suggestion n° 109)", () => {
+  it("montre les paliers obtenus et leur date, sans progression ni secret caché", async () => {
+    const owner = await signUp(app);
+    const viewer = await signUp(app);
+    const visible = ACHIEVEMENTS.filter((a) => !a.retired && !a.secret);
+    const secret = ACHIEVEMENTS.find((a) => a.secret && !a.retired)!;
+    const [won, pending] = [visible[0]!, visible[1]!];
+    await ctx.db.insert(schema.achievementsProgress).values([
+      { userId: owner.userId, achievementKey: won.key, progress: won.target, unlockedAt: new Date("2026-10-01") },
+      { userId: owner.userId, achievementKey: pending.key, progress: 1, unlockedAt: null },
+    ]);
+    const res = await viewer.get(`/players/${owner.username}/achievements`);
+    expect(res.status).toBe(200);
+    const shown = ACHIEVEMENTS.filter((a) => !a.retired);
+    expect(res.body).toMatchObject({ unlocked: 1, total: shown.length });
+    expect(res.body.hiddenSecrets).toBe(shown.filter((a) => a.secret).length);
+    expect(res.body.items.find((a: { key: string }) => a.key === won.key)).toMatchObject({
+      unlockedAt: new Date("2026-10-01").toISOString(),
+      tier: won.tier,
+    });
+    // Rien sur la progression, ni sur les secrets pas encore trouvés.
+    for (const a of res.body.items) expect(a).not.toHaveProperty("progress");
+    expect(res.body.items.find((a: { key: string }) => a.key === secret.key)).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain(owner.userId);
+  });
+
+  it("répond 404 pour un pseudo inconnu", async () => {
+    const viewer = await signUp(app);
+    expect((await viewer.get(`/players/${uniqueName("personne")}/achievements`)).status).toBe(404);
+  });
+});

@@ -1,19 +1,23 @@
 import { and, eq, schema, sql } from "@palacards/db";
-import { SHOP_PRICES, SHOP_SIZE } from "@palacards/game";
+import { SHINY_CHANCE, SHINY_TOTAL, SHOP_PRICES, SHOP_SIZE } from "@palacards/game";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import type { Ctx } from "../src/context.js";
+import { progressionIdle } from "../src/services/progression.js";
 import { makeApp, signUp, type Client } from "./helpers.js";
 
 let app: Awaited<ReturnType<typeof makeApp>>["app"];
 let ctx: Ctx;
 let clock: Ctx["now"];
+let secure: Ctx["random"];
 
 beforeAll(async () => {
   ({ app, ctx } = await makeApp());
   clock = ctx.now;
+  secure = ctx.random;
 });
 afterEach(() => {
   ctx.now = clock;
+  ctx.random = secure;
 });
 afterAll(() => app.close());
 
@@ -29,7 +33,7 @@ interface ShopItem {
 }
 
 describe("boutique du jour", () => {
-  it("20 cartes différentes de la saison, SR, UR ou L, jamais brillantes, au prix de leur rareté", async () => {
+  it("20 cartes différentes de la saison, SR, UR ou L, présentées normales, au prix de leur rareté", async () => {
     const p = await signUp(app);
     const shop = (await p.get("/shop")).body;
     expect(shop.items).toHaveLength(SHOP_SIZE);
@@ -71,8 +75,11 @@ describe("boutique du jour", () => {
       ((await p.get("/shop")).body.items as ShopItem[]).find((i) => i.card.rarity === "SR") ??
       (await p.get("/shop")).body.items[0];
     await setBalance(p, 10_000);
+    // Tirage de brillance raté.
+    ctx.random = (max) => max - 1;
     const res = await p.post("/shop/buy", { slot: item.slot });
     expect(res.status).toBe(200);
+    expect(res.body.shiny).toBe(false);
     expect(res.body.wallet.balance).toBe(10_000 - item.price);
     const [inst] = await ctx.db
       .select()
@@ -96,6 +103,37 @@ describe("boutique du jour", () => {
     expect(again.body.error).toBe("already_bought");
     const shop = (await p.get("/shop")).body.items as ShopItem[];
     expect(shop.find((i) => i.slot === item.slot)).toMatchObject({ purchased: true, card: { owned: true } });
+  });
+
+  it("achat brillant (tiré à l'achat, taux des paquets) : carte brillante, visible en boutique et dans le fil", async () => {
+    const p = await signUp(app);
+    const item = ((await p.get("/shop")).body.items as ShopItem[])[0]!;
+    await setBalance(p, 100_000);
+    ctx.random = (max) => (max === SHINY_TOTAL ? SHINY_CHANCE - 1 : 0);
+    const res = await p.post("/shop/buy", { slot: item.slot });
+    expect(res.status).toBe(200);
+    expect(res.body.shiny).toBe(true);
+    ctx.random = secure;
+    const [inst] = await ctx.db
+      .select()
+      .from(schema.cardInstances)
+      .where(eq(schema.cardInstances.id, res.body.instanceId));
+    expect(inst).toMatchObject({ source: "shop", shiny: true });
+    const shop = (await p.get("/shop")).body.items as ShopItem[];
+    expect(shop.find((i) => i.slot === item.slot)).toMatchObject({ purchased: true, card: { shiny: true } });
+    expect(shop.filter((i) => i.slot !== item.slot).every((i) => !i.card.shiny)).toBe(true);
+    // Comptée dans la collection (filtre « Brillantes ») et le fil des brillantes, comme achetée en boutique.
+    const mine = (await p.get("/collection?shiny=only")).body;
+    expect(mine.items.map((c: { instanceId: number }) => c.instanceId)).toContain(res.body.instanceId);
+    const feed = (await p.get("/feed?kind=shiny")).body;
+    expect(feed.items.find((i: { user: { id: string } }) => i.user.id === p.userId)).toMatchObject({
+      source: "shop",
+      card: { cardId: item.card.cardId, shiny: true },
+    });
+    // Fait avancer les succès « Ça brille ! » (brillantes tirées).
+    await progressionIdle();
+    const stats = await ctx.db.select().from(schema.playerStats).where(eq(schema.playerStats.userId, p.userId));
+    expect(stats.find((s) => s.key === "shiny_pulled")?.value).toBe(1);
   });
 
   it("solde insuffisant : refusé, rien ne bouge", async () => {

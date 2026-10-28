@@ -1,13 +1,14 @@
 "use client";
 
 import { TITLE_MAX_RANK, TITLE_NAMES, titleDetail, type TitleRef } from "@palacards/game";
-import type { BannerDTO, CardDTO, Page } from "@palacards/shared";
+import type { BannerDTO, CardDTO, Page, PublicAchievementsDTO } from "@palacards/shared";
 import { Award, MessageSquare, Repeat, Swords, UserCheck, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
+import { PlayerAchievements } from "@/components/Achievements";
 import { Avatar } from "@/components/Avatar";
 import { ProfileBanner } from "@/components/Banner";
 import { Card, CardGrid } from "@/components/Card";
@@ -16,6 +17,7 @@ import {
   useCollectionFilters,
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
+import { MyProfilePortfolios, TheirPortfolios } from "@/components/Portfolio";
 import { MyShowcase } from "@/components/Showcase";
 import { StatusNote } from "@/components/StatusNote";
 import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore, TitleBadge } from "@/components/ui";
@@ -264,6 +266,7 @@ function TheirCollection({ username }: { username: string }) {
 export default function ProfilePage({ params }: { params: Promise<{ pseudo: string }> }) {
   const { pseudo } = use(params);
   const { data: p, error, mutate } = useSWR<ProfileDTO>(`/players/${encodeURIComponent(pseudo)}`);
+  const achievements = useSWR<PublicAchievementsDTO>(`/players/${encodeURIComponent(pseudo)}/achievements`);
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
   if (!p) return <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />;
@@ -293,9 +296,9 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
                     {p.guild.emblem} {p.guild.name} [{p.guild.tag}]
                   </Link>
                 ) : (
-                  <span>
+                  <Link href={`/guild/${p.guild.id}`} className="article-link">
                     {p.guild.emblem} {p.guild.name} [{p.guild.tag}]
-                  </span>
+                  </Link>
                 )}
               </>
             )}
@@ -323,6 +326,8 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
       </dl>
 
       <Titles p={p} onChanged={() => mutate()} />
+
+      {achievements.data && <PlayerAchievements data={achievements.data} />}
 
       {p.themePacks.length > 0 && (
         <section aria-labelledby="themes-title">
@@ -364,6 +369,8 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
           )}
         </section>
       )}
+
+      {p.isMe ? <MyProfilePortfolios /> : <TheirPortfolios username={p.username} />}
 
       <section>
         <h2 className="section-title mt-0">Collection</h2>

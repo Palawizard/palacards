@@ -118,9 +118,49 @@ export async function exportData(ctx: Ctx, userId: string) {
       .where(or(eq(s.battleTurns.attackerId, userId), eq(s.battleTurns.defenderId, userId))),
     battleQueue: await db.select().from(s.battleQueue).where(eq(s.battleQueue.userId, userId)),
     savedDecks: await db.select().from(s.savedDecks).where(eq(s.savedDecks.userId, userId)),
+    // Assauts du boss et leurs questions : envoi, affichage déclaré, réponse et temps compté. La question d'un assaut
+    // en cours (bonne réponse comprise) ne sort qu'une fois répondue.
+    bossAssaults: await db.select().from(s.bossAssaults).where(eq(s.bossAssaults.userId, userId)),
+    bossHits: await db
+      .select({ hit: s.bossHits })
+      .from(s.bossHits)
+      .innerJoin(s.bossAssaults, eq(s.bossAssaults.id, s.bossHits.assaultId))
+      .where(eq(s.bossAssaults.userId, userId))
+      .then((rows) => rows.map(({ hit }) => (hit.answeredAt ? hit : { ...hit, question: null }))),
     achievements: await db.select().from(s.achievementsProgress).where(eq(s.achievementsProgress.userId, userId)),
     seasonArchives: await db.select().from(s.seasonArchives).where(eq(s.seasonArchives.userId, userId)),
     titles: await db.select().from(s.playerTitles).where(eq(s.playerTitles.userId, userId)),
+    // Portfolios : cartes, image de fond envoyée, designs achetés ou gagnés, likes donnés.
+    portfolios: await db.select().from(s.portfolios).where(eq(s.portfolios.userId, userId)),
+    portfolioCards: await db
+      .select({ card: s.portfolioCards })
+      .from(s.portfolioCards)
+      .innerJoin(s.portfolios, eq(s.portfolios.id, s.portfolioCards.portfolioId))
+      .where(eq(s.portfolios.userId, userId))
+      .then((rows) => rows.map((r) => r.card)),
+    portfolioBackgrounds: await db
+      .select({ background: s.portfolioBackgrounds })
+      .from(s.portfolioBackgrounds)
+      .innerJoin(s.portfolios, eq(s.portfolios.id, s.portfolioBackgrounds.portfolioId))
+      .where(eq(s.portfolios.userId, userId))
+      .then((rows) =>
+        rows.map(({ background: b }) => ({
+          portfolioId: b.portfolioId,
+          mime: b.mime,
+          base64: b.image.toString("base64"),
+          updatedAt: b.updatedAt,
+        })),
+      ),
+    portfolioDesigns: await db
+      .select()
+      .from(s.playerPortfolioDesigns)
+      .where(eq(s.playerPortfolioDesigns.userId, userId)),
+    portfolioLikes: await db.select().from(s.portfolioLikes).where(eq(s.portfolioLikes.userId, userId)),
+    // Admin : cartes ajoutées ou retirées à la main d'un filtre d'images.
+    imageFilterChoices: await db
+      .select()
+      .from(s.imageFilterOverrides)
+      .where(eq(s.imageFilterOverrides.createdBy, userId)),
   };
 }
 

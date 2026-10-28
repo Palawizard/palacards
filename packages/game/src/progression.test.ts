@@ -12,7 +12,7 @@ import {
   rerollQuest,
   weeklyQuest,
 } from "./quests.js";
-import { recycleValue, rollShiny, SHINY_CHANCE } from "./shiny.js";
+import { recycleValue, rollShiny, rollSourceShiny, SHINY_CHANCE, SHINY_SOURCE_CHANCE } from "./shiny.js";
 
 describe("passe de saison", () => {
   it("compte 200 niveaux, 40 100 XP pour le recto et 500 XP par niveau ensuite", () => {
@@ -126,6 +126,14 @@ describe("brillantes", () => {
     expect(rollShiny(() => SHINY_CHANCE)).toBe(false);
     expect(recycleValue("R")).toBe(10);
     expect(recycleValue("R", true)).toBe(100);
+  });
+
+  it("sortent aussi de l'upgrader, des roues et de la boutique, au taux des paquets", () => {
+    for (const source of ["upgrade", "wheel", "shop"] as const) {
+      expect(SHINY_SOURCE_CHANCE[source]).toBe(SHINY_CHANCE);
+      expect(rollSourceShiny(source, () => SHINY_CHANCE - 1)).toBe(true);
+      expect(rollSourceShiny(source, () => SHINY_CHANCE)).toBe(false);
+    }
   });
 
   it("sont gardées en priorité et jamais recyclées automatiquement", () => {

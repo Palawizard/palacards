@@ -1,4 +1,5 @@
 import type { Rarity } from "./rarity.js";
+import { SHINY_SOURCE_COUNTS, type ShinySource } from "./shiny.js";
 
 // ---------------------------------------------------------------------------
 // Succès à paliers
@@ -47,6 +48,8 @@ export type GameEvent =
   | { type: "wheel_spun" }
   | { type: "recycled"; rarities: Rarity[] }
   | { type: "upgrade"; success: boolean }
+  /** Brillantes obtenues hors paquets (upgrader, roue, boutique) : succès « Ça brille ! » selon `SHINY_SOURCE_COUNTS`. */
+  | { type: "shiny_obtained"; source: ShinySource; count: number }
   | { type: "quest_completed"; period: "day" | "week" }
   /** Fin d'un essai de « Plus ou moins vu » : série atteinte (réussites de l'essai). */
   | { type: "hl_finished"; streak: number }
@@ -238,6 +241,9 @@ export function statUpdates(e: GameEvent): StatUpdate[] {
     case "upgrade":
       out.push(add("upgrades"));
       if (e.success) out.push(add("upgrades_won"));
+      break;
+    case "shiny_obtained":
+      if (e.count > 0 && SHINY_SOURCE_COUNTS[e.source]) out.push(add("shiny_pulled", e.count));
       break;
     case "quest_completed":
       out.push(add(e.period === "day" ? "quests_daily" : "quests_weekly"));
