@@ -3,6 +3,7 @@ import { sweepBattles } from "./battles.js";
 import { backfillOwnedSummaries, SUMMARY_BACKFILL_JOB } from "./collection.js";
 import { BOSS_FINALIZE_JOB, finalizeBosses } from "./boss.js";
 import { purgeOldPulls, startWeirdRefresh, WEIRD_REFRESH_JOB } from "./feed.js";
+import { IMAGE_FILTER_REFRESH_JOB, imageFilterCardsEmpty, startImageFilterRefresh } from "./image-filters.js";
 import { COMMUNITY_GOAL_JOB, refreshCommunityGoal } from "./community.js";
 import { notifyPacksFull, PACKS_FULL_JOB } from "./economy.js";
 import { GUILD_WEEKLY_JOB, weeklyJob } from "./guilds.js";
@@ -59,6 +60,15 @@ export function registerJobs(ctx: Ctx) {
   ctx.jobs.schedule(WEIRD_REFRESH_JOB, "15 5 * * 1", async () => {
     startWeirdRefresh(ctx);
   });
+  // Filtres d'images : membres des catégories Wikipédia de chaque thème, rechargés chaque lundi.
+  ctx.jobs.schedule(IMAGE_FILTER_REFRESH_JOB, "45 5 * * 1", async () => {
+    startImageFilterRefresh(ctx);
+  });
+  // Premier démarrage après la mise à jour : catégories chargées tout de suite, sans attendre lundi.
+  if (!ctx.config.WIKIMEDIA_DISABLED)
+    void imageFilterCardsEmpty(ctx)
+      .then((empty) => empty && startImageFilterRefresh(ctx))
+      .catch((err) => ctx.log.warn({ err }, "filtres d'images au démarrage"));
   ctx.jobs.schedule("pulls-purge", "45 4 * * *", async () => {
     ctx.log.info({ deleted: await purgeOldPulls(ctx) }, "purge du fil d'activité");
     ctx.log.info({ deleted: await purgeOldShops(ctx) }, "purge des boutiques du jour");

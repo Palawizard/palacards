@@ -20,6 +20,8 @@ export interface CardMedia {
   pageUrl: string | null;
   /** Article d'arthropode (option « flouter les arthropodes »), quand il vient d'être chargé. */
   arthropod?: boolean;
+  /** Thèmes de filtre d'images de l'article (arthropodes, blessures, nudité), quand il vient d'être chargé. */
+  imageThemes?: ("arthropods" | "gore" | "nudity")[];
 }
 
 export interface Wallet {

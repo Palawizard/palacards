@@ -28,6 +28,7 @@ import {
   ownedCount,
   packState,
   pushWallet,
+  retireInstances,
   type DbOrTx,
 } from "./players.js";
 import { addThemePacks, drawThemeCard, getTheme, isOnSale, lockThemeStock, themeIndex } from "./themes.js";
@@ -255,7 +256,7 @@ export async function openPack(ctx: Ctx, userId: string, options: OpenPackOption
     if (picks.length) {
       const gone = picks.map((i) => ids[i]!);
       const gain = picks.reduce((s, i) => s + recycleValue(drawn[i]!.rarity, drawn[i]!.shiny), 0);
-      await tx.delete(schema.cardInstances).where(inArray(schema.cardInstances.id, gone));
+      await retireInstances(tx, gone, "recycled");
       await logMovement(tx, userId, "card", -gone.length, await ownedCount(tx, userId), "recycle", gone.join(","));
       await movePw(tx, p, gain, "recycle", gone.join(","));
       autoRecycled = { instanceIds: gone, gain };

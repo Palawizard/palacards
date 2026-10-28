@@ -18,7 +18,7 @@ import { ArrowRight, Info, SkipForward, X } from "lucide-react";
 import { animate, AnimatePresence, motion, useMotionValue, useReducedMotion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { mutate as revalidate } from "swr";
@@ -29,6 +29,8 @@ import { CardBack, FlipCard } from "@/components/PackOpener";
 import {
   CollectionFilterBar,
   useCollectionFilters,
+  useFiltersInUrl,
+  useUrlFilters,
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
 import { CardSkeletons, Empty, ErrorBox, LoadMore, Toggle } from "@/components/ui";
@@ -101,7 +103,18 @@ function SlotTile({ card }: { card: CardDTO }) {
   );
 }
 
+/** Filtres de l'établi à l'arrivée : les doublons, les plus récents d'abord. */
+const UPGRADE_FILTERS = { duplicates: "only", sort: "date" } as const;
+
 export default function UpgradePage() {
+  return (
+    <Suspense fallback={<CardSkeletons count={6} />}>
+      <Upgrader />
+    </Suspense>
+  );
+}
+
+function Upgrader() {
   const reduce = useReducedMotion();
   // Réglage « Upgrader sans animation » : pas de tour d'aiguille, le résultat s'affiche dès la réponse du serveur.
   const { me } = useMe();
@@ -109,7 +122,9 @@ export default function UpgradePage() {
   const quick = !!me?.quickUpgrade;
   const [rarity, setRarity] = useState<Rarity>("C");
   // Mêmes filtres que la collection (recherche dans le résumé, tags, booster…), sauf la rareté, fixée par l'établi.
-  const { value: f, set: setFilter, params: filters } = useCollectionFilters({ duplicates: "only", sort: "date" });
+  // Gardés dans l'adresse de la page, comme dans la collection.
+  const { value: f, set: setFilter, params: filters } = useCollectionFilters(useUrlFilters(UPGRADE_FILTERS));
+  useFiltersInUrl("/upgrade", f, UPGRADE_FILTERS);
   /** Retirer les filtres rend ceux de l'établi : « Doublons » seulement, comme à l'arrivée. */
   const resetFilters = useCallback(
     () =>
@@ -123,6 +138,9 @@ export default function UpgradePage() {
         notTag: "",
         theme: "",
         season: "",
+        minAtk: "",
+        minDef: "",
+        levels: [],
       }),
     [setFilter],
   );
@@ -164,6 +182,9 @@ export default function UpgradePage() {
   /** Un filtre de la barre (hors « Doublons » seulement) réduit la liste. */
   const narrowed = !!(
     f.q.trim() ||
+    f.minAtk.trim() ||
+    f.minDef.trim() ||
+    f.levels.length ||
     f.shiny ||
     f.tagged ||
     f.tag ||
@@ -633,6 +654,7 @@ export default function UpgradePage() {
           value={f}
           onChange={setFilter}
           onReset={resetFilters}
+          base={UPGRADE_FILTERS}
           options={options.data}
           owner
           rarities={false}

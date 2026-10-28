@@ -6,6 +6,7 @@ import { parse } from "../errors.js";
 import {
   createGuild,
   guildDetail,
+  publicGuild,
   joinGuild,
   leaveGuild,
   listGuilds,
@@ -78,8 +79,9 @@ export function socialRoutes(api: FastifyInstance, ctx: Ctx) {
     const me = await membership(ctx.db, req.user.id);
     return me ? { ...(await guildDetail(ctx, me.guildId, req.user.id)), myRole: me.role } : null;
   });
+  // Page publique d'une guilde : rien de réservé aux membres (objectif, contributions, salon).
   api.get("/guilds/:id", auth, async (req) =>
-    guildDetail(ctx, parse(z.object({ id: z.coerce.number().int().positive() }), req.params).id),
+    publicGuild(ctx, parse(z.object({ id: z.coerce.number().int().positive() }), req.params).id, req.user.id),
   );
   api.post("/guilds", limited(5), async (req) => {
     const body = parse(

@@ -4,7 +4,7 @@ import { RARITY_LABELS } from "@palacards/game";
 import type { BannerDTO, CardDTO, Page } from "@palacards/shared";
 import { ImageUp, Images, Layers, X } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
@@ -17,7 +17,7 @@ import {
 } from "@/components/CollectionFilters";
 import { CardSkeletons, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, API_BASE, thumbSrc } from "@/lib/api";
-import { useArthropodVeil } from "@/lib/arthropods";
+import { hiddenThemes, useImageVeil } from "@/lib/image-filters";
 import { prepareBanner } from "@/lib/avatar-image";
 import { useMe } from "@/lib/game";
 import { useCardMedia } from "@/lib/media";
@@ -30,12 +30,13 @@ export function bannerSrc(banner: ImageBanner): string {
   return `${API_BASE}/banners/${encodeURIComponent(banner.userId)}?v=${encodeURIComponent(banner.version)}`;
 }
 
-/** Image de l'article d'une bannière-carte (null : pas encore chargée, ou arthropode à masquer). */
+/** Image de l'article d'une bannière-carte (null : pas encore chargée, ou image d'un thème flouté à masquer). */
 function useCardBannerSrc(banner: CardBanner | null) {
   const cardId = banner?.cardId ?? 0;
   const live = useCardMedia(cardId);
   const { me } = useMe();
-  const veil = useArthropodVeil(cardId, !!me?.hideArthropods);
+  const hidden = useMemo(() => hiddenThemes(me), [me]);
+  const veil = useImageVeil(cardId, hidden).state;
   const thumbUrl = live?.thumbUrl ?? banner?.thumbUrl;
   return { src: thumbUrl ? thumbSrc(thumbUrl) : null, visible: veil === "off" || veil === "shown" };
 }

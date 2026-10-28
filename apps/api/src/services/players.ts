@@ -1,7 +1,7 @@
 import { schema } from "@palacards/db";
 import { availablePacks, MAX_STORED_PACKS, msUntilNextPack, PITY_THRESHOLD } from "@palacards/game";
 import type { PackState, Wallet } from "@palacards/shared";
-import { eq, inArray, sql } from "@palacards/db";
+import { and, eq, inArray, isNull, ne, sql } from "@palacards/db";
 import type { Ctx } from "../context.js";
 import { GameError } from "../errors.js";
 
@@ -70,7 +70,8 @@ export type LedgerReason =
   | "boss"
   | "community_goal"
   | "shop_purchase"
-  | "higher_lower";
+  | "higher_lower"
+  | "portfolio_design";
 
 /**
  * Change le solde de PW d'un joueur verrouillé et écrit la ligne de ledger correspondante.
@@ -109,14 +110,52 @@ export async function moveLocked(tx: Tx, player: Player, delta: number) {
   return player;
 }
 
-/** Donne des exemplaires à un nouveau propriétaire (vente, échange) : verrous, épingle, favori et tags remis à zéro. */
-export async function transferInstances(tx: Tx, instanceIds: number[], newOwner: string, source: "market" | "trade") {
+export type CardFate = (typeof schema.CARD_FATES)[number];
+
+/**
+ * Note ce que deviennent des exemplaires dans les échanges qui les contiennent (historique des échanges) : seule
+ * la première chose qui leur arrive après chaque échange compte. `exceptTrade` : l'échange qui les transmet.
+ */
+async function recordFate(tx: Tx, instanceIds: number[], fate: CardFate, exceptTrade?: number) {
+  await tx
+    .update(schema.tradeItems)
+    .set({ fate, fateAt: sql`now()` })
+    .where(
+      and(
+        inArray(schema.tradeItems.instanceId, instanceIds),
+        isNull(schema.tradeItems.fate),
+        exceptTrade === undefined ? undefined : ne(schema.tradeItems.tradeId, exceptTrade),
+      ),
+    );
+}
+
+/**
+ * Détruit des exemplaires (recyclage, fusion, upgrade) en notant leur devenir dans l'historique des échanges :
+ * la ligne d'échange garde sa photo de la carte, `instance_id` passe à null.
+ */
+export async function retireInstances(tx: Tx, instanceIds: number[], fate: Exclude<CardFate, "sold" | "traded">) {
   if (instanceIds.length === 0) return;
+  await recordFate(tx, instanceIds, fate);
+  await tx.delete(schema.cardInstances).where(inArray(schema.cardInstances.id, instanceIds));
+}
+
+/** Donne des exemplaires à un nouveau propriétaire (vente, échange) : verrous, épingle, favori et tags remis à zéro. */
+export async function transferInstances(
+  tx: Tx,
+  instanceIds: number[],
+  newOwner: string,
+  source: "market" | "trade",
+  tradeId?: number,
+) {
+  if (instanceIds.length === 0) return;
+  await recordFate(tx, instanceIds, source === "market" ? "sold" : "traded", tradeId);
   await tx
     .update(schema.cardInstances)
     .set({ ownerId: newOwner, lockedBy: null, pinnedSlot: null, favorite: false, source, obtainedAt: new Date() })
     .where(inArray(schema.cardInstances.id, instanceIds));
   await tx.delete(schema.userTags).where(inArray(schema.userTags.instanceId, instanceIds));
+  // Elles quittent aussi les portfolios de leur ancien propriétaire.
+  await tx.delete(schema.portfolioCards).where(inArray(schema.portfolioCards.instanceId, instanceIds));
 }
 
 /** Trace un mouvement de cartes ou de paquets (sans solde de PW) dans le ledger. */

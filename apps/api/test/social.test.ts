@@ -390,3 +390,57 @@ describe("guildes", () => {
     expect(c!.bonusPacks).toBe(1);
   });
 });
+
+describe("page publique d'une guilde (suggestion n° 110)", () => {
+  async function guildWithMembers() {
+    const chief = await signUp(app);
+    const member = await signUp(app);
+    const created = await chief.post("/guilds", {
+      name: uniqueName("Publique "),
+      tag: uniqueName("P")
+        .slice(0, 5)
+        .replace(/[^A-Za-z0-9]/g, "X"),
+      emblem: "🦊",
+      description: "Une guilde ouverte",
+    });
+    expect(created.status).toBe(200);
+    await member.post(`/guilds/${created.body.id}/join`);
+    return { chief, member, id: created.body.id as number };
+  }
+
+  it("montre nom, rang, score et membres, sans rien de réservé aux membres", async () => {
+    const { chief, member, id } = await guildWithMembers();
+    const visitor = await signUp(app);
+    const res = await visitor.get(`/guilds/${id}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ id, emblem: "🦊", member: false, canJoin: true });
+    expect(res.body.rank).toBeGreaterThanOrEqual(1);
+    expect(res.body.rank).toBeLessThanOrEqual(res.body.guilds);
+    expect(res.body.members.map((m: { username: string; role: string }) => [m.username, m.role])).toEqual([
+      [chief.username, "leader"],
+      [member.username, "member"],
+    ]);
+    // Ni objectif de la semaine, ni contributions, ni identifiants, ni Elo, ni présence en ligne.
+    const text = JSON.stringify(res.body);
+    for (const key of ["objective", "contribution", "elo", "online", "joinedAt", "myRole"])
+      expect(text).not.toContain(key);
+    for (const p of [chief, member]) expect(text).not.toContain(p.userId);
+    // Un membre est renvoyé vers sa page : le drapeau le dit.
+    expect((await member.get(`/guilds/${id}`)).body.member).toBe(true);
+  });
+
+  it("refuse au visiteur les actions des membres", async () => {
+    const { member, id } = await guildWithMembers();
+    const visitor = await signUp(app);
+    expect((await visitor.post(`/guilds/members/${member.userId}/kick`)).status).toBeGreaterThanOrEqual(400);
+    expect((await visitor.patch("/guilds/mine", { description: "Piratée" })).status).toBeGreaterThanOrEqual(400);
+    expect((await visitor.get(`/messages/history?channel=guild:${id}`)).status).toBe(403);
+    expect((await visitor.post("/messages", { channel: `guild:${id}`, body: "Coucou" })).status).toBe(403);
+    expect((await visitor.get(`/guilds/${id}`)).body.description).toBe("Une guilde ouverte");
+  });
+
+  it("répond 404 pour une guilde inconnue", async () => {
+    const visitor = await signUp(app);
+    expect((await visitor.get("/guilds/987654321")).status).toBe(404);
+  });
+});

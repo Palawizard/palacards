@@ -12,6 +12,7 @@ import {
   type Rarity,
 } from "@palacards/game";
 import type { Ctx } from "../context.js";
+import { hiddenFor } from "./image-filters.js";
 import type { DbOrTx } from "./players.js";
 
 /** Préparation d'une question (résumés Wikipédia des leurres) : au-delà, repli sur ce qui est en cache. */
@@ -95,6 +96,8 @@ export interface QuizTarget {
   avoid?: QuestionType[];
   /** Articles que le joueur sait en jeu (ses autres cartes au boss) : seuls leurres des questions de reconnaissance. */
   known?: number[];
+  /** Joueur qui répond : une image qu'il floute (filtres d'images) n'est jamais un choix de « Quelle image ? ». */
+  answerer?: string;
 }
 
 /**
@@ -131,10 +134,10 @@ export async function quizQuestion(ctx: Ctx, attack: QuizTarget): Promise<Questi
   // Résumés des leurres pas encore en cache (titres voisins, hasard) : le temps du bouclier.
   const toLoad = [...known, ...others.slice(0, 8)].map((c) => ({ cardId: Number(c.id), title: c.title }));
   await withTimeout(ctx.wiki.load(toLoad, undefined, { fresh: true }), QUESTION_PREP_MS - 1_500, []);
-  const summaries = await ctx.wiki.summaries([
-    attack.cardId,
-    ...known.map((c) => Number(c.id)),
-    ...candidates.map((c) => Number(c.id)),
+  const ids = [attack.cardId, ...known.map((c) => Number(c.id)), ...candidates.map((c) => Number(c.id))];
+  const [summaries, veiled] = await Promise.all([
+    ctx.wiki.summaries(ids),
+    attack.answerer ? hiddenFor(ctx.db, attack.answerer, ids) : Promise.resolve(new Set<number>()),
   ]);
   const article = (id: number, t: string, views: string | number): QuizArticle => {
     const s = summaries.get(id);
@@ -144,7 +147,7 @@ export async function quizQuestion(ctx: Ctx, attack: QuizTarget): Promise<Questi
       views12m: Number(views),
       extract: s?.extract ?? null,
       description: s?.description ?? null,
-      thumbUrl: s?.thumbUrl ?? null,
+      thumbUrl: veiled.has(id) ? null : (s?.thumbUrl ?? null),
     };
   };
   const parisYear = Number(
@@ -222,9 +225,12 @@ export async function bossQuestion(ctx: Ctx, t: BossQuizTarget): Promise<BossQue
     QUESTION_PREP_MS - 1_500,
     [],
   );
-  const [summaries, attrs] = await Promise.all([
+  const [summaries, attrs, veiled] = await Promise.all([
     ctx.wiki.summaries([...ids, ...candidates.map((c) => Number(c.id))]),
     ctx.wiki.attributes(ids),
+    // Filtres d'images du joueur : une image qu'il floute n'est jamais un choix de « Quelle image ? » (pas de flou
+    // sous chrono), ni celle de sa carte (la question image est alors écartée).
+    hiddenFor(ctx.db, t.userId, [t.cardId, ...candidates.map((c) => Number(c.id))]),
   ]);
   const quiz = (id: number, t2: string, views: string | number): QuizArticle => {
     const s = summaries.get(id);
@@ -234,7 +240,7 @@ export async function bossQuestion(ctx: Ctx, t: BossQuizTarget): Promise<BossQue
       views12m: Number(views),
       extract: s?.extract ?? null,
       description: s?.description ?? null,
-      thumbUrl: s?.thumbUrl ?? null,
+      thumbUrl: veiled.has(id) ? null : (s?.thumbUrl ?? null),
     };
   };
   const full = (id: number, t2: string, views: string | number, rarity: Rarity): BossQuizArticle => {

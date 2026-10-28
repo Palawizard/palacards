@@ -170,6 +170,8 @@ test("carte de sa collection en bannière (mobile), retour à l'image importée"
     .getByLabel("Importer une bannière")
     .setInputFiles({ name: "banniere.png", mimeType: "image/png", buffer: png });
   await expect(alice.page.getByText("Bannière mise à jour.")).toBeVisible();
+  // Sur mobile, le toast recouvre le bouton ; le survoler en réessayant le clic le garderait affiché.
+  await expect(alice.page.getByText("Bannière mise à jour.")).toBeHidden();
   await alice.page.getByRole("button", { name: "Utiliser une de mes cartes" }).click();
   const picker = alice.page.getByRole("dialog", { name: "Carte en bannière" });
   await picker.getByLabel("Filtrer par titre").fill(title);

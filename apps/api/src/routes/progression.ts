@@ -9,7 +9,8 @@ import { createCode, listCodes, setCodeDisabled } from "../services/codes.js";
 import { adminDailyLogin, dailyLoginRatesSchema, setDailyLogin } from "../services/game-settings.js";
 import { adminThemes, createTheme, endTheme, THEME_MAX_CATEGORIES } from "../services/themes.js";
 import { NOTIFICATION_GROUPS } from "../services/notifications.js";
-import { leaderboard, listAchievements } from "../services/progression.js";
+import { leaderboard, listAchievements, publicAchievements } from "../services/progression.js";
+import { findUserByName } from "../services/profiles.js";
 import { CARDS_PURGE_JOB, rolloverSeason } from "../services/seasons.js";
 import { changeUsername } from "../services/settings.js";
 import { chooseTitle } from "../services/titles.js";
@@ -21,6 +22,11 @@ export function progressionRoutes(api: FastifyInstance, ctx: Ctx) {
 
   // --- Succès et classements ---
   api.get("/achievements", auth, async (req) => listAchievements(ctx, req.user.id));
+  // Succès d'un joueur sur son profil : obtenus ou non, sans progression.
+  api.get("/players/:username/achievements", auth, async (req) => {
+    const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.params);
+    return publicAchievements(ctx, (await findUserByName(ctx.db, username)).id);
+  });
   api.get("/leaderboard", auth, async (req) => {
     const q = parse(
       z.object({
