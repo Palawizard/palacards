@@ -369,3 +369,51 @@ describe("option « Upgrader sans animation »", () => {
     expect((await (await signUp(app)).get("/me")).body.quickUpgrade).toBe(false);
   });
 });
+
+describe("filtres de stats et de niveau (suggestion n° 115)", () => {
+  let p: Client;
+  /** Trois exemplaires aux stats et niveaux connus : A (1 000/500, niv. 1), B (1 000/2 000, niv. 3), C (3 000/100, niv. 5). */
+  let a: number, b: number, c: number;
+
+  beforeAll(async () => {
+    p = await signUp(app);
+    const cards = await freshCollection(p);
+    [a, b, c] = cards.map((x) => x.instanceId) as [number, number, number];
+    await ctx.db.delete(ci).where(sql`${ci.ownerId} = ${p.userId} and ${ci.id} not in (${a}, ${b}, ${c})`);
+    await ctx.db.update(ci).set({ atk: 1000, def: 500, level: 1, rarity: "C" }).where(eq(ci.id, a));
+    await ctx.db.update(ci).set({ atk: 1000, def: 2000, level: 3, rarity: "R" }).where(eq(ci.id, b));
+    await ctx.db.update(ci).set({ atk: 3000, def: 100, level: 5, rarity: "C" }).where(eq(ci.id, c));
+  });
+
+  const list = async (query: string) => ids((await p.get(`/collection?${query}`)).body);
+
+  it("filtre par niveau seul, un ou plusieurs niveaux cochés", async () => {
+    expect(await list("levels=3")).toEqual([b]);
+    expect(await list("levels=1,5")).toEqual([a, c].sort((x, y) => x - y));
+    expect((await p.get("/collection?levels=6")).status).toBe(400);
+  });
+
+  it("compte l'ATK et la DEF minimales niveau compris, comme sur la carte", async () => {
+    // B : 1 000 × 1,08 = 1 080 d'ATK au niveau 3.
+    expect(await list("minAtk=1080")).toEqual([b, c].sort((x, y) => x - y));
+    expect(await list("minAtk=1081")).toEqual([c]);
+    expect(await list("minDef=2160")).toEqual([b]);
+  });
+
+  it("cumule tous les filtres (ET logique)", async () => {
+    expect(await list("levels=1,3,5&minAtk=1000&rarity=C")).toEqual([a, c].sort((x, y) => x - y));
+    expect(await list("levels=1,3,5&minAtk=1000&minDef=400&rarity=C")).toEqual([a]);
+    expect(await list("levels=3&rarity=C")).toEqual([]);
+  });
+
+  it("trie par niveau, et applique les filtres à la sélection et à la fusion", async () => {
+    const sorted = (await p.get("/collection?sort=level")).body.items.map((x: { instanceId: number }) => x.instanceId);
+    expect(sorted).toEqual([c, b, a]);
+    const selectable = (await p.get("/collection/selectable?levels=1&minAtk=500")).body;
+    expect(selectable.items.map((i: { id: number }) => i.id)).toEqual([a]);
+    // Doublon de A au niveau 1 : la fusion ne voit que lui avec le filtre « niveau 1 », rien avec « niveau 5 ».
+    await addCopies(a, 1);
+    expect((await p.get("/collection/fusions?levels=1")).body.consumed).toBe(1);
+    expect((await p.get("/collection/fusions?levels=5")).body.consumed).toBe(0);
+  });
+});

@@ -1,7 +1,8 @@
 // Composants d'interface partagés, importés uniquement par des composants client.
 import { RARITIES, RARITY_LABELS, TITLE_NAMES, titleDetail, type Rarity, type TitleRef } from "@palacards/game";
 import { Award, Ban } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
+import { fmt } from "@/lib/format";
 
 /** Filtre de raretés : les sigles eux-mêmes servent de bascules. Sans sélection, tout est affiché. */
 export function RarityFilter({ value, onChange }: { value: Rarity[]; onChange: (v: Rarity[]) => void }) {
@@ -81,6 +82,114 @@ export function TriToggle({
       {value === "exclude" && <Ban aria-hidden className="size-3.5" />}
       {value === "exclude" ? excludeLabel : label}
     </button>
+  );
+}
+
+/** Plus grande ATK ou DEF minimale acceptée par l'API (smallint). */
+const STAT_MAX = 32_767;
+
+/** Puce d'un `<details>` qui s'ouvre comme un menu : se ferme au clic dehors et avec Échap. */
+function useDismiss(ref: RefObject<HTMLDetailsElement | null>) {
+  useEffect(() => {
+    const close = (e: Event) => {
+      const d = ref.current;
+      if (!d?.open) return;
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !d.contains(e.target as Node)) {
+        d.open = false;
+        if (e instanceof KeyboardEvent) d.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [ref]);
+}
+
+/**
+ * ATK et DEF minimales, dans un petit menu « Stats minimales » (comme « Toutes les cartes ») ; la puce montre les
+ * seuils en cours. `hint` : précision sous les champs (stats niveau compris dans la collection).
+ */
+export function StatsFilter({
+  minAtk,
+  minDef,
+  onChange,
+  hint,
+}: {
+  minAtk: string;
+  minDef: string;
+  onChange: (patch: { minAtk?: string; minDef?: string }) => void;
+  hint?: string;
+}) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useDismiss(ref);
+  const atk = /^\d+$/.test(minAtk.trim()) ? Number(minAtk) : null;
+  const def = /^\d+$/.test(minDef.trim()) ? Number(minDef) : null;
+  const summary = [atk !== null && `ATK ≥ ${fmt(atk)}`, def !== null && `DEF ≥ ${fmt(def)}`]
+    .filter(Boolean)
+    .join(" · ");
+  // Colonnes smallint côté API : au-delà de 32 767, aucune carte ne passe de toute façon.
+  const clean = (v: string) => {
+    const digits = v.replace(/\D/g, "").slice(0, 5);
+    return digits && Number(digits) > STAT_MAX ? String(STAT_MAX) : digits;
+  };
+  return (
+    <details ref={ref} className="group relative">
+      <summary className="chip tnum cursor-pointer list-none" data-active={summary ? true : undefined}>
+        {summary || "Stats minimales"}
+      </summary>
+      <div className="z-20 mt-2 flex w-60 flex-col gap-2 rounded-xl border border-line-strong bg-panel p-3 shadow-pop sm:absolute sm:left-0 sm:top-9 sm:mt-0">
+        <label className="text-sm">
+          <span className="label">ATK minimale</span>
+          <input
+            inputMode="numeric"
+            className="field h-8 min-h-0"
+            value={minAtk}
+            onChange={(e) => onChange({ minAtk: clean(e.target.value) })}
+            placeholder="100 à 9 999"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="label">DEF minimale</span>
+          <input
+            inputMode="numeric"
+            className="field h-8 min-h-0"
+            value={minDef}
+            onChange={(e) => onChange({ minDef: clean(e.target.value) })}
+            placeholder="100 à 9 999"
+          />
+        </label>
+        {hint && <p className="text-xs text-faint">{hint}</p>}
+      </div>
+    </details>
+  );
+}
+
+/** Niveaux de carte (1 à 5), plusieurs cochables ; aucun coché : tous. */
+export function LevelFilter({ value, onChange }: { value: number[]; onChange: (v: number[]) => void }) {
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Filtrer par niveau">
+      <span className="mr-0.5 text-xs font-semibold text-faint" aria-hidden>
+        Niv.
+      </span>
+      {[1, 2, 3, 4, 5].map((l) => {
+        const on = value.includes(l);
+        return (
+          <button
+            key={l}
+            type="button"
+            className="chip tnum w-8 justify-center px-0"
+            aria-pressed={on}
+            aria-label={`Niveau ${l}`}
+            onClick={() => onChange(on ? value.filter((x) => x !== l) : [...value, l].sort())}
+          >
+            {l}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

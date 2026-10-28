@@ -9,7 +9,7 @@ import { Suspense, useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
-import { CardSkeletons, Empty, ErrorBox, LoadMore, RarityFilter, Select, Toggle } from "@/components/ui";
+import { CardSkeletons, Empty, ErrorBox, LoadMore, RarityFilter, Select, StatsFilter, Toggle } from "@/components/ui";
 import { fmt } from "@/lib/format";
 import { useDebounced } from "@/lib/use-debounced";
 
@@ -137,31 +137,14 @@ function Catalog() {
             <Select label="Booster" value={theme} onChange={setTheme} options={themeOptions} />
           )}
           <Select label="Trier" value={sort} onChange={setSort} options={SORTS} />
-          <details className="group relative">
-            <summary className="chip cursor-pointer list-none">Stats minimales</summary>
-            <div className="absolute left-0 top-9 z-20 flex w-60 flex-col gap-2 rounded-xl border border-line-strong bg-panel p-3 shadow-pop">
-              <label className="text-sm">
-                <span className="label">ATK minimale</span>
-                <input
-                  inputMode="numeric"
-                  className="field h-8 min-h-0"
-                  value={minAtk}
-                  onChange={(e) => setMinAtk(e.target.value)}
-                  placeholder="100 à 9 999"
-                />
-              </label>
-              <label className="text-sm">
-                <span className="label">DEF minimale</span>
-                <input
-                  inputMode="numeric"
-                  className="field h-8 min-h-0"
-                  value={minDef}
-                  onChange={(e) => setMinDef(e.target.value)}
-                  placeholder="100 à 9 999"
-                />
-              </label>
-            </div>
-          </details>
+          <StatsFilter
+            minAtk={minAtk}
+            minDef={minDef}
+            onChange={(p) => {
+              if (p.minAtk !== undefined) setMinAtk(p.minAtk);
+              if (p.minDef !== undefined) setMinDef(p.minDef);
+            }}
+          />
         </div>
       </div>
 
