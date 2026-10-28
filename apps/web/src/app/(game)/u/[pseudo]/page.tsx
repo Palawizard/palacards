@@ -1,13 +1,14 @@
 "use client";
 
 import { TITLE_MAX_RANK, TITLE_NAMES, titleDetail, type TitleRef } from "@palacards/game";
-import type { BannerDTO, CardDTO, Page } from "@palacards/shared";
+import type { BannerDTO, CardDTO, Page, PublicAchievementsDTO } from "@palacards/shared";
 import { Award, MessageSquare, Repeat, Swords, UserCheck, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import useSWRInfinite from "swr/infinite";
+import { PlayerAchievements } from "@/components/Achievements";
 import { Avatar } from "@/components/Avatar";
 import { ProfileBanner } from "@/components/Banner";
 import { Card, CardGrid } from "@/components/Card";
@@ -264,6 +265,7 @@ function TheirCollection({ username }: { username: string }) {
 export default function ProfilePage({ params }: { params: Promise<{ pseudo: string }> }) {
   const { pseudo } = use(params);
   const { data: p, error, mutate } = useSWR<ProfileDTO>(`/players/${encodeURIComponent(pseudo)}`);
+  const achievements = useSWR<PublicAchievementsDTO>(`/players/${encodeURIComponent(pseudo)}/achievements`);
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
   if (!p) return <div className="h-72 animate-pulse rounded-xl bg-panel" aria-busy />;
@@ -323,6 +325,8 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
       </dl>
 
       <Titles p={p} onChanged={() => mutate()} />
+
+      {achievements.data && <PlayerAchievements data={achievements.data} />}
 
       {p.themePacks.length > 0 && (
         <section aria-labelledby="themes-title">
