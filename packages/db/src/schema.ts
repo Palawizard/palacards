@@ -1168,6 +1168,11 @@ export const bossHits = pgTable(
     atk: integer("atk").notNull(),
     question: jsonb("question"),
     servedAt: tstz("served_at"),
+    /**
+     * Question réellement affichée par le site (images chargées) : le chrono part de là, borné à `served_at` + un
+     * plafond (`bossClockStart`). Null : pas d'affichage déclaré, le chrono part de `served_at`.
+     */
+    shownAt: tstz("shown_at"),
     answeredAt: tstz("answered_at"),
     choice: smallint("choice"),
     correct: boolean("correct"),

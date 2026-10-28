@@ -453,6 +453,12 @@ export interface BossQuestionDTO {
   /** Temps restant pour répondre (ms) au moment de l'envoi. */
   remainingMs: number;
   durationMs: number;
+  /**
+   * Affichage déjà déclaré (`POST …/shown`) : le chrono tourne depuis. Sinon il partira de l'affichage, au plus tard
+   * `shownCapMs` après l'envoi.
+   */
+  shown: boolean;
+  shownCapMs: number;
 }
 
 export interface BossHitDTO {

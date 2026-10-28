@@ -118,6 +118,15 @@ export async function exportData(ctx: Ctx, userId: string) {
       .where(or(eq(s.battleTurns.attackerId, userId), eq(s.battleTurns.defenderId, userId))),
     battleQueue: await db.select().from(s.battleQueue).where(eq(s.battleQueue.userId, userId)),
     savedDecks: await db.select().from(s.savedDecks).where(eq(s.savedDecks.userId, userId)),
+    // Assauts du boss et leurs questions : envoi, affichage déclaré, réponse et temps compté. La question d'un assaut
+    // en cours (bonne réponse comprise) ne sort qu'une fois répondue.
+    bossAssaults: await db.select().from(s.bossAssaults).where(eq(s.bossAssaults.userId, userId)),
+    bossHits: await db
+      .select({ hit: s.bossHits })
+      .from(s.bossHits)
+      .innerJoin(s.bossAssaults, eq(s.bossAssaults.id, s.bossHits.assaultId))
+      .where(eq(s.bossAssaults.userId, userId))
+      .then((rows) => rows.map(({ hit }) => (hit.answeredAt ? hit : { ...hit, question: null }))),
     achievements: await db.select().from(s.achievementsProgress).where(eq(s.achievementsProgress.userId, userId)),
     seasonArchives: await db.select().from(s.seasonArchives).where(eq(s.seasonArchives.userId, userId)),
     titles: await db.select().from(s.playerTitles).where(eq(s.playerTitles.userId, userId)),

@@ -1,0 +1,1 @@
+ALTER TABLE "boss_hits" ADD COLUMN "shown_at" timestamp with time zone;
