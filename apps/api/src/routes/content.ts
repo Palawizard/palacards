@@ -15,7 +15,7 @@ import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import { hlAnswer, hlStart, hlState } from "../services/higher-lower.js";
-import { answerBoss, bossCards, bossState, serveNext, startAssault } from "../services/boss.js";
+import { answerBoss, bossCards, bossState, markShown, serveNext, startAssault } from "../services/boss.js";
 import {
   adminBroadcasts,
   archiveBroadcast,
@@ -119,6 +119,21 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
   api.post("/boss/assault/:id/next", auth, async (req) => {
     const { id } = parse(idParams, req.params);
     return serveNext(ctx, req.user.id, id);
+  });
+  // Question réellement affichée (images chargées) : le chrono part de là, dans la limite du plafond.
+  api.post("/boss/assault/:id/shown", auth, async (req) => {
+    const { id } = parse(idParams, req.params);
+    const { idx } = parse(
+      z.object({
+        idx: z
+          .number()
+          .int()
+          .min(0)
+          .max(BOSS_CARDS_PER_ASSAULT - 1),
+      }),
+      req.body,
+    );
+    return markShown(ctx, req.user.id, id, idx);
   });
   api.post("/boss/assault/:id/answer", auth, async (req) => {
     const { id } = parse(idParams, req.params);

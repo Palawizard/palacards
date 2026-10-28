@@ -62,6 +62,24 @@ export const BOSS_QUESTION_MS = 12_000;
 export const BOSS_YEAR_QUESTION_MS = 18_000;
 /** Marge réseau tolérée au-delà du chrono. */
 export const BOSS_ANSWER_GRACE_MS = 1_500;
+/**
+ * Plafond entre l'envoi d'une question et son affichage déclaré par le site (suggestions n° 113 et 114) : le
+ * chrono part de l'affichage réel, mais jamais plus tard que l'envoi + ce plafond. Un client modifié peut lire la
+ * question pendant ce temps : il reste court pour le texte, plus long pour une question à quatre images.
+ */
+export const BOSS_SHOWN_CAP_MS = 2_000;
+export const BOSS_SHOWN_CAP_IMAGE_MS = 5_000;
+export const bossShownCapMs = (type: string) => (type === "image" ? BOSS_SHOWN_CAP_IMAGE_MS : BOSS_SHOWN_CAP_MS);
+
+/**
+ * Départ du chrono d'une question : son affichage déclaré, borné à l'envoi + le plafond ; sans affichage
+ * déclaré, l'envoi. L'affichage n'est jamais avant l'envoi (le serveur le date à la réception).
+ */
+export function bossClockStart(type: string, servedAt: Date, shownAt: Date | null): Date {
+  if (!shownAt) return servedAt;
+  const latest = servedAt.getTime() + bossShownCapMs(type);
+  return new Date(Math.max(servedAt.getTime(), Math.min(shownAt.getTime(), latest)));
+}
 export const BOSS_CRIT_MS = PERFECT_PARRY_MS;
 export const BOSS_CRIT_MULT = 1.5;
 /** Catégorie en faiblesse : dégâts doublés ; en résistance : divisés par deux. */
