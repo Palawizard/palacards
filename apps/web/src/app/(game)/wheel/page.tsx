@@ -420,7 +420,14 @@ export default function WheelPage() {
                           <Link href="/collection" className="article-link">
                             collection
                           </Link>
-                          .
+                          {shown.card.shiny ? (
+                            <>
+                              {" "}
+                              en version <strong className="text-text">brillante</strong>&nbsp;!
+                            </>
+                          ) : (
+                            "."
+                          )}
                         </>
                       ) : (
                         "Retourne la carte."

@@ -206,6 +206,18 @@ describe("succès à paliers", () => {
     expect(isShortTitle("Ré")).toBe(true);
   });
 
+  it("compte les brillantes de l'upgrader, des roues et de la boutique dans « Ça brille ! »", () => {
+    const stats = run([
+      { type: "pack_opened", rarities: ["C"], shinies: [true] },
+      { type: "shiny_obtained", source: "upgrade", count: 2 },
+      { type: "shiny_obtained", source: "wheel", count: 1 },
+      { type: "shiny_obtained", source: "shop", count: 1 },
+    ]);
+    expect(stats.get("shiny_pulled")).toBe(5);
+    expect(unlockedKeys(stats)).toContain("shiny_5");
+    expect(run([{ type: "shiny_obtained", source: "shop", count: 0 }]).get("shiny_pulled")).toBeUndefined();
+  });
+
   it("compte boss, « Plus ou moins vu », quêtes, recyclage et upgrades", () => {
     const stats = run([
       { type: "boss_assault", damage: 320 },

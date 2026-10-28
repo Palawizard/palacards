@@ -457,7 +457,9 @@ export default function UpgradePage() {
                 {phase === "done" && result
                   ? result.success
                     ? revealed && result.card
-                      ? result.card.title
+                      ? result.card.shiny
+                        ? `${result.card.title}, brillante${NBSP}!`
+                        : result.card.title
                       : "Retourne la carte."
                     : result.refund
                       ? `+${fmt(result.refund)}${NBSP}PW récupérés`

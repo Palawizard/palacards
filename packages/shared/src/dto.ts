@@ -159,6 +159,14 @@ export interface ShopDTO {
   items: { slot: number; price: number; purchased: boolean; card: CardDTO }[];
 }
 
+/** Achat en boutique : l'exemplaire créé, brillant ou non (tiré à l'achat). */
+export interface ShopBuyDTO {
+  slot: number;
+  instanceId: number;
+  shiny: boolean;
+  wallet: Wallet;
+}
+
 /** Objectif communautaire de la saison (page Succès), lu dans le cache recalculé toutes les 10 minutes. */
 export interface CommunityGoalDTO {
   season: number;
