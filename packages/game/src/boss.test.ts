@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { QuizArticle } from "./battle.js";
 import {
+  BOSS_SHOWN_CAP_IMAGE_MS,
+  BOSS_SHOWN_CAP_MS,
+  bossClockStart,
   BOSS_CRIT_MS,
   BOSS_DUEL_MULT,
   BOSS_HP_CAP,
@@ -346,5 +349,25 @@ describe("boss : questions", () => {
     });
     expect(q.type).toBe("popular");
     expect(q.choices).toHaveLength(4);
+  });
+});
+
+describe("départ du chrono (affichage de la question)", () => {
+  const served = new Date("2026-10-28T10:00:00Z");
+  const at = (ms: number) => new Date(served.getTime() + ms);
+  it("part de l'envoi sans affichage déclaré", () => {
+    expect(bossClockStart("definition", served, null)).toEqual(served);
+  });
+  it("part de l'affichage déclaré, dans le plafond", () => {
+    expect(bossClockStart("definition", served, at(800))).toEqual(at(800));
+    expect(bossClockStart("image", served, at(3_000))).toEqual(at(3_000));
+  });
+  it("ne recule jamais au-delà du plafond, plus long pour les images", () => {
+    expect(bossClockStart("definition", served, at(9_000))).toEqual(at(BOSS_SHOWN_CAP_MS));
+    expect(bossClockStart("year_input", served, at(9_000))).toEqual(at(BOSS_SHOWN_CAP_MS));
+    expect(bossClockStart("image", served, at(9_000))).toEqual(at(BOSS_SHOWN_CAP_IMAGE_MS));
+  });
+  it("n'avance jamais avant l'envoi", () => {
+    expect(bossClockStart("image", served, at(-500))).toEqual(served);
   });
 });

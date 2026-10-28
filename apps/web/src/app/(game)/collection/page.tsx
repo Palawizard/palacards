@@ -10,7 +10,12 @@ import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid, RaritySigil } from "@/components/Card";
-import { CollectionFilterBar, useCollectionFilters } from "@/components/CollectionFilters";
+import {
+  CollectionFilterBar,
+  useCollectionFilters,
+  useFiltersInUrl,
+  useUrlFilters,
+} from "@/components/CollectionFilters";
 import {
   BulkTagDialog,
   ExcludeMenu,
@@ -138,8 +143,12 @@ async function inBatches<T extends Record<string, unknown>>(
 function Collection() {
   // `?theme=<id>` : ouverte depuis « Mes cartes de ce booster » sur une fiche carte.
   const urlTheme = useSearchParams().get("theme") ?? "";
-  /** Filtres en cours (`filters`), partagés par la liste, « Tout sélectionner » et la fusion en masse. */
-  const { value: f, set, reset, q: query, params: filters } = useCollectionFilters({ theme: urlTheme });
+  /**
+   * Filtres en cours (`filters`), partagés par la liste, « Tout sélectionner » et la fusion en masse, et gardés dans
+   * l'adresse de la page (rechargement, retour, lien partagé).
+   */
+  const { value: f, set, reset, q: query, params: filters } = useCollectionFilters(useUrlFilters());
+  useFiltersInUrl("/collection", f);
   const [seenTheme, setSeenTheme] = useState(urlTheme);
   if (urlTheme !== seenTheme) {
     // Fiche ouverte par-dessus la collection : la page reste montée, l'URL change.

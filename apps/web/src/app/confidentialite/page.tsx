@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 };
 
 const CONTACT = "palawi.pro@gmail.com";
-const UPDATED = "3 octobre 2026";
+const UPDATED = "28 octobre 2026";
 // Politique commune de palawi.fr : URL absolue, hors du basePath /palacards.
 const COMMON_POLICY = "https://palawi.fr/confidentialite/";
 
@@ -37,7 +37,13 @@ const DATA: { what: string; detail: string; kept: string }[] = [
   {
     what: "Partie",
     detail:
-      "Cartes, points wiki et leur historique, paquets, enchères, échanges, duels et réponses aux quiz, succès, classements par saison.",
+      "Cartes, points wiki et leur historique, paquets, enchères, échanges, duels et réponses aux quiz, assauts du boss (heure d'envoi, d'affichage et de réponse de chaque question), succès, classements par saison.",
+    kept: "Jusqu'à la suppression du compte",
+  },
+  {
+    what: "Réglages",
+    detail:
+      "Préférences de jeu : vitesse des animations, recyclage automatique, images à flouter (arthropodes, blessures et maladies, nudité), notifications.",
     kept: "Jusqu'à la suppression du compte",
   },
   {
@@ -49,6 +55,12 @@ const DATA: { what: string; detail: string; kept: string }[] = [
     what: "Profil",
     detail: "Avatar ou photo de profil que tu importes.",
     kept: "Jusqu'à ce que tu la retires ou supprimes ton compte",
+  },
+  {
+    what: "Portfolios",
+    detail:
+      "Tes portfolios (nom, description, cartes, design), l'image de fond que tu envoies, les designs achetés ou gagnés et les portfolios que tu aimes.",
+    kept: "Jusqu'à ce que tu les supprimes ou supprimes ton compte",
   },
   {
     what: "Suggestions",

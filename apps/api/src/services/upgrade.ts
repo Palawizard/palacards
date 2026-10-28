@@ -33,6 +33,7 @@ import {
   movePw,
   ownedCount,
   pushWallet,
+  retireInstances,
   wallet,
   type DbOrTx,
 } from "./players.js";
@@ -74,7 +75,7 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
     const roll = ctx.random(10_000);
     const success = roll < chance;
     const ref = `${from}>${target}:${ids.join(",")}`;
-    await tx.delete(ci).where(inArray(ci.id, ids));
+    await retireInstances(tx, ids, "upgraded");
     await logMovement(tx, ownerId, "card", -ids.length, await ownedCount(tx, ownerId), "upgrade", ref);
 
     if (!success) {
@@ -333,7 +334,7 @@ export async function upgradeSeries(
     }
     const used = rows.map((r) => r.instanceId);
 
-    await tx.delete(ci).where(inArray(ci.id, used));
+    await retireInstances(tx, used, "upgraded");
     let owned = await ownedCount(tx, ownerId);
     // Le ledger rejoue le lancement lot par lot : on part du total d'avant suppression.
     owned += used.length;

@@ -361,3 +361,102 @@ describe("boss du jour : jour de la mise à jour", () => {
     expect(today()).toBeTruthy();
   });
 });
+
+describe("chrono depuis l'affichage de la question (suggestions n° 113 et 114)", () => {
+  /** Assaut lancé ; sa première question devient une définition (ou une image), envoyée il y a `servedAgoMs`. */
+  async function openQuestion(type: "definition" | "image", servedAgoMs: number) {
+    const p = await signUp(app);
+    const ids = await readyCards(p);
+    const started = await p.post("/boss/assault", { instanceIds: ids });
+    expect(started.status).toBe(200);
+    const assaultId = started.body.current.id as number;
+    const question = {
+      type,
+      key: type,
+      prompt: "Question de test",
+      choices: ["a", "b", "c", "d"].map((c) => (type === "image" ? `https://upload.wikimedia.org/${c}.jpg` : c)),
+      answer: 0,
+      cardHidden: type === "image",
+      durationMs: 12_000,
+    };
+    await ctx.db
+      .update(schema.bossHits)
+      .set({ question, servedAt: new Date(Date.now() - servedAgoMs), shownAt: null })
+      .where(sql`${schema.bossHits.assaultId} = ${assaultId} and ${schema.bossHits.idx} = 0`);
+    return { p, assaultId };
+  }
+  const hitOf = async (assaultId: number) =>
+    (
+      await ctx.db.execute<{ answer_ms: number; damage: number; shown_at: Date | null }>(
+        sql`select answer_ms, damage, shown_at from boss_hits where assault_id = ${assaultId} and idx = 0`,
+      )
+    )[0]!;
+  const answerHit = async (p: Client, assaultId: number) => {
+    const res = await p.post(`/boss/assault/${assaultId}/answer`, { idx: 0, choice: 0 });
+    expect(res.status).toBe(200);
+    return res.body.current.hits[0] as { hit: string; answerMs: number };
+  };
+
+  it("compte un coup critique pour une réponse rapide après un affichage tardif", async () => {
+    // Images longues à charger : envoyée il y a 4,5 s, affichée maintenant (plafond image : 5 s).
+    const { p, assaultId } = await openQuestion("image", 4_500);
+    const shown = await p.post(`/boss/assault/${assaultId}/shown`, { idx: 0 });
+    expect(shown.status).toBe(200);
+    expect(shown.body.remainingMs).toBeGreaterThan(11_000);
+    const h = await answerHit(p, assaultId);
+    expect(h.hit).toBe("crit");
+    expect(h.answerMs).toBeLessThan(1_000);
+  });
+
+  it("ne repousse jamais le départ au-delà du plafond (2 s pour le texte, 5 s pour les images)", async () => {
+    const text = await openQuestion("definition", 7_000);
+    await text.p.post(`/boss/assault/${text.assaultId}/shown`, { idx: 0 });
+    const t = await answerHit(text.p, text.assaultId);
+    expect(t.hit).toBe("hit");
+    expect(t.answerMs).toBeGreaterThanOrEqual(4_900);
+    expect(t.answerMs).toBeLessThan(6_000);
+
+    const image = await openQuestion("image", 10_000);
+    await image.p.post(`/boss/assault/${image.assaultId}/shown`, { idx: 0 });
+    const i = await answerHit(image.p, image.assaultId);
+    expect(i.hit).toBe("hit");
+    expect(i.answerMs).toBeGreaterThanOrEqual(4_900);
+  });
+
+  it("garde l'envoi comme départ quand l'affichage n'est pas déclaré", async () => {
+    const { p, assaultId } = await openQuestion("definition", 5_000);
+    const h = await answerHit(p, assaultId);
+    expect(h.hit).toBe("hit");
+    expect(h.answerMs).toBeGreaterThanOrEqual(4_900);
+    expect((await hitOf(assaultId)).shown_at).toBeNull();
+  });
+
+  it("ne redonne pas de temps à un second appel, ni après la réponse", async () => {
+    const { p, assaultId } = await openQuestion("definition", 0);
+    expect((await p.post(`/boss/assault/${assaultId}/shown`, { idx: 0 })).status).toBe(200);
+    // Le premier affichage date de 4,5 s : un nouvel appel ne le remplace pas.
+    await ctx.db.execute(sql`
+      update boss_hits set served_at = served_at - interval '4.5 seconds', shown_at = shown_at - interval '4.5 seconds'
+      where assault_id = ${assaultId} and idx = 0
+    `);
+    const again = await p.post(`/boss/assault/${assaultId}/shown`, { idx: 0 });
+    expect(again.body.remainingMs).toBeLessThan(8_000);
+    const h = await answerHit(p, assaultId);
+    expect(h.hit).toBe("hit");
+    expect(h.answerMs).toBeGreaterThanOrEqual(4_400);
+    expect((await p.post(`/boss/assault/${assaultId}/shown`, { idx: 0 })).body.error).toBe("no_question");
+  });
+
+  it("expire la question d'après le même départ, et refuse l'assaut d'un autre joueur", async () => {
+    // Envoyée il y a 14 s, affichée au plafond (2 s après) : 12 s écoulées, la marge n'est pas dépassée.
+    const { p, assaultId } = await openQuestion("definition", 14_000);
+    await ctx.db.execute(sql`
+      update boss_hits set shown_at = served_at + interval '2 seconds' where assault_id = ${assaultId} and idx = 0
+    `);
+    const next = await p.post(`/boss/assault/${assaultId}/next`);
+    expect(next.body.current.question?.idx).toBe(0);
+    expect(next.body.current.question.shown).toBe(true);
+    const other = await signUp(app);
+    expect((await other.post(`/boss/assault/${assaultId}/shown`, { idx: 0 })).status).toBe(404);
+  });
+});

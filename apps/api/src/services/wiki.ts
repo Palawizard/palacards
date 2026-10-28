@@ -515,7 +515,8 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
    * Articles d'une catégorie Wikipédia et de ses sous-catégories jusqu'à `depth` niveaux (API MediaWiki,
    * parcours en largeur). Au plus CATEGORY_MAX_PAGES articles et CATEGORY_MAX_REQUESTS appels.
    */
-  async function categoryMembers(category: string, depth: number): Promise<number[]> {
+  /** Articles d'une catégorie et de ses sous-catégories (`depth` niveaux) ; `skip` : sous-catégories ignorées. */
+  async function categoryMembers(category: string, depth: number, skip?: RegExp): Promise<number[]> {
     if (config.WIKIMEDIA_DISABLED) throw new Error("API Wikipédia désactivée (WIKIMEDIA_DISABLED)");
     const pages = new Set<number>();
     const seen = new Set<string>();
@@ -551,7 +552,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
           };
           for (const m of body.query?.categorymembers ?? []) {
             if (m.ns === 0) pages.add(m.pageid);
-            else if (m.ns === 14) next.push(cleanCategory(m.title));
+            else if (m.ns === 14 && !skip?.test(cleanCategory(m.title))) next.push(cleanCategory(m.title));
           }
           cont = body.continue?.cmcontinue;
         } while (cont);

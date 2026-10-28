@@ -219,6 +219,10 @@ export const players = pgTable(
     autoRecycleKeepNew: boolean("auto_recycle_keep_new").notNull().default(true),
     /** Images d'arthropodes (araignées, insectes…) floutées jusqu'au clic. */
     hideArthropods: boolean("hide_arthropods").notNull().default(false),
+    /** Images de blessures, de gore et de maladies floutées jusqu'au clic (filtres d'images, suggestion n° 111). */
+    hideGore: boolean("hide_gore").notNull().default(false),
+    /** Images de nudité floutées jusqu'au clic. */
+    hideNudity: boolean("hide_nudity").notNull().default(false),
     /** Upgrader sans tour d'aiguille : le résultat s'affiche dès la réponse du serveur. */
     quickUpgrade: boolean("quick_upgrade").notNull().default(false),
     /** Ses tags servent de filtre aux autres joueurs sur sa collection (profil, échanges). */
@@ -504,18 +508,41 @@ export const trades = pgTable(
   ],
 );
 
+/** Ce que devient un exemplaire après un échange : il quitte la collection de son propriétaire. */
+export const CARD_FATES = ["fused", "recycled", "upgraded", "sold", "traded"] as const;
+
+/**
+ * Carte d'un échange. La photo de l'exemplaire (article, saison, titre, rareté, brillance, stats, niveau) est prise
+ * à la proposition et rafraîchie à l'acceptation : l'historique la garde quand l'exemplaire disparaît
+ * (`instance_id` remis à null). `fate` : première chose qui lui est arrivée ensuite (fusion, recyclage…).
+ */
 export const tradeItems = pgTable(
   "trade_items",
   {
+    id: id(),
     tradeId: bigint("trade_id", { mode: "number" })
       .notNull()
       .references(() => trades.id, { onDelete: "cascade" }),
-    instanceId: bigint("instance_id", { mode: "number" })
-      .notNull()
-      .references(() => cardInstances.id, { onDelete: "cascade" }),
+    instanceId: bigint("instance_id", { mode: "number" }).references(() => cardInstances.id, {
+      onDelete: "set null",
+    }),
     side: text("side", { enum: ["from", "to"] }).notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    season: smallint("season").notNull(),
+    title: text("title").notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    shiny: boolean("shiny").notNull().default(false),
+    /** Stats de base de l'exemplaire (le niveau donne les stats affichées). */
+    atk: smallint("atk").notNull(),
+    def: smallint("def").notNull(),
+    level: smallint("level").notNull().default(1),
+    fate: text("fate", { enum: CARD_FATES }),
+    fateAt: tstz("fate_at"),
   },
-  (t) => [primaryKey({ columns: [t.tradeId, t.instanceId] }), index("trade_items_instance_idx").on(t.instanceId)],
+  (t) => [
+    uniqueIndex("trade_items_trade_instance_uq").on(t.tradeId, t.instanceId),
+    index("trade_items_instance_idx").on(t.instanceId),
+  ],
 );
 
 export const wishlist = pgTable(
@@ -1145,6 +1172,11 @@ export const bossHits = pgTable(
     atk: integer("atk").notNull(),
     question: jsonb("question"),
     servedAt: tstz("served_at"),
+    /**
+     * Question réellement affichée par le site (images chargées) : le chrono part de là, borné à `served_at` + un
+     * plafond (`bossClockStart`). Null : pas d'affichage déclaré, le chrono part de `served_at`.
+     */
+    shownAt: tstz("shown_at"),
     answeredAt: tstz("answered_at"),
     choice: smallint("choice"),
     correct: boolean("correct"),
@@ -1377,6 +1409,38 @@ export const weirdCards = pgTable(
   (t) => [primaryKey({ columns: [t.cardId, t.genre] })],
 );
 
+export const IMAGE_FILTER_THEMES = ["arthropods", "gore", "nudity"] as const;
+
+/**
+ * Filtres d'images : articles des catégories Wikipédia d'un thème (blessures et maladies, nudité), rechargés en
+ * tâche de fond comme `weird_cards`. Les indices du résumé (`wiki_summaries`) s'y ajoutent à la lecture.
+ */
+export const imageFilterCards = pgTable(
+  "image_filter_cards",
+  {
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    theme: text("theme", { enum: IMAGE_FILTER_THEMES }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.cardId, t.theme] })],
+);
+
+/**
+ * Liste gérée dans Admin : une carte ajoutée à un thème (`flagged`) ou retirée d'un thème malgré la détection.
+ * Elle l'emporte toujours sur la détection automatique.
+ */
+export const imageFilterOverrides = pgTable(
+  "image_filter_overrides",
+  {
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    theme: text("theme", { enum: IMAGE_FILTER_THEMES }).notNull(),
+    flagged: boolean("flagged").notNull(),
+    /** Admin qui a fait le choix (sans clé étrangère : le choix survit au compte). */
+    createdBy: text("created_by"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.cardId, t.theme] })],
+);
+
 /** Message serveur de l'admin : affiché par-dessus la page, en direct ou à la prochaine visite. */
 export const broadcasts = pgTable(
   "broadcasts",
@@ -1412,6 +1476,103 @@ export const broadcastReads = pgTable(
     readAt: tstz("read_at").notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.broadcastId, t.userId] }), index("broadcast_reads_user_idx").on(t.userId)],
+);
+
+// ---------------------------------------------------------------------------
+// Portfolios (suggestions n° 3 et 116)
+// ---------------------------------------------------------------------------
+
+/**
+ * Portfolio d'un joueur : nom, description, design (fond, cadre, accent ; catalogue dans @palacards/game) et place
+ * sur son profil (1 à 3, null : pas affiché). Public dès sa première carte.
+ */
+export const portfolios = pgTable(
+  "portfolios",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    /** Clé d'un fond du catalogue, ou `image` : image envoyée (`portfolio_backgrounds`). */
+    background: text("background").notNull().default("papier"),
+    frame: text("frame").notNull().default("filet"),
+    accent: text("accent").notNull().default("or"),
+    profileSlot: smallint("profile_slot"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("portfolios_user_idx").on(t.userId),
+    index("portfolios_created_idx").on(t.createdAt),
+    uniqueIndex("portfolios_profile_uq")
+      .on(t.userId, t.profileSlot)
+      .where(sql`${t.profileSlot} IS NOT NULL`),
+    check("portfolios_name_len", sql`char_length(${t.name}) BETWEEN 1 AND 40`),
+    check("portfolios_description_len", sql`char_length(${t.description}) <= 280`),
+    check("portfolios_profile_ok", sql`${t.profileSlot} IS NULL OR ${t.profileSlot} BETWEEN 1 AND 3`),
+  ],
+);
+
+/**
+ * Carte d'un portfolio, à sa place (`pos`), éventuellement en vedette. Une carte détruite (recyclée, fusionnée,
+ * upgradée) en sort par la cascade ; une carte vendue ou échangée en est retirée à la transmission.
+ */
+export const portfolioCards = pgTable(
+  "portfolio_cards",
+  {
+    portfolioId: bigint("portfolio_id", { mode: "number" })
+      .notNull()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    instanceId: bigint("instance_id", { mode: "number" })
+      .notNull()
+      .references(() => cardInstances.id, { onDelete: "cascade" }),
+    pos: smallint("pos").notNull(),
+    featured: boolean("featured").notNull().default(false),
+  },
+  (t) => [
+    primaryKey({ columns: [t.portfolioId, t.instanceId] }),
+    index("portfolio_cards_instance_idx").on(t.instanceId),
+    check("portfolio_cards_pos_ok", sql`${t.pos} BETWEEN 0 AND 29`),
+  ],
+);
+
+/** Image envoyée par le joueur comme fond d'un portfolio (mêmes contrôles que les bannières). */
+export const portfolioBackgrounds = pgTable(
+  "portfolio_backgrounds",
+  {
+    portfolioId: bigint("portfolio_id", { mode: "number" })
+      .primaryKey()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    image: bytea("image").notNull(),
+    mime: text("mime", { enum: ["image/webp", "image/jpeg", "image/png"] }).notNull(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("portfolio_backgrounds_size_ok", sql`octet_length(${t.image}) <= 180000`)],
+);
+
+/** Designs achetés ou gagnés par un joueur (les gratuits ne sont pas enregistrés). */
+export const playerPortfolioDesigns = pgTable(
+  "player_portfolio_designs",
+  {
+    userId: userRef("user_id").notNull(),
+    designKey: text("design_key").notNull(),
+    source: text("source", { enum: ["purchase", "achievement", "event"] }).notNull(),
+    acquiredAt: tstz("acquired_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.designKey] })],
+);
+
+/** Like d'un joueur sur le portfolio d'un autre (sans récompense). */
+export const portfolioLikes = pgTable(
+  "portfolio_likes",
+  {
+    portfolioId: bigint("portfolio_id", { mode: "number" })
+      .notNull()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.portfolioId, t.userId] }), index("portfolio_likes_user_idx").on(t.userId)],
 );
 
 // ---------------------------------------------------------------------------
