@@ -327,6 +327,26 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
 
       <Titles p={p} onChanged={() => mutate()} />
 
+      {/* Vitrine et portfolios juste après les titres : visibles sans faire défiler la page. */}
+      {p.isMe ? (
+        <MyShowcase cards={p.showcase} onChanged={() => mutate()} />
+      ) : (
+        <section>
+          <h2 className="section-title mt-0">Vitrine</h2>
+          {p.showcase.length ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
+              {p.showcase.map((c) => (
+                <Card key={c.instanceId} card={c} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted">Aucune carte épinglée pour l’instant.</p>
+          )}
+        </section>
+      )}
+
+      {p.isMe ? <MyProfilePortfolios /> : <TheirPortfolios username={p.username} />}
+
       {achievements.data && <PlayerAchievements data={achievements.data} />}
 
       {p.themePacks.length > 0 && (
@@ -352,25 +372,6 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
           </ul>
         </section>
       )}
-
-      {p.isMe ? (
-        <MyShowcase cards={p.showcase} onChanged={() => mutate()} />
-      ) : (
-        <section>
-          <h2 className="section-title mt-0">Vitrine</h2>
-          {p.showcase.length ? (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5">
-              {p.showcase.map((c) => (
-                <Card key={c.instanceId} card={c} />
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted">Aucune carte épinglée pour l’instant.</p>
-          )}
-        </section>
-      )}
-
-      {p.isMe ? <MyProfilePortfolios /> : <TheirPortfolios username={p.username} />}
 
       <section>
         <h2 className="section-title mt-0">Collection</h2>
