@@ -41,6 +41,12 @@ const DATA: { what: string; detail: string; kept: string }[] = [
     kept: "Jusqu'à la suppression du compte",
   },
   {
+    what: "Réglages",
+    detail:
+      "Préférences de jeu : vitesse des animations, recyclage automatique, images à flouter (arthropodes, blessures et maladies, nudité), notifications.",
+    kept: "Jusqu'à la suppression du compte",
+  },
+  {
     what: "Social",
     detail: "Amis, guilde, messages privés et de guilde, liste de souhaits.",
     kept: "Jusqu'à la suppression du compte",

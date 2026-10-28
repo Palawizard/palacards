@@ -68,7 +68,7 @@ describe("plus ou moins vu", () => {
     const start = await p.post("/hl/start");
     expect(start.status).toBe(200);
     const pair = start.body.current;
-    expect(Object.keys(pair.kept).sort()).toEqual(["description", "thumbUrl", "title"]);
+    expect(Object.keys(pair.kept).sort()).toEqual(["description", "thumbUrl", "title", "veil"]);
     const raw = JSON.stringify(start.body);
     expect(raw).not.toMatch(/views|rarity|cardId|"SR"|"UR"|"L"/);
     expect(pair).toMatchObject({ tryNo: 1, step: 0, streak: 0, durationMs: 15_000 });

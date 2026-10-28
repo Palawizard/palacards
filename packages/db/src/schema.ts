@@ -219,6 +219,10 @@ export const players = pgTable(
     autoRecycleKeepNew: boolean("auto_recycle_keep_new").notNull().default(true),
     /** Images d'arthropodes (araignées, insectes…) floutées jusqu'au clic. */
     hideArthropods: boolean("hide_arthropods").notNull().default(false),
+    /** Images de blessures, de gore et de maladies floutées jusqu'au clic (filtres d'images, suggestion n° 111). */
+    hideGore: boolean("hide_gore").notNull().default(false),
+    /** Images de nudité floutées jusqu'au clic. */
+    hideNudity: boolean("hide_nudity").notNull().default(false),
     /** Upgrader sans tour d'aiguille : le résultat s'affiche dès la réponse du serveur. */
     quickUpgrade: boolean("quick_upgrade").notNull().default(false),
     /** Ses tags servent de filtre aux autres joueurs sur sa collection (profil, échanges). */
@@ -1403,6 +1407,38 @@ export const weirdCards = pgTable(
     genre: text("genre").notNull(),
   },
   (t) => [primaryKey({ columns: [t.cardId, t.genre] })],
+);
+
+export const IMAGE_FILTER_THEMES = ["arthropods", "gore", "nudity"] as const;
+
+/**
+ * Filtres d'images : articles des catégories Wikipédia d'un thème (blessures et maladies, nudité), rechargés en
+ * tâche de fond comme `weird_cards`. Les indices du résumé (`wiki_summaries`) s'y ajoutent à la lecture.
+ */
+export const imageFilterCards = pgTable(
+  "image_filter_cards",
+  {
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    theme: text("theme", { enum: IMAGE_FILTER_THEMES }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.cardId, t.theme] })],
+);
+
+/**
+ * Liste gérée dans Admin : une carte ajoutée à un thème (`flagged`) ou retirée d'un thème malgré la détection.
+ * Elle l'emporte toujours sur la détection automatique.
+ */
+export const imageFilterOverrides = pgTable(
+  "image_filter_overrides",
+  {
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    theme: text("theme", { enum: IMAGE_FILTER_THEMES }).notNull(),
+    flagged: boolean("flagged").notNull(),
+    /** Admin qui a fait le choix (sans clé étrangère : le choix survit au compte). */
+    createdBy: text("created_by"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.cardId, t.theme] })],
 );
 
 /** Message serveur de l'admin : affiché par-dessus la page, en direct ou à la prochaine visite. */

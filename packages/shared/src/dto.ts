@@ -46,6 +46,10 @@ export interface MeDTO {
   animationSpeed: "normal" | "fast" | "instant";
   /** Images d'arthropodes floutées jusqu'au clic. */
   hideArthropods: boolean;
+  /** Images de blessures, de gore et de maladies floutées jusqu'au clic. */
+  hideGore: boolean;
+  /** Images de nudité floutées jusqu'au clic. */
+  hideNudity: boolean;
   /** Upgrader sans tour d'aiguille : le résultat s'affiche tout de suite. */
   quickUpgrade: boolean;
   /** Ses tags servent de filtre aux autres joueurs sur sa collection. */
@@ -379,6 +383,8 @@ export interface HlArticleDTO {
   title: string;
   thumbUrl: string | null;
   description: string | null;
+  /** Thème de filtre d'images que le joueur floute (image floue jusqu'au clic) ; null : rien à flouter. */
+  veil?: "arthropods" | "gore" | "nudity" | null;
 }
 
 /** Paire en cours d'un essai : l'article resté à l'écran (`kept`) et le nouveau (`challenger`). */
@@ -794,4 +800,19 @@ export interface PublicGuildDTO {
   member: boolean;
   /** Le visiteur, sans guilde, peut la rejoindre (pas complète). */
   canJoin: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Filtres d'images (Admin)
+// ---------------------------------------------------------------------------
+
+/** Carte ajoutée à un thème (`flagged`) ou retirée d'un thème à la main dans Admin. */
+export interface ImageFilterOverrideDTO {
+  cardId: number;
+  title: string;
+  thumbUrl: string | null;
+  theme: "arthropods" | "gore" | "nudity";
+  flagged: boolean;
+  by: string | null;
+  createdAt: string;
 }

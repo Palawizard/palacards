@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { api, API_URL, ApiError, fetcher, SOCKET_PATH } from "./api";
 import { describe } from "./notifications";
 import { play, unlockAudioOnGestures, type Sfx } from "./sfx";
-import { setArthropodFlag } from "./arthropods";
+import { setImageThemes } from "./image-filters";
 import { pushMedia } from "./media";
 
 type GameSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -228,7 +228,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       });
     });
     s.on("card:media", (m) => {
-      if (m.arthropod !== undefined) setArthropodFlag(m.cardId, m.arthropod);
+      if (m.imageThemes) setImageThemes(m.cardId, m.imageThemes);
+      else if (m.arthropod !== undefined) setImageThemes(m.cardId, m.arthropod ? ["arthropods"] : []);
       pushMedia(m);
     });
     // Quêtes, passe, succès : les compteurs du menu suivent.

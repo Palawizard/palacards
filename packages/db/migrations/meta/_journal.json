@@ -344,6 +344,13 @@
       "when": 1793176343737,
       "tag": "0048_boss_hits_shown_at",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1793178552007,
+      "tag": "0049_image_filters",
+      "breakpoints": true
     }
   ]
 }
