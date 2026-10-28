@@ -18,6 +18,7 @@ import { progressionRoutes } from "./routes/progression.js";
 import { privacyRoutes } from "./routes/privacy.js";
 import { contentRoutes } from "./routes/content.js";
 import { suggestionRoutes } from "./routes/suggestions.js";
+import { portfolioRoutes } from "./routes/portfolios.js";
 import { prepareAccountDeletion } from "./services/privacy.js";
 import { BROADCAST_CHANNEL, pushBroadcast } from "./services/broadcasts.js";
 import { progressionIdle, registerProgressionHooks } from "./services/progression.js";
@@ -177,6 +178,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}) {
       privacyRoutes(api, ctx);
       contentRoutes(api, ctx);
       suggestionRoutes(api, ctx);
+      portfolioRoutes(api, ctx);
       if (config.GAME_TEST_MODE) testRoutes(api, ctx);
     },
     { prefix: apiPrefix },

@@ -70,7 +70,8 @@ export type LedgerReason =
   | "boss"
   | "community_goal"
   | "shop_purchase"
-  | "higher_lower";
+  | "higher_lower"
+  | "portfolio_design";
 
 /**
  * Change le solde de PW d'un joueur verrouillé et écrit la ligne de ledger correspondante.
@@ -153,6 +154,8 @@ export async function transferInstances(
     .set({ ownerId: newOwner, lockedBy: null, pinnedSlot: null, favorite: false, source, obtainedAt: new Date() })
     .where(inArray(schema.cardInstances.id, instanceIds));
   await tx.delete(schema.userTags).where(inArray(schema.userTags.instanceId, instanceIds));
+  // Elles quittent aussi les portfolios de leur ancien propriétaire.
+  await tx.delete(schema.portfolioCards).where(inArray(schema.portfolioCards.instanceId, instanceIds));
 }
 
 /** Trace un mouvement de cartes ou de paquets (sans solde de PW) dans le ledger. */

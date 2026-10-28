@@ -65,6 +65,7 @@ const REASONS: Record<string, string> = {
   boss: "Boss du jour",
   community_goal: "Objectif communautaire",
   shop_purchase: "Boutique du jour",
+  portfolio_design: "Design de portfolio",
   test: "Test",
 };
 /** Motif d'une ligne du ledger, en français (code brut si inconnu). */

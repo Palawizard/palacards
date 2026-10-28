@@ -7,6 +7,7 @@ import { AdminBroadcasts } from "@/components/AdminBroadcasts";
 import { AdminDailyLogin } from "@/components/AdminDailyLogin";
 import { AdminCodes, AdminThemes } from "@/components/AdminEvents";
 import { AdminImageFilters } from "@/components/AdminImageFilters";
+import { AdminPortfolioBackgrounds } from "@/components/AdminPortfolioBackgrounds";
 import { ConfirmDialog, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt, reasonLabel, relative } from "@/lib/format";
@@ -259,6 +260,7 @@ export default function AdminPage() {
       </section>
 
       <AdminImageFilters />
+      <AdminPortfolioBackgrounds />
 
       <section>
         <h2 className="section-title mt-0">Jobs</h2>
