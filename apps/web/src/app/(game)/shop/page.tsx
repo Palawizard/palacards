@@ -1,7 +1,7 @@
 "use client";
 
 import { RARITY_LABELS, SHOP_PRICES, SHOP_RARITIES, type ShopRarity } from "@palacards/game";
-import type { ShopDTO, Wallet } from "@palacards/shared";
+import type { ShopBuyDTO, ShopDTO } from "@palacards/shared";
 import { Check, Clock, Coins } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -21,7 +21,7 @@ type Item = ShopDTO["items"][number];
 /**
  * Boutique du jour : 20 cartes de la saison choisies pour le joueur (les cartes qu'il n'a pas d'abord),
  * renouvelées à minuit (heure de Paris). Prix fixe par rareté, chaque carte s'achète une fois ; confirmation
- * pour une légendaire.
+ * pour une légendaire. La brillance se tire à l'achat : une carte achetée brillante le reste à l'affichage.
  */
 export default function ShopPage() {
   useSeenFeature("shop");
@@ -43,14 +43,27 @@ export default function ShopPage() {
     if (buying !== null) return;
     setBuying(item.slot);
     try {
-      const res = await api<{ wallet: Wallet }>("/shop/buy", {
+      const res = await api<ShopBuyDTO>("/shop/buy", {
         body: { slot: item.slot },
       });
-      play("coin");
-      toast.success(`${item.card.title} rejoint ta collection.`);
+      if (res.shiny) {
+        play("shiny");
+        toast.success(`Brillante${NBSP}! ${item.card.title} rejoint ta collection en version brillante.`);
+      } else {
+        play("coin");
+        toast.success(`${item.card.title} rejoint ta collection.`);
+      }
       void mutateMe((m) => (m ? { ...m, wallet: res.wallet } : m), { revalidate: false });
       void mutate(
-        (d) => (d ? { ...d, items: d.items.map((i) => (i.slot === item.slot ? { ...i, purchased: true } : i)) } : d),
+        (d) =>
+          d
+            ? {
+                ...d,
+                items: d.items.map((i) =>
+                  i.slot === item.slot ? { ...i, purchased: true, card: { ...i.card, shiny: res.shiny } } : i,
+                ),
+              }
+            : d,
         { revalidate: true },
       );
     } catch (err) {
@@ -75,7 +88,8 @@ export default function ShopPage() {
           Prix fixes ({fmt(SHOP_PRICES.SR)}
           {NBSP}PW la super rare, {fmt(SHOP_PRICES.UR)}
           {NBSP}PW l’ultra rare, {fmt(SHOP_PRICES.L)}
-          {NBSP}PW la légendaire), chaque carte s’achète une fois.
+          {NBSP}PW la légendaire), chaque carte s’achète une fois. Comme dans un paquet, une carte achetée a une petite
+          chance d’arriver brillante.
         </p>
       </div>
 
