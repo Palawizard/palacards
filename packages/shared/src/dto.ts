@@ -763,3 +763,35 @@ export interface PublicAchievementsDTO {
   hiddenSecrets: number;
   items: PublicAchievementDTO[];
 }
+
+// ---------------------------------------------------------------------------
+// Page publique d'une guilde
+// ---------------------------------------------------------------------------
+
+export interface PublicGuildDTO {
+  id: number;
+  name: string;
+  tag: string;
+  emblem: string;
+  description: string;
+  createdAt: string;
+  season: number;
+  /** Rang au classement des guildes de la saison (1 = en tête), sur `guilds`. */
+  rank: number;
+  guilds: number;
+  /** Points de collection de la saison cumulés par les membres. */
+  score: number;
+  /** Rôle et points de la saison apportés au score de la guilde. */
+  members: {
+    username: string;
+    displayName: string;
+    avatar: string | null;
+    role: "leader" | "officer" | "member";
+    score: number;
+  }[];
+  maxMembers: number;
+  /** Le visiteur en est membre : sa page est /guild. */
+  member: boolean;
+  /** Le visiteur, sans guilde, peut la rejoindre (pas complète). */
+  canJoin: boolean;
+}
