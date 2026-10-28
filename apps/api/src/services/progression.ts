@@ -1,4 +1,4 @@
-import { and, desc, eq, schema, sql } from "@palacards/db";
+import { and, desc, eq, isNotNull, schema, sql } from "@palacards/db";
 import {
   ACHIEVEMENTS,
   achievementProgress,
@@ -21,7 +21,7 @@ import {
   type StatKey,
   type TitleRef,
 } from "@palacards/game";
-import type { BannerDTO } from "@palacards/shared";
+import type { BannerDTO, PublicAchievementsDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import {
   activeSeason,
@@ -549,6 +549,39 @@ export async function listAchievements(ctx: Ctx, userId: string) {
       unlockedAt,
     };
   });
+}
+
+/**
+ * Succès d'un joueur vus par les autres (profil public, suggestion n° 109) : obtenus (palier, date) ou non, sans
+ * aucune progression ni statistique. Les secrets non obtenus ne sont que comptés.
+ */
+export async function publicAchievements(ctx: Ctx, userId: string): Promise<PublicAchievementsDTO> {
+  const rows = await ctx.db
+    .select({ key: schema.achievementsProgress.achievementKey, unlockedAt: schema.achievementsProgress.unlockedAt })
+    .from(schema.achievementsProgress)
+    .where(and(eq(schema.achievementsProgress.userId, userId), isNotNull(schema.achievementsProgress.unlockedAt)));
+  const unlocked = new Map(rows.map((r) => [r.key, r.unlockedAt!.toISOString()]));
+  const shown = ACHIEVEMENTS.filter((a) => !a.retired || unlocked.has(a.key));
+  const items = shown
+    .filter((a) => !a.secret || unlocked.has(a.key))
+    .map((a) => ({
+      key: a.key,
+      family: a.family,
+      tier: a.tier,
+      secret: !!a.secret,
+      name: a.name,
+      description: a.description,
+      target: a.target,
+      percent: a.percent ?? null,
+      reward: a.reward,
+      unlockedAt: unlocked.get(a.key) ?? null,
+    }));
+  return {
+    unlocked: shown.filter((a) => unlocked.has(a.key)).length,
+    total: shown.length,
+    hiddenSecrets: shown.filter((a) => a.secret && !unlocked.has(a.key)).length,
+    items,
+  };
 }
 
 /** État du passe de saison d'un joueur (l'XP d'une saison passée ne compte plus). */

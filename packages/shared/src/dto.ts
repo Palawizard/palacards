@@ -735,3 +735,31 @@ export type BannerDTO =
       rarity: Rarity;
       thumbUrl: string | null;
     };
+
+// ---------------------------------------------------------------------------
+// Succès vus sur le profil d'un autre joueur
+// ---------------------------------------------------------------------------
+
+export interface PublicAchievementDTO {
+  key: string;
+  family: string;
+  tier: number;
+  secret: boolean;
+  name: string;
+  description: string;
+  target: number;
+  /** Objectif en pourcentage : 1 = en %, 10 = en dixièmes de % ; null : un nombre. */
+  percent: number | null;
+  reward: { pw: number; packs: number };
+  unlockedAt: string | null;
+}
+
+/** Succès d'un joueur pour son profil public : obtenus ou non, jamais sa progression. */
+export interface PublicAchievementsDTO {
+  unlocked: number;
+  /** Succès comptés (secrets compris). */
+  total: number;
+  /** Secrets pas encore obtenus : comptés dans `total`, absents de `items`. */
+  hiddenSecrets: number;
+  items: PublicAchievementDTO[];
+}
