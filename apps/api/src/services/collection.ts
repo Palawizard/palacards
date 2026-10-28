@@ -14,7 +14,16 @@ import { CLASSIC_THEME, type CardDTO, type Page } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, notFound } from "../errors.js";
 import { seasonTotals, selectInstances, toCardDTO } from "./cards.js";
-import { activeSeason, lockPlayer, logMovement, movePw, ownedCount, pushWallet, type DbOrTx } from "./players.js";
+import {
+  activeSeason,
+  lockPlayer,
+  logMovement,
+  movePw,
+  ownedCount,
+  pushWallet,
+  retireInstances,
+  type DbOrTx,
+} from "./players.js";
 import { emit } from "./progression.js";
 
 const ci = schema.cardInstances;
@@ -28,7 +37,7 @@ export async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promi
     .from(schema.tradeItems)
     .innerJoin(schema.trades, eq(schema.trades.id, schema.tradeItems.tradeId))
     .where(and(inArray(schema.tradeItems.instanceId, ids), eq(schema.trades.status, "pending")));
-  return new Set(rows.map((r) => r.id));
+  return new Set(rows.flatMap((r) => (r.id === null ? [] : [r.id])));
 }
 
 export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title" | "copies";
@@ -417,7 +426,7 @@ export async function recycle(ctx: Ctx, ownerId: string, instanceIds: number[]) 
     if ((await requestedInPendingTrades(tx, ids)).size)
       throw conflict("card_requested", "Une carte est demandée dans un échange en attente : refuse-le d'abord.");
     const gain = rows.reduce((sum, r) => sum + recycleValue(r.rarity, r.shiny), 0);
-    await tx.delete(ci).where(inArray(ci.id, ids));
+    await retireInstances(tx, ids, "recycled");
     await logMovement(tx, ownerId, "card", -ids.length, await ownedCount(tx, ownerId), "recycle", ids.join(","));
     await movePw(tx, p, gain, "recycle", ids.join(","));
     return { gain, player: p, rarities: rows.map((r) => r.rarity) };
@@ -678,7 +687,7 @@ export async function fuse(ctx: Ctx, ownerId: string, targetId: number, sourceId
     if ((await requestedInPendingTrades(tx, [sourceId])).size)
       throw conflict("card_requested", "Cet exemplaire est demandé dans un échange en attente : refuse-le d'abord.");
     const level = target.level + 1;
-    await tx.delete(ci).where(eq(ci.id, sourceId));
+    await retireInstances(tx, [sourceId], "fused");
     await tx.update(ci).set({ level }).where(eq(ci.id, targetId));
     await logMovement(tx, ownerId, "card", -1, await ownedCount(tx, ownerId), "fusion", `${sourceId}>${targetId}`);
     return { level, ...effectiveStats(target.atk, target.def, level) };
@@ -756,7 +765,7 @@ export async function fuseDuplicates(ctx: Ctx, ownerId: string, query: Collectio
     const plans = planFusions(copies);
     if (!plans.length) return { plans, consumed: 0 };
     const sources = plans.flatMap((p) => p.sourceIds);
-    await tx.delete(ci).where(inArray(ci.id, sources));
+    await retireInstances(tx, sources, "fused");
     for (const p of plans) await tx.update(ci).set({ level: p.toLevel }).where(eq(ci.id, p.targetId));
     await logMovement(
       tx,

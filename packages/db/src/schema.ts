@@ -504,18 +504,41 @@ export const trades = pgTable(
   ],
 );
 
+/** Ce que devient un exemplaire après un échange : il quitte la collection de son propriétaire. */
+export const CARD_FATES = ["fused", "recycled", "upgraded", "sold", "traded"] as const;
+
+/**
+ * Carte d'un échange. La photo de l'exemplaire (article, saison, titre, rareté, brillance, stats, niveau) est prise
+ * à la proposition et rafraîchie à l'acceptation : l'historique la garde quand l'exemplaire disparaît
+ * (`instance_id` remis à null). `fate` : première chose qui lui est arrivée ensuite (fusion, recyclage…).
+ */
 export const tradeItems = pgTable(
   "trade_items",
   {
+    id: id(),
     tradeId: bigint("trade_id", { mode: "number" })
       .notNull()
       .references(() => trades.id, { onDelete: "cascade" }),
-    instanceId: bigint("instance_id", { mode: "number" })
-      .notNull()
-      .references(() => cardInstances.id, { onDelete: "cascade" }),
+    instanceId: bigint("instance_id", { mode: "number" }).references(() => cardInstances.id, {
+      onDelete: "set null",
+    }),
     side: text("side", { enum: ["from", "to"] }).notNull(),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    season: smallint("season").notNull(),
+    title: text("title").notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    shiny: boolean("shiny").notNull().default(false),
+    /** Stats de base de l'exemplaire (le niveau donne les stats affichées). */
+    atk: smallint("atk").notNull(),
+    def: smallint("def").notNull(),
+    level: smallint("level").notNull().default(1),
+    fate: text("fate", { enum: CARD_FATES }),
+    fateAt: tstz("fate_at"),
   },
-  (t) => [primaryKey({ columns: [t.tradeId, t.instanceId] }), index("trade_items_instance_idx").on(t.instanceId)],
+  (t) => [
+    uniqueIndex("trade_items_trade_instance_uq").on(t.tradeId, t.instanceId),
+    index("trade_items_instance_idx").on(t.instanceId),
+  ],
 );
 
 export const wishlist = pgTable(
