@@ -2,20 +2,14 @@
 import type { CardDTO, Page } from "@palacards/shared";
 import { ChevronLeft, ChevronRight, GripVertical, Plus, Search, X } from "lucide-react";
 import { motion } from "motion/react";
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
 import { CardSkeletons, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useDebounced } from "@/lib/use-debounced";
+import { dragTransform, moveItem, useGridDrag } from "@/lib/use-grid-drag";
 
 /** Places de la vitrine (SHOWCASE_SIZE côté API). */
 const SIZE = 5;
@@ -23,48 +17,15 @@ const SIZE = 5;
 /** Grille de la vitrine : les 5 places tiennent sur une ligne en grand écran. */
 const GRID = "grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-5";
 
-/** Glissement en cours : carte saisie, position du pointeur et emplacements mesurés au départ. */
-interface Drag {
-  id: number;
-  pointerId: number;
-  /** Point de saisie dans la carte. */
-  grabX: number;
-  grabY: number;
-  /** Pointeur (coordonnées de la page). */
-  x: number;
-  y: number;
-  /** Emplacement i de la grille (coordonnées de la page) : il ne bouge pas, seules les cartes changent de place. */
-  cells: DOMRect[];
-}
-
-const pageRect = (el: Element) => {
-  const r = el.getBoundingClientRect();
-  return new DOMRect(r.left + window.scrollX, r.top + window.scrollY, r.width, r.height);
-};
-
-const move = <T,>(list: T[], from: number, to: number) => {
-  const next = [...list];
-  const [item] = next.splice(from, 1);
-  next.splice(to, 0, item!);
-  return next;
-};
-
 /** Sa propre vitrine : places libres pour ajouter, poignées pour l'ordre, retrait. */
 export function MyShowcase({ cards, onChanged }: { cards: CardDTO[]; onChanged: () => void }) {
   const [order, setOrder] = useState(cards);
   const [synced, setSynced] = useState(cards);
-  // Le profil rechargé fait foi, sauf pendant un glissement.
-  const [drag, setDrag] = useState<Drag | null>(null);
-  if (cards !== synced && !drag) {
-    setSynced(cards);
-    setOrder(cards);
-  }
   const [arranging, setArranging] = useState(false);
   const [picking, setPicking] = useState(false);
   const [announce, setAnnounce] = useState("");
   /** Déplacement au clavier : pas d'animation (geste répété, le résultat doit être immédiat). */
   const [instant, setInstant] = useState(false);
-  const cellsRef = useRef(new Map<number, HTMLLIElement>());
   const handles = useRef(new Map<number, HTMLButtonElement>());
 
   const save = useCallback(
@@ -89,7 +50,7 @@ export function MyShowcase({ cards, onChanged }: { cards: CardDTO[]; onChanged: 
     if (to < 0 || to >= order.length) return;
     const card = order[index]!;
     setInstant(keyboard);
-    void save(move(order, index, to), order);
+    void save(moveItem(order, index, to), order);
     setAnnounce(`${card.title} : place ${to + 1} sur ${order.length}.`);
     // Le focus suit la carte (son bouton est recréé à sa nouvelle place).
     if (keyboard) requestAnimationFrame(() => handles.current.get(card.instanceId!)?.focus());
@@ -111,77 +72,21 @@ export function MyShowcase({ cards, onChanged }: { cards: CardDTO[]; onChanged: 
     toast.success(`${card.title} ajoutée à ta vitrine.`);
   }
 
-  // Les écouteurs du glissement vivent sur la fenêtre : la carte change de place dans le DOM pendant
-  // le geste, ce qui ferait perdre la capture du pointeur à sa poignée.
-  const live = useRef({ order, synced, drag });
-  useLayoutEffect(() => {
-    live.current = { order, synced, drag };
+  const { drag, startDrag, cellRef } = useGridDrag({
+    order,
+    setOrder,
+    synced,
+    idOf: (c) => c.instanceId!,
+    onDrop: (next, before, card) => {
+      const at = next.indexOf(card);
+      setAnnounce(`${card.title} : place ${at + 1} sur ${next.length}.`);
+      void save(next, before);
+    },
   });
-  const dragging = drag?.id ?? null;
-  useEffect(() => {
-    if (dragging === null) return;
-    const onMove = (e: PointerEvent) => {
-      const { drag: d, order: o } = live.current;
-      if (!d || e.pointerId !== d.pointerId) return;
-      setDrag({ ...d, x: e.pageX, y: e.pageY });
-      // Place visée : celle sous le pointeur, sinon la plus proche.
-      let target = 0;
-      let best = Infinity;
-      d.cells.forEach((r, i) => {
-        const inside = e.pageX >= r.left && e.pageX <= r.right && e.pageY >= r.top && e.pageY <= r.bottom;
-        const dist = inside ? -1 : Math.hypot(e.pageX - (r.left + r.width / 2), e.pageY - (r.top + r.height / 2));
-        if (dist < best) {
-          best = dist;
-          target = i;
-        }
-      });
-      const from = o.findIndex((c) => c.instanceId === d.id);
-      if (from !== target) setOrder(move(o, from, target));
-    };
-    const onEnd = (e: PointerEvent) => {
-      const { drag: d, order: o, synced: before } = live.current;
-      if (!d || e.pointerId !== d.pointerId) return;
-      setDrag(null);
-      if (o.some((c, i) => c.instanceId !== before[i]?.instanceId)) {
-        const at = o.findIndex((c) => c.instanceId === d.id);
-        setAnnounce(`${o[at]!.title} : place ${at + 1} sur ${o.length}.`);
-        void save(o, before);
-      }
-    };
-    // Échap annule le glissement.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      setDrag(null);
-      setOrder(live.current.synced);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onEnd);
-    window.addEventListener("pointercancel", onEnd);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onEnd);
-      window.removeEventListener("pointercancel", onEnd);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [dragging, save]);
-
-  function startDrag(e: ReactPointerEvent<HTMLButtonElement>, card: CardDTO) {
-    if (drag || (e.pointerType === "mouse" && e.button !== 0)) return;
-    const cell = cellsRef.current.get(card.instanceId!);
-    if (!cell) return;
-    e.preventDefault();
-    const rect = pageRect(cell);
-    setInstant(false);
-    setDrag({
-      id: card.instanceId!,
-      pointerId: e.pointerId,
-      grabX: e.pageX - rect.left,
-      grabY: e.pageY - rect.top,
-      x: e.pageX,
-      y: e.pageY,
-      cells: order.map((c) => pageRect(cellsRef.current.get(c.instanceId!)!)),
-    });
+  // Le profil rechargé fait foi, sauf pendant un glissement.
+  if (cards !== synced && !drag) {
+    setSynced(cards);
+    setOrder(cards);
   }
 
   const free = SIZE - order.length;
@@ -215,14 +120,10 @@ export function MyShowcase({ cards, onChanged }: { cards: CardDTO[]; onChanged: 
       <ol className={GRID} data-arranging={arranging || undefined}>
         {order.map((card, i) => {
           const lifted = drag?.id === card.instanceId;
-          const cell = drag?.cells[i];
           return (
             <motion.li
               key={card.instanceId}
-              ref={(el) => {
-                if (el) cellsRef.current.set(card.instanceId!, el);
-                else cellsRef.current.delete(card.instanceId!);
-              }}
+              ref={cellRef(card.instanceId!)}
               layout={lifted ? false : "position"}
               transition={instant ? { duration: 0 } : { type: "spring", duration: 0.38, bounce: 0.12 }}
               className="relative flex flex-col gap-2"
@@ -232,13 +133,7 @@ export function MyShowcase({ cards, onChanged }: { cards: CardDTO[]; onChanged: 
               <div
                 className="pc-showcase-item"
                 data-lifted={lifted || undefined}
-                style={
-                  lifted && drag && cell
-                    ? {
-                        transform: `translate(${drag.x - drag.grabX - cell.left}px, ${drag.y - drag.grabY - cell.top}px) scale(1.04) rotate(-1.5deg)`,
-                      }
-                    : undefined
-                }
+                style={lifted && drag ? { transform: dragTransform(drag, i) } : undefined}
               >
                 <Card card={card} href={arranging ? null : undefined} />
               </div>
@@ -261,7 +156,10 @@ export function MyShowcase({ cards, onChanged }: { cards: CardDTO[]; onChanged: 
                     }}
                     className="pc-arrange-btn pc-grip"
                     aria-label={`Déplacer ${card.title}, place ${i + 1} sur ${order.length} (flèches gauche et droite)`}
-                    onPointerDown={(e) => startDrag(e, card)}
+                    onPointerDown={(e) => {
+                      setInstant(false);
+                      startDrag(e, card);
+                    }}
                     onKeyDown={(e) => {
                       if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
                         e.preventDefault();

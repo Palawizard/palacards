@@ -816,3 +816,62 @@ export interface ImageFilterOverrideDTO {
   by: string | null;
   createdAt: string;
 }
+
+// ---------------------------------------------------------------------------
+// Portfolios (suggestions n° 3 et 116)
+// ---------------------------------------------------------------------------
+
+/** Design d'un portfolio : clés du catalogue (@palacards/game), ou `image` pour un fond envoyé (`backgroundVersion`). */
+export interface PortfolioDesignDTO {
+  background: string;
+  frame: string;
+  accent: string;
+  /** Version de l'image de fond envoyée, gardée même quand un autre fond est choisi (cache du navigateur) ; null sans image. */
+  backgroundVersion: string | null;
+}
+
+export interface PortfolioOwnerDTO {
+  username: string;
+  displayName: string;
+  avatar: string | null;
+}
+
+/** Portfolio en liste (page Communauté, profil, ses portfolios) : aperçu des premières cartes. */
+export interface PortfolioSummaryDTO {
+  id: number;
+  name: string;
+  description: string;
+  owner: PortfolioOwnerDTO;
+  design: PortfolioDesignDTO;
+  cardCount: number;
+  likes: number;
+  /** Le visiteur l'a aimé. */
+  liked: boolean;
+  /** Le visiteur en est l'auteur. */
+  mine: boolean;
+  /** Place sur le profil de l'auteur (1 à 3) ; null : pas affiché. */
+  profileSlot: number | null;
+  /** Carte en vedette d'abord, puis les suivantes dans l'ordre (6 au plus). */
+  preview: PortfolioCardDTO[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PortfolioCardDTO = CardDTO & { featured: boolean };
+
+/** Portfolio complet (page publique, éditeur). */
+export interface PortfolioDTO extends PortfolioSummaryDTO {
+  cards: PortfolioCardDTO[];
+}
+
+/** Design du catalogue, avec ce qu'il faut pour l'obtenir et s'il est déjà au joueur. */
+export interface PortfolioDesignItemDTO {
+  key: string;
+  slot: "background" | "frame";
+  name: string;
+  source: "free" | "shop" | "achievement" | "event";
+  price: number | null;
+  /** Condition à remplir (succès, évènement). */
+  condition: string | null;
+  owned: boolean;
+}

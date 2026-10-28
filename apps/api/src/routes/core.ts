@@ -95,6 +95,7 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "leaderboard-shiny", until: "2027-01-15T00:00:00+01:00" },
   { key: "shop", until: "2027-01-31T00:00:00+01:00" },
   { key: "plus-ou-moins", until: "2027-01-31T00:00:00+01:00" },
+  { key: "portfolios", until: "2027-02-28T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */

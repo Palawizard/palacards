@@ -57,6 +57,12 @@ const DATA: { what: string; detail: string; kept: string }[] = [
     kept: "Jusqu'à ce que tu la retires ou supprimes ton compte",
   },
   {
+    what: "Portfolios",
+    detail:
+      "Tes portfolios (nom, description, cartes, design), l'image de fond que tu envoies, les designs achetés ou gagnés et les portfolios que tu aimes.",
+    kept: "Jusqu'à ce que tu les supprimes ou supprimes ton compte",
+  },
+  {
     what: "Suggestions",
     detail:
       "Idées et bugs que tu envoies à l'admin depuis la page Suggestions, avec leur statut, sa réponse et le tri qui aide à les traiter.",

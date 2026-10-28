@@ -17,6 +17,7 @@ import {
   useCollectionFilters,
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
+import { MyProfilePortfolios, TheirPortfolios } from "@/components/Portfolio";
 import { MyShowcase } from "@/components/Showcase";
 import { StatusNote } from "@/components/StatusNote";
 import { CardSkeletons, CreatorBadge, Empty, ErrorBox, LoadMore, TitleBadge } from "@/components/ui";
@@ -368,6 +369,8 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
           )}
         </section>
       )}
+
+      {p.isMe ? <MyProfilePortfolios /> : <TheirPortfolios username={p.username} />}
 
       <section>
         <h2 className="section-title mt-0">Collection</h2>

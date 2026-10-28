@@ -1479,6 +1479,103 @@ export const broadcastReads = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Portfolios (suggestions n° 3 et 116)
+// ---------------------------------------------------------------------------
+
+/**
+ * Portfolio d'un joueur : nom, description, design (fond, cadre, accent ; catalogue dans @palacards/game) et place
+ * sur son profil (1 à 3, null : pas affiché). Public dès sa première carte.
+ */
+export const portfolios = pgTable(
+  "portfolios",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    /** Clé d'un fond du catalogue, ou `image` : image envoyée (`portfolio_backgrounds`). */
+    background: text("background").notNull().default("papier"),
+    frame: text("frame").notNull().default("filet"),
+    accent: text("accent").notNull().default("or"),
+    profileSlot: smallint("profile_slot"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("portfolios_user_idx").on(t.userId),
+    index("portfolios_created_idx").on(t.createdAt),
+    uniqueIndex("portfolios_profile_uq")
+      .on(t.userId, t.profileSlot)
+      .where(sql`${t.profileSlot} IS NOT NULL`),
+    check("portfolios_name_len", sql`char_length(${t.name}) BETWEEN 1 AND 40`),
+    check("portfolios_description_len", sql`char_length(${t.description}) <= 280`),
+    check("portfolios_profile_ok", sql`${t.profileSlot} IS NULL OR ${t.profileSlot} BETWEEN 1 AND 3`),
+  ],
+);
+
+/**
+ * Carte d'un portfolio, à sa place (`pos`), éventuellement en vedette. Une carte détruite (recyclée, fusionnée,
+ * upgradée) en sort par la cascade ; une carte vendue ou échangée en est retirée à la transmission.
+ */
+export const portfolioCards = pgTable(
+  "portfolio_cards",
+  {
+    portfolioId: bigint("portfolio_id", { mode: "number" })
+      .notNull()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    instanceId: bigint("instance_id", { mode: "number" })
+      .notNull()
+      .references(() => cardInstances.id, { onDelete: "cascade" }),
+    pos: smallint("pos").notNull(),
+    featured: boolean("featured").notNull().default(false),
+  },
+  (t) => [
+    primaryKey({ columns: [t.portfolioId, t.instanceId] }),
+    index("portfolio_cards_instance_idx").on(t.instanceId),
+    check("portfolio_cards_pos_ok", sql`${t.pos} BETWEEN 0 AND 29`),
+  ],
+);
+
+/** Image envoyée par le joueur comme fond d'un portfolio (mêmes contrôles que les bannières). */
+export const portfolioBackgrounds = pgTable(
+  "portfolio_backgrounds",
+  {
+    portfolioId: bigint("portfolio_id", { mode: "number" })
+      .primaryKey()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    image: bytea("image").notNull(),
+    mime: text("mime", { enum: ["image/webp", "image/jpeg", "image/png"] }).notNull(),
+    updatedAt: tstz("updated_at").notNull().defaultNow(),
+  },
+  (t) => [check("portfolio_backgrounds_size_ok", sql`octet_length(${t.image}) <= 180000`)],
+);
+
+/** Designs achetés ou gagnés par un joueur (les gratuits ne sont pas enregistrés). */
+export const playerPortfolioDesigns = pgTable(
+  "player_portfolio_designs",
+  {
+    userId: userRef("user_id").notNull(),
+    designKey: text("design_key").notNull(),
+    source: text("source", { enum: ["purchase", "achievement", "event"] }).notNull(),
+    acquiredAt: tstz("acquired_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.designKey] })],
+);
+
+/** Like d'un joueur sur le portfolio d'un autre (sans récompense). */
+export const portfolioLikes = pgTable(
+  "portfolio_likes",
+  {
+    portfolioId: bigint("portfolio_id", { mode: "number" })
+      .notNull()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.portfolioId, t.userId] }), index("portfolio_likes_user_idx").on(t.userId)],
+);
+
+// ---------------------------------------------------------------------------
 // Suggestions des joueurs
 // ---------------------------------------------------------------------------
 
