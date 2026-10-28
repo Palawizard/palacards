@@ -2,7 +2,7 @@
 
 import { PORTFOLIO_ACCENTS, PORTFOLIO_CARDS_MAX, PORTFOLIO_DESCRIPTION_MAX, PORTFOLIO_NAME_MAX } from "@palacards/game";
 import type { CardDTO, Page, PortfolioCardDTO, PortfolioDesignItemDTO, PortfolioDTO } from "@palacards/shared";
-import { ChevronLeft, ChevronRight, GripVertical, ImageUp, Lock, Plus, Search, Star, Trash2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, GripVertical, ImageUp, Lock, Plus, Star, Trash2, X } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,13 +11,17 @@ import { toast } from "sonner";
 import useSWR, { type KeyedMutator } from "swr";
 import useSWRInfinite from "swr/infinite";
 import { Card, CardGrid } from "@/components/Card";
+import {
+  CollectionFilterBar,
+  useCollectionFilters,
+  type CollectionFilterOptions,
+} from "@/components/CollectionFilters";
 import { portfolioBackgroundSrc, PortfolioShell } from "@/components/Portfolio";
 import { CardSkeletons, ConfirmDialog, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { preparePortfolioBackground } from "@/lib/avatar-image";
 import { fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
-import { useDebounced } from "@/lib/use-debounced";
 import { dragTransform, moveItem, useGridDrag } from "@/lib/use-grid-drag";
 
 const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ? err.message : fallback);
@@ -243,7 +247,7 @@ function CardsEditor({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Port
   );
 }
 
-/** Choix de plusieurs cartes de sa collection d'un coup (les plus rares d'abord). */
+/** Choix de plusieurs cartes de sa collection d'un coup, avec les filtres et le tri de la collection. */
 function CardsPicker({
   open,
   onClose,
@@ -286,13 +290,13 @@ function PickerBody({
   onPick: (cards: CardDTO[]) => void;
   onClose: () => void;
 }) {
-  const [q, setQ] = useState("");
+  // Filtres propres au sélecteur : ceux de la page Collection (et son adresse) n'en sont pas touchés.
+  const { value: f, set, reset, params } = useCollectionFilters();
+  const options = useSWR<CollectionFilterOptions>("/collection/summary");
   const [chosen, setChosen] = useState<CardDTO[]>([]);
-  const query = useDebounced(q).trim();
+  const query = `${params}${params ? "&" : ""}sort=${f.sort}&limit=60`;
   const list = useSWRInfinite<Page<CardDTO>>((i, prev) =>
-    prev && !prev.nextCursor
-      ? null
-      : `/collection?sort=rarity&limit=60${query ? `&q=${encodeURIComponent(query)}` : ""}&page=${i}`,
+    prev && !prev.nextCursor ? null : `/collection?${query}&page=${i}`,
   );
   const items = list.data?.flatMap((p) => p.items) ?? [];
   const done = !!list.data && !list.data[list.data.length - 1]?.nextCursor;
@@ -321,31 +325,23 @@ function PickerBody({
           <X aria-hidden className="size-5" />
         </button>
       </div>
-      <div className="px-5 pt-4">
-        <div className="relative">
-          <Search
-            aria-hidden
-            className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-faint"
-          />
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Chercher dans ta collection"
-            aria-label="Chercher dans ta collection"
-            className="field h-10 min-h-0 pl-8 text-sm"
-            autoFocus
-          />
-        </div>
-      </div>
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-4">
+      {/* Sur mobile, les filtres défilent avec la liste pour lui laisser la hauteur ; au-delà, ils restent en haut. */}
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5">
+        <CollectionFilterBar
+          value={f}
+          onChange={set}
+          onReset={reset}
+          options={options.data}
+          owner
+          className="py-4 sm:sticky sm:top-0 sm:z-10 sm:-mx-5 sm:bg-panel sm:px-5"
+        />
         {list.error ? (
           <ErrorBox error={list.error} retry={() => list.mutate()} />
         ) : !list.data ? (
           <CardSkeletons count={8} />
         ) : items.length === 0 ? (
-          <Empty title={query ? "Aucune carte ne correspond" : "Ta collection est vide"}>
-            {query ? "Essaie un autre titre." : "Ouvre un paquet pour tirer tes premières cartes."}
+          <Empty title={params ? "Aucune carte ne correspond" : "Ta collection est vide"}>
+            {params ? "Essaie d’autres filtres." : "Ouvre un paquet pour tirer tes premières cartes."}
           </Empty>
         ) : (
           <>
