@@ -30,6 +30,12 @@ test("profil d'un autre joueur : ses succès en lecture seule (suggestion n° 10
 
   // Les familles pas encore commencées sont repliées.
   await expect(section.getByText(/pas encore commencées?/)).toBeVisible();
+
+  // La vitrine passe avant les succès, sans faire défiler la page (suggestion n° 119).
+  const headings = await page.getByRole("heading", { level: 2 }).allTextContents();
+  const vitrine = headings.indexOf("Vitrine");
+  expect(vitrine).toBeGreaterThan(-1);
+  expect(vitrine).toBeLessThan(headings.findIndex((h) => h.startsWith("Succès")));
 });
 
 test("page publique d'une guilde, depuis le classement et le profil d'un membre (suggestion n° 110)", async ({
