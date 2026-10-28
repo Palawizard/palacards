@@ -46,6 +46,10 @@ export interface MeDTO {
   animationSpeed: "normal" | "fast" | "instant";
   /** Images d'arthropodes floutées jusqu'au clic. */
   hideArthropods: boolean;
+  /** Images de blessures, de gore et de maladies floutées jusqu'au clic. */
+  hideGore: boolean;
+  /** Images de nudité floutées jusqu'au clic. */
+  hideNudity: boolean;
   /** Upgrader sans tour d'aiguille : le résultat s'affiche tout de suite. */
   quickUpgrade: boolean;
   /** Ses tags servent de filtre aux autres joueurs sur sa collection. */
@@ -157,6 +161,14 @@ export interface ShopDTO {
   /** Prochain renouvellement (minuit, heure de Paris). */
   resetsAt: string;
   items: { slot: number; price: number; purchased: boolean; card: CardDTO }[];
+}
+
+/** Achat en boutique : l'exemplaire créé, brillant ou non (tiré à l'achat). */
+export interface ShopBuyDTO {
+  slot: number;
+  instanceId: number;
+  shiny: boolean;
+  wallet: Wallet;
 }
 
 /** Objectif communautaire de la saison (page Succès), lu dans le cache recalculé toutes les 10 minutes. */
@@ -290,12 +302,18 @@ export interface AuctionDTO {
   reference: ReferencePriceDTO | null;
 }
 
+/** Ce qu'est devenue une carte après un échange (historique) : fusionnée, recyclée, upgradée, vendue, échangée. */
+export type CardFate = "fused" | "recycled" | "upgraded" | "sold" | "traded";
+
+/** Carte d'un échange : l'exemplaire, ou sa photo prise à l'échange s'il a disparu depuis (`instanceId` null). */
+export type TradeCardDTO = CardDTO & { fate: CardFate | null };
+
 export interface TradeDTO {
   id: number;
   from: { id: string; name: string; username: string };
   to: { id: string; name: string; username: string };
-  give: CardDTO[];
-  want: CardDTO[];
+  give: TradeCardDTO[];
+  want: TradeCardDTO[];
   fromPw: number;
   toPw: number;
   message: string | null;
@@ -365,6 +383,8 @@ export interface HlArticleDTO {
   title: string;
   thumbUrl: string | null;
   description: string | null;
+  /** Thème de filtre d'images que le joueur floute (image floue jusqu'au clic) ; null : rien à flouter. */
+  veil?: "arthropods" | "gore" | "nudity" | null;
 }
 
 /** Paire en cours d'un essai : l'article resté à l'écran (`kept`) et le nouveau (`challenger`). */
@@ -439,6 +459,12 @@ export interface BossQuestionDTO {
   /** Temps restant pour répondre (ms) au moment de l'envoi. */
   remainingMs: number;
   durationMs: number;
+  /**
+   * Affichage déjà déclaré (`POST …/shown`) : le chrono tourne depuis. Sinon il partira de l'affichage, au plus tard
+   * `shownCapMs` après l'envoi.
+   */
+  shown: boolean;
+  shownCapMs: number;
 }
 
 export interface BossHitDTO {
@@ -715,3 +741,137 @@ export type BannerDTO =
       rarity: Rarity;
       thumbUrl: string | null;
     };
+
+// ---------------------------------------------------------------------------
+// Succès vus sur le profil d'un autre joueur
+// ---------------------------------------------------------------------------
+
+export interface PublicAchievementDTO {
+  key: string;
+  family: string;
+  tier: number;
+  secret: boolean;
+  name: string;
+  description: string;
+  target: number;
+  /** Objectif en pourcentage : 1 = en %, 10 = en dixièmes de % ; null : un nombre. */
+  percent: number | null;
+  reward: { pw: number; packs: number };
+  unlockedAt: string | null;
+}
+
+/** Succès d'un joueur pour son profil public : obtenus ou non, jamais sa progression. */
+export interface PublicAchievementsDTO {
+  unlocked: number;
+  /** Succès comptés (secrets compris). */
+  total: number;
+  /** Secrets pas encore obtenus : comptés dans `total`, absents de `items`. */
+  hiddenSecrets: number;
+  items: PublicAchievementDTO[];
+}
+
+// ---------------------------------------------------------------------------
+// Page publique d'une guilde
+// ---------------------------------------------------------------------------
+
+export interface PublicGuildDTO {
+  id: number;
+  name: string;
+  tag: string;
+  emblem: string;
+  description: string;
+  createdAt: string;
+  season: number;
+  /** Rang au classement des guildes de la saison (1 = en tête), sur `guilds`. */
+  rank: number;
+  guilds: number;
+  /** Points de collection de la saison cumulés par les membres. */
+  score: number;
+  /** Rôle et points de la saison apportés au score de la guilde. */
+  members: {
+    username: string;
+    displayName: string;
+    avatar: string | null;
+    role: "leader" | "officer" | "member";
+    score: number;
+  }[];
+  maxMembers: number;
+  /** Le visiteur en est membre : sa page est /guild. */
+  member: boolean;
+  /** Le visiteur, sans guilde, peut la rejoindre (pas complète). */
+  canJoin: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Filtres d'images (Admin)
+// ---------------------------------------------------------------------------
+
+/** Carte ajoutée à un thème (`flagged`) ou retirée d'un thème à la main dans Admin. */
+export interface ImageFilterOverrideDTO {
+  cardId: number;
+  title: string;
+  thumbUrl: string | null;
+  theme: "arthropods" | "gore" | "nudity";
+  flagged: boolean;
+  by: string | null;
+  createdAt: string;
+}
+
+// ---------------------------------------------------------------------------
+// Portfolios (suggestions n° 3 et 116)
+// ---------------------------------------------------------------------------
+
+/** Design d'un portfolio : clés du catalogue (@palacards/game), ou `image` pour un fond envoyé (`backgroundVersion`). */
+export interface PortfolioDesignDTO {
+  background: string;
+  frame: string;
+  accent: string;
+  /** Version de l'image de fond envoyée, gardée même quand un autre fond est choisi (cache du navigateur) ; null sans image. */
+  backgroundVersion: string | null;
+}
+
+export interface PortfolioOwnerDTO {
+  username: string;
+  displayName: string;
+  avatar: string | null;
+}
+
+/** Portfolio en liste (page Communauté, profil, ses portfolios) : aperçu des premières cartes. */
+export interface PortfolioSummaryDTO {
+  id: number;
+  name: string;
+  description: string;
+  owner: PortfolioOwnerDTO;
+  design: PortfolioDesignDTO;
+  cardCount: number;
+  likes: number;
+  /** Le visiteur l'a aimé. */
+  liked: boolean;
+  /** Le visiteur en est l'auteur. */
+  mine: boolean;
+  /** Place sur le profil de l'auteur (1 à 3) ; null : pas affiché. */
+  profileSlot: number | null;
+  /** Carte en vedette d'abord, puis les suivantes dans l'ordre (6 au plus). */
+  preview: PortfolioCardDTO[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PortfolioCardDTO = CardDTO & { featured: boolean };
+
+/** Portfolio complet (page publique, éditeur). */
+export interface PortfolioDTO extends PortfolioSummaryDTO {
+  cards: PortfolioCardDTO[];
+}
+
+/** Design du catalogue, avec ce qu'il faut pour l'obtenir et s'il est déjà au joueur. */
+export interface PortfolioDesignItemDTO {
+  key: string;
+  slot: "background" | "frame";
+  name: string;
+  source: "free" | "shop" | "achievement" | "event";
+  price: number | null;
+  /** Condition à remplir (succès, évènement). */
+  condition: string | null;
+  owned: boolean;
+}

@@ -15,6 +15,7 @@ import {
   type GuildObjectiveKind,
   type GuildRole,
 } from "@palacards/game";
+import type { PublicGuildDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { Effects } from "./notifications.js";
@@ -436,5 +437,62 @@ export async function guildDetail(ctx: Ctx, guildId: number, viewerId?: string) 
       minContribution: minContribution(obj.kind),
       ...(viewerId ? { myContribution: contributions?.get(viewerId) ?? 0, rewarded: (rewarded?.n ?? 0) > 0 } : {}),
     },
+  };
+}
+
+/**
+ * Guilde vue par n'importe quel joueur (suggestion n° 110) : nom, emblème, rang et score de saison au classement des
+ * guildes, membres (pseudo, rôle, points de collection de la saison apportés au score). Rien de réservé aux membres :
+ * ni objectif de la semaine, ni contributions, ni salon. `member` : le visiteur en fait partie (sa page est /guild).
+ */
+export async function publicGuild(ctx: Ctx, guildId: number, viewerId: string): Promise<PublicGuildDTO> {
+  const [guild] = await ctx.db.select().from(g).where(eq(g.id, guildId));
+  if (!guild) throw notFound("Cette guilde n'existe pas.");
+  const season = await activeSeason(ctx.db);
+  const scores = await seasonScores(ctx, season);
+  // Même classement que la page Classement (guildes, saison) : score décroissant, puis nom.
+  const all = await ctx.db.execute<{ id: string; name: string; score: number }>(sql`
+    select g.id::text, g.name, coalesce(sum(s.score), 0)::int as score
+    from guilds g
+    left join guild_members m on m.guild_id = g.id
+    left join (${collectionScoresSql(season)}) s on s.owner_id = m.user_id
+    group by g.id order by score desc, g.name
+  `);
+  const rank = all.findIndex((r) => Number(r.id) === guildId) + 1;
+  const rows = await ctx.db.execute<{
+    user_id: string;
+    username: string;
+    display_name: string;
+    avatar: string | null;
+    role: GuildRole;
+  }>(sql`
+    select m.user_id, u.username, coalesce(u.display_username, u.name) as display_name, p.avatar, m.role
+    from guild_members m join "user" u on u.id = m.user_id join players p on p.user_id = m.user_id
+    where m.guild_id = ${guildId}
+    order by case m.role when 'leader' then 0 when 'officer' then 1 else 2 end, m.joined_at
+  `);
+  const viewer = await membership(ctx.db, viewerId);
+  const members = rows.map((r) => ({
+    username: r.username,
+    displayName: r.display_name,
+    avatar: r.avatar,
+    role: r.role,
+    score: scores.get(r.user_id) ?? 0,
+  }));
+  return {
+    id: guild.id,
+    name: guild.name,
+    tag: guild.tag,
+    emblem: guild.emblem,
+    description: guild.description,
+    createdAt: guild.createdAt.toISOString(),
+    season,
+    rank,
+    guilds: all.length,
+    score: members.reduce((sum, m) => sum + m.score, 0),
+    members,
+    maxMembers: GUILD_MAX_MEMBERS,
+    member: viewer?.guildId === guildId,
+    canJoin: !viewer && rows.length < GUILD_MAX_MEMBERS,
   };
 }

@@ -415,6 +415,8 @@ async function buildQuestion(ctx: Ctx, battle: Battle, turn: number, attack: Dec
     season: attack.season,
     rarity: attack.rarity,
     avoid: used,
+    // Le défenseur répond : ses filtres d'images écartent les images qu'il floute.
+    answerer: attack.userId === battle.challengerId ? battle.opponentId : battle.challengerId,
   });
 }
 

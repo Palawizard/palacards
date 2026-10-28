@@ -1,5 +1,5 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
-import { AUTO_RECYCLE_RARITIES, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
+import { AUTO_RECYCLE_RARITIES, MAX_LEVEL, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
 import { avatarSchema, collectionThemeParam, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -8,7 +8,7 @@ import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
 import { clearBannerCard, deleteBanner, getBannerImage, saveBannerImage, setBannerCard } from "../services/banners.js";
 import { answeringQuestion, queueWaiting } from "../services/battles.js";
-import { arthropodFlags, cardSheet, catalog } from "../services/cards.js";
+import { arthropodFlags, cardSheet, catalog, imageFlags } from "../services/cards.js";
 import {
   bulkTag,
   completion,
@@ -53,7 +53,13 @@ export const filterModeParam = z
   .optional()
   .transform((v) => (v === "true" ? "only" : v === "false" ? undefined : v));
 /** ATK / DEF : colonnes smallint, bornées pour ne jamais déborder côté SQL. */
-const statParam = intParam.min(0).max(32_767);
+export const statParam = intParam.min(0).max(32_767);
+/** Niveaux de carte cochés (`levels=1,3`) : 1 à 5, chacun une fois. */
+export const levelList = z
+  .string()
+  .optional()
+  .transform((v) => (v ? [...new Set(v.split(",").map(Number))] : undefined))
+  .pipe(z.array(z.number().int().min(1).max(MAX_LEVEL)).max(MAX_LEVEL).optional());
 const idParams = z.object({ id: z.coerce.number().int().positive() });
 
 /** Nombre de messages non lus (MP + guilde), utilisé par l'en-tête. */
@@ -89,6 +95,7 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "leaderboard-shiny", until: "2027-01-15T00:00:00+01:00" },
   { key: "shop", until: "2027-01-31T00:00:00+01:00" },
   { key: "plus-ou-moins", until: "2027-01-31T00:00:00+01:00" },
+  { key: "portfolios", until: "2027-02-28T00:00:00+01:00" },
 ];
 
 /** Boosters à thème achetés ou reçus, pas encore ouverts. */
@@ -118,6 +125,8 @@ export async function me(
     avatar: p.avatar,
     animationSpeed: p.animationSpeed,
     hideArthropods: p.hideArthropods,
+    hideGore: p.hideGore,
+    hideNudity: p.hideNudity,
     quickUpgrade: p.quickUpgrade,
     publicTags: p.publicTags,
     autoRecycle: { max: p.autoRecycleMax, keepNew: p.autoRecycleKeepNew },
@@ -168,6 +177,8 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
           autoRecycleMax: z.enum(AUTO_RECYCLE_RARITIES).nullable().optional(),
           autoRecycleKeepNew: z.boolean().optional(),
           hideArthropods: z.boolean().optional(),
+          hideGore: z.boolean().optional(),
+          hideNudity: z.boolean().optional(),
           quickUpgrade: z.boolean().optional(),
           publicTags: z.boolean().optional(),
         })
@@ -229,8 +240,11 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     tagged: filterModeParam,
     q: z.string().max(100).optional(),
     inSummary: z.stringbool().optional(),
+    minAtk: statParam.optional(),
+    minDef: statParam.optional(),
+    levels: levelList,
   });
-  const collectionSort = z.enum(["date", "atk", "def", "views", "rarity", "title", "copies"]);
+  const collectionSort = z.enum(["date", "atk", "def", "views", "rarity", "title", "copies", "level"]);
   api.get("/collection", auth, async (req) => {
     const q = parse(
       collectionFilters.extend({
@@ -373,20 +387,17 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     if (await answeringQuestion(ctx, req.user.id)) throw duelInProgress();
     return catalog(ctx, req.user.id, q);
   });
-  // Option « flouter les arthropodes » : lesquelles de ces cartes en montrent un (par lots, depuis l'affichage).
-  api.get("/cards/arthropods", auth, async (req) => {
-    const { ids } = parse(
-      z.object({
-        ids: z
-          .string()
-          .max(4000)
-          .transform((v) => v.split(",").map(Number))
-          .pipe(z.array(z.number().int().positive()).min(1).max(200)),
-      }),
-      req.query,
-    );
-    return arthropodFlags(ctx, req.user.id, ids);
+  // Filtres d'images : thèmes (arthropodes, blessures, nudité) de ces cartes, par lots depuis l'affichage.
+  const flagIds = z.object({
+    ids: z
+      .string()
+      .max(4000)
+      .transform((v) => v.split(",").map(Number))
+      .pipe(z.array(z.number().int().positive()).min(1).max(200)),
   });
+  api.get("/cards/image-flags", auth, async (req) => imageFlags(ctx, req.user.id, parse(flagIds, req.query).ids));
+  // Ancienne forme (arthropodes seulement), pour un onglet resté ouvert sur la version précédente du site.
+  api.get("/cards/arthropods", auth, async (req) => arthropodFlags(ctx, req.user.id, parse(flagIds, req.query).ids));
   api.get("/cards/:id", { ...auth, config: { rateLimit: { max: 60, timeWindow: "1 minute" } } }, async (req) => {
     const { id } = parse(idParams, req.params);
     if (await answeringQuestion(ctx, req.user.id)) throw duelInProgress();

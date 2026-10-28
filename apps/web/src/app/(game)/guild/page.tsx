@@ -144,9 +144,9 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
                   {g.emblem}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-display text-lg">
+                  <Link href={`/guild/${g.id}`} className="block truncate font-display text-lg hover:underline">
                     {g.name} <span className="text-sm text-faint">[{g.tag}]</span>
-                  </span>
+                  </Link>
                   <span className="tnum text-xs text-muted">
                     {g.members}/{GUILD_MAX_MEMBERS} membres · {fmt(g.score)} pts de saison
                   </span>

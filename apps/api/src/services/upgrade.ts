@@ -1,7 +1,7 @@
 import { and, desc, eq, inArray, schema, sql } from "@palacards/db";
 import {
   nextRarity,
-  rollShiny,
+  rollSourceShiny,
   UPGRADE_MAX_CARDS,
   UPGRADE_MIN_CARDS,
   UPGRADE_SERIES_MAX_LOTS,
@@ -33,6 +33,7 @@ import {
   movePw,
   ownedCount,
   pushWallet,
+  retireInstances,
   wallet,
   type DbOrTx,
 } from "./players.js";
@@ -74,17 +75,27 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
     const roll = ctx.random(10_000);
     const success = roll < chance;
     const ref = `${from}>${target}:${ids.join(",")}`;
-    await tx.delete(ci).where(inArray(ci.id, ids));
+    await retireInstances(tx, ids, "upgraded");
     await logMovement(tx, ownerId, "card", -ids.length, await ownedCount(tx, ownerId), "upgrade", ref);
 
     if (!success) {
       const refund = upgradeRefund(from, ids.length);
       if (refund) await movePw(tx, p, refund, "upgrade", ref);
-      return { success, chance, roll, refund, instanceId: null, drawn: null, notable: [] as number[], player: p };
+      return {
+        success,
+        chance,
+        roll,
+        refund,
+        instanceId: null,
+        shiny: false,
+        drawn: null,
+        notable: [] as number[],
+        player: p,
+      };
     }
     const season = await activeSeason(tx);
     const drawn = await drawCard(tx, season, target, ctx.random);
-    const shiny = rollShiny(ctx.random);
+    const shiny = rollSourceShiny("upgrade", ctx.random);
     const [inserted] = await tx
       .insert(ci)
       .values({
@@ -103,13 +114,19 @@ export async function upgrade(ctx: Ctx, ownerId: string, instanceIds: number[]):
     const notable = await logPulls(tx, ownerId, "upgrade", [
       { cardId: drawn.id, season, rarity: target, shiny, title: drawn.title },
     ]);
-    return { success, chance, roll, refund: 0, instanceId: inserted!.id, drawn, notable, player: p };
+    return { success, chance, roll, refund: 0, instanceId: inserted!.id, shiny, drawn, notable, player: p };
   });
 
   const card = res.instanceId ? ((await instancesByIds(ctx.db, [res.instanceId], ownerId))[0] ?? null) : null;
   await afterCommit(ctx, async () => {
     pushWallet(ctx, res.player);
-    void emit(ctx, ownerId, { type: "upgrade", success: res.success }, ...(res.drawn ? (["collection"] as const) : []));
+    void emit(
+      ctx,
+      ownerId,
+      { type: "upgrade", success: res.success },
+      ...(res.shiny ? [{ type: "shiny_obtained" as const, source: "upgrade" as const, count: 1 }] : []),
+      ...(res.drawn ? (["collection"] as const) : []),
+    );
     if (res.drawn) {
       loadMediaInBackground(ctx, ownerId, [{ cardId: res.drawn.id, title: res.drawn.title }]);
       await announcePulls(ctx, ownerId, res.notable);
@@ -317,7 +334,7 @@ export async function upgradeSeries(
     }
     const used = rows.map((r) => r.instanceId);
 
-    await tx.delete(ci).where(inArray(ci.id, used));
+    await retireInstances(tx, used, "upgraded");
     let owned = await ownedCount(tx, ownerId);
     // Le ledger rejoue le lancement lot par lot : on part du total d'avant suppression.
     owned += used.length;
@@ -345,7 +362,7 @@ export async function upgradeSeries(
         continue;
       }
       const drawn = await drawCard(tx, season, target, ctx.random);
-      const shiny = rollShiny(ctx.random);
+      const shiny = rollSourceShiny("upgrade", ctx.random);
       const [inserted] = await tx
         .insert(ci)
         .values({
@@ -384,7 +401,8 @@ export async function upgradeSeries(
       .values({ userId: ownerId, rarity: from, target, lots, successes, refund, createdAt: ctx.now() })
       .returning({ id: schema.upgradeSeriesRuns.id });
     const remaining = (await seriesCandidates(ctx, ownerId, from, singles, tx)).ids.length;
-    return { id: run!.id, lots, won, notable, refund, remaining, successes, player: p };
+    const shinies = lots.filter((l) => l.won?.shiny).length;
+    return { id: run!.id, lots, won, notable, refund, remaining, successes, shinies, player: p };
   });
 
   const byId = new Map(
@@ -402,6 +420,7 @@ export async function upgradeSeries(
       ctx,
       ownerId,
       ...res.lots.map((l) => ({ type: "upgrade" as const, success: l.success })),
+      ...(res.shinies ? [{ type: "shiny_obtained" as const, source: "upgrade" as const, count: res.shinies }] : []),
       ...(res.won.length ? (["collection"] as const) : []),
     );
     if (res.won.length) {

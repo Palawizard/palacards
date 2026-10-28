@@ -1,4 +1,5 @@
 import {
+  Album,
   ArrowBigUpDash,
   ChartNoAxesColumn,
   Award,
@@ -80,6 +81,7 @@ export const NAV: NavGroup[] = [
       { href: "/friends", label: "Amis", icon: Users },
       { href: "/messages", label: "Messages", icon: MessageSquare, badge: "messages" },
       { href: "/feed", label: "Fil d'activité", icon: Radio, feature: "feed" },
+      { href: "/portfolios", label: "Portfolios", icon: Album, feature: "portfolios" },
       { href: "/guild", label: "Guilde", icon: Shield },
       { href: "/leaderboard", label: "Classement", icon: Trophy, feature: "leaderboard-shiny" },
       { href: "/nouveautes", label: "Mises à jour", icon: Newspaper, feature: "updates" },

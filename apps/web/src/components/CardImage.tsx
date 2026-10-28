@@ -1,12 +1,15 @@
 "use client";
 
+import { IMAGE_THEME_VEILS } from "@palacards/game";
 import { Eye, EyeOff } from "lucide-react";
-import { revealArthropod, useArthropodVeil } from "@/lib/arthropods";
+import { useMemo } from "react";
 import { useMe } from "@/lib/game";
+import { hiddenThemes, revealImage, useImageVeil } from "@/lib/image-filters";
 
 /**
- * Image d'article d'une carte. Avec l'option « flouter les arthropodes », une araignée ou un insecte reste
- * flou jusqu'au clic sur « Afficher » (`revealable`), et l'image attend le verdict sans clignoter.
+ * Image d'article d'une carte. Avec un filtre d'images actif (arthropodes, blessures et maladies, nudité), une
+ * image du thème reste floue jusqu'au clic sur « Afficher » (`revealable`), et l'image attend le verdict sans
+ * clignoter.
  * Les vignettes trop petites ou posées dans un bouton (`revealable` à false) restent floues : on les
  * dévoile depuis la carte en grand.
  */
@@ -24,7 +27,9 @@ export function CardImage({
   className?: string;
 }) {
   const { me } = useMe();
-  const veil = useArthropodVeil(cardId, !!me?.hideArthropods);
+  const hidden = useMemo(() => hiddenThemes(me), [me]);
+  const { state: veil, theme } = useImageVeil(cardId, hidden);
+  const note = theme ? IMAGE_THEME_VEILS[theme] : "";
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element -- vignettes Wikimedia relayées par l'API (pas d'optimiseur Next) */}
@@ -45,17 +50,17 @@ export function CardImage({
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                revealArthropod(cardId);
+                revealImage(cardId);
               }}
             >
               <Eye aria-hidden className="size-[1.1em]" strokeWidth={2.25} />
               Afficher
             </button>
-            <span className="pc-veil-note">Arthropode masqué</span>
+            <span className="pc-veil-note">{note}</span>
           </span>
         ) : (
-          <span className="pc-veil" title="Arthropode masqué : ouvre la carte pour l'afficher">
-            <EyeOff aria-label="Arthropode masqué" className="size-4 text-white drop-shadow" />
+          <span className="pc-veil" title={`${note} : ouvre la carte pour l'afficher`}>
+            <EyeOff aria-label={note} className="size-4 text-white drop-shadow" />
           </span>
         ))}
     </>

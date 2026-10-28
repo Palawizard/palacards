@@ -323,7 +323,7 @@
       border-color: var(--color-faint);
       color: var(--color-text);
     }
-    :is(button, summary).chip[aria-pressed="true"]:hover:not(:disabled) {
+    :is(button, summary).chip:is([aria-pressed="true"], [data-active]):hover:not(:disabled) {
       background: var(--color-accent-strong);
       color: var(--color-accent-ink);
     }
@@ -397,7 +397,8 @@
   button.chip:active:not(:disabled) {
     transform: scale(0.97);
   }
-  .chip[aria-pressed="true"] {
+  .chip[aria-pressed="true"],
+  .chip[data-active] {
     background: var(--color-accent);
     border-color: var(--color-accent);
     color: var(--color-accent-ink);

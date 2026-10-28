@@ -1,4 +1,4 @@
-import { and, desc, eq, schema, sql } from "@palacards/db";
+import { and, desc, eq, inArray, schema, sql } from "@palacards/db";
 import {
   HL_CHOICE_MS,
   HL_RENEW_ATTEMPTS,
@@ -14,11 +14,13 @@ import {
   hlViewRange,
   hlWidenedBands,
   isArthropod,
+  type ImageTheme,
   parisDay,
   pickChallenger,
   unusableQuizImage,
 } from "@palacards/game";
 import type { HlAnswerDTO, HlArticleDTO, HlPairDTO, HlStateDTO } from "@palacards/shared";
+import { imageThemesOf, playerHiddenThemes } from "./image-filters.js";
 import type { Ctx } from "../context.js";
 import { conflict } from "../errors.js";
 import { afterCommit } from "./notifications.js";
@@ -82,13 +84,33 @@ async function poolRows(
     order by ${order}
     limit ${SAMPLE}
   `);
+  // Liste Admin des arthropodes : elle l'emporte sur la détection (ajoutée ou retirée à la main).
+  const manual =
+    hideArthropods && rows.length
+      ? new Map(
+          (
+            await db
+              .select({ id: schema.imageFilterOverrides.cardId, flagged: schema.imageFilterOverrides.flagged })
+              .from(schema.imageFilterOverrides)
+              .where(
+                and(
+                  eq(schema.imageFilterOverrides.theme, "arthropods"),
+                  inArray(
+                    schema.imageFilterOverrides.cardId,
+                    rows.map((r) => Number(r.id)),
+                  ),
+                ),
+              )
+          ).map((o) => [o.id, o.flagged]),
+        )
+      : new Map<number, boolean>();
   return rows
     .filter(
       (r) =>
         usableImage(r.thumb_url) &&
         hlEligibleTitle(r.title) &&
         hlEligibleDescription(r.description) &&
-        !(hideArthropods && (r.arthropod ?? isArthropod(r))),
+        !(hideArthropods && (manual.get(Number(r.id)) ?? r.arthropod ?? isArthropod(r))),
     )
     .map((r) => ({
       id: Number(r.id),
@@ -208,19 +230,41 @@ async function articleOf(db: DbOrTx, season: number, cardId: number): Promise<Hl
   };
 }
 
-const hidden = ({ title, thumbUrl, description }: HlArticleDTO): HlArticleDTO => ({ title, thumbUrl, description });
+const hidden = ({ title, thumbUrl, description }: HlArticleDTO, veil: ImageTheme | null): HlArticleDTO => ({
+  title,
+  thumbUrl,
+  description,
+  veil,
+});
+
+/**
+ * Thème flouté de l'image de chaque article de la paire, d'après les filtres d'images du joueur (les arthropodes
+ * sont déjà écartés des tirages) : l'image reste floue jusqu'au clic, sans donner l'identifiant de l'article.
+ */
+async function veilsOf(db: DbOrTx, userId: string, ids: number[]) {
+  const hiddenThemes = await playerHiddenThemes(db, userId);
+  if (!hiddenThemes.length) return new Map<number, ImageTheme>();
+  const { themes } = await imageThemesOf(db, ids);
+  return new Map(
+    [...themes].flatMap(([id, t]) => {
+      const theme = t.find((x) => hiddenThemes.includes(x));
+      return theme ? [[id, theme] as const] : [];
+    }),
+  );
+}
 
 async function pairOf(db: DbOrTx, run: Run, now: Date): Promise<HlPairDTO> {
-  const [kept, challenger] = await Promise.all([
+  const [kept, challenger, veils] = await Promise.all([
     articleOf(db, run.season, run.keptCardId),
     articleOf(db, run.season, run.challengerCardId),
+    veilsOf(db, run.userId, [run.keptCardId, run.challengerCardId]),
   ]);
   return {
     tryNo: run.tryNo,
     step: run.step,
     streak: run.streak,
-    kept: hidden(kept),
-    challenger: hidden(challenger),
+    kept: hidden(kept, veils.get(run.keptCardId) ?? null),
+    challenger: hidden(challenger, veils.get(run.challengerCardId) ?? null),
     deadline: run.deadline.toISOString(),
     // Temps restant vu du serveur : le chrono du navigateur s'y cale (horloges décalées).
     msLeft: Math.max(0, run.deadline.getTime() - now.getTime()),

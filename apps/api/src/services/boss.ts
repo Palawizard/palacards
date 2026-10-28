@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, lt, schema, sql } from "@palacards/db";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, schema, sql } from "@palacards/db";
 import {
   articleCategory,
   BOSS_ANSWER_GRACE_MS,
@@ -14,6 +14,7 @@ import {
   addDays,
   bossDamage,
   bossDayReward,
+  bossClockStart,
   bossDayRule,
   bossHit,
   bossPhase1Hp,
@@ -21,6 +22,7 @@ import {
   bossPhaseState,
   bossQuestionMs,
   bossQuestionMult,
+  bossShownCapMs,
   categoryMult,
   effectiveStats,
   fatigueRestDays,
@@ -50,6 +52,7 @@ import { afterCommit, Effects } from "./notifications.js";
 import { activeSeason, lockPlayers, logMovement, movePw, packState, pushWallet, type Player } from "./players.js";
 import { emit } from "./progression.js";
 import { bossQuestion, QUESTION_PREP_MS, withTimeout } from "./quiz.js";
+import { warmThumbs } from "./thumbs.js";
 import { nextParisMidnight } from "./wheel.js";
 import { articleUrl } from "./wiki.js";
 
@@ -296,8 +299,14 @@ async function hitsOf(db: Ctx["db"] | Tx, assaultId: number): Promise<Hit[]> {
 function prefetchNext(ctx: Ctx, boss: BossDay, assault: Assault, hits: Hit[]) {
   const next = hits.find((h) => !h.servedAt);
   if (!next) return;
-  void questionFor(ctx, boss, assault, next, hits).catch(() => {});
+  // Question image : ses vignettes sont mises en cache tout de suite, le joueur les aura sans attendre Wikimedia.
+  void questionFor(ctx, boss, assault, next, hits)
+    .then((q) => q.type === "image" && warmThumbs(ctx, q.choices))
+    .catch(() => {});
 }
+
+/** Départ du chrono d'une question posée : son affichage déclaré, borné (voir `bossClockStart`). */
+const clockStart = (h: Hit) => bossClockStart((h.question as BossQuestion).type, h.servedAt!, h.shownAt);
 
 // ---------------------------------------------------------------------------
 // Assauts
@@ -435,17 +444,56 @@ export async function serveNext(ctx: Ctx, userId: string, assaultId: number) {
           set: { askedAt: now },
         });
     prefetchNext(ctx, boss!, assault, await hitsOf(ctx.db, assaultId));
+    // L'envoi est daté au plus près de la réponse HTTP : la préparation et la lecture de l'état ne comptent pas.
+    const state = await bossState(ctx, userId);
+    if (served)
+      await ctx.db
+        .update(bh)
+        .set({ servedAt: ctx.now() })
+        .where(and(eq(bh.assaultId, assaultId), eq(bh.idx, next.idx), isNull(bh.shownAt), isNull(bh.answeredAt)));
+    return state;
   } else if (!open && !next && !assault.finishedAt) {
     await finishAssault(ctx, userId, assaultId);
   }
   return bossState(ctx, userId);
 }
 
+/**
+ * Le site affiche la question (images chargées) : le chrono part d'ici, jamais plus tard que l'envoi + le plafond.
+ * Seul le premier appel compte ; un appel après la réponse ne change rien. Renvoie le temps qu'il reste.
+ */
+export async function markShown(ctx: Ctx, userId: string, assaultId: number, idx: number) {
+  const [assault] = await ctx.db
+    .select({ id: ba.id })
+    .from(ba)
+    .where(and(eq(ba.id, assaultId), eq(ba.userId, userId)));
+  if (!assault) throw notFound("Assaut introuvable.");
+  await ctx.db
+    .update(bh)
+    .set({ shownAt: ctx.now() })
+    .where(
+      and(
+        eq(bh.assaultId, assaultId),
+        eq(bh.idx, idx),
+        isNotNull(bh.servedAt),
+        isNull(bh.shownAt),
+        isNull(bh.answeredAt),
+      ),
+    );
+  const [hit] = await ctx.db
+    .select()
+    .from(bh)
+    .where(and(eq(bh.assaultId, assaultId), eq(bh.idx, idx)));
+  if (!hit?.servedAt || !hit.question || hit.answeredAt) throw conflict("no_question", "Aucune question en cours.");
+  const elapsed = ctx.now().getTime() - clockStart(hit).getTime();
+  return { remainingMs: Math.max(0, questionMs(hit) - elapsed) };
+}
+
 /** Question posée, chrono (et marge) dépassé : réponse absente, aucun dégât. */
 async function expireOpenQuestion(ctx: Ctx, userId: string, assault: Assault, hits: Hit[]) {
   const open = hits.find((h) => h.servedAt && !h.answeredAt);
   if (!open?.question) return;
-  const elapsed = ctx.now().getTime() - open.servedAt!.getTime();
+  const elapsed = ctx.now().getTime() - clockStart(open).getTime();
   if (elapsed <= questionMs(open) + BOSS_ANSWER_GRACE_MS) return;
   await resolveHit(ctx, userId, assault.id, open.idx, null);
 }
@@ -481,7 +529,8 @@ async function resolveHit(ctx: Ctx, userId: string, assaultId: number, idx: numb
     const now = ctx.now();
     const question = hit.question as BossQuestion;
     const durationMs = bossQuestionMs(question.type);
-    const elapsed = now.getTime() - hit.servedAt.getTime();
+    // Temps compté depuis l'affichage réel de la question (borné), pas depuis son envoi.
+    const elapsed = now.getTime() - clockStart(hit).getTime();
     const late = elapsed > durationMs + BOSS_ANSWER_GRACE_MS;
     const answerMs = answer && !late ? Math.min(elapsed, durationMs) : null;
     let choice: number | null = null;
@@ -622,7 +671,7 @@ function assaultView(ctx: Ctx, assault: Assault, hits: Hit[], cards: Map<number,
   if (open?.question) {
     const q = open.question as BossQuestion;
     const durationMs = bossQuestionMs(q.type);
-    const elapsed = ctx.now().getTime() - open.servedAt!.getTime();
+    const elapsed = ctx.now().getTime() - clockStart(open).getTime();
     const card = cards.get(open.instanceId)!;
     // Image : la carte donnerait la réponse, elle reste face cachée jusqu'à la réponse.
     question = {
@@ -637,6 +686,8 @@ function assaultView(ctx: Ctx, assault: Assault, hits: Hit[], cards: Map<number,
       mult: open.mult ?? 1,
       remainingMs: Math.max(0, durationMs - elapsed),
       durationMs,
+      shown: !!open.shownAt,
+      shownCapMs: bossShownCapMs(q.type),
     };
   }
   return {

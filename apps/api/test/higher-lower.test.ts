@@ -68,7 +68,7 @@ describe("plus ou moins vu", () => {
     const start = await p.post("/hl/start");
     expect(start.status).toBe(200);
     const pair = start.body.current;
-    expect(Object.keys(pair.kept).sort()).toEqual(["description", "thumbUrl", "title"]);
+    expect(Object.keys(pair.kept).sort()).toEqual(["description", "thumbUrl", "title", "veil"]);
     const raw = JSON.stringify(start.body);
     expect(raw).not.toMatch(/views|rarity|cardId|"SR"|"UR"|"L"/);
     expect(pair).toMatchObject({ tryNo: 1, step: 0, streak: 0, durationMs: 15_000 });
@@ -303,9 +303,22 @@ describe("plus ou moins vu", () => {
       .update(schema.hlRuns)
       .set({ keptCardId: Number(top!.id), challengerCardId: Number(lower!.id) })
       .where(eq(schema.hlRuns.userId, p.userId));
-    // Sens tiré « plus vu » (random → 0) : impossible face au plus vu du pool, donc paire entièrement nouvelle.
+    // Les deux articles ont été montrés, comme dans une vraie partie : la nouvelle paire ne les reprend pas.
+    const [current] = await ctx.db.select().from(schema.hlRuns).where(eq(schema.hlRuns.userId, p.userId));
+    await ctx.db
+      .insert(schema.hlSeen)
+      .values([top, lower].map((c) => ({ userId: p.userId, day: current!.day, cardId: Number(c!.id) })))
+      .onConflictDoNothing();
+    // Sens tiré « plus vu » (premier tirage → 0) : impossible face au plus vu du pool, donc paire entièrement
+    // nouvelle. Les tirages de cette paire restent aléatoires : tous à 0, ses 6 tentatives seraient identiques et
+    // échoueraient ensemble si l'article de plus petite clé était en haut du pool.
     const random = ctx.random;
-    ctx.random = () => 0;
+    let first = true;
+    ctx.random = (n) => {
+      if (!first) return random(n);
+      first = false;
+      return 0;
+    };
     try {
       const res = await p.post("/hl/answer", { step: 0, pick: "kept" });
       expect(res.body).toMatchObject({ correct: true, streak: 1, next: { renewed: true } });

@@ -1,6 +1,6 @@
 "use client";
 
-import type { CardDTO, TradeDTO } from "@palacards/shared";
+import type { CardFate, TradeCardDTO, TradeDTO } from "@palacards/shared";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -30,7 +30,16 @@ const STATUS: Record<string, string> = {
   pending: "En attente",
 };
 
-function Side({ title, cards, pw }: { title: string; cards: CardDTO[]; pw: number }) {
+/** Ce qu'est devenue la carte depuis l'échange (l'historique la garde même disparue). */
+const FATE: Record<CardFate, string> = {
+  fused: "fusionnée",
+  recycled: "recyclée",
+  upgraded: "upgradée",
+  sold: "vendue",
+  traded: "échangée",
+};
+
+function Side({ title, cards, pw }: { title: string; cards: TradeCardDTO[]; pw: number }) {
   return (
     <div className="min-w-0 flex-1">
       <h3 className="mb-1.5 text-xs font-semibold text-faint">{title}</h3>
@@ -38,14 +47,16 @@ function Side({ title, cards, pw }: { title: string; cards: CardDTO[]; pw: numbe
         <p className="text-sm text-faint">Rien</p>
       ) : (
         <ul className="flex flex-col gap-1.5">
-          {cards.map((c) => (
-            <li key={c.instanceId}>
+          {cards.map((c, i) => (
+            <li key={c.instanceId ?? `gone-${c.cardId}-${i}`}>
               <Link href={`/card/${c.cardId}`} className="flex items-center gap-2 rounded-lg p-1 hover:bg-panel-2">
                 <Thumb card={c} size="sm" />
                 <span className="min-w-0">
                   <span className="line-clamp-1 font-display">{c.title}</span>
                   <span className="tnum flex items-center gap-1.5 text-xs text-faint">
                     <RaritySigil rarity={c.rarity} /> ATK {fmt(c.atk)} · DEF {fmt(c.def)}
+                    {c.level > 1 && <> · niv. {c.level}</>}
+                    {c.fate && <span className="italic"> · {FATE[c.fate]} depuis</span>}
                   </span>
                 </span>
               </Link>

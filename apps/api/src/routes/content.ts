@@ -2,6 +2,7 @@ import { eq, schema } from "@palacards/db";
 import {
   BOSS_CARDS_PER_ASSAULT,
   FEED_REACTIONS,
+  IMAGE_THEMES,
   PASS_HALF_LEVEL,
   PASS_MAX_LEVEL,
   PASS_OVERFLOW_PW,
@@ -15,7 +16,13 @@ import { z } from "zod";
 import { requireAdmin, requireUser, type Ctx } from "../context.js";
 import { parse } from "../errors.js";
 import { hlAnswer, hlStart, hlState } from "../services/higher-lower.js";
-import { answerBoss, bossCards, bossState, serveNext, startAssault } from "../services/boss.js";
+import {
+  adminImageFilters,
+  searchFilterCards,
+  setImageFilterOverride,
+  startImageFilterRefresh,
+} from "../services/image-filters.js";
+import { answerBoss, bossCards, bossState, markShown, serveNext, startAssault } from "../services/boss.js";
 import {
   adminBroadcasts,
   archiveBroadcast,
@@ -120,6 +127,21 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
     const { id } = parse(idParams, req.params);
     return serveNext(ctx, req.user.id, id);
   });
+  // Question réellement affichée (images chargées) : le chrono part de là, dans la limite du plafond.
+  api.post("/boss/assault/:id/shown", auth, async (req) => {
+    const { id } = parse(idParams, req.params);
+    const { idx } = parse(
+      z.object({
+        idx: z
+          .number()
+          .int()
+          .min(0)
+          .max(BOSS_CARDS_PER_ASSAULT - 1),
+      }),
+      req.body,
+    );
+    return markShown(ctx, req.user.id, id, idx);
+  });
   api.post("/boss/assault/:id/answer", auth, async (req) => {
     const { id } = parse(idParams, req.params);
     const body = parse(
@@ -207,4 +229,23 @@ export function contentRoutes(api: FastifyInstance, ctx: Ctx) {
 
   // Catégories « bizarres » du fil : rechargement en tâche de fond (long : plusieurs centaines d'appels).
   api.post("/admin/feed/refresh", admin, async () => ({ started: startWeirdRefresh(ctx) }));
+
+  // --- Filtres d'images (blessures, nudité, arthropodes) : liste manuelle, prioritaire sur la détection ---
+  api.get("/admin/image-filters", admin, async () => adminImageFilters(ctx));
+  api.get("/admin/image-filters/search", admin, async (req) =>
+    searchFilterCards(ctx, parse(z.object({ q: z.string().trim().min(1).max(100) }), req.query).q),
+  );
+  api.put("/admin/image-filters", admin, async (req) => {
+    const b = parse(
+      z.object({
+        cardId: z.number().int().positive(),
+        theme: z.enum(IMAGE_THEMES),
+        flagged: z.boolean().nullable(),
+      }),
+      req.body,
+    );
+    return { themes: await setImageFilterOverride(ctx, req.user.id, b.cardId, b.theme, b.flagged) };
+  });
+  // Membres des catégories Wikipédia de chaque thème : rechargement en tâche de fond (aussi chaque lundi).
+  api.post("/admin/image-filters/refresh", admin, async () => ({ started: startImageFilterRefresh(ctx) }));
 }

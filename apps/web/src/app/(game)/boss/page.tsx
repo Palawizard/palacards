@@ -1,6 +1,13 @@
 "use client";
 
-import { BOSS_QUESTION_LABELS, CATEGORY_LABELS, RARITY_LABELS, type BossQuestionType } from "@palacards/game";
+import {
+  BOSS_CRIT_MS,
+  BOSS_QUESTION_LABELS,
+  CATEGORY_LABELS,
+  isDuel,
+  RARITY_LABELS,
+  type BossQuestionType,
+} from "@palacards/game";
 import type {
   ArticleCategoryKey,
   BossCardDTO,
@@ -462,6 +469,21 @@ function verdict(h: BossHitDTO): string {
   return "Raté";
 }
 
+/** Secondes avec une décimale, à la française : « 2,1 ». */
+const seconds = (ms: number) => (ms / 1000).toFixed(1).replace(".", ",").replace(",0", "");
+
+/**
+ * Temps compté par le serveur (depuis l'affichage de la question) et ce qu'il a donné : « 2,1 s : coup critique »,
+ * « 4,6 s : touché (critique sous 4 s) ». Rien pour une réponse arrivée trop tard.
+ */
+function timeVerdict(h: BossHitDTO): string | null {
+  if (h.answerMs === null) return null;
+  const t = `${seconds(h.answerMs)} s`;
+  if (h.type === "year_input" || h.hit === "miss") return `Réponse en ${t}`;
+  if (isDuel(h.type)) return `${t} : touché (duel, sans critique)`;
+  return h.hit === "crit" ? `${t} : coup critique` : `${t} : touché (critique sous ${seconds(BOSS_CRIT_MS)} s)`;
+}
+
 function HitDetail({ h, choices }: { h: BossHitDTO; choices: string[] | null }) {
   if (h.type === "year_input")
     return (
@@ -519,6 +541,67 @@ function YearInput({ disabled, onSubmit }: { disabled: boolean; onSubmit: (year:
   );
 }
 
+/** Attente maximale des images d'une question avant de l'afficher quand même (sous le plafond du serveur, 5 s). */
+const IMAGE_WAIT_MS = 4_500;
+
+/** Charge et décode des images (le navigateur les garde ensuite en cache), au plus `IMAGE_WAIT_MS`. */
+function loadImages(srcs: string[]): Promise<void> {
+  const all = Promise.all(
+    srcs.map((src) => {
+      const img = new Image();
+      img.src = src;
+      return img.decode().catch(() => {});
+    }),
+  );
+  return Promise.race([all.then(() => {}), new Promise<void>((r) => setTimeout(r, IMAGE_WAIT_MS))]);
+}
+
+/**
+ * Chrono d'une question, parti de son affichage réel (suggestions n° 113 et 114) : une question image attend ses
+ * vignettes, puis le site déclare l'affichage au serveur, qui compte le temps depuis cet instant (borné). Renvoie
+ * l'échéance locale, null tant que la question n'est pas prête à s'afficher.
+ */
+function useQuestionClock(boss: BossState): number | null {
+  const a = boss.current;
+  const q = a?.question ?? null;
+  const key = a && q ? `${a.id}:${q.idx}` : null;
+  const [clock, setClock] = useState<{ key: string; deadline: number } | null>(null);
+  // Dernier état reçu, lu par l'effet de la question (qui ne repart qu'à une nouvelle question).
+  const latest = useRef({ q, receivedAt: boss.receivedAt });
+  useEffect(() => {
+    latest.current = { q, receivedAt: boss.receivedAt };
+  });
+  useEffect(() => {
+    const { q, receivedAt } = latest.current;
+    if (!key || !a || !q) return;
+    let live = true;
+    // Déjà affichée (page rechargée) : le chrono tourne depuis l'affichage déclaré.
+    if (q.shown) {
+      setClock({ key, deadline: receivedAt + q.remainingMs });
+      return;
+    }
+    void (q.type === "image" ? loadImages(q.choices.map(thumbSrc)) : Promise.resolve()).then(() => {
+      if (!live) return;
+      // Le serveur ne part jamais plus tard que l'envoi + le plafond : l'échéance affichée non plus.
+      const start = Math.min(Date.now(), receivedAt + q.shownCapMs);
+      const deadline = start + q.remainingMs;
+      setClock({ key, deadline });
+      void api<{ remainingMs: number }>(`/boss/assault/${a.id}/shown`, { body: { idx: q.idx } })
+        .then(
+          (r) =>
+            live &&
+            setClock((c) => (c?.key === key ? { key, deadline: Math.min(deadline, Date.now() + r.remainingMs) } : c)),
+        )
+        .catch(() => {});
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois par question (clé), pas à chaque état reçu
+  }, [key]);
+  return clock && clock.key === key ? clock.deadline : null;
+}
+
 function AssaultPanel({
   boss,
   onAnswer,
@@ -534,8 +617,10 @@ function AssaultPanel({
   const q = a.question;
   const last = a.hits.at(-1);
   const now = useNow(200);
-  const remaining = q ? Math.max(0, boss.receivedAt + q.remainingMs - now) : 0;
-  const expired = !!q && remaining <= 0;
+  const deadline = useQuestionClock(boss);
+  const ready = !!q && deadline !== null;
+  const remaining = q ? (ready ? Math.max(0, deadline - now) : q.durationMs) : 0;
+  const expired = ready && remaining <= 0;
   // Chrono écoulé : le serveur compte la question comme ratée et passe à la suivante.
   useEffect(() => {
     if (!expired) return;
@@ -583,6 +668,7 @@ function AssaultPanel({
     return (
       <div className="pc-boss-verdict" data-hit={last.hit} aria-live="polite">
         <p className="font-display text-4xl uppercase">{verdict(last)}</p>
+        {timeVerdict(last) && <p className="tnum text-sm font-semibold">{timeVerdict(last)}</p>}
         <HitDetail h={last} choices={lastChoices} />
         {last.mult !== 1 && last.damage > 0 && (
           <p className="text-sm text-muted">
@@ -592,6 +678,10 @@ function AssaultPanel({
       </div>
     );
   }
+
+  // Question pas encore prête (images en chargement) : rien n'est montré, le chrono n'a pas commencé.
+  if (!ready)
+    return <div className="h-40 animate-pulse rounded-xl bg-panel" aria-busy aria-label="Chargement de la question" />;
 
   const late = remaining < 4_000;
   const duel = q.type === "duel_older" || q.type === "duel_popular";
