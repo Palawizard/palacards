@@ -1,5 +1,5 @@
 import { and, eq, isNull, schema, sql } from "@palacards/db";
-import { AUTO_RECYCLE_RARITIES, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
+import { AUTO_RECYCLE_RARITIES, MAX_LEVEL, RARITIES, TRADE_MAX_CARDS_PER_SIDE } from "@palacards/game";
 import { avatarSchema, collectionThemeParam, type MeDTO } from "@palacards/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -53,7 +53,13 @@ export const filterModeParam = z
   .optional()
   .transform((v) => (v === "true" ? "only" : v === "false" ? undefined : v));
 /** ATK / DEF : colonnes smallint, bornées pour ne jamais déborder côté SQL. */
-const statParam = intParam.min(0).max(32_767);
+export const statParam = intParam.min(0).max(32_767);
+/** Niveaux de carte cochés (`levels=1,3`) : 1 à 5, chacun une fois. */
+export const levelList = z
+  .string()
+  .optional()
+  .transform((v) => (v ? [...new Set(v.split(",").map(Number))] : undefined))
+  .pipe(z.array(z.number().int().min(1).max(MAX_LEVEL)).max(MAX_LEVEL).optional());
 const idParams = z.object({ id: z.coerce.number().int().positive() });
 
 /** Nombre de messages non lus (MP + guilde), utilisé par l'en-tête. */
@@ -229,8 +235,11 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
     tagged: filterModeParam,
     q: z.string().max(100).optional(),
     inSummary: z.stringbool().optional(),
+    minAtk: statParam.optional(),
+    minDef: statParam.optional(),
+    levels: levelList,
   });
-  const collectionSort = z.enum(["date", "atk", "def", "views", "rarity", "title", "copies"]);
+  const collectionSort = z.enum(["date", "atk", "def", "views", "rarity", "title", "copies", "level"]);
   api.get("/collection", auth, async (req) => {
     const q = parse(
       collectionFilters.extend({

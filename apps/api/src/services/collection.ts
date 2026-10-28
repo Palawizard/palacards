@@ -40,7 +40,7 @@ export async function requestedInPendingTrades(tx: DbOrTx, ids: number[]): Promi
   return new Set(rows.flatMap((r) => (r.id === null ? [] : [r.id])));
 }
 
-export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title" | "copies";
+export type CollectionSort = "date" | "atk" | "def" | "views" | "rarity" | "title" | "copies" | "level";
 
 /** Filtre à trois états : absent (indifférent), seulement les cartes concernées, ou toutes sauf elles. */
 export type FilterMode = "only" | "exclude";
@@ -62,6 +62,11 @@ export interface CollectionQuery {
   q?: string;
   /** La recherche porte aussi sur le résumé Wikipédia (et la description courte) de l'article. */
   inSummary?: boolean;
+  /** ATK et DEF minimales, niveau compris (les stats affichées sur la carte). */
+  minAtk?: number;
+  minDef?: number;
+  /** Niveaux gardés (1 à 5) ; absent ou vide : tous. */
+  levels?: number[];
   sort: CollectionSort;
   page: number;
   limit: number;
@@ -80,10 +85,17 @@ function copiesOf(ownerId: string): SQL {
   return sql`(select count(*) from card_instances d where d.owner_id = ${ownerId} and d.card_id = ${ci.cardId})`;
 }
 
+/** Stat affichée d'un exemplaire (bonus de niveau compris, arrondie comme `effectiveStats`). */
+const effectiveStat = (col: typeof ci.atk | typeof ci.def) =>
+  sql`round(${col}::numeric * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)))`;
+
 /** Conditions SQL des filtres de collection (la requête joint `cards` pour la recherche par titre). */
 function collectionWhere(ownerId: string, query: CollectionFilters): SQL[] {
   const where: SQL[] = [eq(ci.ownerId, ownerId)];
   if (query.rarity?.length) where.push(inArray(ci.rarity, query.rarity));
+  if (query.levels?.length) where.push(inArray(ci.level, query.levels));
+  if (query.minAtk !== undefined) where.push(sql`${effectiveStat(ci.atk)} >= ${query.minAtk}`);
+  if (query.minDef !== undefined) where.push(sql`${effectiveStat(ci.def)} >= ${query.minDef}`);
   if (query.season) where.push(eq(ci.season, query.season));
   /** Ajoute la condition, ou sa négation en mode « exclure ». */
   const mode = (m: FilterMode | undefined, cond: SQL) => {
@@ -126,6 +138,8 @@ function collectionOrder(ownerId: string, sort: CollectionSort, viewerId: string
     date: [sql`${ci.obtainedAt} desc`],
     atk: [sql`${ci.atk} * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)) desc`],
     def: [sql`${ci.def} * (1 + ${LEVEL_BONUS}::numeric * (${ci.level} - 1)) desc`],
+    // Les plus hauts niveaux d'abord ; à égalité, l'ordre par rareté.
+    level: [sql`${ci.level} desc`, ...byRarity],
     views: [byViews],
     rarity: byRarity,
     title: [sql`${c.title} asc`],
