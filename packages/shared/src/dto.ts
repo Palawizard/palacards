@@ -298,12 +298,18 @@ export interface AuctionDTO {
   reference: ReferencePriceDTO | null;
 }
 
+/** Ce qu'est devenue une carte après un échange (historique) : fusionnée, recyclée, upgradée, vendue, échangée. */
+export type CardFate = "fused" | "recycled" | "upgraded" | "sold" | "traded";
+
+/** Carte d'un échange : l'exemplaire, ou sa photo prise à l'échange s'il a disparu depuis (`instanceId` null). */
+export type TradeCardDTO = CardDTO & { fate: CardFate | null };
+
 export interface TradeDTO {
   id: number;
   from: { id: string; name: string; username: string };
   to: { id: string; name: string; username: string };
-  give: CardDTO[];
-  want: CardDTO[];
+  give: TradeCardDTO[];
+  want: TradeCardDTO[];
   fromPw: number;
   toPw: number;
   message: string | null;

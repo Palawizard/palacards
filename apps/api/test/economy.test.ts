@@ -400,3 +400,71 @@ describe("vues cachées sur les cartes des autres (« Plus lu » en duel)", () =
     expect((await a.get(`/cards/${card!.cardId}`)).body.card).toHaveProperty("views12m");
   });
 });
+
+describe("historique des échanges (suggestion n° 118)", () => {
+  /** Échange conclu : `b` reçoit une carte de `a`. Renvoie l'exemplaire reçu. */
+  async function tradedCard(a: Client, b: Client) {
+    const card = await giveCard(a);
+    const proposed = await a.post("/trades", { to: b.username, give: [card] });
+    expect((await b.post(`/trades/${proposed.body.id}/accept`)).status).toBe(200);
+    const [row] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, card));
+    return { card, tradeId: proposed.body.id as number, row: row! };
+  }
+  async function historyCard(p: Client, tradeId: number) {
+    const trade = (await p.get("/trades?box=history")).body.find((t: { id: number }) => t.id === tradeId);
+    return trade?.give[0];
+  }
+
+  it("garde une carte reçue puis fusionnée, avec la mention « fusionnée »", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const { card, tradeId, row } = await tradedCard(a, b);
+    const copy = await b.post("/test/grant-card", { cardId: row.cardId, count: 1 });
+    await ctx.db
+      .update(schema.cardInstances)
+      .set({ level: 2 })
+      .where(eq(schema.cardInstances.id, copy.body.instanceIds[0]));
+    expect((await b.post(`/collection/${copy.body.instanceIds[0]}/fuse`, { sourceId: card })).status).toBe(200);
+    for (const p of [a, b])
+      expect(await historyCard(p, tradeId)).toMatchObject({
+        instanceId: null,
+        cardId: row.cardId,
+        rarity: row.rarity,
+        level: 1,
+        fate: "fused",
+      });
+  });
+
+  it("garde une carte reçue puis recyclée ou upgradée, avec la bonne mention", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const recycled = await tradedCard(a, b);
+    expect((await b.post("/collection/recycle", { instanceIds: [recycled.card] })).status).toBe(200);
+    expect(await historyCard(b, recycled.tradeId)).toMatchObject({ cardId: recycled.row.cardId, fate: "recycled" });
+
+    const upgraded = await tradedCard(a, b);
+    await ctx.db.update(schema.cardInstances).set({ rarity: "C" }).where(eq(schema.cardInstances.id, upgraded.card));
+    expect((await b.post("/upgrade", { instanceIds: [upgraded.card] })).status).toBe(200);
+    expect(await historyCard(b, upgraded.tradeId)).toMatchObject({ cardId: upgraded.row.cardId, fate: "upgraded" });
+  });
+
+  it("note une carte revendue au marché, et garde la photo prise à l'échange", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const c = await signUp(app);
+    const { card, tradeId } = await tradedCard(a, b);
+    const listed = await b.post("/market", { instanceId: card, startPrice: 10, buyout: 20, durationMs: HOUR });
+    await givePw(c, 50);
+    expect((await c.post(`/market/${listed.body.id}/buy`)).status).toBe(200);
+    // Le nouveau propriétaire la monte d'un niveau : l'historique garde le niveau de l'échange.
+    await ctx.db.update(schema.cardInstances).set({ level: 3 }).where(eq(schema.cardInstances.id, card));
+    expect(await historyCard(a, tradeId)).toMatchObject({ instanceId: card, level: 1, fate: "sold" });
+  });
+
+  it("ne marque pas les cartes de l'échange qui les transmet", async () => {
+    const a = await signUp(app);
+    const b = await signUp(app);
+    const { tradeId } = await tradedCard(a, b);
+    expect(await historyCard(b, tradeId)).toMatchObject({ fate: null });
+  });
+});

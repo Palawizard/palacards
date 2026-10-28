@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, lte, or, schema, sql } from "@palacards/db";
-import { TRADE_MAX_CARDS_PER_SIDE, TRADE_TTL_MS } from "@palacards/game";
-import type { TradeDTO } from "@palacards/shared";
+import { effectiveStats, TRADE_MAX_CARDS_PER_SIDE, TRADE_TTL_MS } from "@palacards/game";
+import type { TradeCardDTO, TradeDTO } from "@palacards/shared";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { instancesByIds } from "./cards.js";
@@ -17,6 +17,7 @@ import {
   type Player,
 } from "./players.js";
 import { findUserByName } from "./profiles.js";
+import { articleUrl } from "./wiki.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
 type Trade = typeof schema.trades.$inferSelect;
@@ -34,6 +35,30 @@ export interface TradeOffer {
   message?: string;
 }
 
+type Instance = typeof ci.$inferSelect;
+
+/** Titres des articles de ces exemplaires, par `saison:article`. */
+async function titlesOf(tx: Tx, rows: Instance[]): Promise<Map<string, string>> {
+  if (!rows.length) return new Map();
+  const found = await tx
+    .select({ id: schema.cards.id, season: schema.cards.season, title: schema.cards.title })
+    .from(schema.cards)
+    .where(or(...rows.map((r) => and(eq(schema.cards.season, r.season), eq(schema.cards.id, r.cardId)))));
+  return new Map(found.map((c) => [`${c.season}:${c.id}`, c.title]));
+}
+
+/** Photo d'un exemplaire pour l'historique des échanges (gardée s'il est ensuite fusionné, recyclé…). */
+const snapshot = (r: Instance, titles: Map<string, string>) => ({
+  cardId: r.cardId,
+  season: r.season,
+  title: titles.get(`${r.season}:${r.cardId}`) ?? "?",
+  rarity: r.rarity,
+  shiny: r.shiny,
+  atk: r.atk,
+  def: r.def,
+  level: r.level,
+});
+
 async function lockTrade(tx: Tx, tradeId: number): Promise<Trade> {
   const [row] = await tx.select().from(t).where(eq(t.id, tradeId)).for("update");
   if (!row) throw notFound("Cet échange n'existe pas.");
@@ -46,7 +71,7 @@ async function release(tx: Tx, trade: Trade, from: Player) {
     .select()
     .from(schema.tradeItems)
     .where(and(eq(schema.tradeItems.tradeId, trade.id), eq(schema.tradeItems.side, "from")));
-  if (items.length) {
+  if (items.some((i) => i.instanceId !== null)) {
     await tx
       .update(ci)
       .set({ lockedBy: null })
@@ -54,7 +79,7 @@ async function release(tx: Tx, trade: Trade, from: Player) {
         and(
           inArray(
             ci.id,
-            items.map((i) => i.instanceId),
+            items.flatMap((i) => (i.instanceId === null ? [] : [i.instanceId])),
           ),
           eq(ci.ownerId, trade.fromId),
           eq(ci.lockedBy, "trade"),
@@ -116,9 +141,13 @@ async function createTrade(
     ...want.map((id) => ({ side: "to" as const, id })),
   ];
   if (items.length) {
-    await tx
-      .insert(schema.tradeItems)
-      .values(items.map((i) => ({ tradeId: trade!.id, instanceId: i.id, side: i.side })));
+    const titles = await titlesOf(tx, rows);
+    await tx.insert(schema.tradeItems).values(
+      items.map((i) => {
+        const r = byId.get(i.id)!;
+        return { tradeId: trade!.id, instanceId: i.id, side: i.side, ...snapshot(r, titles) };
+      }),
+    );
   }
   await fx.notify(tx, toId, parentId ? "trade_countered" : "trade_received", { tradeId: trade!.id, fromId });
   return { trade: trade!, from };
@@ -172,11 +201,14 @@ export async function acceptTrade(ctx: Ctx, userId: string, tradeId: number) {
     const from = players.get(trade.fromId)!;
     const to = players.get(trade.toId)!;
     const items = await tx.select().from(schema.tradeItems).where(eq(schema.tradeItems.tradeId, tradeId));
-    const ids = items.map((i) => i.instanceId).sort((x, y) => x - y);
+    // Exemplaire disparu depuis la proposition (compte supprimé) : l'échange ne peut plus se faire.
+    if (items.some((i) => i.instanceId === null))
+      throw conflict("trade_invalid", "Une carte de l'échange n'existe plus.");
+    const ids = items.map((i) => i.instanceId!).sort((x, y) => x - y);
     const rows = ids.length ? await tx.select().from(ci).where(inArray(ci.id, ids)).orderBy(ci.id).for("update") : [];
     const byId = new Map(rows.map((r) => [r.id, r]));
-    const give = items.filter((i) => i.side === "from").map((i) => i.instanceId);
-    const want = items.filter((i) => i.side === "to").map((i) => i.instanceId);
+    const give = items.filter((i) => i.side === "from").map((i) => i.instanceId!);
+    const want = items.filter((i) => i.side === "to").map((i) => i.instanceId!);
     for (const id of give) {
       const r = byId.get(id);
       if (!r || r.ownerId !== trade.fromId || r.lockedBy !== "trade")
@@ -195,8 +227,14 @@ export async function acceptTrade(ctx: Ctx, userId: string, tradeId: number) {
     await movePw(tx, to, trade.fromPw, "trade", tradeId);
     await movePw(tx, to, -trade.toPw, "trade", tradeId);
     await movePw(tx, from, trade.toPw, "trade", tradeId);
-    await transferInstances(tx, give, trade.toId, "trade");
-    await transferInstances(tx, want, trade.fromId, "trade");
+    // Photo reprise au moment de l'échange : un exemplaire demandé a pu gagner un niveau depuis la proposition.
+    for (const r of rows)
+      await tx
+        .update(schema.tradeItems)
+        .set({ level: r.level })
+        .where(and(eq(schema.tradeItems.tradeId, tradeId), eq(schema.tradeItems.instanceId, r.id)));
+    await transferInstances(tx, give, trade.toId, "trade", tradeId);
+    await transferInstances(tx, want, trade.fromId, "trade", tradeId);
     // Cartes : une ligne par sens (sortie puis entrée) pour chaque joueur.
     const fromCount = await ownedCount(tx, trade.fromId);
     const toCount = await ownedCount(tx, trade.toId);
@@ -270,9 +308,35 @@ export async function listTrades(ctx: Ctx, userId: string, box: "received" | "se
         trades.map((x) => x.id),
       ),
     );
-  // Vues seulement sur ses propres cartes (« Plus lu » en duel).
-  const cards = await instancesByIds(ctx.db, [...new Set(items.map((i) => i.instanceId))], userId);
-  const cardBy = new Map(cards.map((c) => [c.instanceId, c]));
+  // Échange en attente : l'exemplaire tel qu'il est (vues seulement sur ses propres cartes, « Plus lu » en duel).
+  // Échange clos : la photo prise à l'échange, gardée même si la carte a été fusionnée, recyclée ou vendue depuis.
+  const pending = new Set(trades.filter((x) => x.status === "pending").map((x) => x.id));
+  const live = await instancesByIds(
+    ctx.db,
+    [...new Set(items.flatMap((i) => (pending.has(i.tradeId) && i.instanceId !== null ? [i.instanceId] : [])))],
+    userId,
+  );
+  const liveBy = new Map(live.map((c) => [c.instanceId, c]));
+  const media = await ctx.wiki.cached([...new Set(items.map((i) => i.cardId))]);
+  const cardOf = (i: (typeof items)[number]): TradeCardDTO => {
+    const fate = i.fate ?? null;
+    const current = i.instanceId !== null && pending.has(i.tradeId) ? liveBy.get(i.instanceId) : undefined;
+    if (current) return { ...current, fate };
+    const m = media.get(i.cardId);
+    return {
+      instanceId: i.instanceId,
+      cardId: i.cardId,
+      season: i.season,
+      title: i.title,
+      rarity: i.rarity,
+      ...effectiveStats(i.atk, i.def, i.level),
+      level: i.level,
+      ...(i.shiny ? { shiny: true } : {}),
+      thumbUrl: m?.thumbUrl ?? null,
+      pageUrl: m?.pageUrl ?? articleUrl(i.title),
+      fate,
+    };
+  };
   const users = await ctx.db
     .select({
       id: schema.user.id,
@@ -284,10 +348,7 @@ export async function listTrades(ctx: Ctx, userId: string, box: "received" | "se
   const userBy = new Map(users.map((u) => [u.id, u]));
   const person = (id: string) => ({ id, name: userBy.get(id)?.name ?? "?", username: userBy.get(id)?.username ?? "" });
   return trades.map((x) => {
-    const side = (s: "from" | "to") =>
-      items
-        .filter((i) => i.tradeId === x.id && i.side === s)
-        .flatMap((i) => (cardBy.get(i.instanceId) ? [cardBy.get(i.instanceId)!] : []));
+    const side = (s: "from" | "to") => items.filter((i) => i.tradeId === x.id && i.side === s).map(cardOf);
     return {
       id: x.id,
       from: person(x.fromId),
