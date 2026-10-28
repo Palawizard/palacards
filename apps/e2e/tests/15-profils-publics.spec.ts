@@ -31,3 +31,33 @@ test("profil d'un autre joueur : ses succès en lecture seule (suggestion n° 10
   // Les familles pas encore commencées sont repliées.
   await expect(section.getByText(/pas encore commencées?/)).toBeVisible();
 });
+
+test("page publique d'une guilde, depuis le classement et le profil d'un membre (suggestion n° 110)", async ({
+  browser,
+}) => {
+  const chief = await newPlayer(browser, "chef");
+  const name = `Guilde ${chief.name}`.slice(0, 24);
+  await apiCall(chief.page, "POST", "/guilds", { name, tag: "PUB", emblem: "🦊", description: "Ouverte à tous" });
+
+  const { page } = await newPlayer(browser, "curieux");
+  await page.goto("leaderboard");
+  await page.getByRole("button", { name: "Guildes" }).click();
+  await page.getByRole("link", { name: new RegExp(name) }).click();
+  await expect(page).toHaveURL(/\/guild\/\d+$/);
+  await expect(page.getByRole("heading", { level: 1, name: new RegExp(name) })).toBeVisible();
+  await expect(page.getByText("Ouverte à tous")).toBeVisible();
+  await expect(page.getByText(/Classement des guildes/)).toBeVisible();
+  // Rien de réservé aux membres : ni salon, ni objectif de la semaine, ni gestion.
+  await expect(page.getByText(/Salon de la guilde|Objectif de la semaine|Promouvoir|Quitter/)).toHaveCount(0);
+  const guildUrl = page.url();
+
+  // Le membre mène à son profil, qui ramène à la guilde.
+  await page.getByRole("link", { name: chief.name, exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/u/${chief.name}$`));
+  await page.getByRole("link", { name: new RegExp(name) }).click();
+  await expect(page).toHaveURL(guildUrl);
+
+  // Un membre qui ouvre la page publique de sa guilde retrouve sa page habituelle.
+  await chief.page.goto(guildUrl.replace(/^.*\/palacards\//, ""));
+  await expect(chief.page).toHaveURL(/\/guild$/);
+});

@@ -192,9 +192,14 @@ export default function LeaderboardPage() {
                 <td className="relative px-3 py-1.5">
                   {r.banner && <RowBanner banner={r.banner} />}
                   <div className="relative flex items-center gap-2.5">
-                    {r.username ? (
-                      // Doublon du lien du nom, hors tabulation : l'avatar aussi mène au profil.
-                      <Link href={`/u/${r.username}`} tabIndex={-1} aria-hidden className="rounded-full">
+                    {r.username || board === "guilds" ? (
+                      // Doublon du lien du nom, hors tabulation : l'avatar (ou l'emblème) mène aussi à la page.
+                      <Link
+                        href={r.username ? `/u/${r.username}` : `/guild/${r.id}`}
+                        tabIndex={-1}
+                        aria-hidden
+                        className="rounded-full"
+                      >
                         <Avatar name={r.name} avatar={r.avatar} size="sm" />
                       </Link>
                     ) : (
@@ -204,6 +209,10 @@ export default function LeaderboardPage() {
                       {r.username ? (
                         <Link href={`/u/${r.username}`} className="font-semibold hover:underline">
                           {r.name}
+                        </Link>
+                      ) : board === "guilds" ? (
+                        <Link href={`/guild/${r.id}`} className="font-semibold hover:underline">
+                          {r.name} {r.extra && <span className="font-normal text-faint">[{r.extra}]</span>}
                         </Link>
                       ) : (
                         <span className="font-semibold">

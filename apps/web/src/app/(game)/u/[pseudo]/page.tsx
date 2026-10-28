@@ -295,9 +295,9 @@ export default function ProfilePage({ params }: { params: Promise<{ pseudo: stri
                     {p.guild.emblem} {p.guild.name} [{p.guild.tag}]
                   </Link>
                 ) : (
-                  <span>
+                  <Link href={`/guild/${p.guild.id}`} className="article-link">
                     {p.guild.emblem} {p.guild.name} [{p.guild.tag}]
-                  </span>
+                  </Link>
                 )}
               </>
             )}
