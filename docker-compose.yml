@@ -38,6 +38,18 @@ services:
       - work_mem=16MB
       - -c
       - maintenance_work_mem=512MB
+      # Une requête = un processus : sur une petite machine, une grosse requête découpée en 3 processus
+      # occupait tous les cœurs et faisait attendre les requêtes courtes du jeu (mini-jeux, ouvertures).
+      - -c
+      - max_parallel_workers_per_gather=0
+      # Mesure des requêtes : statistiques cumulées (vue pg_stat_statements) et journal des requêtes
+      # de plus de 500 ms (docker compose logs postgres).
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
+      - -c
+      - log_min_duration_statement=500
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
       - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
@@ -80,6 +92,10 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       BASE_PATH: /palacards
       NODE_ENV: production
+      THUMB_CACHE_DIR: /var/cache/palacards/thumbs
+    volumes:
+      # Vignettes Wikimedia déjà téléchargées (2 Go au plus, THUMB_CACHE_MAX_MB) : survivent aux déploiements.
+      - thumbs:/var/cache/palacards/thumbs
     depends_on:
       postgres:
         condition: service_healthy
@@ -147,3 +163,7 @@ networks:
     # branché pour joindre palacards-api et palacards-web par leur nom (deploy/Caddyfile.palacards).
     # Nom réel du réseau (docker network ls) : CADDY_NETWORK dans le .env (`web` sur vm-apps).
     name: ${CADDY_NETWORK:-caddy}
+
+volumes:
+  # Cache des vignettes de l'API (docker volume : palacards_thumbs).
+  thumbs: {}

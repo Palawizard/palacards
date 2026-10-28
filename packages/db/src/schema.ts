@@ -56,6 +56,10 @@ export const cards = pgTable(
     index("cards_rarity_rand_idx").on(t.season, t.rarity, t.randKey),
     // Tris du catalogue paginé par curseur (keyset).
     index("cards_views_idx").on(t.season, t.views12m, t.id),
+    // « Plus ou moins vu » : candidats par fourchette de vues parmi les SR, UR et L seulement.
+    index("cards_hl_views_idx")
+      .on(t.season, t.views12m, t.id)
+      .where(sql`${t.rarity} in ('SR', 'UR', 'L')`),
     index("cards_atk_idx").on(t.season, t.atk, t.id),
     index("cards_def_idx").on(t.season, t.def, t.id),
     index("cards_title_idx").on(t.season, t.title, t.id),
@@ -561,6 +565,15 @@ export const themes = pgTable(
     /** Admin qui a créé le thème (sans clé étrangère : le thème survit au compte). */
     createdBy: text("created_by"),
     createdAt: tstz("created_at").notNull().defaultNow(),
+    /**
+     * Saison pour laquelle `theme_cards.rarity/pos`, `byRarity` et `previewIds` sont calculés (null : à refaire,
+     * par exemple après un ajout d'articles en SQL). Recalculés tout seuls au premier usage d'une autre saison.
+     */
+    indexedSeason: smallint("indexed_season"),
+    /** Articles du thème par rareté dans `indexedSeason`. */
+    byRarity: jsonb("by_rarity").$type<Partial<Record<(typeof rarityEnum.enumValues)[number], number>>>(),
+    /** Cartes phares (les plus rares, puis les plus lues) dans `indexedSeason`, dans l'ordre d'affichage. */
+    previewIds: jsonb("preview_ids").$type<number[]>(),
   },
   (t) => [
     index("themes_ends_idx").on(t.endsAt),
@@ -577,9 +590,17 @@ export const themeCards = pgTable(
       .notNull()
       .references(() => themes.id, { onDelete: "cascade" }),
     cardId: bigint("card_id", { mode: "number" }).notNull(),
+    /** Rareté de l'article dans `themes.indexed_season` (null : absent de cette saison). */
+    rarity: rarityEnum("rarity"),
+    /** Rang de l'article parmi ceux de sa rareté (0, 1, 2…) : tirage direct d'un rang au hasard. */
+    pos: integer("pos"),
   },
-  // Index sur l'article seul : thèmes d'une carte (fiche carte).
-  (t) => [primaryKey({ columns: [t.themeId, t.cardId] }), index("theme_cards_card_idx").on(t.cardId)],
+  // Index sur l'article seul : thèmes d'une carte (fiche carte). Index de tirage : (thème, rareté, rang).
+  (t) => [
+    primaryKey({ columns: [t.themeId, t.cardId] }),
+    index("theme_cards_card_idx").on(t.cardId),
+    index("theme_cards_draw_idx").on(t.themeId, t.rarity, t.pos),
+  ],
 );
 
 /** Boosters à thème d'un joueur : achetés (ou reçus) pas encore ouverts, et nombre déjà ouverts. */
@@ -1279,6 +1300,10 @@ export const hlRuns = pgTable(
     /** Fin de l'essai : mauvaise réponse, temps écoulé, ou plus aucun article possible. */
     endReason: text("end_reason", { enum: ["wrong", "timeout", "exhausted"] }),
     reward: integer("reward").notNull().default(0),
+    /** Entraînement (après les 3 essais du jour) : ni PW, ni XP, ni quête, ni succès, ni classement. */
+    practice: boolean("practice").notNull().default(false),
+    /** La paire en cours remplace une paire impossible (aucun article dans le sens tiré) : les deux sont nouveaux. */
+    pairRenewed: boolean("pair_renewed").notNull().default(false),
     createdAt: tstz("created_at").notNull().defaultNow(),
     finishedAt: tstz("finished_at"),
   },
@@ -1289,6 +1314,33 @@ export const hlRuns = pgTable(
       .where(sql`${t.status} = 'playing'`),
     index("hl_runs_month_idx").on(t.day, t.streak),
   ],
+);
+
+/**
+ * Chaque réponse de « Plus ou moins vu » : la paire, les vues, le choix et le temps de réponse. Sert à vérifier
+ * une série suspecte après coup (le 22/10/2026, impossible de rejouer une série de 52 sans ce journal).
+ */
+export const hlSteps = pgTable(
+  "hl_steps",
+  {
+    runId: bigint("run_id", { mode: "number" })
+      .notNull()
+      .references(() => hlRuns.id, { onDelete: "cascade" }),
+    step: smallint("step").notNull(),
+    keptCardId: bigint("kept_card_id", { mode: "number" }).notNull(),
+    challengerCardId: bigint("challenger_card_id", { mode: "number" }).notNull(),
+    keptViews: bigint("kept_views", { mode: "number" }).notNull(),
+    challengerViews: bigint("challenger_views", { mode: "number" }).notNull(),
+    pick: text("pick", { enum: ["kept", "challenger"] }).notNull(),
+    correct: boolean("correct").notNull(),
+    timeout: boolean("timeout").notNull(),
+    /** Paire tirée de zéro (voir `hl_runs.pair_renewed`). */
+    renewed: boolean("renewed").notNull(),
+    /** Temps entre l'affichage de la paire et la réponse (ms). */
+    answerMs: integer("answer_ms").notNull(),
+    answeredAt: tstz("answered_at").notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.runId, t.step] })],
 );
 
 /** Articles déjà montrés au joueur ce jour-là : jamais deux fois le même dans la journée. */

@@ -758,8 +758,8 @@ export const PackOpener = memo(function PackOpener({
   season: number;
   /** Booster à thème sélectionné (sinon : paquet du stock). */
   theme?: ThemeDTO | null;
-  /** Après chaque ouverture réussie (relire les boosters à thème). */
-  onOpened?: () => void;
+  /** Après chaque ouverture réussie d'un booster à thème : son stock et son compteur d'ouvertures à jour. */
+  onOpened?: (theme: { id: number; owned: number; opened: number }) => void;
 }) {
   const { me, mutateMe } = useMe();
   const speed: Speed = me?.animationSpeed ?? "normal";
@@ -860,7 +860,7 @@ export const PackOpener = memo(function PackOpener({
         );
       } else if (kept) toast.success(`Recyclage auto : ${keptNote}`);
       if (buying) play("coin");
-      onOpened?.();
+      if (res.theme) onOpened?.(res.theme);
       void mutateMe((m) => (m ? { ...m, packs: res.packs } : m), { revalidate: false });
     } catch (err) {
       setPhase("sealed");

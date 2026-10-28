@@ -12,7 +12,7 @@ import {
 } from "@palacards/game";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { progressionIdle } from "../src/services/progression.js";
-import { createTheme } from "../src/services/themes.js";
+import { createTheme, drawThemeCard } from "../src/services/themes.js";
 import { nextParisMidnight } from "../src/services/wheel.js";
 import { cleanCategory, createWiki } from "../src/services/wiki.js";
 import { makeApp, signUp, signUpAdmin, uniqueName, type Client } from "./helpers.js";
@@ -628,6 +628,64 @@ describe("boosters à thème", () => {
       expect(inAdmin.categories).toEqual(["Chanteur français", "Chanteuse française"]);
     } finally {
       spy.mockRestore();
+    }
+  });
+
+  it("index de tirage : rareté et rang de chaque article, tirage direct, refait si remis à zéro", async () => {
+    const admin = await signUpAdmin(app, ctx);
+    const created = await makeTheme(admin);
+    const id = created.body.id as number;
+    const season = Number(
+      (await ctx.db.execute<{ id: number }>(sql`select id from seasons where status = 'active'`))[0]!.id,
+    );
+    const rows = await ctx.db.execute<{ card_id: string; rarity: string; pos: number; real: string }>(sql`
+      select tc.card_id, tc.rarity, tc.pos, c.rarity as real
+      from theme_cards tc join cards c on c.season = ${season} and c.id = tc.card_id
+      where tc.theme_id = ${id} order by tc.card_id
+    `);
+    expect(rows).toHaveLength(30);
+    const byRarity: Record<string, number[]> = {};
+    for (const r of rows) {
+      expect(r.rarity).toBe(r.real);
+      (byRarity[r.rarity] ??= []).push(r.pos);
+    }
+    // Rangs 0, 1, 2… par rareté, dans l'ordre des identifiants.
+    for (const pos of Object.values(byRarity)) expect(pos).toEqual(pos.map((_, i) => i));
+    const [t] = await ctx.db.execute<{
+      indexed_season: number;
+      by_rarity: Record<string, number>;
+      preview_ids: number[];
+    }>(sql`select indexed_season, by_rarity, preview_ids from themes where id = ${id}`);
+    expect(t!.indexed_season).toBe(season);
+    for (const [r, pos] of Object.entries(byRarity)) expect(t!.by_rarity[r]).toBe(pos.length);
+    expect(t!.preview_ids).toHaveLength(4);
+
+    const p = await signUp(app);
+    const listed = (await p.get("/themes")).body.find((x: { id: number }) => x.id === id);
+    expect(listed.byRarity).toMatchObject(Object.fromEntries(Object.entries(byRarity).map(([r, v]) => [r, v.length])));
+    expect(listed.preview.map((c: { cardId: number }) => c.cardId)).toEqual(t!.preview_ids);
+
+    // Le dernier rang d'une rareté donne l'article d'identifiant le plus grand de cette rareté.
+    const counts = listed.byRarity;
+    const rarity = Object.entries(byRarity).sort((a, b) => b[1].length - a[1].length)[0]![0] as "C" | "R" | "SR";
+    const last = rows.filter((r) => r.rarity === rarity).at(-1)!;
+    const drawn = await drawThemeCard(ctx.db, season, id, rarity, counts, (n) => n - 1);
+    expect(drawn).toMatchObject({ id: Number(last.card_id), themed: true });
+
+    // Article retiré en SQL et index remis à null : tout se recalcule à la lecture suivante.
+    await ctx.db.execute(sql`delete from theme_cards where theme_id = ${id} and card_id = ${last.card_id}`);
+    await ctx.db.execute(sql`update themes set indexed_season = null where id = ${id}`);
+    const again = (await p.get("/themes")).body.find((x: { id: number }) => x.id === id);
+    expect(again.byRarity[rarity]).toBe(counts[rarity] - 1);
+    const [t2] = await ctx.db.execute<{ indexed_season: number }>(
+      sql`select indexed_season from themes where id = ${id}`,
+    );
+    expect(t2!.indexed_season).toBe(season);
+    await p.post("/test/grant-pw", { amount: 1000 });
+    for (let i = 0; i < 3; i++) {
+      const opened = await p.post("/packs/open", { themeId: id, buy: true });
+      expect(opened.status).toBe(200);
+      expect(opened.body.theme.themedCardIds).not.toContain(Number(last.card_id));
     }
   });
 

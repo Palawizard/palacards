@@ -3,13 +3,20 @@ import type { RandomInt } from "./packs.js";
 // ---------------------------------------------------------------------------
 // « Plus ou moins vu » (remplace l'article du jour)
 //
-// Trois essais par jour (heure de Paris). Un essai oppose deux articles : le joueur choisit celui qui a eu le
+// Trois essais par jour (heure de Paris), puis entraînement illimité sans PW, XP, quêtes, succès ni classement. Un essai oppose deux articles : le joueur choisit celui qui a eu le
 // plus de vues sur 12 mois. Bonne réponse : la série monte de 1, l'article le plus vu reste et un nouveau
 // arrive en face, avec un écart de vues de plus en plus serré. Mauvaise réponse ou temps écoulé : l'essai
-// s'arrête et rapporte selon la série atteinte. Le serveur garde la paire, l'échéance et les vues.
+// s'arrête et rapporte selon la série atteinte. Le serveur garde la paire, l'échéance et les vues. Le nouvel
+// article est plus vu une fois sur deux, sans exception : si aucun ne convient dans le sens tiré, la paire
+// entière est remplacée.
 // ---------------------------------------------------------------------------
 
 export const HL_TRIES_PER_DAY = 3;
+/**
+ * Paires tirées au plus pour remplacer une paire impossible (aucun article dans le sens tiré) : au-delà, l'essai
+ * s'arrête (« plus aucun article possible »).
+ */
+export const HL_RENEW_ATTEMPTS = 6;
 /** Temps pour choisir, contrôlé par le serveur. */
 export const HL_CHOICE_MS = 15_000;
 /** Vues révélées à l'écran avant la paire suivante : ajouté à son échéance, le chrono ne perd rien. */
@@ -89,26 +96,28 @@ export function hlViewRange(views: number, band: { min: number; max: number }, h
 export const hlNewIsHigher = (random: RandomInt) => random(2) === 0;
 
 /**
- * Choisit le nouvel article parmi des candidats (déjà filtrés : pool, pas encore vus aujourd'hui) : le premier
- * de la fourchette voulue dans le sens tiré, sinon dans les fourchettes élargies, sinon n'importe quel candidat
- * à au moins ×1,05. `null` : aucun candidat possible.
+ * Choisit le nouvel article parmi des candidats (déjà filtrés : pool, pas encore vus aujourd'hui), **dans le sens
+ * tiré** (`higher` : plus vu que l'article gardé) : le premier de la fourchette voulue, sinon des fourchettes
+ * élargies, jamais à moins de ×1,05. `null` : aucun candidat dans ce sens.
+ *
+ * Jamais l'autre sens en repli : en haut du pool (l'article gardé est l'un des plus vus), le nouvel article
+ * serait toujours moins vu et « garder » gagnerait à coup sûr (série de 52 le 22/10/2026). L'appelant tire
+ * alors une nouvelle paire.
  */
 export function pickChallenger<T extends { views: number }>(
   keptViews: number,
   candidates: readonly T[],
   streak: number,
   random: RandomInt,
+  higher: boolean,
 ): T | null {
-  const higher = hlNewIsHigher(random);
   for (const band of hlWidenedBands(streak)) {
-    for (const dir of [higher, !higher]) {
-      const fits = candidates.filter((c) => {
-        if (dir ? c.views <= keptViews : c.views >= keptViews) return false;
-        const r = ratio(c.views, keptViews);
-        return r >= band.min && r <= band.max;
-      });
-      if (fits.length) return fits[random(fits.length)]!;
-    }
+    const fits = candidates.filter((c) => {
+      if (higher ? c.views <= keptViews : c.views >= keptViews) return false;
+      const r = ratio(c.views, keptViews);
+      return r >= band.min && r <= band.max;
+    });
+    if (fits.length) return fits[random(fits.length)]!;
   }
   return null;
 }
@@ -127,13 +136,3 @@ export function hlEligibleTitle(title: string): boolean {
 /** Description courte d'une page d'homonymie (Wikidata) : écartée aussi. */
 export const hlEligibleDescription = (description: string | null | undefined) =>
   !description || !/page d['’]homonymie|liste (de|des|d['’])|wikimedia/i.test(description);
-
-/** Texte à partager en fin de journée, sans spoiler (aucun titre d'article). */
-export function hlShareText(day: string, streaks: readonly number[], best: number): string {
-  const tries = streaks.map((s, i) => `Essai ${i + 1} : ${"🟩".repeat(Math.min(s, 10))}${s > 10 ? "+" : ""} ${s}`);
-  return [
-    `PalaCards · Plus ou moins vu · ${day}`,
-    ...tries,
-    `Meilleure série du jour : ${Math.max(0, ...streaks)} · record : ${best}`,
-  ].join("\n");
-}

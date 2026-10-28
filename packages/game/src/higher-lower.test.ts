@@ -8,9 +8,9 @@ import {
   hlEligibleTitle,
   hlExpired,
   hlReward,
-  hlShareText,
   hlViewRange,
   hlWidenedBands,
+  hlNewIsHigher,
   pickChallenger,
 } from "./higher-lower.js";
 import type { RandomInt } from "./packs.js";
@@ -77,7 +77,7 @@ describe("plus ou moins vu : difficulté", () => {
   });
 
   it("choisit un nouvel article dans la fourchette, 50 % plus vu, jamais à égalité", () => {
-    const candidates = [10_000, 30_000, 60_000, 95_000, 100_000, 103_000, 160_000, 400_000, 900_000].map(
+    const candidates = [10_000, 30_000, 60_000, 95_000, 100_000, 110_000, 160_000, 400_000, 900_000].map(
       (views, id) => ({
         id,
         views,
@@ -86,7 +86,7 @@ describe("plus ou moins vu : difficulté", () => {
     let higher = 0;
     const random = seeded("challenger");
     for (let i = 0; i < 2_000; i++) {
-      const c = pickChallenger(100_000, candidates, 0, random)!;
+      const c = pickChallenger(100_000, candidates, 0, random, hlNewIsHigher(random))!;
       const r = Math.max(c.views, 100_000) / Math.min(c.views, 100_000);
       expect(r).toBeGreaterThanOrEqual(2);
       expect(r).toBeLessThanOrEqual(20);
@@ -94,9 +94,9 @@ describe("plus ou moins vu : difficulté", () => {
     }
     expect(higher / 2_000).toBeGreaterThan(0.45);
     expect(higher / 2_000).toBeLessThan(0.55);
-    // Série de 10 : ×1,05 à ×1,4 seulement (95 000 ou 103 000 vues ici).
+    // Série de 10 : ×1,05 à ×1,4 seulement (95 000 ou 110 000 vues ici).
     for (let i = 0; i < 200; i++) {
-      const c = pickChallenger(100_000, candidates, 10, random)!;
+      const c = pickChallenger(100_000, candidates, 10, random, hlNewIsHigher(random))!;
       const r = Math.max(c.views, 100_000) / Math.min(c.views, 100_000);
       expect(r).toBeGreaterThanOrEqual(1.05);
       expect(r).toBeLessThanOrEqual(1.4);
@@ -106,10 +106,21 @@ describe("plus ou moins vu : difficulté", () => {
   it("élargit si rien ne convient, et renvoie null sans candidat possible", () => {
     const random = seeded("large");
     // Seul candidat : ×1,1, hors de la fourchette ×2 à ×20 de la série 0.
-    expect(pickChallenger(100_000, [{ views: 110_000 }], 0, random)).toEqual({ views: 110_000 });
+    expect(pickChallenger(100_000, [{ views: 110_000 }], 0, random, true)).toEqual({ views: 110_000 });
     // Égalité ou presque (×1,02) : jamais.
-    expect(pickChallenger(100_000, [{ views: 100_000 }, { views: 102_000 }], 0, random)).toBeNull();
-    expect(pickChallenger(100_000, [], 0, random)).toBeNull();
+    expect(pickChallenger(100_000, [{ views: 100_000 }, { views: 102_000 }], 0, random, true)).toBeNull();
+    expect(pickChallenger(100_000, [], 0, random, true)).toBeNull();
+  });
+
+  it("ne change jamais de sens : en haut du pool, aucun article plus vu, donc null (pas un moins vu)", () => {
+    const random = seeded("plafond");
+    // Article gardé au sommet du pool (comme Ed Gein, 3,8 M de vues) : seulement des articles moins vus.
+    const below = [{ views: 3_200_000 }, { views: 3_000_000 }, { views: 2_500_000 }];
+    expect(pickChallenger(3_800_000, below, 12, random, true)).toBeNull();
+    expect(below).toContain(pickChallenger(3_800_000, below, 12, random, false));
+    // Et l'inverse en bas du pool.
+    const above = [{ views: 30_000 }, { views: 40_000 }];
+    expect(pickChallenger(25_000, above, 0, random, false)).toBeNull();
   });
 });
 
@@ -131,12 +142,5 @@ describe("plus ou moins vu : réponses et pool", () => {
     expect(hlEligibleDescription("page d'homonymie de Wikimedia")).toBe(false);
     expect(hlEligibleDescription("monument de Paris")).toBe(true);
     expect(hlEligibleDescription(null)).toBe(true);
-  });
-
-  it("partage sans spoiler : séries du jour et record, aucun titre", () => {
-    const text = hlShareText("2026-10-22", [3, 0, 12], 14);
-    expect(text).toContain("Meilleure série du jour : 12");
-    expect(text).toContain("record : 14");
-    expect(text.split("\n")).toHaveLength(5);
   });
 });

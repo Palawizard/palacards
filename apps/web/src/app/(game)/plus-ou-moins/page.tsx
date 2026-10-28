@@ -2,13 +2,13 @@
 
 import { HL_REVEAL_MS, HL_REWARD_CAP, hlReward } from "@palacards/game";
 import type { HlAnswerDTO, HlArticleDTO, HlPairDTO, HlStateDTO } from "@palacards/shared";
-import { Check, Clock, Copy, Eye, Flame, Trophy, X } from "lucide-react";
+import { Check, Clock, Eye, Flame, Trophy, X } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { ErrorBox } from "@/components/ui";
-import { api, ApiError, SITE_URL, thumbSrc } from "@/lib/api";
+import { api, ApiError, thumbSrc } from "@/lib/api";
 import { useSeenFeature } from "@/lib/features";
 import { countdown, fmt } from "@/lib/format";
 import { useMe } from "@/lib/game";
@@ -187,16 +187,6 @@ export default function HigherLowerPage() {
     }
   }
 
-  async function share() {
-    if (!data?.share) return;
-    try {
-      await navigator.clipboard.writeText(`${data.share}\n${SITE_URL}/plus-ou-moins`);
-      toast.success("Copié : colle-le à tes potes !");
-    } catch {
-      toast.error("Copie impossible sur ce navigateur.");
-    }
-  }
-
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
 
   return (
@@ -207,7 +197,7 @@ export default function HigherLowerPage() {
           Lequel de ces deux articles a eu le plus de vues sur Wikipédia ces 12 derniers mois{NBSP}? Bonne réponse{NBSP}
           : ta série monte et le plus vu reste face à un nouvel article, de plus en plus proche. Une erreur, ou 15
           secondes sans répondre, et l’essai s’arrête. 3 essais par jour, jusqu’à {fmt(hlReward(HL_REWARD_CAP))}
-          {NBSP}PW par essai.
+          {NBSP}PW par essai, puis entraînement à volonté (sans PW ni classement).
         </p>
       </div>
 
@@ -237,10 +227,11 @@ export default function HigherLowerPage() {
               <div className="flex flex-col gap-4 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <p className="tnum">
-                    Essai {pair.tryNo} · série{" "}
+                    {pair.practice ? "Entraînement" : `Essai ${pair.tryNo}`} · série{" "}
                     <strong className="text-text">{reveal ? reveal.res.streak : pair.streak}</strong>
                   </p>
-                  {!reveal && (
+                  {!reveal && pair.practice && <p className="text-muted">Sans PW, ni XP, ni classement</p>}
+                  {!reveal && !pair.practice && (
                     <p className="tnum text-muted">
                       En jeu{NBSP}: {fmt(pair.reward)}
                       {NBSP}PW → {fmt(pair.nextReward)}
@@ -249,6 +240,11 @@ export default function HigherLowerPage() {
                   )}
                 </div>
                 {!reveal && <Timer key={`${pair.tryNo}-${pair.step}`} pair={pair} />}
+                {!reveal && pair.renewed && (
+                  <p className="text-sm text-muted" role="status">
+                    Nouvelle paire{NBSP}: plus aucun article ne pouvait affronter le précédent.
+                  </p>
+                )}
                 <AnswerBoard pair={pair} res={reveal?.res ?? null} busy={busy} onPick={pick} reduce={!!reduce} />
                 <p className="sr-only" aria-live="assertive">
                   {reveal
@@ -279,7 +275,11 @@ export default function HigherLowerPage() {
                   </p>
                   <p className="tnum text-sm text-muted">
                     Série de <strong className="text-text">{over.streak}</strong>
-                    {over.reward ? ` · +${fmt(over.reward)}${NBSP}PW` : " · pas de PW cette fois"}
+                    {over.reward
+                      ? ` · +${fmt(over.reward)}${NBSP}PW`
+                      : reveal?.pair.practice
+                        ? " · entraînement, sans PW"
+                        : " · pas de PW cette fois"}
                   </p>
                 </div>
               </motion.section>
@@ -299,48 +299,22 @@ export default function HigherLowerPage() {
                   : "Jouer"}
               </button>
             ) : (
-              <p className="text-sm text-muted">
-                Tes 3 essais du jour sont joués. Nouveaux essais dans{" "}
-                <strong className="tnum text-text">{countdown(Math.max(0, resetIn))}</strong>.
-              </p>
-            ))}
-
-          {data.runs.length > 0 && (
-            <section className="infobox" aria-labelledby="hl-day">
-              <h2 id="hl-day" className="infobox-head">
-                Ta journée
-              </h2>
-              <div className="flex flex-col gap-3 p-4">
-                <ol className="tnum flex flex-wrap gap-2 text-sm">
-                  {data.runs.map((r) => (
-                    <li key={r.tryNo} className="rounded-lg border border-line px-3 py-2">
-                      Essai {r.tryNo}
-                      {NBSP}: série <strong className="text-text">{r.streak}</strong>
-                      <span className="text-muted">
-                        {r.reward ? ` · +${fmt(r.reward)}${NBSP}PW` : ""}
-                        {r.endReason === "timeout" ? " · temps écoulé" : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-                <p className="tnum text-sm text-muted">
-                  Meilleure série du jour{NBSP}: <strong className="text-text">{data.todayBest}</strong> · série record
-                  {NBSP}: <strong className="text-text">{data.best}</strong> · {fmt(data.totalWins)} réussites en tout
+              <div className="flex flex-col gap-3">
+                <p className="text-sm text-muted">
+                  Tes 3 essais du jour sont joués. Nouveaux essais dans{" "}
+                  <strong className="tnum text-text">{countdown(Math.max(0, resetIn))}</strong>. En attendant, tu peux
+                  t’entraîner{NBSP}: sans PW, ni XP, ni quêtes, ni succès, et rien ne compte au classement.
                 </p>
-                {data.share && (
-                  <div className="flex flex-col gap-2">
-                    <pre className="pc-share whitespace-pre-wrap text-left text-sm" aria-label="Ton résumé à partager">
-                      {data.share}
-                    </pre>
-                    <button type="button" className="btn self-start" onClick={share}>
-                      <Copy aria-hidden className="size-4" />
-                      Copier le résumé
-                    </button>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  className="btn min-w-56 self-start max-sm:w-full max-sm:self-stretch"
+                  disabled={busy}
+                  onClick={start}
+                >
+                  {data.practice.played ? "Rejouer à l’entraînement" : "S’entraîner"}
+                </button>
               </div>
-            </section>
-          )}
+            ))}
         </>
       )}
     </div>
@@ -373,7 +347,9 @@ function AnswerBoard({
         <motion.div
           key={`${pair.tryNo}-${pair.step}-${side}`}
           initial={
-            side === "challenger" && !reduce && pair.step > 0 ? { opacity: 0, transform: "translateX(12px)" } : false
+            !reduce && pair.step > 0 && (side === "challenger" || pair.renewed)
+              ? { opacity: 0, transform: "translateX(12px)" }
+              : false
           }
           animate={{ opacity: 1, transform: "translateX(0px)" }}
           transition={{ duration: 0.24, ease: EASE_OUT }}
