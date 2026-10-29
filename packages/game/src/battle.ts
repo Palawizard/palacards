@@ -294,6 +294,28 @@ export function yearCandidates(extract: string, maxYear: number): { sentence: st
   return candidates;
 }
 
+/**
+ * L'année apparaît-elle dans le texte d'un article (date Wikidata vérifiable par le joueur) ? Années à 4 chiffres :
+ * le nombre seul (pas dans « 18573 » ni « 1857,5 »). Années plus courtes et avant J.-C. : seulement en contexte
+ * de date (« en 82 », « l'an 601 », « 470 av. J.-C. », « -470 »), sinon « 82 mètres » suffirait.
+ */
+export function yearInText(text: string, year: number): boolean {
+  if (!text || !Number.isInteger(year) || year === 0) return false;
+  const n = Math.abs(year);
+  if (year > 0 && n >= 1000) return new RegExp(`(?<![\\d,.])${n}(?![\\d]|,\\d)`).test(text);
+  const bc = String.raw`\s*(?:av\.?|avant)\s*(?:J\.?\s*-?\s*C\.?|notre ère|l'ère commune)`;
+  if (year < 0)
+    return (
+      new RegExp(`(?<![\\d,.])${n}${bc}`).test(text) || new RegExp(`(?:^|[\\s(\\[/–])[-−]${n}(?![\\d])`).test(text)
+    );
+  const ad = new RegExp(String.raw`(?<![\d,.])${n}\s*(?:apr\.?|après)\s*J\.?\s*-?\s*C`);
+  const dated = new RegExp(
+    String.raw`(?:^|[\s(])(?:en|l'an|an|vers|dès|depuis|l'année)\s+${n}(?![\d,]|\s*(?:av|avant)\b)`,
+    "i",
+  );
+  return ad.test(text) || dated.test(text);
+}
+
 /** La phrase avec cette année masquée (▢▢▢▢), tronquée proprement. */
 export function maskYear(sentence: string, year: number, maxLength = 280): string {
   return truncate(sentence.replace(new RegExp(`(?<![\\d,.])${year}(?![\\d,])`, "g"), "▢▢▢▢"), maxLength);
