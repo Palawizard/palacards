@@ -72,7 +72,7 @@ export const TRIAGE_JSON_SCHEMA = {
 } as const;
 
 /** Ce que le jeu contient aujourd'hui : pour repérer les doublons de fonctionnalités et ce qui touche l'équilibrage. */
-const PRODUCT = `PalaCards est un jeu de cartes à collectionner gratuit, entre amis, sur palawi.fr/palacards. Chaque carte est un article du Wikipédia francophone (environ 2,6 millions de cartes par saison). Interface en français, joueurs tutoyés. Aucun argent réel : la monnaie du jeu s'appelle PW.
+const PRODUCT = `PalaCards est un jeu de cartes à collectionner gratuit, entre amis, sur palacards.fr. Chaque carte est un article du Wikipédia francophone (environ 2,6 millions de cartes par saison). Interface en français, joueurs tutoyés. Aucun argent réel : la monnaie du jeu s'appelle PW.
 
 Raretés : commune (C), peu commune (PC), rare (R), super rare (SR), ultra rare (UR), légendaire (L), plus des cartes brillantes. Saisons mensuelles (classements remis à zéro).
 
