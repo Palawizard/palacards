@@ -156,6 +156,8 @@ export async function exportData(ctx: Ctx, userId: string) {
       .from(s.playerPortfolioDesigns)
       .where(eq(s.playerPortfolioDesigns.userId, userId)),
     portfolioLikes: await db.select().from(s.portfolioLikes).where(eq(s.portfolioLikes.userId, userId)),
+    // Portfolios partagés d'amis : invitations reçues et participations.
+    portfolioMemberships: await db.select().from(s.portfolioMembers).where(eq(s.portfolioMembers.userId, userId)),
     // Admin : cartes ajoutées ou retirées à la main d'un filtre d'images.
     imageFilterChoices: await db
       .select()

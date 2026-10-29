@@ -168,3 +168,33 @@ export function normalizePortfolioCards(
     return { instanceId: c.instanceId, featured: on };
   });
 }
+
+// ---------------------------------------------------------------------------
+// Portfolios partagés (suggestion n° 125) : le propriétaire invite des amis, qui y ajoutent leurs propres cartes.
+// Aucune carte ne change de main : chacune reste à celui qui l'a posée et sort du portfolio s'il le quitte.
+// ---------------------------------------------------------------------------
+
+/** Joueurs au plus dans un portfolio partagé, propriétaire et invitations en attente compris. */
+export const PORTFOLIO_SHARED_MAX_PLAYERS = 5;
+
+/** Qui voit le portfolio : tout le monde (page Communauté, profil du propriétaire) ou ses participants seuls. */
+export const PORTFOLIO_VISIBILITIES = ["public", "members"] as const;
+export type PortfolioVisibility = (typeof PORTFOLIO_VISIBILITIES)[number];
+
+/**
+ * Nouvel ordre demandé par un participant : cartes ajoutées (à vérifier dans sa collection) et cartes retirées.
+ * Un invité ne retire que ses propres cartes ; le propriétaire peut retirer celles de tout le monde (c'est sa page).
+ * Renvoie null si un invité retire une carte qui n'est pas à lui.
+ */
+export function portfolioCardsChange(input: {
+  editorId: string;
+  ownerId: string;
+  before: { instanceId: number; ownerId: string }[];
+  after: number[];
+}): { added: number[]; removed: number[] } | null {
+  const next = new Set(input.after);
+  const known = new Set(input.before.map((c) => c.instanceId));
+  const removed = input.before.filter((c) => !next.has(c.instanceId));
+  if (input.editorId !== input.ownerId && removed.some((c) => c.ownerId !== input.editorId)) return null;
+  return { added: input.after.filter((id) => !known.has(id)), removed: removed.map((c) => c.instanceId) };
+}

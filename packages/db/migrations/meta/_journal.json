@@ -365,6 +365,13 @@
       "when": 1793286523199,
       "tag": "0051_wiki_year_in_article",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793317965840,
+      "tag": "0052_portfolio_members",
+      "breakpoints": true
     }
   ]
 }

@@ -4,6 +4,7 @@ import {
   PORTFOLIO_DESCRIPTION_MAX,
   PORTFOLIO_NAME_MAX,
   PORTFOLIO_PROFILE_SLOTS,
+  PORTFOLIO_VISIBILITIES,
 } from "@palacards/game";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -19,9 +20,13 @@ import {
   designCatalog,
   getPortfolio,
   getPortfolioBackground,
+  invitePortfolioMember,
+  joinPortfolio,
   likePortfolio,
   myPortfolios,
+  portfolioInvitations,
   profilePortfolios,
+  removePortfolioMember,
   savePortfolioBackground,
   setPortfolioCards,
   setProfilePortfolios,
@@ -49,6 +54,7 @@ export function portfolioRoutes(api: FastifyInstance, ctx: Ctx) {
     return communityPortfolios(ctx, req.user.id, q.sort, q.page);
   });
   api.get("/portfolios/mine", auth, async (req) => myPortfolios(ctx, req.user.id));
+  api.get("/portfolios/invitations", auth, async (req) => portfolioInvitations(ctx, req.user.id));
   api.get("/portfolios/designs", auth, async (req) => designCatalog(ctx, req.user.id));
   api.post("/portfolios/designs/:key/buy", limited(20), async (req) => {
     const { key } = parse(z.object({ key: z.string().min(1).max(40) }), req.params);
@@ -82,6 +88,7 @@ export function portfolioRoutes(api: FastifyInstance, ctx: Ctx) {
           background: z.string().min(1).max(40).optional(),
           frame: z.string().min(1).max(40).optional(),
           accent: z.enum(PORTFOLIO_ACCENT_KEYS).optional(),
+          visibility: z.enum(PORTFOLIO_VISIBILITIES).optional(),
         })
         .refine((v) => Object.keys(v).length > 0, "Rien à modifier"),
       req.body,
@@ -106,6 +113,24 @@ export function portfolioRoutes(api: FastifyInstance, ctx: Ctx) {
   api.delete("/portfolios/:id", auth, async (req) => {
     await deletePortfolio(ctx, req.user.id, parse(idParams, req.params).id);
     return { ok: true };
+  });
+  // Portfolios partagés (suggestion n° 125) : invitation d'un ami, acceptation, départ ou retrait.
+  const memberParams = idParams.extend({ username: z.string().min(1).max(30) });
+  api.post("/portfolios/:id/members", limited(30), async (req) => {
+    const { id } = parse(idParams, req.params);
+    const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.body);
+    await invitePortfolioMember(ctx, req.user.id, id, (await findUserByName(ctx.db, username)).id);
+    return getPortfolio(ctx, req.user.id, id);
+  });
+  api.delete("/portfolios/:id/members/:username", auth, async (req) => {
+    const { id, username } = parse(memberParams, req.params);
+    await removePortfolioMember(ctx, req.user.id, id, (await findUserByName(ctx.db, username)).id);
+    return { ok: true };
+  });
+  api.post("/portfolios/:id/join", limited(30), async (req) => {
+    const { id } = parse(idParams, req.params);
+    await joinPortfolio(ctx, req.user.id, id);
+    return getPortfolio(ctx, req.user.id, id);
   });
   api.post("/portfolios/:id/like", limited(60), async (req) =>
     likePortfolio(ctx, req.user.id, parse(idParams, req.params).id, true),
