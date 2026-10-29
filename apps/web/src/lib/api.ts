@@ -1,8 +1,9 @@
 /** Base de l'API vue depuis le navigateur. En prod, même origine (chaîne vide). */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-export const BASE_PATH = "/palacards";
-/** Adresse publique du site (URL absolues des métadonnées, sitemap). */
-export const SITE_URL = `https://palawi.fr${BASE_PATH}`;
+/** Chemin public du site : vide en production (palacards.fr), /palacards en dev, CI et E2E (voir next.config.ts). */
+export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "/palacards";
+/** Adresse publique du site (URL absolues des métadonnées, sitemap), sans barre finale. */
+export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? `https://palacards.fr${BASE_PATH}`;
 export const API_BASE = `${API_URL}${BASE_PATH}/api`;
 export const SOCKET_PATH = `${BASE_PATH}/socket.io`;
 
