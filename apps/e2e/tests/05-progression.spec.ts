@@ -151,8 +151,11 @@ test("en-tête : le survol du bouton de son déplie le curseur de volume", async
   const panel = slider.locator("xpath=../..");
   await expect(panel).toHaveCSS("opacity", "0");
 
-  await button.hover();
-  await expect(panel).toHaveCSS("opacity", "1");
+  // Survol repris si l'en-tête finit de charger (et décale le bouton) juste après.
+  await expect(async () => {
+    await button.hover();
+    await expect(panel).toHaveCSS("opacity", "1", { timeout: 1_000 });
+  }).toPass();
   // La souris descend du bouton au curseur sans refermer le panneau.
   await slider.hover();
   await slider.focus();
