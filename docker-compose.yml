@@ -1,5 +1,5 @@
 # Stack de production sur vm-apps : /opt/dockpanel/stacks/palacards/
-# Caddy route /palacards/api/* et /palacards/socket.io/* -> palacards-api, /palacards/* -> palacards-web
+# Servi à la racine de https://palacards.fr : Caddy route /api/* et /socket.io/* -> palacards-api, le reste -> palacards-web
 # (deploy/Caddyfile.palacards), par nom de conteneur sur le réseau externe `caddy` ci-dessous (nom réel : CADDY_NETWORK du .env).
 # Démarrage / mise à jour (le service one-shot `migrate` fait échouer `up --wait`) :
 #   docker compose build
@@ -90,7 +90,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      BASE_PATH: /palacards
+      BASE_PATH: ""
       NODE_ENV: production
       THUMB_CACHE_DIR: /var/cache/palacards/thumbs
     volumes:
@@ -103,7 +103,7 @@ services:
         condition: service_completed_successfully
     mem_limit: 512m
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/palacards/api/health > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/api/health > /dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 20s
@@ -125,7 +125,7 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      BASE_PATH: /palacards
+      BASE_PATH: ""
     depends_on:
       postgres:
         condition: service_healthy
@@ -139,6 +139,9 @@ services:
     build:
       context: .
       dockerfile: docker/web.Dockerfile
+      args:
+        NEXT_PUBLIC_BASE_PATH: ""
+        NEXT_PUBLIC_SITE_URL: https://palacards.fr
     image: palacards-web:0.1.0
     container_name: palacards-web
     restart: unless-stopped
@@ -147,7 +150,7 @@ services:
         condition: service_healthy
     mem_limit: 512m
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/palacards/login || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/login || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 20s

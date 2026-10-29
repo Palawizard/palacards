@@ -5,6 +5,10 @@ WORKDIR /repo
 FROM base AS build
 COPY . .
 ENV NEXT_PUBLIC_API_URL=""
+# Chemin et adresse publics, figés dans le build (production : racine de palacards.fr, voir docker-compose.yml).
+ARG NEXT_PUBLIC_BASE_PATH=/palacards
+ARG NEXT_PUBLIC_SITE_URL=https://palacards.fr/palacards
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 RUN pnpm install --frozen-lockfile --filter @palacards/web... \
  && pnpm --filter @palacards/web... build
 
