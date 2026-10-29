@@ -19,6 +19,7 @@ import {
   titlesClash,
   unusableQuizImage,
   TOTAL_TURNS,
+  yearInText,
   yearQuestion,
   type QuizArticle,
 } from "./battle.js";
@@ -326,5 +327,34 @@ describe("questions", () => {
     expect(cardHiddenUntilAnswer({ type: "image", titleHidden: false })).toBe(true);
     expect(cardHiddenUntilAnswer({ type: "who_am_i", titleHidden: true })).toBe(true);
     expect(cardHiddenUntilAnswer({ type: "definition", titleHidden: false })).toBe(false);
+  });
+});
+
+describe("année présente dans l'article (dates Wikidata)", () => {
+  // Cas réel (suggestion n° 122) : Wikidata donne 1857 pour le symbolisme, absent de l'article (1886, années 1870).
+  const symbolisme =
+    "Le symbolisme est un mouvement artistique européen qui se développe dans les années 1870 et qui atteint son " +
+    "apogée dans les années 1890. Jean Moréas impose ce nom au mouvement dans son « Manifeste » de 1886.";
+
+  it("trouve une année à 4 chiffres seule, pas dans un autre nombre", () => {
+    expect(yearInText(symbolisme, 1857)).toBe(false);
+    expect(yearInText(symbolisme, 1886)).toBe(true);
+    expect(yearInText(symbolisme, 1870)).toBe(true);
+    expect(yearInText("population de 18571 habitants", 1857)).toBe(false);
+    expect(yearInText("un indice de 1857,5", 1857)).toBe(false);
+    expect(yearInText("en 1887, il publie", 1887)).toBe(true);
+    expect(yearInText("(1886-1891)", 1891)).toBe(true);
+  });
+
+  it("n'accepte une année courte ou avant J.-C. qu'en contexte de date", () => {
+    expect(yearInText("Le Colisée mesure 82 mètres de haut.", 82)).toBe(false);
+    expect(yearInText("Il est inauguré en 80 sous Titus.", 80)).toBe(true);
+    expect(yearInText("Il est inauguré en 80 apr. J.-C.", 80)).toBe(true);
+    expect(yearInText("fondée vers 601", 601)).toBe(true);
+    expect(yearInText("né vers -470/469 et mort en -399", -470)).toBe(true);
+    expect(yearInText("né le 12 ou le 13 juillet 100 av. J.-C. à Rome", -100)).toBe(true);
+    expect(yearInText("né le 12 ou le 13 juillet 100 av. J.-C. à Rome", 100)).toBe(false);
+    expect(yearInText("une cité fondée au VIIIe siècle av. J.-C.", -800)).toBe(false);
+    expect(yearInText("", 1900)).toBe(false);
   });
 });
