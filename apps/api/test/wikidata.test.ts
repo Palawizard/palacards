@@ -40,6 +40,22 @@ describe("attributs Wikidata", () => {
     });
     expect(a).toEqual({ human: false, countryId: "Q145", year: 2010, yearKind: "publication" });
   });
+
+  it("écarte une date à la décennie ou au siècle près (suggestion n° 122)", () => {
+    const a = entityAttributes({
+      claims: {
+        ...claim("P31", { id: "Q968159" }),
+        P571: [
+          { rank: "preferred", mainsnak: { datavalue: { value: { time: "+1870-00-00T00:00:00Z", precision: 8 } } } },
+          { rank: "normal", mainsnak: { datavalue: { value: { time: "+1886-09-18T00:00:00Z", precision: 11 } } } },
+        ],
+        ...claim("P580", { time: "+1800-00-00T00:00:00Z", precision: 7 }),
+      },
+    });
+    expect(a).toMatchObject({ year: 1886, yearKind: "inception" });
+    const vague = entityAttributes({ claims: claim("P571", { time: "+1870-00-00T00:00:00Z", precision: 8 }) });
+    expect(vague).toMatchObject({ year: null, yearKind: null });
+  });
 });
 
 describe("image pixelisée", () => {

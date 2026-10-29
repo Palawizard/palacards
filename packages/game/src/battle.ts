@@ -279,15 +279,27 @@ function truncate(text: string, maxLength: number): string {
 
 const capitalize = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 
-const YEAR = /(?<![\d,.])(1[0-9]{3}|20[0-9]{2})(?![\d,])/g;
+/** Année isolée : ni un morceau de nombre, ni suivie d'une virgule décimale (« 1887, elle… » compte). */
+const YEAR = /(?<![\d,.])(1[0-9]{3}|20[0-9]{2})(?!\d|,\d)/g;
+
+/**
+ * Décennie (« années 1870 », « années 1870-1880 », « années 1870 et 1880 ») : pas une date précise, l'année
+ * n'est pas posée (suggestion n° 122).
+ */
+const DECADE_BEFORE = /ann[ée]es\s+(?:\d{4}\s*(?:[-–]|et|à)\s*)?$/i;
 
 /** Années exploitables d'un extrait (phrases d'au moins 30 caractères, années passées) : questions « Quelle année ? ». */
 export function yearCandidates(extract: string, maxYear: number): { sentence: string; year: number }[] {
   const sentences = extract.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ý«])/);
   const candidates: { sentence: string; year: number }[] = [];
   for (const sentence of sentences) {
+    const decades = new Set(
+      [...sentence.matchAll(YEAR)].filter((m) => DECADE_BEFORE.test(sentence.slice(0, m.index))).map((m) => m[1]),
+    );
     for (const m of sentence.matchAll(YEAR)) {
       const year = Number(m[1]);
+      // Une année aussi écrite en décennie dans la phrase serait masquée deux fois : écartée aussi.
+      if (decades.has(m[1]!)) continue;
       if (year <= maxYear && sentence.length >= 30) candidates.push({ sentence, year });
     }
   }
@@ -296,7 +308,7 @@ export function yearCandidates(extract: string, maxYear: number): { sentence: st
 
 /** La phrase avec cette année masquée (▢▢▢▢), tronquée proprement. */
 export function maskYear(sentence: string, year: number, maxLength = 280): string {
-  return truncate(sentence.replace(new RegExp(`(?<![\\d,.])${year}(?![\\d,])`, "g"), "▢▢▢▢"), maxLength);
+  return truncate(sentence.replace(new RegExp(`(?<![\\d,.])${year}(?!\\d|,\\d)`, "g"), "▢▢▢▢"), maxLength);
 }
 
 /**

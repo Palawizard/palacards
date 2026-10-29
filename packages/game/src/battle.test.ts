@@ -19,6 +19,7 @@ import {
   titlesClash,
   unusableQuizImage,
   TOTAL_TURNS,
+  yearCandidates,
   yearQuestion,
   type QuizArticle,
 } from "./battle.js";
@@ -250,6 +251,18 @@ describe("questions", () => {
       expect(q.choices[q.answer]).toBe("2019");
     }
     expect(yearQuestion("Aucune date ici, juste une phrase assez longue.", seededRandom("z"), 2026)).toBeNull();
+  });
+
+  it("ne masque jamais une décennie (« années 1870 »)", () => {
+    expect(yearCandidates("Un mouvement artistique fondé dans les années 1870 en France.", 2026)).toEqual([]);
+    expect(yearCandidates("Un courant musical des Années 1960-1970, né à Londres.", 2026)).toEqual([]);
+    expect(
+      yearCandidates("Né dans les années 1870 à Paris, le mouvement publie son manifeste en 1886.", 2026).map(
+        (c) => c.year,
+      ),
+    ).toEqual([1886]);
+    // La même année écrite en décennie ailleurs dans la phrase : écartée (elle serait masquée deux fois).
+    expect(yearCandidates("Apparu dans les années 1880, le groupe se dissout en 1880 à Lyon.", 2026)).toEqual([]);
   });
 
   it("repère les titres trop proches", () => {

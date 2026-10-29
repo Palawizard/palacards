@@ -30,6 +30,7 @@ import {
   fatigueRestDays,
   fatigueSince,
   makeBossQuestion,
+  reliableYear,
   type BossQuizArticle,
 } from "./boss.js";
 import { addDays } from "./market.js";
@@ -215,9 +216,16 @@ describe("boss : récompenses", () => {
 });
 
 describe("boss : questions", () => {
-  const boss = article({ cardId: 9, title: "Napoléon Ier", views12m: 3_000_000, year: 1769, yearKind: "birth" });
+  const boss = article({
+    cardId: 9,
+    title: "Napoléon Ier",
+    views12m: 3_000_000,
+    extract: "Napoléon Bonaparte, né le 15 août 1769 à Ajaccio, est un militaire et homme d'État français.",
+    year: 1769,
+    yearKind: "birth",
+  });
   const extract =
-    "La tour Eiffel est une tour de fer puddlé de 330 mètres de hauteur située à Paris. Elle est inaugurée en 1889 pour l'Exposition universelle.";
+    "La tour Eiffel est une tour de fer puddlé de 330 mètres de hauteur située à Paris. Construite à partir de 1887, elle est inaugurée en 1889 pour l'Exposition universelle.";
   const target = article({
     cardId: 2,
     title: "Tour Eiffel",
@@ -252,6 +260,7 @@ describe("boss : questions", () => {
         "duel_older:older",
         "duel_popular:popular",
         "image:image",
+        "year_input:extract:1887",
         "year_input:extract:1889",
         "year_input:wikidata",
       ].sort(),
@@ -272,6 +281,7 @@ describe("boss : questions", () => {
       boss,
       history: [
         { type: "definition", key: "definition", askedAt: 1 },
+        { type: "year_input", key: "extract:1887", askedAt: 1 },
         { type: "year_input", key: "extract:1889", askedAt: 1 },
         { type: "year_input", key: "wikidata", askedAt: 1 },
         { type: "duel_older", key: "older", askedAt: 1 },
@@ -297,14 +307,19 @@ describe("boss : questions", () => {
     expect(q.durationMs).toBe(BOSS_YEAR_QUESTION_MS);
     expect(q.choices).toEqual([]);
     expect([1887, 1889]).toContain(q.answer);
-    if (q.key === "extract:1889") expect(q.prompt).toContain("▢▢▢▢");
+    if (q.key.startsWith("extract:")) expect(q.prompt).toContain("▢▢▢▢");
     else expect(q.prompt).toBe("En quelle année a été créé ou fondé « Tour Eiffel » ?");
   });
 
   it("met la carte contre le boss dans un duel à deux choix", () => {
-    const q = makeBossQuestion("d", { ...target, extract: null, description: null, thumbUrl: null, year: 1887 }, [], {
+    const q = makeBossQuestion("d", { ...target, description: null, thumbUrl: null }, [], {
       boss,
-      history: [{ type: "duel_popular", key: "popular", askedAt: 1 }],
+      history: [
+        { type: "duel_popular", key: "popular", askedAt: 1 },
+        { type: "year_input", key: "extract:1887", askedAt: 1 },
+        { type: "year_input", key: "extract:1889", askedAt: 1 },
+        { type: "year_input", key: "wikidata", askedAt: 1 },
+      ],
     });
     expect(q.type).toBe("duel_older");
     expect(q.choices.sort()).toEqual(["Napoléon Ier", "Tour Eiffel"]);
@@ -326,6 +341,7 @@ describe("boss : questions", () => {
 
   it("change les leurres selon la graine (joueur et jour)", () => {
     const history = [
+      { type: "year_input", key: "extract:1887", askedAt: 1 },
       { type: "year_input", key: "extract:1889", askedAt: 1 },
       { type: "year_input", key: "wikidata", askedAt: 1 },
       { type: "duel_older", key: "older", askedAt: 1 },
@@ -341,6 +357,32 @@ describe("boss : questions", () => {
       ),
     );
     expect(sets.size).toBeGreaterThan(1);
+  });
+
+  it("ne pose pas une date Wikidata absente de l'extrait, ni une décennie (suggestion n° 122)", () => {
+    const symbolisme = article({
+      cardId: 4,
+      title: "Le symbolisme (art)",
+      extract:
+        "Le symbolisme est un mouvement littéraire et artistique fondé dans les années 1870 en France et en Belgique.",
+      year: 1854,
+      yearKind: "inception",
+    });
+    const keys = bossQuestionVariants("s", symbolisme, [], { boss, maxYear: 2026 }).map((v) => `${v.type}:${v.key}`);
+    expect(keys.filter((k) => k.startsWith("year_input"))).toEqual([]);
+    // Ni « le plus ancien » sur cette date.
+    expect(keys).not.toContain("duel_older:older");
+    expect(reliableYear(symbolisme, 2026)).toBeNull();
+    expect(reliableYear({ ...symbolisme, extract: null }, 2026)).toBeNull();
+    // Date Wikidata confirmée par l'extrait : posée.
+    const confirmed = {
+      ...symbolisme,
+      extract: "Le symbolisme est un mouvement artistique apparu en France en 1886.",
+      year: 1886,
+    };
+    expect(reliableYear(confirmed, 2026)).toBe(1886);
+    const v = bossQuestionVariants("s", confirmed, [], { boss, maxYear: 2026 }).map((x) => `${x.type}:${x.key}`);
+    expect(v).toEqual(expect.arrayContaining(["year_input:extract:1886", "year_input:wikidata", "duel_older:older"]));
   });
 
   it("se replie sur « le plus lu » sans résumé", () => {

@@ -313,7 +313,7 @@ export function bossDayReward(input: { fallen: number; damage: number; paidPhase
 /**
  * - `definition` : « Qu'est-ce que X ? », 4 descriptions courtes (leurres du même genre) ;
  * - `image` : « Quelle image illustre X ? », 4 vignettes d'articles du même genre (carte face cachée) ;
- * - `year_input` : une année à taper (phrase de l'extrait, ou date Wikidata) ;
+ * - `year_input` : une année à taper (phrase de l'extrait, ou date Wikidata que l'extrait confirme) ;
  * - `duel_older` / `duel_popular` : « Lequel est le plus ancien / le plus lu ? », la carte contre le boss ;
  * - `popular` : repli sans résumé, « lequel est le plus lu ? », 4 titres.
  */
@@ -365,6 +365,23 @@ const YEAR_PROMPTS: Record<YearKind, (t: string) => string> = {
 };
 
 const capitalize = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
+
+/**
+ * La date Wikidata n'est fiable que si l'extrait de l'article (le texte affiché sur la carte) la donne aussi,
+ * en toutes lettres et pas en décennie : sinon elle peut contredire l'article (« Le symbolisme (art) » :
+ * 1854 attendu pour un « mouvement fondé dans les années 1870 », suggestion n° 122). `false` : date Wikidata
+ * seule acceptée, même absente de l'extrait.
+ */
+export const BOSS_YEAR_NEEDS_EXTRACT = true;
+
+/** Année Wikidata d'un article si elle est fiable (voir BOSS_YEAR_NEEDS_EXTRACT), sinon null. */
+export function reliableYear(article: Pick<BossQuizArticle, "year" | "extract">, maxYear: number): number | null {
+  const year = article.year;
+  if (year === null || year > maxYear) return null;
+  if (!BOSS_YEAR_NEEDS_EXTRACT) return year;
+  if (!article.extract) return null;
+  return yearCandidates(article.extract, maxYear).some((c) => c.year === year) ? year : null;
+}
 
 interface Variant {
   type: BossQuestionType;
@@ -448,8 +465,9 @@ export function bossQuestionVariants(
       build: () => ({ prompt: maskYear(sentence, year), choices: [], answer: year, cardHidden: false }),
     });
   }
-  if (target.year !== null && target.yearKind && target.year <= options.maxYear) {
-    const year = target.year;
+  const targetYear = reliableYear(target, options.maxYear);
+  if (targetYear !== null && target.yearKind) {
+    const year = targetYear;
     const kind = target.yearKind;
     out.push({
       type: "year_input",
@@ -459,15 +477,22 @@ export function bossQuestionVariants(
   }
 
   const boss = options.boss && options.boss.cardId !== target.cardId ? options.boss : null;
-  if (boss && duelPossible("duel_older", target, boss)) {
+  // « Le plus ancien » : seulement entre dates fiables, comme l'année à taper.
+  const older = boss
+    ? {
+        target: { ...target, year: targetYear },
+        boss: { ...boss, year: reliableYear(boss, options.maxYear) },
+      }
+    : null;
+  if (older && duelPossible("duel_older", older.target, older.boss)) {
     out.push({
       type: "duel_older",
       key: "older",
       build: (rand) =>
         duelQuestion(
           "Lequel est le plus ancien ? (naissance, création ou sortie)",
-          target,
-          boss,
+          older.target,
+          older.boss,
           rand,
           (a, b) => a.year! < b.year!,
         ),

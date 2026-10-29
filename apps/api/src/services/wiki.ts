@@ -37,12 +37,15 @@ export interface WikiAttributes {
 
 type Claim = {
   rank?: string;
-  mainsnak?: { datavalue?: { value?: { id?: string; time?: string } | string } };
+  mainsnak?: { datavalue?: { value?: { id?: string; time?: string; precision?: number } | string } };
 };
 type Entity = { claims?: Record<string, Claim[]>; labels?: Record<string, { value: string }>; missing?: string };
 
 /** Valeurs d'une propriété, rang « préféré » d'abord, sans les valeurs dépréciées. */
-function claimValues(entity: Entity | undefined, prop: string): (string | { id?: string; time?: string })[] {
+function claimValues(
+  entity: Entity | undefined,
+  prop: string,
+): (string | { id?: string; time?: string; precision?: number })[] {
   const claims = (entity?.claims?.[prop] ?? []).filter((c) => c.rank !== "deprecated");
   claims.sort((a, b) => Number(b.rank === "preferred") - Number(a.rank === "preferred"));
   return claims.map((c) => c.mainsnak?.datavalue?.value).filter((v): v is NonNullable<typeof v> => v !== undefined);
@@ -60,6 +63,12 @@ export function wikidataYear(time: string | undefined): number | null {
   const year = Number(m[2]) * (m[1] === "-" ? -1 : 1);
   return year === 0 || Math.abs(year) > 9_999 ? null : year;
 }
+
+/**
+ * Précision Wikidata minimale d'une date retenue : l'année (9). Une décennie (8) ou un siècle (7) s'écrit
+ * « +1870-00-00 » : son année n'est pas une vraie date et fausserait la réponse attendue (suggestion n° 122).
+ */
+export const WIKIDATA_YEAR_PRECISION = 9;
 
 /** Date retenue : naissance pour une personne ; sinon sortie, création ou fondation, début. */
 const YEAR_PROPS: { prop: string; kind: NonNullable<WikiAttributes["yearKind"]>; human?: boolean }[] = [
@@ -81,7 +90,8 @@ export function entityAttributes(entity: Entity | undefined): Omit<WikiAttribute
   for (const { prop, kind, human: forHuman } of YEAR_PROPS) {
     if (forHuman !== undefined && forHuman !== human) continue;
     for (const v of claimValues(entity, prop)) {
-      const y = typeof v === "object" ? wikidataYear(v.time) : null;
+      const precise = typeof v === "object" && (v.precision ?? WIKIDATA_YEAR_PRECISION) >= WIKIDATA_YEAR_PRECISION;
+      const y = precise ? wikidataYear(v.time) : null;
       if (y !== null) {
         year = y;
         yearKind = kind;
