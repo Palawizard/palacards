@@ -245,6 +245,44 @@ describe("fusion en masse des doublons", () => {
   });
 });
 
+describe("recyclage des doublons (suggestion n° 124)", () => {
+  it("ne liste que les doublons des raretés demandées, et tous sans filtre de rareté", async () => {
+    const p = await signUp(app);
+    const [a, b] = await freshCollection(p);
+    await ctx.db.update(ci).set({ rarity: "L" }).where(eq(ci.id, a!.instanceId));
+    await ctx.db.update(ci).set({ rarity: "C" }).where(eq(ci.id, b!.instanceId));
+    // Exemplaires identiques : le meilleur gardé peut être l'original ou une copie, on compte par article.
+    const legendary = [a!.instanceId, ...(await addCopies(a!.instanceId, 2))];
+    const common = [b!.instanceId, ...(await addCopies(b!.instanceId, 3))];
+    const among = (xs: number[], pool: number[]) => xs.filter((x) => pool.includes(x)).length;
+
+    // Toutes les raretés sauf légendaire : aucun doublon légendaire, et le gain annoncé suit.
+    const noL = (await p.get("/collection/duplicates?rarity=C,PC,R,SR,UR")).body;
+    expect(noL.instanceIds).toHaveLength(3);
+    expect(among(noL.instanceIds, common)).toBe(3);
+    expect(noL.gain).toBe(3 * recycleValue("C"));
+    const onlyL = (await p.get("/collection/duplicates?rarity=L")).body;
+    expect(onlyL.instanceIds).toHaveLength(2);
+    expect(among(onlyL.instanceIds, legendary)).toBe(2);
+    expect(onlyL.gain).toBe(2 * recycleValue("L"));
+    // Sans filtre : comportement d'origine, tous les doublons.
+    const all = (await p.get("/collection/duplicates")).body;
+    expect(all.instanceIds).toHaveLength(5);
+    expect(all.gain).toBe(noL.gain + onlyL.gain);
+    expect((await p.get("/collection/duplicates?rarity=X")).status).toBe(400);
+
+    // Recycler la liste filtrée laisse les légendaires intactes.
+    expect((await p.post("/collection/recycle", { instanceIds: noL.instanceIds })).body.gain).toBe(noL.gain);
+    const left = await ctx.db
+      .select({ id: ci.id })
+      .from(ci)
+      .where(inArray(ci.id, [...legendary, ...common]));
+    const kept = left.map((r) => r.id);
+    expect(among(kept, legendary)).toBe(3);
+    expect(among(kept, common)).toBe(1);
+  });
+});
+
 describe("collection d'un autre joueur (échanges)", () => {
   it("se parcourt en entier, page par page, filtrée par rareté et brillantes, sans favoris ni vues", async () => {
     const owner = await signUp(app);
