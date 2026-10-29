@@ -1,7 +1,7 @@
 import { schema, type Db } from "@palacards/db";
-import { isArthropod } from "@palacards/game";
+import { isArthropod, yearInText } from "@palacards/game";
 import type { CardMedia } from "@palacards/shared";
-import { and, eq, inArray, sql } from "@palacards/db";
+import { and, eq, inArray, isNotNull, isNull, sql } from "@palacards/db";
 import type { FastifyBaseLogger } from "fastify";
 import type { Config } from "../config.js";
 
@@ -33,16 +33,21 @@ export interface WikiAttributes {
   continents: string[];
   year: number | null;
   yearKind: "birth" | "inception" | "publication" | "start" | null;
+  /** L'année apparaît dans le texte de l'article (null : pas encore vérifié). */
+  yearInArticle: boolean | null;
 }
 
 type Claim = {
   rank?: string;
-  mainsnak?: { datavalue?: { value?: { id?: string; time?: string } | string } };
+  mainsnak?: { datavalue?: { value?: { id?: string; time?: string; precision?: number } | string } };
 };
 type Entity = { claims?: Record<string, Claim[]>; labels?: Record<string, { value: string }>; missing?: string };
 
 /** Valeurs d'une propriété, rang « préféré » d'abord, sans les valeurs dépréciées. */
-function claimValues(entity: Entity | undefined, prop: string): (string | { id?: string; time?: string })[] {
+function claimValues(
+  entity: Entity | undefined,
+  prop: string,
+): (string | { id?: string; time?: string; precision?: number })[] {
   const claims = (entity?.claims?.[prop] ?? []).filter((c) => c.rank !== "deprecated");
   claims.sort((a, b) => Number(b.rank === "preferred") - Number(a.rank === "preferred"));
   return claims.map((c) => c.mainsnak?.datavalue?.value).filter((v): v is NonNullable<typeof v> => v !== undefined);
@@ -61,6 +66,9 @@ export function wikidataYear(time: string | undefined): number | null {
   return year === 0 || Math.abs(year) > 9_999 ? null : year;
 }
 
+/** Précision Wikidata de l'année (11 : jour, 10 : mois, 9 : année) ; 8 (décennie), 7 (siècle)… ne donnent pas une année. */
+const YEAR_PRECISION = 9;
+
 /** Date retenue : naissance pour une personne ; sinon sortie, création ou fondation, début. */
 const YEAR_PROPS: { prop: string; kind: NonNullable<WikiAttributes["yearKind"]>; human?: boolean }[] = [
   { prop: "P569", kind: "birth", human: true },
@@ -70,7 +78,9 @@ const YEAR_PROPS: { prop: string; kind: NonNullable<WikiAttributes["yearKind"]>;
 ];
 
 /** Attributs d'un élément Wikidata (pays et continents résolus à part). */
-export function entityAttributes(entity: Entity | undefined): Omit<WikiAttributes, "qid" | "country" | "continents"> {
+export function entityAttributes(
+  entity: Entity | undefined,
+): Omit<WikiAttributes, "qid" | "country" | "continents" | "yearInArticle"> {
   const natures = claimValues(entity, "P31").map((v) => (typeof v === "object" ? v.id : null));
   const human = natures.includes("Q5");
   const countryId = human
@@ -81,7 +91,9 @@ export function entityAttributes(entity: Entity | undefined): Omit<WikiAttribute
   for (const { prop, kind, human: forHuman } of YEAR_PROPS) {
     if (forHuman !== undefined && forHuman !== human) continue;
     for (const v of claimValues(entity, prop)) {
-      const y = typeof v === "object" ? wikidataYear(v.time) : null;
+      // Une date au siècle ou à la décennie près (« XIIe siècle » stocké « 1101 ») n'est pas une année.
+      const precise = typeof v === "object" && (v.precision === undefined || v.precision >= YEAR_PRECISION);
+      const y = typeof v === "object" && precise ? wikidataYear(v.time) : null;
       if (y !== null) {
         year = y;
         yearKind = kind;
@@ -371,6 +383,9 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
           continents: sql`excluded.continents`,
           year: sql`excluded.year`,
           yearKind: sql`excluded.year_kind`,
+          // Nouvelle année : à revérifier dans l'article.
+          yearInArticle: sql`case when ${schema.wikiAttributes.year} is not distinct from excluded.year
+            then ${schema.wikiAttributes.yearInArticle} end`,
           status: sql`excluded.status`,
           fetchedAt: sql`now()`,
         },
@@ -429,8 +444,62 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
           continents: r.continents,
           year: r.year,
           yearKind: r.yearKind,
+          yearInArticle: r.yearInArticle,
         });
     return out;
+  }
+
+  /** Texte complet d'un article (sans mise en forme), ou null s'il n'existe pas. */
+  async function articleText(pageId: number): Promise<string | null> {
+    const body = await getJson<{ query?: { pages?: { pageid?: number; missing?: boolean; extract?: string }[] } }>(
+      api(ACTION_API, {
+        action: "query",
+        prop: "extracts",
+        explaintext: "1",
+        exsectionformat: "plain",
+        pageids: String(pageId),
+      }),
+    );
+    const page = body.query?.pages?.[0];
+    return page && !page.missing ? (page.extract ?? "") : null;
+  }
+
+  const inflightYears = new Map<number, Promise<void>>();
+
+  /**
+   * Vérifie que la date Wikidata de ces articles apparaît dans leur texte complet (une fois par article et par date,
+   * gardé en cache). Les erreurs réseau ne sont pas gardées : on réessaiera au prochain besoin.
+   */
+  async function checkYears(cardIds: number[]): Promise<void> {
+    if (config.WIKIMEDIA_DISABLED || cardIds.length === 0) return;
+    const rows = await db
+      .select({ pageId: schema.wikiAttributes.pageId, year: schema.wikiAttributes.year })
+      .from(schema.wikiAttributes)
+      .where(
+        and(
+          inArray(schema.wikiAttributes.pageId, [...new Set(cardIds)]),
+          isNotNull(schema.wikiAttributes.year),
+          isNull(schema.wikiAttributes.yearInArticle),
+        ),
+      );
+    await Promise.all(
+      rows.map((r) => {
+        let p = inflightYears.get(r.pageId);
+        if (!p) {
+          p = articleText(r.pageId)
+            .then(async (text) => {
+              await db
+                .update(schema.wikiAttributes)
+                .set({ yearInArticle: text !== null && yearInText(text, r.year!) })
+                .where(and(eq(schema.wikiAttributes.pageId, r.pageId), eq(schema.wikiAttributes.year, r.year!)));
+            })
+            .catch((err) => log.warn({ err, pageId: r.pageId }, "vérification de la date Wikidata impossible"))
+            .finally(() => inflightYears.delete(r.pageId));
+          inflightYears.set(r.pageId, p);
+        }
+        return p;
+      }),
+    );
   }
 
   /** Titre d'un article (saison la plus récente où il existe). */
@@ -571,6 +640,7 @@ export function createWiki(db: Db, config: Config, log: FastifyBaseLogger) {
     pageCategories,
     pagesCategories,
     loadAttributes,
+    checkYears,
     attributes,
   };
 }

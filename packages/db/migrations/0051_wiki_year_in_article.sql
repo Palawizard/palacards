@@ -1,0 +1,1 @@
+ALTER TABLE "wiki_attributes" ADD COLUMN "year_in_article" boolean;
