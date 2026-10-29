@@ -1224,6 +1224,11 @@ export const wikiAttributes = pgTable("wiki_attributes", {
     .default(sql`'{}'::text[]`),
   year: smallint("year"),
   yearKind: text("year_kind", { enum: ["birth", "inception", "publication", "start"] }),
+  /**
+   * L'année apparaît dans le texte complet de l'article (null : pas encore vérifié). Seule une date vérifiée sert aux
+   * questions du boss : le joueur doit pouvoir la retrouver dans l'article (suggestion n° 122).
+   */
+  yearInArticle: boolean("year_in_article"),
   status: text("status", { enum: ["ok", "missing", "error"] }).notNull(),
   fetchedAt: tstz("fetched_at").notNull().defaultNow(),
 });

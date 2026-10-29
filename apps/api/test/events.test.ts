@@ -827,3 +827,37 @@ describe("don admin à tous les joueurs", () => {
     expect((await admin.post("/admin/grant", { username: "*", pw: -10 })).body.error).toBe("negative_gift");
   });
 });
+
+describe("date Wikidata vérifiée dans l'article (suggestion n° 122)", () => {
+  it("ne garde que les dates présentes dans le texte complet, une fois par date", async () => {
+    const wiki = createWiki(ctx.db, { ...ctx.config, WIKIMEDIA_DISABLED: false }, ctx.log);
+    // Pages fictives (identifiants hors du catalogue de test) : le symbolisme réel et une ville.
+    const [symb, ville] = [990_000_001, 990_000_002];
+    await ctx.db.execute(sql`
+      insert into wiki_attributes (page_id, qid, human, year, year_kind, status) values
+        (${symb}, 'Q164800', false, 1857, 'inception', 'ok'), (${ville}, 'Q1297', false, 1837, 'inception', 'ok')
+      on conflict (page_id) do update set year = excluded.year, year_in_article = null
+    `);
+    const texts: Record<string, string> = {
+      [symb]: "Le symbolisme se développe dans les années 1870. Jean Moréas publie son « Manifeste » en 1886.",
+      [ville]: "Chicago est fondée en 1837 et devient vite la plus grande ville du Midwest.",
+    };
+    const fetchMock = vi.fn(async (url: URL) => {
+      const id = url.searchParams.get("pageids")!;
+      return Response.json({ query: { pages: [{ pageid: Number(id), extract: texts[id] }] } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await wiki.checkYears([symb, ville]);
+      const attrs = await wiki.attributes([symb, ville]);
+      expect(attrs.get(symb)).toMatchObject({ year: 1857, yearInArticle: false });
+      expect(attrs.get(ville)).toMatchObject({ year: 1837, yearInArticle: true });
+      // Déjà vérifiées : aucun nouvel appel.
+      await wiki.checkYears([symb, ville]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+      await ctx.db.execute(sql`delete from wiki_attributes where page_id in (${symb}, ${ville})`);
+    }
+  });
+});

@@ -198,7 +198,8 @@ export async function bossQuestion(ctx: Ctx, t: BossQuizTarget): Promise<BossQue
   await withTimeout(
     Promise.all([
       ctx.wiki.load([{ cardId: t.cardId, title }], undefined, { fresh: true }),
-      ctx.wiki.loadAttributes(ids),
+      // Date Wikidata vérifiée dans l'article (suggestion n° 122) : sans réponse à temps, pas de question de date.
+      ctx.wiki.loadAttributes(ids).then(() => ctx.wiki.checkYears(ids)),
     ]),
     2_000,
     null,
@@ -245,7 +246,9 @@ export async function bossQuestion(ctx: Ctx, t: BossQuizTarget): Promise<BossQue
   };
   const full = (id: number, t2: string, views: string | number, rarity: Rarity): BossQuizArticle => {
     const a = attrs.get(id);
-    return { ...quiz(id, t2, views), rarity, year: a?.year ?? null, yearKind: a?.yearKind ?? null };
+    // Seule une date retrouvée dans le texte de l'article est posée (année à taper, duel « le plus ancien »).
+    const year = a?.yearInArticle ? a.year : null;
+    return { ...quiz(id, t2, views), rarity, year, yearKind: year === null ? null : (a?.yearKind ?? null) };
   };
   return makeBossQuestion(
     t.seed,

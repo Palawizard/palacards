@@ -40,6 +40,24 @@ describe("attributs Wikidata", () => {
     });
     expect(a).toEqual({ human: false, countryId: "Q145", year: 2010, yearKind: "publication" });
   });
+
+  it("ignore une date au siècle ou à la décennie près (suggestion n° 122)", () => {
+    // Abbaye d'Orval : « XIIe siècle » stocké « +1101 », précision 7 ; le jeu en faisait l'année 1101.
+    const century = entityAttributes({
+      claims: { ...claim("P571", { time: "+1101-00-00T00:00:00Z", precision: 7 }) },
+    });
+    expect(century).toMatchObject({ year: null, yearKind: null });
+    // Une date précise à l'année passe, même après une date au siècle près.
+    const a = entityAttributes({
+      claims: {
+        P571: [
+          { rank: "normal", mainsnak: { datavalue: { value: { time: "+1101-00-00T00:00:00Z", precision: 7 } } } },
+          { rank: "normal", mainsnak: { datavalue: { value: { time: "+1132-00-00T00:00:00Z", precision: 9 } } } },
+        ],
+      },
+    });
+    expect(a).toMatchObject({ year: 1132, yearKind: "inception" });
+  });
 });
 
 describe("image pixelisée", () => {
