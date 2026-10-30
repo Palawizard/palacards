@@ -2,7 +2,7 @@
 // Importé uniquement par des composants client.
 import { PORTFOLIO_PROFILE_SLOTS } from "@palacards/game";
 import type { PortfolioDesignDTO, PortfolioDTO, PortfolioSummaryDTO } from "@palacards/shared";
-import { ChevronLeft, ChevronRight, Heart, Link2, Pencil, Star, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Heart, Link2, Lock, Pencil, Star, Users, X } from "lucide-react";
 import Link from "next/link";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import useSWR from "swr";
@@ -46,6 +46,19 @@ export function PortfolioShell({
 
 const likesLabel = (n: number) => `${fmt(n)} j’aime`;
 
+/** Le visiteur compose ce portfolio (propriétaire ou ami qui l'a rejoint). */
+export const participates = (p: PortfolioSummaryDTO) => p.role === "owner" || p.role === "member";
+
+const joinNames = (names: string[]) =>
+  names.length > 1 ? `${names.slice(0, -1).join(", ")} et ${names.at(-1)}` : (names[0] ?? "");
+
+/** Ceux qui composent le portfolio : « Léa », « Léa et Max », « Léa, Max et Sam ». */
+export const participantsLabel = (p: PortfolioSummaryDTO) =>
+  joinNames([p.owner, ...p.members].map((m) => m.displayName));
+
+/** Amis qui participent au portfolio (sans le propriétaire). */
+const sharedWith = (p: PortfolioSummaryDTO) => joinNames(p.members.map((m) => m.displayName));
+
 /** J'aime (sans récompense) : un par joueur, jamais sur les siens ; le compteur suit tout de suite. */
 export function LikeButton({
   p,
@@ -58,9 +71,9 @@ export function LikeButton({
   const [busy, setBusy] = useState(false);
   // Nouveau portfolio affiché : on repart de ses valeurs.
   if (state.for !== p.id) setState({ likes: p.likes, liked: p.liked, for: p.id });
-  if (p.mine)
+  if (participates(p))
     return (
-      <span className="pf-like" title="Tu ne peux pas aimer tes propres portfolios">
+      <span className="pf-like" title="Tu ne peux pas aimer un portfolio que tu composes">
         <Heart aria-hidden className="size-4" strokeWidth={2.25} />
         <span className="tnum">{fmt(state.likes)}</span>
         <span className="sr-only">j’aime</span>
@@ -117,7 +130,7 @@ export function PortfolioTile({ p, heading: Heading = "h3" }: { p: PortfolioSumm
             <p className="pf-muted mt-1 flex items-center gap-1.5 text-sm">
               <span className="pf-rule !w-5" aria-hidden />
               <span className="truncate">
-                {p.owner.displayName} · {p.cardCount} carte{p.cardCount > 1 ? "s" : ""}
+                {participantsLabel(p)} · {p.cardCount} carte{p.cardCount > 1 ? "s" : ""}
               </span>
             </p>
           </div>
@@ -164,14 +177,28 @@ export function PortfolioView({ p }: { p: PortfolioDTO }) {
           <h1 className="pf-title font-display text-[clamp(2.1rem,1.4rem+2.6vw,3.6rem)]">{p.name}</h1>
           <span className="pf-rule mt-2.5" aria-hidden />
           <p className="pf-muted mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-            <Link href={`/u/${p.owner.username}`} className="pf-link inline-flex items-center gap-1.5 font-semibold">
-              <Avatar name={p.owner.displayName} avatar={p.owner.avatar} size="sm" />
-              {p.owner.displayName}
-            </Link>
+            {/* Propriétaire puis amis participants : « Léa, Max et Sam ». */}
+            {[p.owner, ...p.members].map((m, i, all) => (
+              <span key={m.username} className="inline-flex items-center">
+                <Link href={`/u/${m.username}`} className="pf-link inline-flex items-center gap-1.5 font-semibold">
+                  <Avatar name={m.displayName} avatar={m.avatar} size="sm" />
+                  {m.displayName}
+                </Link>
+                {i < all.length - 2 ? "," : i === all.length - 2 ? <span className="ml-2">et</span> : null}
+              </span>
+            ))}
             <span aria-hidden>·</span>
             <span className="tnum">
               {p.cardCount} carte{p.cardCount > 1 ? "s" : ""}
             </span>
+            {p.visibility === "members" && (
+              <>
+                <span aria-hidden>·</span>
+                <span className="inline-flex items-center gap-1">
+                  <Lock aria-hidden className="size-3.5" /> Visible des participants seuls
+                </span>
+              </>
+            )}
           </p>
           {p.description && <p className="mt-2 max-w-[65ch] [text-wrap:pretty]">{p.description}</p>}
         </div>
@@ -197,16 +224,52 @@ export function PortfolioView({ p }: { p: PortfolioDTO }) {
   );
 }
 
-/** Actions sous la page d'un portfolio : partager, et modifier s'il est à soi. */
+/** Actions sous la page d'un portfolio : partager, et modifier si on le compose. */
 export function PortfolioActions({ p }: { p: PortfolioSummaryDTO }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <ShareButton id={p.id} />
-      {p.mine && (
+      {participates(p) && (
         <Link href={`/portfolios/${p.id}/modifier`} className="btn btn-sm btn-primary">
-          <Pencil aria-hidden className="size-4" /> Modifier
+          <Pencil aria-hidden className="size-4" /> {p.mine ? "Modifier" : "Mes cartes"}
         </Link>
       )}
+    </div>
+  );
+}
+
+/** Réponse à l'invitation d'un ami dans son portfolio partagé : rejoindre ou refuser. */
+export function InvitationAnswer({
+  p,
+  me,
+  onDone,
+}: {
+  p: PortfolioSummaryDTO;
+  me: string;
+  onDone: (joined: boolean) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  async function answer(join: boolean) {
+    setBusy(true);
+    try {
+      if (join) await api(`/portfolios/${p.id}/join`, { method: "POST" });
+      else await api(`/portfolios/${p.id}/members/${encodeURIComponent(me)}`, { method: "DELETE" });
+      toast.success(join ? `Tu participes à « ${p.name} ».` : "Invitation refusée.");
+      onDone(join);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Réponse non enregistrée.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => answer(true)}>
+        <Check aria-hidden className="size-4" /> Rejoindre
+      </button>
+      <button type="button" className="btn btn-sm" disabled={busy} onClick={() => answer(false)}>
+        Refuser
+      </button>
     </div>
   );
 }
@@ -224,13 +287,23 @@ export function PortfolioRow({ p }: { p: PortfolioSummaryDTO }) {
       <div className="min-w-0 flex-1">
         <p className="pf-title truncate font-display text-xl">{p.name}</p>
         <p className="pf-muted tnum mt-0.5 text-sm">
-          {p.cardCount ? `${p.cardCount} carte${p.cardCount > 1 ? "s" : ""}` : "Vide, visible de toi seul"} ·{" "}
-          {likesLabel(p.likes)}
-          {p.profileSlot !== null && " · sur ton profil"}
+          {p.cardCount
+            ? `${p.cardCount} carte${p.cardCount > 1 ? "s" : ""}`
+            : p.members.length
+              ? "Vide"
+              : "Vide, visible de toi seul"}{" "}
+          · {likesLabel(p.likes)}
+          {p.mine && p.profileSlot !== null && " · sur ton profil"}
         </p>
+        {(!p.mine || p.members.length > 0) && (
+          <p className="pf-muted mt-0.5 flex items-center gap-1 truncate text-sm">
+            <Users aria-hidden className="size-3.5 shrink-0" />
+            <span className="truncate">{p.mine ? `Avec ${sharedWith(p)}` : `Partagé par ${p.owner.displayName}`}</span>
+          </p>
+        )}
         <p className="mt-1.5 flex gap-3 text-sm font-semibold">
           <Link href={`/portfolios/${p.id}/modifier`} className="pf-link">
-            Modifier
+            {p.mine ? "Modifier" : "Mes cartes"}
           </Link>
           {p.cardCount > 0 && (
             <Link href={`/portfolios/${p.id}`} className="pf-link">
@@ -272,8 +345,10 @@ export function MyProfilePortfolios() {
   const [adding, setAdding] = useState("");
   const [busy, setBusy] = useState(false);
   if (!data) return null;
-  const shown = data.filter((p) => p.profileSlot !== null);
-  const others = data.filter((p) => p.profileSlot === null && p.cardCount > 0);
+  // Seulement les siens (pas ceux d'amis auxquels on participe), publics pour en ajouter.
+  const own = data.filter((p) => p.mine);
+  const shown = own.filter((p) => p.profileSlot !== null);
+  const others = own.filter((p) => p.profileSlot === null && p.cardCount > 0 && p.visibility === "public");
 
   async function save(ids: number[]) {
     setBusy(true);
@@ -302,7 +377,7 @@ export function MyProfilePortfolios() {
             {shown.length} / {PORTFOLIO_PROFILE_SLOTS}
           </span>
         </h2>
-        {data.length > 0 && (
+        {own.length > 0 && (
           <button
             type="button"
             className={`btn btn-sm ${editing ? "btn-primary" : ""}`}
@@ -313,7 +388,7 @@ export function MyProfilePortfolios() {
           </button>
         )}
       </div>
-      {!data.length ? (
+      {!own.length ? (
         <p className="text-sm text-muted">
           Compose un portfolio avec tes cartes pour l’afficher ici.{" "}
           <Link href="/portfolios" className="article-link">
