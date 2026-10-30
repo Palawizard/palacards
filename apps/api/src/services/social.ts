@@ -3,6 +3,7 @@ import { dmChannel, guildChannel, type Rarity } from "@palacards/game";
 import type { Ctx } from "../context.js";
 import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { Effects } from "./notifications.js";
+import { leaveSharedPortfolios } from "./portfolios.js";
 import { emit } from "./progression.js";
 import { findUserByName, statusNoteOf } from "./profiles.js";
 
@@ -86,10 +87,11 @@ export async function acceptFriend(ctx: Ctx, userId: string, otherId: string) {
   }
 }
 
-/** Refuse, annule une demande ou retire un ami. */
+/** Refuse, annule une demande ou retire un ami (chacun quitte alors les portfolios partagés de l'autre). */
 export async function removeFriend(ctx: Ctx, userId: string, otherId: string) {
   const key = pair(userId, otherId);
   await ctx.db.delete(f).where(and(eq(f.userA, key.userA), eq(f.userB, key.userB)));
+  await leaveSharedPortfolios(ctx, userId, otherId);
 }
 
 export async function listFriends(ctx: Ctx, userId: string) {

@@ -853,15 +853,24 @@ export interface PortfolioSummaryDTO {
   profileSlot: number | null;
   /** Carte en vedette d'abord, puis les suivantes dans l'ordre (6 au plus). */
   preview: PortfolioCardDTO[];
+  /** Portfolio partagé (suggestion n° 125) : `members` le cache à tous sauf ses participants. */
+  visibility: "public" | "members";
+  /** Place du visiteur : propriétaire, ami qui y participe, ami invité (pas encore répondu), ou simple visiteur. */
+  role: "owner" | "member" | "invited" | null;
+  /** Amis qui y participent (invitation acceptée), dans l'ordre d'arrivée. */
+  members: PortfolioOwnerDTO[];
   createdAt: string;
   updatedAt: string;
 }
 
-export type PortfolioCardDTO = CardDTO & { featured: boolean };
+/** `by` : pseudo du joueur à qui est la carte (celui qui l'a posée). */
+export type PortfolioCardDTO = CardDTO & { featured: boolean; by: string };
 
 /** Portfolio complet (page publique, éditeur). */
 export interface PortfolioDTO extends PortfolioSummaryDTO {
   cards: PortfolioCardDTO[];
+  /** Invitations en attente (le propriétaire seul les voit ; liste vide pour les autres). */
+  invited: PortfolioOwnerDTO[];
 }
 
 /** Design du catalogue, avec ce qu'il faut pour l'obtenir et s'il est déjà au joueur. */

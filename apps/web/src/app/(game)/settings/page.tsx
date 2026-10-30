@@ -21,7 +21,7 @@ import { setTheme, useTheme } from "@/lib/theme";
 const GROUPS: Record<string, string> = {
   market: "Marché (enchères, ventes, wishlist)",
   trades: "Échanges",
-  social: "Amis et guilde",
+  social: "Amis, guilde et portfolios partagés",
   battles: "Duels",
   packs: "Stock de paquets plein",
   achievements: "Succès",

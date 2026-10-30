@@ -1502,6 +1502,10 @@ export const portfolios = pgTable(
     background: text("background").notNull().default("papier"),
     frame: text("frame").notNull().default("filet"),
     accent: text("accent").notNull().default("or"),
+    /** `members` : visible de ses seuls participants (portfolio partagé, suggestion n° 125). */
+    visibility: text("visibility", { enum: ["public", "members"] })
+      .notNull()
+      .default("public"),
     profileSlot: smallint("profile_slot"),
     createdAt: tstz("created_at").notNull().defaultNow(),
     updatedAt: tstz("updated_at").notNull().defaultNow(),
@@ -1539,6 +1543,23 @@ export const portfolioCards = pgTable(
     index("portfolio_cards_instance_idx").on(t.instanceId),
     check("portfolio_cards_pos_ok", sql`${t.pos} BETWEEN 0 AND 29`),
   ],
+);
+
+/**
+ * Ami invité dans un portfolio partagé (suggestion n° 125) : invitation en attente tant que `joinedAt` est nul.
+ * Un participant y pose ses propres cartes ; elles en sortent s'il part ou si le propriétaire le retire.
+ */
+export const portfolioMembers = pgTable(
+  "portfolio_members",
+  {
+    portfolioId: bigint("portfolio_id", { mode: "number" })
+      .notNull()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    invitedAt: tstz("invited_at").notNull().defaultNow(),
+    joinedAt: tstz("joined_at"),
+  },
+  (t) => [primaryKey({ columns: [t.portfolioId, t.userId] }), index("portfolio_members_user_idx").on(t.userId)],
 );
 
 /** Image envoyée par le joueur comme fond d'un portfolio (mêmes contrôles que les bannières). */

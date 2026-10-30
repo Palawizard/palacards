@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNotNull, schema, sql } from "@palacards/db";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, schema, sql } from "@palacards/db";
 import {
   eligibleDesigns,
   normalizePortfolioCards,
@@ -8,7 +8,10 @@ import {
   PORTFOLIO_IMAGE_BACKGROUND,
   PORTFOLIO_MAX,
   PORTFOLIO_PROFILE_SLOTS,
+  PORTFOLIO_SHARED_MAX_PLAYERS,
+  portfolioCardsChange,
   type PortfolioAccent,
+  type PortfolioVisibility,
 } from "@palacards/game";
 import {
   BANNER_IMAGE_MAX_BYTES,
@@ -22,6 +25,7 @@ import { badRequest, conflict, forbidden, notFound } from "../errors.js";
 import { sniffImage } from "./avatars.js";
 import { BANNER_MAX_SIDE } from "./banners.js";
 import { instanceColumns, toCardDTO } from "./cards.js";
+import { Effects } from "./notifications.js";
 import { lockPlayer, movePw, pushWallet, type DbOrTx } from "./players.js";
 
 type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
@@ -31,6 +35,7 @@ const pf = schema.portfolios;
 const pc = schema.portfolioCards;
 const pl = schema.portfolioLikes;
 const pb = schema.portfolioBackgrounds;
+const pm = schema.portfolioMembers;
 const ci = schema.cardInstances;
 
 /** Cartes montrées dans un aperçu (liste, profil). */
@@ -43,17 +48,24 @@ const versionOf = (d: Date) => d.getTime().toString(36);
 // ---------------------------------------------------------------------------
 
 /**
- * Cartes de ces portfolios, dans l'ordre, encore possédées par leur auteur (une carte qui change de main en sort à
- * la transmission ; le filtre sur le propriétaire n'est qu'un garde-fou). Vues seulement pour l'auteur.
+ * La carte est à un participant du portfolio : son propriétaire ou un ami qui l'a rejoint. Une carte qui change de
+ * main en sort à la transmission, celles d'un ami qui part à son départ : ce filtre n'est qu'un garde-fou.
  */
+const heldByParticipant = sql`(${ci.ownerId} = ${pf.userId} or exists (
+  select 1 from portfolio_members m
+  where m.portfolio_id = ${pf.id} and m.user_id = ${ci.ownerId} and m.joined_at is not null
+))`;
+
+/** Cartes de ces portfolios, dans l'ordre, encore à un participant. Vues seulement pour celui à qui est la carte. */
 async function cardsOf(db: DbOrTx, list: Portfolio[], viewerId: string, limit?: number) {
   const out = new Map<number, PortfolioCardDTO[]>(list.map((p) => [p.id, []]));
   if (!list.length) return out;
   const rows = await db
-    .select({ ...instanceColumns, portfolioId: pc.portfolioId, featured: pc.featured })
+    .select({ ...instanceColumns, portfolioId: pc.portfolioId, featured: pc.featured, by: schema.user.username })
     .from(pc)
     .innerJoin(pf, eq(pf.id, pc.portfolioId))
-    .innerJoin(ci, and(eq(ci.id, pc.instanceId), eq(ci.ownerId, pf.userId)))
+    .innerJoin(ci, and(eq(ci.id, pc.instanceId), heldByParticipant))
+    .innerJoin(schema.user, eq(schema.user.id, ci.ownerId))
     .innerJoin(schema.cards, and(eq(schema.cards.season, ci.season), eq(schema.cards.id, ci.cardId)))
     .leftJoin(schema.wikiSummaries, eq(schema.wikiSummaries.pageId, ci.cardId))
     .where(
@@ -63,21 +75,47 @@ async function cardsOf(db: DbOrTx, list: Portfolio[], viewerId: string, limit?: 
       ),
     )
     .orderBy(asc(pc.portfolioId), asc(pc.pos));
-  for (const { portfolioId, featured, ...r } of rows)
-    out.get(portfolioId)!.push({ ...toCardDTO(r, {}, viewerId), featured });
+  for (const { portfolioId, featured, by, ...r } of rows)
+    out.get(portfolioId)!.push({ ...toCardDTO(r, {}, viewerId), featured, by: by ?? "" });
   if (limit !== undefined)
     for (const [id, cards] of out)
       out.set(id, [...cards.filter((c) => c.featured), ...cards.filter((c) => !c.featured)].slice(0, limit));
   return out;
 }
 
-/** Résumés de ces portfolios pour `viewerId` (auteur, likes, aperçu ou toutes les cartes). */
+type MemberRow = {
+  portfolio_id: string;
+  user_id: string;
+  username: string;
+  display_name: string;
+  avatar: string | null;
+  joined_at: Date | string | null;
+};
+
+/** Participants et invités de ces portfolios, dans l'ordre d'arrivée (les invitations en attente à la fin). */
+async function membersOf(db: DbOrTx, ids: number[]) {
+  if (!ids.length) return [];
+  return db.execute<MemberRow>(sql`
+    select m.portfolio_id, m.user_id, u.username, coalesce(u.display_username, u.name) as display_name, p.avatar,
+           m.joined_at
+    from portfolio_members m join "user" u on u.id = m.user_id join players p on p.user_id = u.id
+    where m.portfolio_id in (${sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    )})
+    order by m.joined_at asc nulls last, m.invited_at asc
+  `);
+}
+
+const toOwnerDTO = (m: MemberRow) => ({ username: m.username, displayName: m.display_name, avatar: m.avatar });
+
+/** Résumés de ces portfolios pour `viewerId` (auteur, participants, likes, aperçu ou toutes les cartes). */
 async function summaries(ctx: Ctx, list: Portfolio[], viewerId: string, full: true): Promise<PortfolioDTO[]>;
 async function summaries(ctx: Ctx, list: Portfolio[], viewerId: string, full?: false): Promise<PortfolioSummaryDTO[]>;
 async function summaries(ctx: Ctx, list: Portfolio[], viewerId: string, full = false) {
   if (!list.length) return [];
   const ids = list.map((p) => p.id);
-  const [owners, likes, mineLiked, counts, backgrounds, allCards] = await Promise.all([
+  const [owners, likes, mineLiked, counts, backgrounds, allCards, members] = await Promise.all([
     ctx.db.execute<{ id: string; username: string; display_name: string; avatar: string | null }>(sql`
       select u.id, u.username, coalesce(u.display_username, u.name) as display_name, p.avatar
       from "user" u join players p on p.user_id = u.id
@@ -98,12 +136,13 @@ async function summaries(ctx: Ctx, list: Portfolio[], viewerId: string, full = f
     ctx.db
       .select({ id: pc.portfolioId, n: sql<number>`count(*)::int` })
       .from(pc)
-      .innerJoin(ci, eq(ci.id, pc.instanceId))
-      .innerJoin(pf, and(eq(pf.id, pc.portfolioId), eq(pf.userId, ci.ownerId)))
+      .innerJoin(pf, eq(pf.id, pc.portfolioId))
+      .innerJoin(ci, and(eq(ci.id, pc.instanceId), heldByParticipant))
       .where(inArray(pc.portfolioId, ids))
       .groupBy(pc.portfolioId),
     ctx.db.select({ id: pb.portfolioId, updatedAt: pb.updatedAt }).from(pb).where(inArray(pb.portfolioId, ids)),
     cardsOf(ctx.db, list, viewerId, full ? undefined : PREVIEW_CARDS),
+    membersOf(ctx.db, ids),
   ]);
   const ownerBy = new Map(owners.map((o) => [o.id, o]));
   const likesBy = new Map(likes.map((l) => [l.id, l.n]));
@@ -113,6 +152,9 @@ async function summaries(ctx: Ctx, list: Portfolio[], viewerId: string, full = f
   return list.map((p) => {
     const o = ownerBy.get(p.userId);
     const cards = allCards.get(p.id) ?? [];
+    const here = members.filter((m) => Number(m.portfolio_id) === p.id);
+    const me = here.find((m) => m.user_id === viewerId);
+    const role = p.userId === viewerId ? "owner" : me ? (me.joined_at ? "member" : "invited") : null;
     const summary: PortfolioSummaryDTO = {
       id: p.id,
       name: p.name,
@@ -132,23 +174,41 @@ async function summaries(ctx: Ctx, list: Portfolio[], viewerId: string, full = f
       preview: full
         ? [...cards.filter((c) => c.featured), ...cards.filter((c) => !c.featured)].slice(0, PREVIEW_CARDS)
         : cards,
+      visibility: p.visibility,
+      role,
+      members: here.filter((m) => m.joined_at).map(toOwnerDTO),
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
     };
-    return full ? { ...summary, cards } : summary;
+    if (!full) return summary;
+    const invited = role === "owner" ? here.filter((m) => !m.joined_at).map(toOwnerDTO) : [];
+    return { ...summary, cards, invited };
   });
 }
 
-/** Portfolio non vide (une carte encore possédée) : visible des autres joueurs. */
-const nonEmpty = sql`exists (
+/** Portfolio public et non vide (une carte encore à un participant) : visible des autres joueurs. */
+const isPublic = sql`(${pf.visibility} = 'public' and exists (
   select 1 from portfolio_cards x join card_instances i on i.id = x.instance_id
-  where x.portfolio_id = ${pf.id} and i.owner_id = ${pf.userId}
-)`;
+  where x.portfolio_id = ${pf.id} and (i.owner_id = ${pf.userId} or exists (
+    select 1 from portfolio_members m
+    where m.portfolio_id = ${pf.id} and m.user_id = i.owner_id and m.joined_at is not null
+  ))
+))`;
 
 async function load(db: DbOrTx, id: number): Promise<Portfolio> {
   const [p] = await db.select().from(pf).where(eq(pf.id, id));
   if (!p) throw notFound("Ce portfolio n'existe pas.");
   return p;
+}
+
+/** Place d'un joueur dans un portfolio : propriétaire, participant, invité ou aucune. */
+async function roleIn(db: DbOrTx, p: Portfolio, userId: string): Promise<PortfolioSummaryDTO["role"]> {
+  if (p.userId === userId) return "owner";
+  const [m] = await db
+    .select({ joinedAt: pm.joinedAt })
+    .from(pm)
+    .where(and(eq(pm.portfolioId, p.id), eq(pm.userId, userId)));
+  return m ? (m.joinedAt ? "member" : "invited") : null;
 }
 
 /** Son propre portfolio, verrouillé (modification). */
@@ -159,30 +219,62 @@ async function own(tx: Tx, userId: string, id: number): Promise<Portfolio> {
   return p;
 }
 
-/** Page d'un portfolio : son auteur le voit toujours, les autres seulement s'il a une carte. */
+/** Portfolio dont on est propriétaire ou participant, verrouillé (ses cartes). */
+async function editable(tx: Tx, userId: string, id: number) {
+  const [p] = await tx.select().from(pf).where(eq(pf.id, id)).for("update");
+  if (!p) throw notFound("Ce portfolio n'existe pas.");
+  const role = await roleIn(tx, p, userId);
+  if (role !== "owner" && role !== "member") throw forbidden("Tu ne participes pas à ce portfolio.");
+  return p;
+}
+
+/**
+ * Page d'un portfolio : son propriétaire, ses participants et ses invités le voient toujours ; les autres
+ * seulement s'il est public et a une carte.
+ */
 export async function getPortfolio(ctx: Ctx, viewerId: string, id: number): Promise<PortfolioDTO> {
   const p = await load(ctx.db, id);
   const [dto] = await summaries(ctx, [p], viewerId, true);
-  if (p.userId !== viewerId && !dto!.cards.length) throw notFound("Ce portfolio n'existe pas.");
+  if (!dto!.role && (p.visibility !== "public" || !dto!.cards.length)) throw notFound("Ce portfolio n'existe pas.");
   return dto!;
 }
 
-/** Ses portfolios : ceux du profil d'abord (dans l'ordre), puis les plus récents. */
+/** Ses portfolios et ceux qu'on partage avec un ami : ceux du profil d'abord (dans l'ordre), puis les plus récents. */
 export async function myPortfolios(ctx: Ctx, userId: string): Promise<PortfolioSummaryDTO[]> {
   const list = await ctx.db
     .select()
     .from(pf)
-    .where(eq(pf.userId, userId))
-    .orderBy(sql`${pf.profileSlot} asc nulls last`, desc(pf.updatedAt));
+    .where(
+      sql`(${pf.userId} = ${userId} or exists (
+        select 1 from portfolio_members m where m.portfolio_id = ${pf.id} and m.user_id = ${userId}
+          and m.joined_at is not null
+      ))`,
+    )
+    .orderBy(sql`case when ${pf.userId} = ${userId} then ${pf.profileSlot} end asc nulls last`, desc(pf.updatedAt));
   return summaries(ctx, list, userId);
 }
 
-/** Portfolios du profil d'un joueur (3 au plus, dans l'ordre qu'il a choisi), non vides. */
+/** Invitations en attente dans les portfolios partagés d'amis, les plus récentes d'abord. */
+export async function portfolioInvitations(ctx: Ctx, userId: string): Promise<PortfolioSummaryDTO[]> {
+  const rows = await ctx.db
+    .select({ p: pf })
+    .from(pm)
+    .innerJoin(pf, eq(pf.id, pm.portfolioId))
+    .where(and(eq(pm.userId, userId), isNull(pm.joinedAt)))
+    .orderBy(desc(pm.invitedAt));
+  return summaries(
+    ctx,
+    rows.map((r) => r.p),
+    userId,
+  );
+}
+
+/** Portfolios du profil d'un joueur (3 au plus, dans l'ordre qu'il a choisi), publics et non vides. */
 export async function profilePortfolios(ctx: Ctx, viewerId: string, ownerId: string) {
   const list = await ctx.db
     .select()
     .from(pf)
-    .where(and(eq(pf.userId, ownerId), isNotNull(pf.profileSlot), nonEmpty))
+    .where(and(eq(pf.userId, ownerId), isNotNull(pf.profileSlot), isPublic))
     .orderBy(asc(pf.profileSlot));
   return summaries(ctx, list, viewerId);
 }
@@ -195,7 +287,7 @@ export async function communityPortfolios(ctx: Ctx, viewerId: string, sort: "rec
   const list = await ctx.db
     .select()
     .from(pf)
-    .where(nonEmpty)
+    .where(isPublic)
     .orderBy(...(sort === "likes" ? [sql`${likes} desc`, desc(pf.createdAt)] : [desc(pf.createdAt)]), desc(pf.id))
     .limit(COMMUNITY_PAGE + 1)
     .offset(page * COMMUNITY_PAGE);
@@ -229,12 +321,22 @@ export async function createPortfolio(ctx: Ctx, userId: string, input: { name: s
   });
 }
 
-/** Nom, description et design ; un design pas encore à soi est refusé. */
+/**
+ * Nom, description, design et visibilité (propriétaire seul) ; un design pas encore à soi est refusé. Réservé aux
+ * participants, le portfolio quitte le profil.
+ */
 export async function updatePortfolio(
   ctx: Ctx,
   userId: string,
   id: number,
-  input: { name?: string; description?: string; background?: string; frame?: string; accent?: PortfolioAccent },
+  input: {
+    name?: string;
+    description?: string;
+    background?: string;
+    frame?: string;
+    accent?: PortfolioAccent;
+    visibility?: PortfolioVisibility;
+  },
 ) {
   const have = await designsOf(ctx.db, userId);
   await ctx.db.transaction(async (tx) => {
@@ -254,12 +356,19 @@ export async function updatePortfolio(
     }
     await tx
       .update(pf)
-      .set({ ...input, updatedAt: ctx.now() })
+      .set({
+        ...input,
+        ...(input.visibility === "members" ? { profileSlot: null } : {}),
+        updatedAt: ctx.now(),
+      })
       .where(eq(pf.id, p.id));
   });
 }
 
-/** Remplace les cartes (ordre et vedette) : des exemplaires de sa collection seulement. */
+/**
+ * Remplace les cartes (ordre et vedette), par le propriétaire ou un participant. Chacun n'ajoute que des exemplaires
+ * de sa collection et ne retire que les siens (le propriétaire peut retirer ceux de tous) ; rien ne change de main.
+ */
 export async function setPortfolioCards(
   ctx: Ctx,
   userId: string,
@@ -269,14 +378,26 @@ export async function setPortfolioCards(
   const list = normalizePortfolioCards(cards);
   if (!list) throw badRequest("portfolio_cards", "Liste de cartes invalide (30 au plus, chacune une fois).");
   await ctx.db.transaction(async (tx) => {
-    const p = await own(tx, userId, id);
-    const ids = list.map((c) => c.instanceId);
-    if (ids.length) {
+    const p = await editable(tx, userId, id);
+    const before = await tx
+      .select({ instanceId: pc.instanceId, ownerId: ci.ownerId })
+      .from(pc)
+      .innerJoin(pf, eq(pf.id, pc.portfolioId))
+      .innerJoin(ci, and(eq(ci.id, pc.instanceId), heldByParticipant))
+      .where(eq(pc.portfolioId, p.id));
+    const change = portfolioCardsChange({
+      editorId: userId,
+      ownerId: p.userId,
+      before,
+      after: list.map((c) => c.instanceId),
+    });
+    if (!change) throw forbidden("Tu ne peux retirer que tes propres cartes.");
+    if (change.added.length) {
       const owned = await tx
         .select({ id: ci.id })
         .from(ci)
-        .where(and(inArray(ci.id, ids), eq(ci.ownerId, userId)));
-      if (owned.length !== ids.length) throw notFound("Certaines cartes ne sont plus dans ta collection.");
+        .where(and(inArray(ci.id, change.added), eq(ci.ownerId, userId)));
+      if (owned.length !== change.added.length) throw notFound("Certaines cartes ne sont plus dans ta collection.");
     }
     await tx.delete(pc).where(eq(pc.portfolioId, p.id));
     if (list.length)
@@ -305,7 +426,7 @@ export async function setProfilePortfolios(ctx: Ctx, userId: string, ids: number
       const mine = await tx
         .select({ id: pf.id })
         .from(pf)
-        .where(and(inArray(pf.id, wanted), eq(pf.userId, userId)));
+        .where(and(inArray(pf.id, wanted), eq(pf.userId, userId), eq(pf.visibility, "public")));
       if (mine.length !== wanted.length) throw notFound("Portfolio introuvable.");
     }
     // Tout est libéré d'abord : l'index unique (joueur, place) ne voit jamais deux portfolios au même endroit.
@@ -319,17 +440,142 @@ export async function setProfilePortfolios(ctx: Ctx, userId: string, ids: number
 }
 
 // ---------------------------------------------------------------------------
+// Portfolios partagés (suggestion n° 125) : invitations d'amis, départ, retrait
+// ---------------------------------------------------------------------------
+
+async function areFriends(db: DbOrTx, x: string, y: string) {
+  const [a, b] = x < y ? [x, y] : [y, x];
+  const [row] = await db
+    .select({ status: schema.friendships.status })
+    .from(schema.friendships)
+    .where(and(eq(schema.friendships.userA, a), eq(schema.friendships.userB, b)));
+  return row?.status === "accepted";
+}
+
+async function nameOf(db: DbOrTx, userId: string) {
+  const [u] = await db
+    .select({ name: sql<string>`coalesce(${schema.user.displayUsername}, ${schema.user.name})` })
+    .from(schema.user)
+    .where(eq(schema.user.id, userId));
+  return u?.name ?? "?";
+}
+
+/** Le propriétaire invite un ami ; propriétaire et invitations compris, PORTFOLIO_SHARED_MAX_PLAYERS joueurs au plus. */
+export async function invitePortfolioMember(ctx: Ctx, userId: string, id: number, friendId: string) {
+  if (friendId === userId) throw badRequest("self", "Tu participes déjà à ton portfolio.");
+  const fx = new Effects();
+  await ctx.db.transaction(async (tx) => {
+    const p = await own(tx, userId, id);
+    if (!(await areFriends(tx, userId, friendId))) throw forbidden("Tu ne peux inviter que tes amis.");
+    const rows = await tx.select({ userId: pm.userId }).from(pm).where(eq(pm.portfolioId, p.id));
+    if (rows.some((r) => r.userId === friendId)) throw conflict("portfolio_member", "Cet ami est déjà invité.");
+    if (rows.length + 1 >= PORTFOLIO_SHARED_MAX_PLAYERS)
+      throw conflict(
+        "portfolio_members_full",
+        `Un portfolio partagé réunit ${PORTFOLIO_SHARED_MAX_PLAYERS} joueurs au plus, toi compris.`,
+      );
+    await tx.insert(pm).values({ portfolioId: p.id, userId: friendId, invitedAt: ctx.now() });
+    await fx.notify(tx, friendId, "portfolio_invite", {
+      from: await nameOf(tx, userId),
+      portfolioId: p.id,
+      name: p.name,
+    });
+  });
+  await fx.flush(ctx);
+}
+
+/** L'ami invité accepte : il peut dès lors y poser ses cartes. Il faut être encore amis. */
+export async function joinPortfolio(ctx: Ctx, userId: string, id: number) {
+  const fx = new Effects();
+  await ctx.db.transaction(async (tx) => {
+    const [p] = await tx.select().from(pf).where(eq(pf.id, id)).for("update");
+    const [m] = p
+      ? await tx
+          .select()
+          .from(pm)
+          .where(and(eq(pm.portfolioId, id), eq(pm.userId, userId)))
+      : [];
+    if (!p || !m) throw notFound("Aucune invitation pour ce portfolio.");
+    if (m.joinedAt) throw conflict("portfolio_member", "Tu participes déjà à ce portfolio.");
+    if (!(await areFriends(tx, userId, p.userId)))
+      throw forbidden("Vous n'êtes plus amis : l'invitation ne tient plus.");
+    await tx
+      .update(pm)
+      .set({ joinedAt: ctx.now() })
+      .where(and(eq(pm.portfolioId, id), eq(pm.userId, userId)));
+    // On n'aime pas un portfolio auquel on participe.
+    await tx.delete(pl).where(and(eq(pl.portfolioId, id), eq(pl.userId, userId)));
+    await fx.notify(tx, p.userId, "portfolio_joined", {
+      from: await nameOf(tx, userId),
+      portfolioId: id,
+      name: p.name,
+    });
+  });
+  await fx.flush(ctx);
+}
+
+/** Sort un participant (ou une invitation) d'un portfolio : ses cartes le quittent et restent dans sa collection. */
+async function dropMember(tx: Tx, id: number, memberId: string, now: Date) {
+  const gone = await tx
+    .delete(pm)
+    .where(and(eq(pm.portfolioId, id), eq(pm.userId, memberId)))
+    .returning({ userId: pm.userId });
+  if (!gone.length) return false;
+  await tx
+    .delete(pc)
+    .where(
+      and(
+        eq(pc.portfolioId, id),
+        inArray(pc.instanceId, tx.select({ id: ci.id }).from(ci).where(eq(ci.ownerId, memberId))),
+      ),
+    );
+  await tx.update(pf).set({ updatedAt: now }).where(eq(pf.id, id));
+  return true;
+}
+
+/**
+ * Retire un participant ou une invitation : le propriétaire pour n'importe qui (révocation), chacun pour soi-même
+ * (départ, refus).
+ */
+export async function removePortfolioMember(ctx: Ctx, userId: string, id: number, memberId: string) {
+  await ctx.db.transaction(async (tx) => {
+    const [p] = await tx.select().from(pf).where(eq(pf.id, id)).for("update");
+    if (!p) throw notFound("Ce portfolio n'existe pas.");
+    if (memberId !== userId && p.userId !== userId) throw forbidden("Ce portfolio n'est pas le tien.");
+    if (!(await dropMember(tx, id, memberId, ctx.now()))) throw notFound("Ce joueur ne participe pas à ce portfolio.");
+  });
+}
+
+/** Deux joueurs ne sont plus amis : chacun quitte les portfolios partagés de l'autre. */
+export async function leaveSharedPortfolios(ctx: Ctx, x: string, y: string) {
+  await ctx.db.transaction(async (tx) => {
+    for (const [ownerId, memberId] of [
+      [x, y],
+      [y, x],
+    ] as const) {
+      const rows = await tx
+        .select({ id: pm.portfolioId })
+        .from(pm)
+        .innerJoin(pf, eq(pf.id, pm.portfolioId))
+        .where(and(eq(pf.userId, ownerId), eq(pm.userId, memberId)));
+      for (const r of rows) await dropMember(tx, r.id, memberId, ctx.now());
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Likes (sans récompense)
 // ---------------------------------------------------------------------------
 
 export async function likePortfolio(ctx: Ctx, userId: string, id: number, like: boolean) {
   const p = await load(ctx.db, id);
-  if (p.userId === userId) throw forbidden("Tu ne peux pas aimer ton propre portfolio.");
+  const role = await roleIn(ctx.db, p, userId);
+  if (role === "owner" || role === "member") throw forbidden("Tu ne peux pas aimer ton propre portfolio.");
   if (like) {
     const [visible] = await ctx.db
       .select({ id: pf.id })
       .from(pf)
-      .where(and(eq(pf.id, id), nonEmpty));
+      .where(and(eq(pf.id, id), isPublic));
     if (!visible) throw notFound("Ce portfolio n'existe pas.");
     await ctx.db.insert(pl).values({ portfolioId: id, userId, createdAt: ctx.now() }).onConflictDoNothing();
   } else {

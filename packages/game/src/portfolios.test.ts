@@ -6,6 +6,7 @@ import {
   PORTFOLIO_CARDS_MAX,
   PORTFOLIO_DESIGNS,
   PORTFOLIO_PRICES,
+  portfolioCardsChange,
 } from "./portfolios.js";
 
 describe("designs des portfolios", () => {
@@ -59,5 +60,32 @@ describe("cartes d'un portfolio", () => {
     expect(
       normalizePortfolioCards(Array.from({ length: PORTFOLIO_CARDS_MAX + 1 }, (_, i) => ({ instanceId: i + 1 }))),
     ).toBeNull();
+  });
+});
+
+describe("portfolios partagés (suggestion n° 125)", () => {
+  const before = [
+    { instanceId: 1, ownerId: "owner" },
+    { instanceId: 2, ownerId: "ami" },
+    { instanceId: 3, ownerId: "autre" },
+  ];
+
+  it("laisse un invité ajouter, réordonner et retirer ses propres cartes", () => {
+    expect(portfolioCardsChange({ editorId: "ami", ownerId: "owner", before, after: [3, 1, 9] })).toEqual({
+      added: [9],
+      removed: [2],
+    });
+  });
+
+  it("refuse qu'un invité retire la carte d'un autre", () => {
+    expect(portfolioCardsChange({ editorId: "ami", ownerId: "owner", before, after: [2, 3] })).toBeNull();
+    expect(portfolioCardsChange({ editorId: "ami", ownerId: "owner", before, after: [1, 2] })).toBeNull();
+  });
+
+  it("laisse le propriétaire retirer n'importe quelle carte", () => {
+    expect(portfolioCardsChange({ editorId: "owner", ownerId: "owner", before, after: [] })).toEqual({
+      added: [],
+      removed: [1, 2, 3],
+    });
   });
 });
