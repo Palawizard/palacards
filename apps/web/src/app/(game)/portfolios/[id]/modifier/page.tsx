@@ -156,10 +156,7 @@ function CardsEditor({ p, me, mutate }: { p: PortfolioDTO; me: string; mutate: K
             {order.length} / {PORTFOLIO_CARDS_MAX}
           </span>
         </h2>
-        <p className="pf-muted text-sm">
-          Poignée ou flèches pour l’ordre, étoile pour la vedette.
-          {shared && !p.mine && " Tu ne retires que tes cartes."}
-        </p>
+        <p className="pf-muted text-sm">Poignée ou flèches pour l’ordre, étoile pour la vedette.</p>
       </div>
       <ol className="pf-grid">
         {order.map((card, i) => {
@@ -235,18 +232,10 @@ function CardsEditor({ p, me, mutate }: { p: PortfolioDTO; me: string; mutate: K
                 >
                   <ChevronRight aria-hidden className="size-4" />
                 </button>
-                {shared && card.by !== me && (
-                  <span
-                    className="ml-auto min-w-0 truncate px-1 text-xs text-muted"
-                    title={`Carte de ${names.get(card.by) ?? card.by}`}
-                  >
-                    {names.get(card.by) ?? card.by}
-                  </span>
-                )}
                 {canRemove(card) && (
                   <button
                     type="button"
-                    className={`pc-arrange-btn pc-arrange-remove ${shared && card.by !== me ? "" : "ml-auto"}`}
+                    className="pc-arrange-btn pc-arrange-remove ml-auto"
                     aria-label={`Retirer ${card.title} du portfolio`}
                     onClick={() => remove(card)}
                   >
@@ -254,6 +243,11 @@ function CardsEditor({ p, me, mutate }: { p: PortfolioDTO; me: string; mutate: K
                   </button>
                 )}
               </div>
+              {shared && (
+                <p className="pf-muted mt-1 truncate text-xs">
+                  {card.by === me ? "À toi" : `À ${names.get(card.by) ?? card.by}`}
+                </p>
+              )}
             </motion.li>
           );
         })}
@@ -917,8 +911,8 @@ function MemberPanel({ p, me }: { p: PortfolioDTO; me: string }) {
         Partage
       </h2>
       <p className="text-sm text-muted [text-wrap:pretty]">
-        Portfolio de {p.owner.displayName} : ajoute tes cartes, change l’ordre ou la vedette. Le titre et le design
-        restent à son choix.
+        Portfolio de {p.owner.displayName} : ajoute tes cartes, change l’ordre ou la vedette. Tu ne retires que les
+        tiennes ; le titre et le design restent à son choix.
       </p>
       <ul className="flex flex-col gap-2">
         {[p.owner, ...p.members].map((m) => (
