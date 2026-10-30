@@ -370,6 +370,28 @@ describe("option « Upgrader sans animation »", () => {
   });
 });
 
+describe("option « Confirmer avant de recycler » (suggestion n° 127)", () => {
+  it("est désactivée par défaut et se mémorise pour le joueur", async () => {
+    const p = await signUp(app);
+    expect((await p.get("/me")).body.confirmRecycle).toBe(false);
+    expect((await p.patch("/me/settings", { confirmRecycle: true })).body.confirmRecycle).toBe(true);
+    expect((await p.get("/me")).body.confirmRecycle).toBe(true);
+    expect((await p.patch("/me/settings", { confirmRecycle: false })).body.confirmRecycle).toBe(false);
+    expect((await p.patch("/me/settings", { confirmRecycle: "oui" })).status).toBe(400);
+    expect((await (await signUp(app)).get("/me")).body.confirmRecycle).toBe(false);
+  });
+
+  it("les doublons à recycler sont comptés par rareté pour la fenêtre de confirmation", async () => {
+    const p = await signUp(app);
+    for (let i = 0; i < 3; i++) await p.post("/packs/open");
+    const dups = (await p.get("/collection/duplicates")).body as {
+      instanceIds: number[];
+      rarities: { rarity: string; count: number }[];
+    };
+    expect(dups.rarities.reduce((s, r) => s + r.count, 0)).toBe(dups.instanceIds.length);
+  });
+});
+
 describe("filtres de stats et de niveau (suggestion n° 115)", () => {
   let p: Client;
   /** Trois exemplaires aux stats et niveaux connus : A (1 000/500, niv. 1), B (1 000/2 000, niv. 3), C (3 000/100, niv. 5). */

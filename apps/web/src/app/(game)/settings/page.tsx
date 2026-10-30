@@ -409,6 +409,34 @@ export default function SettingsPage() {
               }}
             />
           </label>
+          <label className="flex cursor-pointer items-start justify-between gap-4 rounded-xl border border-line bg-panel px-3 py-2.5">
+            <span className="min-w-0">
+              <span className="block">Confirmer avant de recycler</span>
+              <span className="mt-0.5 block text-xs text-faint">
+                Le bouton « Recycler » d’une carte tout juste tirée ouvre une fenêtre de confirmation, avec sa rareté et
+                les points wiki gagnés. Dans la collection et sur les fiches, la confirmation est toujours demandée ; le
+                recyclage automatique n’est pas concerné.
+              </span>
+            </span>
+            <input
+              type="checkbox"
+              className="mt-1 size-4 shrink-0 accent-[var(--color-accent)]"
+              checked={me.confirmRecycle}
+              onChange={(e) => {
+                const confirmRecycle = e.target.checked;
+                void run(
+                  () =>
+                    mutateMe(api<MeDTO>("/me/settings", { method: "PATCH", body: { confirmRecycle } }), {
+                      optimisticData: (m) => (m ? { ...m, confirmRecycle } : m!),
+                      revalidate: false,
+                    }),
+                  confirmRecycle
+                    ? "Chaque recyclage te demandera confirmation."
+                    : "Les cartes d’un paquet se recyclent de nouveau en un clic.",
+                );
+              }}
+            />
+          </label>
         </div>
       </Section>
 

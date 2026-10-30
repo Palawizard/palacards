@@ -1,5 +1,6 @@
 import { and, desc, eq, inArray, isNull, schema, sql, type SQL } from "@palacards/db";
 import {
+  countByRarity,
   effectiveStats,
   isBetterCopy,
   LEVEL_BONUS,
@@ -502,9 +503,13 @@ export async function duplicateIds(
   ownerId: string,
   rarities?: Rarity[],
   db: DbOrTx = ctx.db,
-): Promise<{ instanceIds: number[]; gain: number }> {
+): Promise<{ instanceIds: number[]; gain: number; rarities: { rarity: Rarity; count: number }[] }> {
   const dups = (await freeCopies(ctx, ownerId, rarities, db)).duplicates;
-  return { instanceIds: dups.map((r) => r.id), gain: dups.reduce((s, r) => s + recycleValue(r.rarity), 0) };
+  return {
+    instanceIds: dups.map((r) => r.id),
+    gain: dups.reduce((s, r) => s + recycleValue(r.rarity), 0),
+    rarities: countByRarity(dups.map((r) => r.rarity)),
+  };
 }
 
 /** Plafond de « Tout sélectionner » (et des actions en masse) : bien au-delà d'une collection réelle. */
