@@ -1,0 +1,1 @@
+ALTER TABLE "players" ADD COLUMN "confirm_recycle" boolean DEFAULT false NOT NULL;

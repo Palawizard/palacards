@@ -128,6 +128,7 @@ export async function me(
     hideGore: p.hideGore,
     hideNudity: p.hideNudity,
     quickUpgrade: p.quickUpgrade,
+    confirmRecycle: p.confirmRecycle,
     publicTags: p.publicTags,
     autoRecycle: { max: p.autoRecycleMax, keepNew: p.autoRecycleKeepNew },
     wallet: wallet(p),
@@ -180,6 +181,7 @@ export function coreRoutes(api: FastifyInstance, ctx: Ctx) {
           hideGore: z.boolean().optional(),
           hideNudity: z.boolean().optional(),
           quickUpgrade: z.boolean().optional(),
+          confirmRecycle: z.boolean().optional(),
           publicTags: z.boolean().optional(),
         })
         .refine((b) => Object.keys(b).length > 0, "Aucun réglage à modifier"),

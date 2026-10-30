@@ -24,7 +24,9 @@ import { play } from "@/lib/sfx";
 import { PHONE_QUERY, useMediaQuery } from "@/lib/use-media-query";
 import { Card, SparkStar } from "./Card";
 import { CardImage } from "./CardImage";
+import { RecycleBreakdown } from "./RecycleBreakdown";
 import { FX_DURATION, isFxTier, RevealFx, SHINY_FX_DURATION, ShinyFx, type FxTier } from "./RevealFx";
+import { ConfirmDialog } from "./ui";
 
 type Speed = "normal" | "fast" | "instant";
 type Phase = "sealed" | "tearing" | "dealt";
@@ -770,6 +772,8 @@ export const PackOpener = memo(function PackOpener({
   const [revealed, setRevealed] = useState<boolean[]>([]);
   const [recycled, setRecycled] = useState<Record<number, true>>({});
   const [wished, setWished] = useState<Record<number, true>>({});
+  /** Carte en attente de confirmation de recyclage. */
+  const [asking, setAsking] = useState<CardDTO | null>(null);
   const [cursor, setCursor] = useState(0);
   const [busy, setBusy] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -883,8 +887,11 @@ export const PackOpener = memo(function PackOpener({
     }
   }
 
+  /** Réglage « Confirmer avant de recycler » : la carte passe d'abord par la fenêtre de confirmation. */
+  const askRecycle = (card: CardDTO) => (me?.confirmRecycle ? setAsking(card) : void recycleOne(card));
+
   const allRevealed = revealed.length > 0 && revealed.every(Boolean);
-  const dealt = { cards, revealed, onReveal: reveal, recycled, onRecycle: recycleOne, speed };
+  const dealt = { cards, revealed, onReveal: reveal, recycled, onRecycle: askRecycle, speed };
   /** Téléphone, cartes encore en pile : la pile porte ses propres boutons. */
   const decking = phone && phase === "dealt" && cursor < cards.length;
 
@@ -923,7 +930,7 @@ export const PackOpener = memo(function PackOpener({
             ) : cursor < cards.length ? (
               <PackDeck {...dealt} onRevealAll={revealAll} cursor={cursor} onCursor={setCursor} />
             ) : (
-              <DeckRecap cards={cards} recycled={recycled} wished={wished} onRecycle={recycleOne} onShow={setCursor} />
+              <DeckRecap cards={cards} recycled={recycled} wished={wished} onRecycle={askRecycle} onShow={setCursor} />
             )}
           </motion.div>
         )}
@@ -961,6 +968,23 @@ export const PackOpener = memo(function PackOpener({
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!asking}
+        danger
+        title="Recycler cette carte ?"
+        confirmLabel={`Recycler (+${asking ? recycleValue(asking.rarity, asking.shiny) : 0} PW)`}
+        onConfirm={() => asking && void recycleOne(asking)}
+        onClose={() => setAsking(null)}
+      >
+        {asking?.title} disparaît de ta collection contre des points wiki.
+        {asking && (
+          <RecycleBreakdown
+            rarities={[{ rarity: asking.rarity, count: 1 }]}
+            gain={recycleValue(asking.rarity, asking.shiny)}
+          />
+        )}
+      </ConfirmDialog>
     </section>
   );
 });
