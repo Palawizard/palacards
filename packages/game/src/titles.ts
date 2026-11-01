@@ -5,14 +5,27 @@ import type { Rarity } from "./rarity.js";
  * Titres cosmétiques : à la fin de chaque saison, les premiers de chaque classement de saison gagnent
  * le titre de ce classement, gardé pour toujours et marqué de la saison obtenue. Aucun effet de jeu.
  */
-export const TITLE_BOARDS = ["collection", "legendary", "packs", "luck", "elo", "wealth", "guilds", "pass"] as const;
+export const TITLE_BOARDS = [
+  "collection",
+  "legendary",
+  "packs",
+  "luck",
+  "elo",
+  "wealth",
+  "guilds",
+  "pass",
+  "achievements",
+  "shiny",
+  "hl_streak",
+] as const;
 export type TitleBoard = (typeof TITLE_BOARDS)[number];
 
 /**
- * Tous les classements : ceux à titre, plus ceux qui n'en donnent pas (« Succès » : les paliers débloqués
- * se cumulent depuis l'inscription, sans saison ; « Brillantes » : cartes brillantes possédées, par saison).
+ * Tous les classements, tous de saison et à titre depuis le 2026-11-01 : « Succès » (paliers de la saison, les
+ * succès repartent de zéro à chaque saison), « Brillantes » (exemplaires brillants de l'édition en cours) et
+ * « Meilleure série » de « Plus ou moins vu » (sur la saison, auparavant au mois).
  */
-export const LEADERBOARDS = [...TITLE_BOARDS, "achievements", "shiny", "hl_streak"] as const;
+export const LEADERBOARDS = TITLE_BOARDS;
 export type Leaderboard = (typeof LEADERBOARDS)[number];
 
 /** Rangs récompensés : les TITLE_MAX_RANK premiers de chaque classement. */
@@ -27,6 +40,9 @@ export const TITLE_NAMES: Record<TitleBoard, string> = {
   wealth: "Magnat",
   guilds: "Champion de guilde",
   pass: "Pilier de la saison",
+  achievements: "Perfectionniste",
+  shiny: "Collectionneur d'éclats",
+  hl_streak: "Œil de lynx",
 };
 
 /** Nom des classements, pour situer un titre (« n° 1 en Chance »). */
@@ -39,6 +55,9 @@ export const TITLE_BOARD_LABELS: Record<TitleBoard, string> = {
   wealth: "Richesse",
   guilds: "Guildes",
   pass: "Passe de saison",
+  achievements: "Succès",
+  shiny: "Brillantes",
+  hl_streak: "Meilleure série",
 };
 
 /** Rareté comptée par le classement « Légendaires » : articles différents, doublons comptés une fois. */
