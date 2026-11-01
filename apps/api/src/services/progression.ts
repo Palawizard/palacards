@@ -324,6 +324,8 @@ async function seasonTotals(db: DbOrTx, season: number): Promise<Partial<Record<
  * (`source` = `pack`, `upgrade`, `wheel` ou `boss` ; un transfert par échange ou vente la réécrit en `trade` /
  * `market`, un don admin vaut `admin`). Sinon des amis se prêteraient gratuitement leurs cartes pour débloquer
  * les succès de collection chacun à leur tour.
+ * Seules comptent les cartes de l'édition en cours : les succès repartent de zéro à chaque saison, et les cartes
+ * des saisons passées les redébloqueraient aussitôt.
  */
 export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameEvent> {
   const season = await activeSeason(db);
@@ -335,13 +337,13 @@ export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameE
   }>(sql`
     with pulled as (
       select i.card_id, i.rarity, i.season from card_instances i
-      where i.owner_id = ${userId} and i.source in ('pack', 'upgrade', 'wheel', 'boss')
+      where i.owner_id = ${userId} and i.source in ('pack', 'upgrade', 'wheel', 'boss') and i.season = ${season}
     )
     select
       (select count(distinct card_id)::int from pulled) as unique_cards,
       (select count(distinct card_id)::int from pulled where rarity = 'L') as unique_l,
       (select json_object_agg(rarity, n) from (
-         select rarity, count(distinct card_id)::int as n from pulled where season = ${season} group by rarity
+         select rarity, count(distinct card_id)::int as n from pulled group by rarity
        ) s) as season_owned,
       (select count(distinct upper(left(f_unaccent(c.title), 1)))::int from pulled p
          join cards c on c.season = p.season and c.id = p.card_id
@@ -389,6 +391,18 @@ export async function winStreak(db: DbOrTx, userId: string): Promise<number> {
 // Rattrapage : statistiques recalculées depuis l'historique (une fois par version)
 // ---------------------------------------------------------------------------
 
+/**
+ * Début de l'historique qui compte pour les succès : les succès repartent de zéro à chaque saison, donc à partir
+ * de la saison 2 seul l'historique de la saison en cours est relu (null : saison 1, tout l'historique).
+ */
+async function seasonHistoryStart(db: DbOrTx): Promise<Date | null> {
+  const [row] = await db
+    .select({ id: schema.seasons.id, startedAt: schema.seasons.startedAt })
+    .from(schema.seasons)
+    .where(eq(schema.seasons.status, "active"));
+  return row && row.id > 1 && row.startedAt ? row.startedAt : null;
+}
+
 /** À augmenter quand le rattrapage sait recalculer une statistique de plus. */
 export const STATS_VERSION = 2;
 
@@ -397,34 +411,39 @@ export const STATS_VERSION = 2;
  * recyclées ou vendues ne disent plus leur rareté : les tirages par rareté sont des minimums.
  */
 async function historicalStats(db: DbOrTx, userId: string): Promise<Map<StatKey, number>> {
+  // Les succès repartent de zéro à chaque saison : à partir de la saison 2, seul l'historique de la saison compte.
+  const since = (await seasonHistoryStart(db))?.toISOString() ?? null;
+  const after = (col: string) => (since ? sql`and ${sql.raw(col)} >= ${since}` : sql``);
   const [h] = await db.execute<Record<string, number | string | null>>(sql`
     select
-      (select count(*) from ledger where user_id = ${userId} and kind = 'card' and reason = 'pack_open') as packs_opened,
-      (select count(*) from ledger where user_id = ${userId} and kind = 'theme_pack' and reason = 'pack_open')
-        + (select count(*) from ledger where user_id = ${userId} and kind = 'pw' and reason = 'theme_pack' and delta < 0) as theme_packs_opened,
-      (select count(*) from card_instances where owner_id = ${userId} and source in ('pack', 'wheel', 'upgrade') and rarity = 'SR') as pulled_sr,
-      (select count(*) from card_instances where owner_id = ${userId} and source in ('pack', 'wheel', 'upgrade') and rarity = 'UR') as pulled_ur,
-      (select count(*) from card_instances where owner_id = ${userId} and source in ('pack', 'wheel', 'upgrade') and rarity = 'L') as pulled_l,
-      (select count(*) from auctions where seller_id = ${userId} and status = 'sold') as sales,
-      (select coalesce(max(current_bid), 0) from auctions where seller_id = ${userId} and status = 'sold') as best_sale,
-      (select count(*) from auctions a where a.seller_id = ${userId} and a.status = 'sold' and a.current_bid > 1000
+      (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'card' and reason = 'pack_open') as packs_opened,
+      (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'theme_pack' and reason = 'pack_open')
+        + (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'pw' and reason = 'theme_pack' and delta < 0) as theme_packs_opened,
+      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade') and rarity = 'SR') as pulled_sr,
+      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade') and rarity = 'UR') as pulled_ur,
+      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade') and rarity = 'L') as pulled_l,
+      (select count(*) from auctions where seller_id = ${userId} and status = 'sold' ${after("closed_at")}) as sales,
+      (select coalesce(max(current_bid), 0) from auctions where seller_id = ${userId} and status = 'sold' ${after("closed_at")}) as best_sale,
+      (select count(*) from auctions a where a.seller_id = ${userId} and a.status = 'sold' ${after("a.closed_at")} and a.current_bid > 1000
          and (select count(distinct b.bidder_id) from bids b where b.auction_id = a.id) >= 2) as big_sales,
-      (select count(*) from auctions where current_bidder_id = ${userId} and status = 'sold') as purchases,
-      (select count(*) from trades where status = 'accepted' and (from_id = ${userId} or to_id = ${userId})) as trades,
-      (select count(*) from battles where status = 'finished' and (challenger_id = ${userId} or opponent_id = ${userId})) as battles_played,
-      (select count(*) from battles bt where bt.status = 'finished' and bt.winner_id = ${userId}
+      (select count(*) from auctions where current_bidder_id = ${userId} and status = 'sold' ${after("closed_at")}) as purchases,
+      (select count(*) from trades where status = 'accepted' and (from_id = ${userId} or to_id = ${userId}) ${after("resolved_at")}) as trades,
+      (select count(*) from battles where status = 'finished' and (challenger_id = ${userId} or opponent_id = ${userId}) ${after("finished_at")}) as battles_played,
+      (select count(*) from battles bt where bt.status = 'finished' and bt.winner_id = ${userId} ${after("bt.finished_at")}
          and exists (select 1 from ledger l where l.user_id = ${userId} and l.reason = 'battle' and l.ref_id = bt.id::text)) as battles_won,
-      (select greatest(p.elo_peak, p.elo, coalesce((select max(a.elo) from season_archives a where a.user_id = ${userId}), 0))
+      (select case when ${since}::timestamptz is null
+           then greatest(p.elo_peak, p.elo, coalesce((select max(a.elo) from season_archives a where a.user_id = ${userId}), 0))
+           else p.elo end
          from players p where p.user_id = ${userId}) as elo_peak,
       (select coalesce(max(level), 0) from card_instances where owner_id = ${userId}) as card_level_max,
-      (select count(*) from ledger where user_id = ${userId} and kind = 'card' and reason = 'fusion') as fusions,
+      (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'card' and reason = 'fusion') as fusions,
       (select count(*) from guild_members where user_id = ${userId}) as guild_joined,
       (select count(*) from friendships where status = 'accepted' and (user_a = ${userId} or user_b = ${userId})) as friends,
       (select login_streak from players where user_id = ${userId}) as login_streak_max,
-      (select count(distinct ref_id) from ledger where user_id = ${userId} and reason = 'wheel') as wheel_spins,
-      (select coalesce(sum(-delta), 0) from ledger where user_id = ${userId} and kind = 'card' and reason = 'recycle' and delta < 0) as recycled,
-      (select count(*) from ledger where user_id = ${userId} and kind = 'card' and reason = 'upgrade' and delta < 0) as upgrades,
-      (select count(*) from ledger where user_id = ${userId} and kind = 'card' and reason = 'upgrade' and delta > 0) as upgrades_won
+      (select count(distinct ref_id) from ledger where user_id = ${userId} ${after("created_at")} and reason = 'wheel') as wheel_spins,
+      (select coalesce(sum(-delta), 0) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'card' and reason = 'recycle' and delta < 0) as recycled,
+      (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'card' and reason = 'upgrade' and delta < 0) as upgrades,
+      (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'card' and reason = 'upgrade' and delta > 0) as upgrades_won
   `);
   const out = new Map<StatKey, number>();
   for (const key of STAT_KEYS) {
@@ -434,7 +453,7 @@ async function historicalStats(db: DbOrTx, userId: string): Promise<Map<StatKey,
   // Meilleure série : duels récompensés, du plus ancien au plus récent.
   const battles = await db.execute<{ winner_id: string | null }>(sql`
     select bt.winner_id from battles bt
-    where bt.status = 'finished' and (bt.challenger_id = ${userId} or bt.opponent_id = ${userId})
+    where bt.status = 'finished' and (bt.challenger_id = ${userId} or bt.opponent_id = ${userId}) ${after("bt.finished_at")}
       and exists (select 1 from ledger l where l.user_id = ${userId} and l.reason = 'battle' and l.ref_id = bt.id::text)
     order by bt.finished_at
   `);
@@ -745,8 +764,13 @@ export async function boardRows(db: DbOrTx, board: Board, period: "season" | "al
     `);
     rows = res.map((r) => ({ id: r.owner_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
   } else if (board === "hl_streak") {
-    // « Plus ou moins vu » : meilleure série d'un essai pendant le mois en cours (heure de Paris), quelle que soit
-    // la période demandée. Égalité : le premier à l'avoir atteinte.
+    // « Plus ou moins vu » : meilleure série d'un essai pendant la saison (jours de Paris de la saison), ou depuis
+    // toujours. Égalité : le premier à l'avoir atteinte.
+    const window =
+      period === "season"
+        ? sql`and day >= coalesce((select (started_at at time zone 'Europe/Paris')::date from seasons where id = ${season}), '-infinity'::date)
+              and day < coalesce((select (ends_at at time zone 'Europe/Paris')::date from seasons where id = ${season} and status <> 'active'), 'infinity'::date)`
+        : sql``;
     const res = await db.execute<{
       user_id: string;
       value: number;
@@ -758,16 +782,25 @@ export async function boardRows(db: DbOrTx, board: Board, period: "season" | "al
       from (
         select distinct on (user_id) user_id, streak::int as value, finished_at
         from hl_runs
-        where status = 'over' and streak > 0 and not practice
-          and day >= date_trunc('month', now() at time zone 'Europe/Paris')::date
+        where status = 'over' and streak > 0 and not practice ${window}
         order by user_id, streak desc, finished_at
       ) s join "user" u on u.id = s.user_id left join players p on p.user_id = s.user_id
       order by s.value desc, s.finished_at, u.username limit 100
     `);
     rows = res.map((r) => ({ id: r.user_id, name: r.name, username: r.username, avatar: r.avatar, value: r.value }));
   } else if (board === "achievements") {
-    // Paliers de succès débloqués depuis l'inscription (même liste pour les deux périodes) ; seuls comptent les
-    // succès qui existent encore. Égalité : le premier à avoir atteint ce nombre (date de son dernier palier).
+    // Paliers de succès débloqués pendant la saison (les succès repartent de zéro à chaque saison : en cours dans
+    // achievements_progress, saisons terminées dans achievement_archives), ou cumulés sur toutes les saisons. Seuls
+    // comptent les succès qui existent encore. Égalité : le premier à avoir atteint ce nombre (date de son dernier palier).
+    const unlocked =
+      period === "season"
+        ? sql`select user_id, achievement_key, unlocked_at from achievements_progress
+              where unlocked_at is not null and (select status from seasons where id = ${season}) = 'active'
+              union all
+              select user_id, achievement_key, unlocked_at from achievement_archives where season = ${season}`
+        : sql`select user_id, achievement_key, unlocked_at from achievements_progress where unlocked_at is not null
+              union all
+              select user_id, achievement_key, unlocked_at from achievement_archives`;
     const res = await db.execute<{
       user_id: string;
       value: number;
@@ -778,8 +811,8 @@ export async function boardRows(db: DbOrTx, board: Board, period: "season" | "al
       select a.user_id, a.value, u.username, coalesce(u.display_username, u.name) as name, p.avatar
       from (
         select user_id, count(*)::int as value, max(unlocked_at) as reached_at
-        from achievements_progress
-        where unlocked_at is not null and achievement_key in (${sql.join(
+        from (${unlocked}) u
+        where achievement_key in (${sql.join(
           ACHIEVEMENTS.map((a) => sql`${a.key}`),
           sql`, `,
         )})
