@@ -360,6 +360,68 @@ describe("classements et saisons", () => {
     expect(all.body.rows.find((r: { me: boolean }) => r.me).value).toBe(1234);
   });
 
+  it("bascule de saison : succès archivés puis remis à zéro, regagnés avec leur récompense", async () => {
+    const p = await signUp(app);
+    expect((await p.post("/packs/open")).status).toBe(200);
+    await progressionIdle();
+    const unlockedKeys = async () =>
+      (
+        await ctx.db.execute<{ achievement_key: string }>(
+          sql`select achievement_key from achievements_progress where user_id = ${p.userId} and unlocked_at is not null`,
+        )
+      ).map((r) => r.achievement_key);
+    const paid = async (key: string) =>
+      Number(
+        (
+          await ctx.db.execute<{ n: number }>(
+            sql`select count(*)::int as n from ledger where user_id = ${p.userId} and reason = 'achievement' and ref_id = ${key}`,
+          )
+        )[0]!.n,
+      );
+    const before = await unlockedKeys();
+    expect(before.length).toBeGreaterThan(0);
+    // « Premier paquet » (50 PW) : sa récompense doit se regagner à la saison suivante.
+    const key = "first_pack";
+    expect(before).toContain(key);
+    const paidBefore = await paid(key);
+    expect(paidBefore).toBeGreaterThan(0);
+    const season = (await p.get("/me")).body.season;
+    const board = async (period: string) =>
+      (await p.get(`/leaderboard?board=achievements&period=${period}`)).body.rows.find((r: { me: boolean }) => r.me);
+    expect((await board("season")).value).toBe(before.length);
+
+    await rolloverSeason(ctx);
+    // Archivés sous la saison terminée, puis remis à zéro (statistiques comprises).
+    const archived = await ctx.db
+      .select()
+      .from(schema.achievementArchives)
+      .where(eq(schema.achievementArchives.userId, p.userId));
+    expect(archived.map((a) => a.achievementKey).sort()).toEqual([...before].sort());
+    expect(archived.every((a) => a.season === season)).toBe(true);
+    expect(await unlockedKeys()).toEqual([]);
+    const [stats] = await ctx.db.execute<{ n: number }>(
+      sql`select count(*)::int as n from player_stats where user_id = ${p.userId}`,
+    );
+    expect(stats!.n).toBe(0);
+    // Classement : rien sur la nouvelle saison, les saisons passées comptent en « tout temps ».
+    expect(await board("season")).toBeUndefined();
+    expect((await board("all")).value).toBe(before.length);
+
+    // Le palier se regagne, avec sa récompense ; les cartes de la saison passée ne comptent plus pour la collection.
+    expect((await p.post("/packs/open")).status).toBe(200);
+    await progressionIdle();
+    expect(await unlockedKeys()).toContain(key);
+    expect(await paid(key)).toBe(paidBefore + 1);
+    const [unique] = await ctx.db.execute<{ value: number }>(
+      sql`select value::int from player_stats where user_id = ${p.userId} and key = 'unique_cards'`,
+    );
+    const [newCards] = await ctx.db.execute<{ n: number }>(sql`
+      select count(distinct card_id)::int as n from card_instances
+      where owner_id = ${p.userId} and season = ${season + 1} and source in ('pack', 'upgrade', 'wheel', 'boss')
+    `);
+    expect(unique?.value ?? 0).toBe(newCards!.n);
+  });
+
   it("titres de fin de saison : attribués aux premiers, affichés, au choix du joueur", async () => {
     const a = await signUp(app);
     const b = await signUp(app);

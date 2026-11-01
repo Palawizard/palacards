@@ -128,6 +128,7 @@ export async function exportData(ctx: Ctx, userId: string) {
       .where(eq(s.bossAssaults.userId, userId))
       .then((rows) => rows.map(({ hit }) => (hit.answeredAt ? hit : { ...hit, question: null }))),
     achievements: await db.select().from(s.achievementsProgress).where(eq(s.achievementsProgress.userId, userId)),
+    achievementArchives: await db.select().from(s.achievementArchives).where(eq(s.achievementArchives.userId, userId)),
     seasonArchives: await db.select().from(s.seasonArchives).where(eq(s.seasonArchives.userId, userId)),
     titles: await db.select().from(s.playerTitles).where(eq(s.playerTitles.userId, userId)),
     // Portfolios : cartes, image de fond envoyée, designs achetés ou gagnés, likes donnés.
