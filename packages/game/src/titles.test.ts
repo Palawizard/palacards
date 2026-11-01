@@ -24,12 +24,10 @@ describe("titres de classement", () => {
 
   it("nomme chaque classement et situe le titre", () => {
     for (const b of TITLE_BOARDS) expect(TITLE_NAMES[b]).toBeTruthy();
-    // « Succès » n'est pas un classement à titre : aucune récompense en fin de saison.
-    expect(LEADERBOARDS).toContain("achievements");
-    expect(TITLE_BOARDS as readonly string[]).not.toContain("achievements");
-    // « Brillantes » non plus : classement de confort, sans récompense.
-    expect(LEADERBOARDS).toContain("shiny");
-    expect(TITLE_BOARDS as readonly string[]).not.toContain("shiny");
+    // Tous les classements sont de saison et donnent un titre (Succès, Brillantes et Meilleure série compris).
+    expect([...LEADERBOARDS]).toEqual([...TITLE_BOARDS]);
+    for (const b of ["achievements", "shiny", "hl_streak"]) expect(TITLE_BOARDS as readonly string[]).toContain(b);
+    expect(TITLE_NAMES.shiny).toBe("Collectionneur d'éclats");
     expect(titleDetail({ board: "luck", rank: 1, season: 3 })).toBe("n°\u00a01 en Chance, saison 3");
   });
 });
