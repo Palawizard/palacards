@@ -46,21 +46,17 @@ const BOARDS: { value: Board; label: string; unit: string }[] = [
   { value: "pass", label: "Passe de saison", unit: "niv." },
   { value: "achievements", label: "Succès", unit: "Paliers" },
   { value: "shiny", label: "Brillantes", unit: "Brillantes" },
-  { value: "hl_streak", label: "Meilleure série du mois", unit: "Série" },
+  { value: "hl_streak", label: "Meilleure série", unit: "Série" },
 ];
-
-/** Classements sans choix de période (cumulés depuis l'inscription, ou au mois pour « Plus ou moins vu ») : pas de titre. */
-const ALL_TIME_BOARDS: readonly Board[] = ["achievements", "hl_streak"];
 
 export default function LeaderboardPage() {
   useSeenFeature("leaderboard-achievements");
   useSeenFeature("leaderboard-shiny");
   const [board, setBoard] = useState<Board>("collection");
   const [period, setPeriod] = useState<"season" | "all">("season");
-  const allTime = ALL_TIME_BOARDS.includes(board);
   // Garde l'ancien tableau (atténué) pendant le changement d'onglet : pas de flash de squelette.
   const { data, error, mutate, isLoading } = useSWR<{ season: number; rows: Row[] }>(
-    `/leaderboard?board=${board}&period=${allTime ? "all" : period}`,
+    `/leaderboard?board=${board}&period=${period}`,
     {
       keepPreviousData: true,
     },
@@ -95,22 +91,21 @@ export default function LeaderboardPage() {
         )}
         {board === "achievements" && (
           <p className="hatnote mt-2">
-            Nombre de paliers de succès débloqués depuis ton inscription, secrets compris. Ce classement ne repart pas à
-            zéro et ne donne pas de titre. À égalité, le premier à avoir atteint ce nombre passe devant.
+            Nombre de paliers de succès débloqués pendant la saison, secrets compris&nbsp;: les succès repartent de zéro
+            à chaque saison (et leurs récompenses se regagnent). «&nbsp;Tout temps&nbsp;» additionne toutes les saisons.
+            À égalité, le premier à avoir atteint ce nombre passe devant.
           </p>
         )}
         {board === "hl_streak" && (
           <p className="hatnote mt-2">
-            Meilleure série d’un essai à «&nbsp;Plus ou moins vu&nbsp;» depuis le 1er du mois (heure de Paris). Ce
-            classement repart à zéro chaque mois et ne donne pas de titre. À égalité, le premier à l’avoir atteinte
-            passe devant.
+            Meilleure série d’un essai à «&nbsp;Plus ou moins vu&nbsp;» pendant la saison (ou de tout temps). À égalité,
+            le premier à l’avoir atteinte passe devant.
           </p>
         )}
         {board === "shiny" && (
           <p className="hatnote mt-2">
             Nombre de cartes brillantes possédées, chaque exemplaire compté (comme le filtre «&nbsp;Brillantes&nbsp;» de
-            ta collection). Ce classement ne donne pas de titre. À égalité, le premier à avoir atteint ce nombre passe
-            devant.
+            ta collection), de l’édition de la saison. À égalité, le premier à avoir atteint ce nombre passe devant.
           </p>
         )}
       </div>
@@ -128,21 +123,14 @@ export default function LeaderboardPage() {
             </button>
           ))}
         </nav>
-        {!allTime && (
-          <div className="flex gap-1.5" role="group" aria-label="Période">
-            <button
-              type="button"
-              className="chip"
-              aria-pressed={period === "season"}
-              onClick={() => setPeriod("season")}
-            >
-              Saison {data?.season ?? ""}
-            </button>
-            <button type="button" className="chip" aria-pressed={period === "all"} onClick={() => setPeriod("all")}>
-              Tout temps
-            </button>
-          </div>
-        )}
+        <div className="flex gap-1.5" role="group" aria-label="Période">
+          <button type="button" className="chip" aria-pressed={period === "season"} onClick={() => setPeriod("season")}>
+            Saison {data?.season ?? ""}
+          </button>
+          <button type="button" className="chip" aria-pressed={period === "all"} onClick={() => setPeriod("all")}>
+            Tout temps
+          </button>
+        </div>
       </div>
 
       {error ? (
