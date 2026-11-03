@@ -43,7 +43,7 @@ const DATA: { what: string; detail: string; kept: string }[] = [
   {
     what: "Réglages",
     detail:
-      "Préférences de jeu : vitesse des animations, recyclage automatique, images à flouter (arthropodes, blessures et maladies, nudité), notifications.",
+      "Préférences de jeu : vitesse des animations, recyclage automatique, confirmation avant recyclage, images à flouter (arthropodes, blessures et maladies, nudité), notifications.",
     kept: "Jusqu'à la suppression du compte",
   },
   {
