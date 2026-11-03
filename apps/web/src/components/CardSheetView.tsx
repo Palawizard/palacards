@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { Card, RaritySigil } from "@/components/Card";
 import { ReferenceLine, SellForm } from "@/components/market";
+import { RecycleBreakdown } from "@/components/RecycleBreakdown";
 import { TagEditor } from "@/components/TagEditor";
 import { ConfirmDialog, ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -208,7 +209,8 @@ function InstanceRow({ card, siblings, onChanged }: { card: CardDTO; siblings: C
         }
         onClose={() => setConfirm(false)}
       >
-        L’exemplaire disparaît de ta collection contre {recycleValue(card.rarity, card.shiny)} points wiki.
+        L’exemplaire disparaît de ta collection contre des points wiki.
+        <RecycleBreakdown rarities={[{ rarity: card.rarity, count: 1 }]} gain={recycleValue(card.rarity, card.shiny)} />
       </ConfirmDialog>
     </li>
   );

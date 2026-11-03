@@ -1,17 +1,25 @@
 "use client";
 
-import { PORTFOLIO_CARDS_MAX, PORTFOLIO_DESCRIPTION_MAX, PORTFOLIO_MAX, PORTFOLIO_NAME_MAX } from "@palacards/game";
+import {
+  PORTFOLIO_CARDS_MAX,
+  PORTFOLIO_DESCRIPTION_MAX,
+  PORTFOLIO_MAX,
+  PORTFOLIO_NAME_MAX,
+  PORTFOLIO_SHARED_MAX_PLAYERS,
+} from "@palacards/game";
 import type { Page, PortfolioSummaryDTO } from "@palacards/shared";
 import { Plus, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
-import useSWR from "swr";
+import Link from "next/link";
+import useSWR, { useSWRConfig } from "swr";
 import useSWRInfinite from "swr/infinite";
-import { PortfolioRow, PortfolioTile } from "@/components/Portfolio";
+import { InvitationAnswer, PortfolioRow, PortfolioShell, PortfolioTile } from "@/components/Portfolio";
 import { Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { useSeenFeature } from "@/lib/features";
+import { useMe } from "@/lib/game";
 
 const SORTS = [
   { value: "recent", param: null, label: "Récents" },
@@ -133,6 +141,46 @@ function Mine({ onCreate }: { onCreate: () => void }) {
   );
 }
 
+/** Invitations d'amis dans leurs portfolios partagés (rien s'il n'y en a pas). */
+function Invitations() {
+  const { me } = useMe();
+  const { data, mutate } = useSWR<PortfolioSummaryDTO[]>("/portfolios/invitations");
+  const { mutate: refresh } = useSWRConfig();
+  if (!data?.length || !me) return null;
+  return (
+    <section aria-labelledby="pf-invites-title" className="flex flex-col gap-4">
+      <h2 id="pf-invites-title" className="section-title !mb-0 mt-0">
+        Invitations
+      </h2>
+      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {data.map((p) => (
+          <li key={p.id}>
+            <PortfolioShell id={p.id} design={p.design} pageClassName="flex flex-col gap-2.5 !p-4">
+              <div className="min-w-0">
+                <p className="pf-title truncate font-display text-xl">{p.name}</p>
+                <p className="pf-muted mt-0.5 text-sm [text-wrap:pretty]">
+                  {p.owner.displayName} t’invite à y ajouter tes cartes.{" "}
+                  <Link href={`/portfolios/${p.id}`} className="pf-link font-semibold">
+                    Voir la page
+                  </Link>
+                </p>
+              </div>
+              <InvitationAnswer
+                p={p}
+                me={me.username}
+                onDone={() => {
+                  void mutate();
+                  void refresh("/portfolios/mine");
+                }}
+              />
+            </PortfolioShell>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Community() {
   const router = useRouter();
   const params = useSearchParams();
@@ -205,8 +253,11 @@ export default function PortfoliosPage() {
       </div>
       <p className="hatnote -mt-4">
         Des pages de classeur composées avec tes cartes : jusqu’à {PORTFOLIO_CARDS_MAX} par portfolio, une en vedette,
-        et un fond, un cadre et une couleur au choix. Les j’aime ne rapportent rien, ils font juste plaisir.
+        et un fond, un cadre et une couleur au choix. Invite jusqu’à {PORTFOLIO_SHARED_MAX_PLAYERS - 1} amis à y ajouter
+        leurs cartes. Les j’aime ne rapportent rien, ils font juste plaisir.
       </p>
+
+      <Invitations />
 
       <section aria-labelledby="pf-mine-title" className="flex flex-col gap-4">
         <h2 id="pf-mine-title" className="section-title !mb-0 mt-0">

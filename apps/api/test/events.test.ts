@@ -492,9 +492,13 @@ describe("roues du jour", () => {
 
 describe("boosters à thème", () => {
   async function makeTheme(admin: Client, extra: Record<string, unknown> = {}) {
+    // 30 articles pris à tour de rôle dans chaque rareté : chaque emplacement d'un booster tombe dans le thème
+    // (un thème fait seulement de communes donnait parfois un booster sans aucune carte du thème).
     const titles = await ctx.db.execute<{ title: string }>(sql`
-      select title from cards where season = (select id from seasons where status = 'active')
-        and rarity in ('C', 'R', 'SR') order by id desc limit 30
+      select title from (
+        select id, title, row_number() over (partition by rarity order by id desc) as n
+        from cards where season = (select id from seasons where status = 'active')
+      ) c order by n, id desc limit 30
     `);
     return admin.post("/admin/themes", {
       name: `Thème ${uniqueName("t")}`,
@@ -540,7 +544,7 @@ describe("boosters à thème", () => {
     const listed = await p.get(`/cards?theme=${created.body.id}&limit=100`);
     expect(listed.body.items).toHaveLength(30);
     for (const c of listed.body.items) expect(pool.has(c.cardId)).toBe(true);
-    expect(opened.body.theme.themedCardIds.length).toBeGreaterThan(0);
+    expect(opened.body.theme.themedCardIds).toHaveLength(10);
     for (const id of opened.body.theme.themedCardIds) expect(pool.has(id)).toBe(true);
 
     // Boosters ouverts : compteur par édition, sur la page Paquets et sur le profil.
@@ -667,7 +671,7 @@ describe("boosters à thème", () => {
 
     // Le dernier rang d'une rareté donne l'article d'identifiant le plus grand de cette rareté.
     const counts = listed.byRarity;
-    const rarity = Object.entries(byRarity).sort((a, b) => b[1].length - a[1].length)[0]![0] as "C" | "R" | "SR";
+    const rarity = Object.entries(byRarity).sort((a, b) => b[1].length - a[1].length)[0]![0] as Rarity;
     const last = rows.filter((r) => r.rarity === rarity).at(-1)!;
     const drawn = await drawThemeCard(ctx.db, season, id, rarity, counts, (n) => n - 1);
     expect(drawn).toMatchObject({ id: Number(last.card_id), themed: true });

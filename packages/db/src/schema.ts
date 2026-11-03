@@ -225,6 +225,8 @@ export const players = pgTable(
     hideNudity: boolean("hide_nudity").notNull().default(false),
     /** Upgrader sans tour d'aiguille : le résultat s'affiche dès la réponse du serveur. */
     quickUpgrade: boolean("quick_upgrade").notNull().default(false),
+    /** Fenêtre de confirmation avant chaque recyclage, même d'une carte seule (suggestion n° 127). */
+    confirmRecycle: boolean("confirm_recycle").notNull().default(false),
     /** Ses tags servent de filtre aux autres joueurs sur sa collection (profil, échanges). */
     publicTags: boolean("public_tags").notNull().default(false),
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
@@ -1520,6 +1522,10 @@ export const portfolios = pgTable(
     background: text("background").notNull().default("papier"),
     frame: text("frame").notNull().default("filet"),
     accent: text("accent").notNull().default("or"),
+    /** `members` : visible de ses seuls participants (portfolio partagé, suggestion n° 125). */
+    visibility: text("visibility", { enum: ["public", "members"] })
+      .notNull()
+      .default("public"),
     profileSlot: smallint("profile_slot"),
     createdAt: tstz("created_at").notNull().defaultNow(),
     updatedAt: tstz("updated_at").notNull().defaultNow(),
@@ -1556,6 +1562,33 @@ export const portfolioCards = pgTable(
     primaryKey({ columns: [t.portfolioId, t.instanceId] }),
     index("portfolio_cards_instance_idx").on(t.instanceId),
     check("portfolio_cards_pos_ok", sql`${t.pos} BETWEEN 0 AND 29`),
+  ],
+);
+
+/**
+ * Ami invité dans un portfolio partagé (suggestion n° 125) : invitation en attente tant que `joinedAt` est nul.
+ * Un participant y pose ses propres cartes ; elles en sortent s'il part ou si le propriétaire le retire.
+ */
+export const portfolioMembers = pgTable(
+  "portfolio_members",
+  {
+    portfolioId: bigint("portfolio_id", { mode: "number" })
+      .notNull()
+      .references(() => portfolios.id, { onDelete: "cascade" }),
+    userId: userRef("user_id").notNull(),
+    invitedAt: tstz("invited_at").notNull().defaultNow(),
+    joinedAt: tstz("joined_at"),
+    /** Droits choisis par le propriétaire : `contributor` (ses cartes) ou `editor` (ordre, vedette, toutes les cartes). */
+    role: text("role", { enum: ["contributor", "editor"] })
+      .notNull()
+      .default("contributor"),
+    /** Place sur le profil du participant (1 à 3), partagée avec ses propres portfolios ; null s'il n'y est pas. */
+    profileSlot: smallint("profile_slot"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.portfolioId, t.userId] }),
+    index("portfolio_members_user_idx").on(t.userId),
+    uniqueIndex("portfolio_members_profile_slot_idx").on(t.userId, t.profileSlot),
   ],
 );
 

@@ -439,11 +439,13 @@
 .pf-star:active {
   transform: scale(0.94);
 }
-.pf-star[aria-pressed="true"] {
+.pf-star[aria-pressed="true"],
+.pf-star[data-on] {
   background: var(--pf-accent);
   color: #1f1600;
 }
-.pf-star[aria-pressed="true"] svg {
+.pf-star[aria-pressed="true"] svg,
+.pf-star[data-on] svg {
   fill: currentColor;
 }
 .pf-star:focus-visible {

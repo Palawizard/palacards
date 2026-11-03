@@ -6,6 +6,7 @@ import {
   PORTFOLIO_CARDS_MAX,
   PORTFOLIO_DESIGNS,
   PORTFOLIO_PRICES,
+  portfolioCardsChange,
 } from "./portfolios.js";
 
 describe("designs des portfolios", () => {
@@ -59,5 +60,51 @@ describe("cartes d'un portfolio", () => {
     expect(
       normalizePortfolioCards(Array.from({ length: PORTFOLIO_CARDS_MAX + 1 }, (_, i) => ({ instanceId: i + 1 }))),
     ).toBeNull();
+  });
+});
+
+describe("portfolios partagés (suggestion n° 125)", () => {
+  const before = [
+    { instanceId: 1, ownerId: "owner", featured: true },
+    { instanceId: 2, ownerId: "ami", featured: false },
+    { instanceId: 3, ownerId: "autre", featured: false },
+  ];
+  const ids = (...list: number[]) => list.map((instanceId) => ({ instanceId, featured: false }));
+
+  it("laisse un contributeur ajouter et retirer ses cartes, sans toucher à l'ordre ni à la vedette", () => {
+    expect(portfolioCardsChange({ editorId: "ami", rights: "contributor", before, after: ids(3, 1, 9) })).toEqual({
+      added: [9],
+      removed: [2],
+      cards: [
+        { instanceId: 1, featured: true },
+        { instanceId: 3, featured: false },
+        { instanceId: 9, featured: false },
+      ],
+    });
+  });
+
+  it("refuse qu'un contributeur retire la carte d'un autre", () => {
+    expect(portfolioCardsChange({ editorId: "ami", rights: "contributor", before, after: ids(2, 3) })).toBeNull();
+    expect(portfolioCardsChange({ editorId: "ami", rights: "contributor", before, after: ids(1, 2) })).toBeNull();
+  });
+
+  it("laisse un éditeur réordonner, changer la vedette et retirer les cartes des autres", () => {
+    const after = [
+      { instanceId: 3, featured: true },
+      { instanceId: 2, featured: false },
+    ];
+    expect(portfolioCardsChange({ editorId: "ami", rights: "editor", before, after })).toEqual({
+      added: [],
+      removed: [1],
+      cards: after,
+    });
+  });
+
+  it("laisse le propriétaire retirer n'importe quelle carte", () => {
+    expect(portfolioCardsChange({ editorId: "owner", rights: "owner", before, after: [] })).toEqual({
+      added: [],
+      removed: [1, 2, 3],
+      cards: [],
+    });
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { ECONOMY, MAX_LEVEL, RARITY_LABELS, recycleValue, type Rarity } from "@palacards/game";
+import { countByRarity, MAX_LEVEL, RARITIES, RARITY_LABELS, recycleValue, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
 import { ChevronsUp } from "lucide-react";
 import Link from "next/link";
@@ -24,6 +24,7 @@ import {
   SelectionBar,
   type Exclusions,
 } from "@/components/SelectionBar";
+import { RecycleBreakdown } from "@/components/RecycleBreakdown";
 import { CardSkeletons, ConfirmDialog, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
@@ -157,7 +158,15 @@ function Collection() {
   }
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<Map<number, Picked>>(new Map());
-  const [confirm, setConfirm] = useState<null | { ids: number[]; gain: number; label: string; kept?: number }>(null);
+  const [confirm, setConfirm] = useState<null | {
+    ids: number[];
+    gain: number;
+    rarities: { rarity: Rarity; count: number }[];
+    label: string;
+    kept?: number;
+    /** « Recycler les doublons » limité aux raretés cochées dans les filtres. */
+    filter?: Rarity[];
+  }>(null);
   const [tagging, setTagging] = useState(false);
   const [busy, setBusy] = useState(false);
   const [fusion, setFusion] = useState<FusionPreview | null>(null);
@@ -228,14 +237,30 @@ function Collection() {
     }
   }
 
+  /**
+   * « Recycler les doublons » : seulement ceux des raretés cochées dans les filtres (toutes si aucune). Les autres
+   * filtres ne s'appliquent pas : le meilleur exemplaire de chaque article est gardé, quel que soit le filtre.
+   */
   async function askRecycleDuplicates() {
+    const rarities = f.rarity;
     try {
-      const { instanceIds, gain } = await api<{ instanceIds: number[]; gain: number }>("/collection/duplicates");
-      if (instanceIds.length === 0) return toast("Aucun doublon à recycler.");
+      const {
+        instanceIds,
+        gain,
+        rarities: counts,
+      } = await api<{
+        instanceIds: number[];
+        gain: number;
+        rarities: { rarity: Rarity; count: number }[];
+      }>(`/collection/duplicates${rarities.length ? `?rarity=${rarities.join(",")}` : ""}`);
+      if (instanceIds.length === 0)
+        return toast(rarities.length ? "Aucun doublon à recycler dans ces raretés." : "Aucun doublon à recycler.");
       setConfirm({
         ids: instanceIds,
         gain,
-        label: `${instanceIds.length} ${plural(instanceIds.length, "doublon")}`,
+        rarities: counts,
+        label: `${fmt(instanceIds.length)} ${plural(instanceIds.length, "doublon")}`,
+        filter: rarities.length ? RARITIES.filter((r) => rarities.includes(r)) : undefined,
       });
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : "Impossible de lister les doublons.");
@@ -553,6 +578,7 @@ function Collection() {
             setConfirm({
               ids: recyclable.map(([id]) => id),
               gain: selectedGain,
+              rarities: countByRarity(recyclable.map(([, p]) => p.rarity)),
               label: `${fmt(recyclable.length)} ${plural(recyclable.length, "carte")}`,
               kept: selected.size - recyclable.length,
             });
@@ -577,11 +603,13 @@ function Collection() {
         {confirm?.kept
           ? ` ${fmt(confirm.kept)} ${plural(confirm.kept, "carte")} de la sélection ${confirm.kept > 1 ? "restent" : "reste"} de côté : favorite, brillante, épinglée ou engagée dans une vente ou un échange.`
           : " Les favorites, épinglées et cartes engagées dans une vente ou un échange ne sont jamais recyclées d’office."}
-        {confirm && confirm.ids.length > 0 && (
-          <span className="mt-2 block text-faint">
-            {RARITY_LABELS.C} = {ECONOMY.recycleValue.C} PW, {RARITY_LABELS.L} = {fmt(ECONOMY.recycleValue.L)} PW.
+        {confirm?.filter && (
+          <span className="mt-2 block font-semibold text-text">
+            Seulement {plural(confirm.filter.length, "la rareté cochée", "les raretés cochées")}&nbsp;:{" "}
+            {confirm.filter.map((r) => RARITY_LABELS[r]).join(", ")}. Les autres ne sont pas touchées.
           </span>
         )}
+        {confirm && confirm.ids.length > 0 && <RecycleBreakdown rarities={confirm.rarities} gain={confirm.gain} />}
       </ConfirmDialog>
 
       <ConfirmDialog
