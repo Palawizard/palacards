@@ -1170,10 +1170,23 @@ button:disabled .pc-pack-foil {
     color: var(--color-danger);
   }
 }
+/* Auteur d'une carte dans la barre (portfolio partagé, vue d'un contributeur) : même hauteur que les boutons. */
+.pc-arrange-label {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 0.5rem;
+  font-size: 0.75rem;
+  line-height: 2rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 @media (pointer: coarse) {
   .pc-arrange-btn {
     min-width: 2.5rem;
     height: 2.5rem;
+  }
+  .pc-arrange-label {
+    line-height: 2.5rem;
   }
 }
 .pc-showcase-empty {

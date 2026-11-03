@@ -1,8 +1,37 @@
 "use client";
 
-import { PORTFOLIO_ACCENTS, PORTFOLIO_CARDS_MAX, PORTFOLIO_DESCRIPTION_MAX, PORTFOLIO_NAME_MAX } from "@palacards/game";
-import type { CardDTO, Page, PortfolioCardDTO, PortfolioDesignItemDTO, PortfolioDTO } from "@palacards/shared";
-import { ChevronLeft, ChevronRight, GripVertical, ImageUp, Lock, Plus, Star, Trash2, X } from "lucide-react";
+import {
+  arrangesPortfolio,
+  PORTFOLIO_ACCENTS,
+  PORTFOLIO_CARDS_MAX,
+  PORTFOLIO_DESCRIPTION_MAX,
+  PORTFOLIO_NAME_MAX,
+  PORTFOLIO_MEMBER_ROLE_LABELS,
+  PORTFOLIO_MEMBER_ROLES,
+  PORTFOLIO_SHARED_MAX_PLAYERS,
+  type PortfolioMemberRole,
+} from "@palacards/game";
+import type {
+  CardDTO,
+  Page,
+  PortfolioCardDTO,
+  PortfolioDesignItemDTO,
+  PortfolioDTO,
+  PortfolioMemberDTO,
+} from "@palacards/shared";
+import {
+  ChevronLeft,
+  ChevronRight,
+  GripVertical,
+  ImageUp,
+  Lock,
+  LogOut,
+  Plus,
+  Star,
+  Trash2,
+  UserPlus,
+  X,
+} from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -16,7 +45,8 @@ import {
   useCollectionFilters,
   type CollectionFilterOptions,
 } from "@/components/CollectionFilters";
-import { portfolioBackgroundSrc, PortfolioShell } from "@/components/Portfolio";
+import { Avatar } from "@/components/Avatar";
+import { participates, portfolioBackgroundSrc, PortfolioShell } from "@/components/Portfolio";
 import { CardSkeletons, ConfirmDialog, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { preparePortfolioBackground } from "@/lib/avatar-image";
@@ -30,8 +60,14 @@ const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ?
 // Cartes : ordre (poignée, flèches), vedette, retrait, ajout
 // ---------------------------------------------------------------------------
 
-function CardsEditor({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<PortfolioDTO> }) {
+function CardsEditor({ p, me, mutate }: { p: PortfolioDTO; me: string; mutate: KeyedMutator<PortfolioDTO> }) {
   const [order, setOrder] = useState<PortfolioCardDTO[]>(p.cards);
+  // Portfolio partagé : un contributeur ajoute et retire ses cartes ; le propriétaire et les éditeurs rangent tout.
+  const shared = p.members.length > 0;
+  const arranges = arrangesPortfolio(p.rights);
+  const canRemove = (c: PortfolioCardDTO) => arranges || c.by === me;
+  const names = new Map([p.owner, ...p.members].map((m) => [m.username, m.displayName]));
+  const byLabel = (c: PortfolioCardDTO) => (c.by === me ? "À toi" : `À ${names.get(c.by) ?? c.by}`);
   const [synced, setSynced] = useState(p.cards);
   const [picking, setPicking] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -108,7 +144,7 @@ function CardsEditor({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Port
     const fresh = cards
       .filter((c) => !known.has(c.instanceId))
       .slice(0, PORTFOLIO_CARDS_MAX - order.length)
-      .map((c) => ({ ...c, featured: false }));
+      .map((c) => ({ ...c, featured: false, by: me }));
     if (!fresh.length) return;
     setInstant(false);
     void save([...order, ...fresh], order);
@@ -126,7 +162,11 @@ function CardsEditor({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Port
             {order.length} / {PORTFOLIO_CARDS_MAX}
           </span>
         </h2>
-        <p className="pf-muted text-sm">Poignée ou flèches pour l’ordre, étoile pour la vedette.</p>
+        <p className="pf-muted text-sm">
+          {arranges
+            ? "Poignée ou flèches pour l’ordre, étoile pour la vedette."
+            : `Tes cartes s’ajoutent à la fin ; ${p.owner.displayName} range l’ordre et la vedette.`}
+        </p>
       </div>
       <ol className="pf-grid">
         {order.map((card, i) => {
@@ -147,70 +187,100 @@ function CardsEditor({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Port
                 style={lifted && drag ? { transform: dragTransform(drag, i) } : undefined}
               >
                 <Card card={card} href={null} prefetch={false} />
-                <button
-                  type="button"
-                  className="pf-star"
-                  aria-pressed={card.featured}
-                  aria-label={card.featured ? `Retirer ${card.title} de la vedette` : `Mettre ${card.title} en vedette`}
-                  title={card.featured ? "En vedette" : "Mettre en vedette"}
-                  onClick={() => feature(card)}
-                >
-                  <Star aria-hidden className="size-4" strokeWidth={2.25} />
-                </button>
-              </div>
-              <div className="pc-arrange-bar" role="group" aria-label={`Place de ${card.title}`}>
-                <button
-                  type="button"
-                  className="pc-arrange-btn"
-                  aria-label={`Avancer ${card.title}`}
-                  disabled={i === 0}
-                  onClick={() => shift(i, -1)}
-                >
-                  <ChevronLeft aria-hidden className="size-4" />
-                </button>
-                <button
-                  type="button"
-                  ref={(el) => {
-                    if (el) handles.current.set(card.instanceId!, el);
-                    else handles.current.delete(card.instanceId!);
-                  }}
-                  className="pc-arrange-btn pc-grip"
-                  aria-label={`Déplacer ${card.title}, place ${i + 1} sur ${order.length} (flèches)`}
-                  onPointerDown={(e) => {
-                    setInstant(false);
-                    startDrag(e, card);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-                      e.preventDefault();
-                      shift(i, -1, true);
-                    } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-                      e.preventDefault();
-                      shift(i, 1, true);
+                {arranges ? (
+                  <button
+                    type="button"
+                    className="pf-star"
+                    aria-pressed={card.featured}
+                    aria-label={
+                      card.featured ? `Retirer ${card.title} de la vedette` : `Mettre ${card.title} en vedette`
                     }
-                  }}
-                >
-                  <GripVertical aria-hidden className="size-4" />
-                  <span className="tnum text-xs font-bold">{i + 1}</span>
-                </button>
-                <button
-                  type="button"
-                  className="pc-arrange-btn"
-                  aria-label={`Reculer ${card.title}`}
-                  disabled={i === order.length - 1}
-                  onClick={() => shift(i, 1)}
-                >
-                  <ChevronRight aria-hidden className="size-4" />
-                </button>
-                <button
-                  type="button"
-                  className="pc-arrange-btn pc-arrange-remove ml-auto"
-                  aria-label={`Retirer ${card.title} du portfolio`}
-                  onClick={() => remove(card)}
-                >
-                  <X aria-hidden className="size-4" />
-                </button>
+                    title={card.featured ? "En vedette" : "Mettre en vedette"}
+                    onClick={() => feature(card)}
+                  >
+                    <Star aria-hidden className="size-4" strokeWidth={2.25} />
+                  </button>
+                ) : (
+                  card.featured && (
+                    <span className="pf-star" data-on title="En vedette">
+                      <Star aria-hidden className="size-4" strokeWidth={2.25} />
+                      <span className="sr-only">En vedette</span>
+                    </span>
+                  )
+                )}
               </div>
+              {!arranges ? (
+                <div className="pc-arrange-bar" role="group" aria-label={`Carte ${card.title}`}>
+                  <span className="pc-arrange-label pf-muted">{byLabel(card)}</span>
+                  {canRemove(card) && (
+                    <button
+                      type="button"
+                      className="pc-arrange-btn pc-arrange-remove ml-auto"
+                      aria-label={`Retirer ${card.title} du portfolio`}
+                      onClick={() => remove(card)}
+                    >
+                      <X aria-hidden className="size-4" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="pc-arrange-bar" role="group" aria-label={`Place de ${card.title}`}>
+                  <button
+                    type="button"
+                    className="pc-arrange-btn"
+                    aria-label={`Avancer ${card.title}`}
+                    disabled={i === 0}
+                    onClick={() => shift(i, -1)}
+                  >
+                    <ChevronLeft aria-hidden className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      if (el) handles.current.set(card.instanceId!, el);
+                      else handles.current.delete(card.instanceId!);
+                    }}
+                    className="pc-arrange-btn pc-grip"
+                    aria-label={`Déplacer ${card.title}, place ${i + 1} sur ${order.length} (flèches)`}
+                    onPointerDown={(e) => {
+                      setInstant(false);
+                      startDrag(e, card);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                        e.preventDefault();
+                        shift(i, -1, true);
+                      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                        e.preventDefault();
+                        shift(i, 1, true);
+                      }
+                    }}
+                  >
+                    <GripVertical aria-hidden className="size-4" />
+                    <span className="tnum text-xs font-bold">{i + 1}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="pc-arrange-btn"
+                    aria-label={`Reculer ${card.title}`}
+                    disabled={i === order.length - 1}
+                    onClick={() => shift(i, 1)}
+                  >
+                    <ChevronRight aria-hidden className="size-4" />
+                  </button>
+                  {canRemove(card) && (
+                    <button
+                      type="button"
+                      className="pc-arrange-btn pc-arrange-remove ml-auto"
+                      aria-label={`Retirer ${card.title} du portfolio`}
+                      onClick={() => remove(card)}
+                    >
+                      <X aria-hidden className="size-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {shared && arranges && <p className="pf-muted mt-1 truncate text-xs">{byLabel(card)}</p>}
             </motion.li>
           );
         })}
@@ -682,6 +752,256 @@ function DesignPanel({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Port
 }
 
 // ---------------------------------------------------------------------------
+// Partage (suggestion n° 125) : amis invités, retrait, visibilité
+// ---------------------------------------------------------------------------
+
+interface Friend {
+  id: string;
+  username: string;
+  displayName: string;
+}
+
+const VISIBILITIES = [
+  { value: "public", label: "Tout le monde", note: "Page Communauté et ton profil, dès la première carte." },
+  { value: "members", label: "Les participants seuls", note: "Caché des autres joueurs et de ton profil." },
+] as const;
+
+function SharePanel({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<PortfolioDTO> }) {
+  const friends = useSWR<{ friends: Friend[] }>("/friends");
+  const [picked, setPicked] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState<PortfolioMemberDTO | null>(null);
+  const taken = new Set([...p.members, ...p.invited].map((m) => m.username));
+  const candidates = (friends.data?.friends ?? []).filter((f) => !taken.has(f.username));
+  const players = 1 + p.members.length + p.invited.length;
+  const full = players >= PORTFOLIO_SHARED_MAX_PLAYERS;
+  const target = picked || candidates[0]?.username || "";
+
+  async function run(fn: () => Promise<unknown>, done?: string) {
+    setBusy(true);
+    try {
+      await fn();
+      await mutate();
+      if (done) toast.success(done);
+    } catch (err) {
+      toast.error(errorText(err, "Modification non enregistrée."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function invite(e: FormEvent) {
+    e.preventDefault();
+    const friend = candidates.find((f) => f.username === target);
+    if (!friend) return;
+    setPicked("");
+    void run(
+      () => api(`/portfolios/${p.id}/members`, { body: { username: friend.username } }),
+      `Invitation envoyée à ${friend.displayName}.`,
+    );
+  }
+
+  function setRole(m: PortfolioMemberDTO, role: PortfolioMemberRole) {
+    if (m.role === role) return;
+    void run(
+      () => api(`/portfolios/${p.id}/members/${encodeURIComponent(m.username)}`, { method: "PATCH", body: { role } }),
+      `${m.displayName} : ${PORTFOLIO_MEMBER_ROLE_LABELS[role].toLowerCase()}.`,
+    );
+  }
+
+  function revoke(m: PortfolioMemberDTO) {
+    setRemoving(null);
+    void run(
+      () => api(`/portfolios/${p.id}/members/${encodeURIComponent(m.username)}`, { method: "DELETE" }),
+      `${m.displayName} n’a plus accès au portfolio.`,
+    );
+  }
+
+  const person = (m: PortfolioMemberDTO, status: string) => (
+    <li key={m.username} className="flex items-start gap-2.5">
+      <Avatar name={m.displayName} avatar={m.avatar} size="sm" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-semibold">{m.displayName}</span>
+        <span className="block text-xs text-faint">{status}</span>
+        <span className="mt-1.5 flex flex-wrap gap-1" role="radiogroup" aria-label={`Droits de ${m.displayName}`}>
+          {PORTFOLIO_MEMBER_ROLES.map((r) => (
+            <button
+              key={r}
+              type="button"
+              role="radio"
+              aria-checked={m.role === r}
+              disabled={busy}
+              className="chip h-7 px-2.5 text-xs aria-checked:border-accent aria-checked:bg-accent aria-checked:text-accent-ink"
+              onClick={() => setRole(m, r)}
+            >
+              {PORTFOLIO_MEMBER_ROLE_LABELS[r]}
+            </button>
+          ))}
+        </span>
+      </span>
+      <button
+        type="button"
+        className="btn btn-sm btn-ghost px-2"
+        disabled={busy}
+        aria-label={`Retirer ${m.displayName} du portfolio`}
+        title="Retirer"
+        onClick={() => setRemoving(m)}
+      >
+        <X aria-hidden className="size-4" />
+      </button>
+    </li>
+  );
+
+  return (
+    <section aria-labelledby="pf-share-title" className="flex flex-col gap-3">
+      <h2 id="pf-share-title" className="section-title !mb-0 mt-0">
+        Partage
+        <span className="tnum font-sans text-sm font-semibold normal-case tracking-normal text-faint [font-stretch:100%]">
+          {players} / {PORTFOLIO_SHARED_MAX_PLAYERS}
+        </span>
+      </h2>
+      <p className="text-sm text-muted [text-wrap:pretty]">
+        Tes amis invités y ajoutent leurs propres cartes, qui restent à eux. Un contributeur ajoute et retire les
+        siennes ; un éditeur range aussi l’ordre, la vedette et peut retirer toutes les cartes. Toi seul choisis le
+        titre, le design et le partage.
+      </p>
+      {players > 1 && (
+        <ul className="flex flex-col gap-2">
+          {p.members.map((m) => person(m, "Participe"))}
+          {p.invited.map((m) => person(m, "Invitation envoyée"))}
+        </ul>
+      )}
+      {full ? (
+        <p className="text-sm text-muted">
+          Le portfolio réunit déjà {PORTFOLIO_SHARED_MAX_PLAYERS} joueurs, toi compris.
+        </p>
+      ) : friends.error ? (
+        <ErrorBox error={friends.error} retry={() => friends.mutate()} />
+      ) : !friends.data ? (
+        <div className="h-10 animate-pulse rounded-lg bg-panel" aria-busy />
+      ) : candidates.length ? (
+        <form onSubmit={invite} className="flex flex-col gap-1.5">
+          <label className="label" htmlFor="pf-invite">
+            Inviter un ami
+          </label>
+          <div className="flex gap-2">
+            <select
+              id="pf-invite"
+              className="field min-w-0 flex-1"
+              value={target}
+              onChange={(e) => setPicked(e.target.value)}
+            >
+              {candidates.map((f) => (
+                <option key={f.username} value={f.username}>
+                  {f.displayName}
+                </option>
+              ))}
+            </select>
+            <button type="submit" className="btn btn-sm" disabled={busy}>
+              <UserPlus aria-hidden className="size-4" /> Inviter
+            </button>
+          </div>
+        </form>
+      ) : (
+        <p className="text-sm text-muted">
+          {friends.data.friends.length ? "Tous tes amis sont déjà invités." : "Tu n’as pas encore d’ami à inviter."}{" "}
+          <Link href="/friends" className="article-link">
+            Ajouter des amis
+          </Link>
+        </p>
+      )}
+
+      <fieldset className="mt-1 flex flex-col gap-2">
+        <legend className="label mb-1.5">Qui voit ce portfolio</legend>
+        {VISIBILITIES.map((v) => (
+          <label key={v.value} className="flex cursor-pointer items-start gap-2.5 text-sm">
+            <input
+              type="radio"
+              name="pf-visibility"
+              className="mt-0.5 accent-[var(--color-accent)]"
+              checked={p.visibility === v.value}
+              disabled={busy}
+              onChange={() =>
+                void run(() => api(`/portfolios/${p.id}`, { method: "PATCH", body: { visibility: v.value } }))
+              }
+            />
+            <span>
+              <span className="font-semibold">{v.label}</span>
+              <span className="block text-xs text-faint">{v.note}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      <ConfirmDialog
+        open={!!removing}
+        danger
+        title={removing ? `Retirer ${removing.displayName} ?` : ""}
+        confirmLabel="Retirer"
+        onConfirm={() => removing && revoke(removing)}
+        onClose={() => setRemoving(null)}
+      >
+        Ses cartes quittent le portfolio et restent dans sa collection. Tu pourras l’inviter de nouveau.
+      </ConfirmDialog>
+    </section>
+  );
+}
+
+/** Ce qu'un ami participant voit à la place du titre et du design : qui compose le portfolio, et le départ. */
+function MemberPanel({ p, me }: { p: PortfolioDTO; me: string }) {
+  const router = useRouter();
+  const [leaving, setLeaving] = useState(false);
+
+  async function leave() {
+    setLeaving(false);
+    try {
+      await api(`/portfolios/${p.id}/members/${encodeURIComponent(me)}`, { method: "DELETE" });
+      toast.success("Tu as quitté le portfolio.");
+      router.push("/portfolios");
+    } catch (err) {
+      toast.error(errorText(err, "Départ impossible."));
+    }
+  }
+
+  return (
+    <section aria-labelledby="pf-share-title" className="flex flex-col gap-3">
+      <h2 id="pf-share-title" className="section-title !mb-0 mt-0">
+        Partage
+      </h2>
+      <p className="text-sm text-muted [text-wrap:pretty]">
+        {p.rights === "editor"
+          ? `Portfolio de ${p.owner.displayName}, dont tu es éditeur : ajoute tes cartes, range l’ordre et la vedette, retire celles de tous.`
+          : `Portfolio de ${p.owner.displayName}, dont tu es contributeur : ajoute et retire tes propres cartes.`}{" "}
+        Le titre et le design restent à son choix.
+        {p.visibility === "public" && " Tu peux l’épingler sur ton profil, comme tes propres portfolios."}
+      </p>
+      <ul className="flex flex-col gap-2">
+        {[{ ...p.owner, role: null }, ...p.members].map((m) => (
+          <li key={m.username} className="flex items-center gap-2.5 text-sm">
+            <Avatar name={m.displayName} avatar={m.avatar} size="sm" />
+            <span className="min-w-0 flex-1 truncate font-semibold">{m.username === me ? "Toi" : m.displayName}</span>
+            <span className="text-xs text-faint">{m.role ? PORTFOLIO_MEMBER_ROLE_LABELS[m.role] : "Propriétaire"}</span>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="btn btn-sm btn-ghost self-start text-danger" onClick={() => setLeaving(true)}>
+        <LogOut aria-hidden className="size-4" /> Quitter le portfolio
+      </button>
+      <ConfirmDialog
+        open={leaving}
+        danger
+        title="Quitter ce portfolio ?"
+        confirmLabel="Quitter"
+        onConfirm={leave}
+        onClose={() => setLeaving(false)}
+      >
+        Tes cartes en sortent et restent dans ta collection. Il faudra une nouvelle invitation pour revenir.
+      </ConfirmDialog>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -689,6 +1009,7 @@ export default function EditPortfolioPage({ params }: { params: Promise<{ id: st
   const { id } = use(params);
   const router = useRouter();
   const { data: p, error, mutate } = useSWR<PortfolioDTO>(`/portfolios/${encodeURIComponent(id)}`);
+  const { me } = useMe();
   const [deleting, setDeleting] = useState(false);
 
   async function destroy() {
@@ -703,10 +1024,10 @@ export default function EditPortfolioPage({ params }: { params: Promise<{ id: st
   }
 
   if (error) return <ErrorBox error={error} retry={() => mutate()} />;
-  if (!p) return <div className="h-[32rem] animate-pulse rounded-xl bg-panel" aria-busy />;
-  if (!p.mine)
+  if (!p || !me) return <div className="h-[32rem] animate-pulse rounded-xl bg-panel" aria-busy />;
+  if (!participates(p))
     return (
-      <Empty title="Ce portfolio n’est pas à toi">
+      <Empty title={p.role === "invited" ? "Rejoins d’abord ce portfolio" : "Ce portfolio n’est pas à toi"}>
         <Link href={`/portfolios/${p.id}`} className="article-link">
           Voir sa page
         </Link>
@@ -720,22 +1041,24 @@ export default function EditPortfolioPage({ params }: { params: Promise<{ id: st
           <ChevronLeft aria-hidden className="size-4" /> Portfolios
         </Link>
         <div className="flex flex-wrap gap-2">
-          {/* Sur mobile, le design vient après les cartes : raccourci. */}
+          {/* Sur mobile, le design et le partage viennent après les cartes : raccourci. */}
           <a href="#pf-design" className="btn btn-sm lg:hidden">
-            Design
+            {p.mine ? "Design et partage" : "Partage"}
           </a>
-          {p.cardCount > 0 && (
+          {(p.cardCount > 0 || !p.mine) && (
             <Link href={`/portfolios/${p.id}`} className="btn btn-sm">
               Voir la page
             </Link>
           )}
-          <button type="button" className="btn btn-sm btn-ghost text-danger" onClick={() => setDeleting(true)}>
-            <Trash2 aria-hidden className="size-4" /> Supprimer
-          </button>
+          {p.mine && (
+            <button type="button" className="btn btn-sm btn-ghost text-danger" onClick={() => setDeleting(true)}>
+              <Trash2 aria-hidden className="size-4" /> Supprimer
+            </button>
+          )}
         </div>
       </div>
       <div>
-        <h1 className="page-title">Modifier le portfolio</h1>
+        <h1 className="page-title">{p.mine ? "Modifier le portfolio" : "Tes cartes dans ce portfolio"}</h1>
         <p className="hatnote mt-2">
           Chaque changement est enregistré aussitôt. Une carte vendue, échangée, recyclée, fusionnée ou upgradée quitte
           le portfolio.
@@ -749,11 +1072,18 @@ export default function EditPortfolioPage({ params }: { params: Promise<{ id: st
             <span className="pf-rule mt-2" aria-hidden />
             {p.description && <p className="mt-2 max-w-[65ch] text-sm [text-wrap:pretty]">{p.description}</p>}
           </header>
-          <CardsEditor p={p} mutate={mutate} />
+          <CardsEditor p={p} me={me.username} mutate={mutate} />
         </PortfolioShell>
         <aside id="pf-design" className="flex scroll-mt-20 flex-col gap-6">
-          <InfoForm key={`${p.name}\n${p.description}`} p={p} mutate={mutate} />
-          <DesignPanel p={p} mutate={mutate} />
+          {p.mine ? (
+            <>
+              <InfoForm key={`${p.name}\n${p.description}`} p={p} mutate={mutate} />
+              <SharePanel p={p} mutate={mutate} />
+              <DesignPanel p={p} mutate={mutate} />
+            </>
+          ) : (
+            <MemberPanel p={p} me={me.username} />
+          )}
         </aside>
       </div>
 

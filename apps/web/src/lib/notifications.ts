@@ -44,6 +44,16 @@ export function describe(notif: Pick<NotificationDTO, "type" | "payload">): { te
       return { text: `${s(p.from)} veut t'ajouter en ami.`, href: "/friends" };
     case "friend_accepted":
       return { text: `${s(p.from)} a accepté ta demande d'ami.`, href: "/friends" };
+    case "portfolio_invite":
+      return {
+        text: `${s(p.from)} t'invite à composer le portfolio « ${s(p.name)} » avec tes cartes.`,
+        href: `/portfolios/${n(p.portfolioId)}`,
+      };
+    case "portfolio_joined":
+      return {
+        text: `${s(p.from)} a rejoint ton portfolio « ${s(p.name)} ».`,
+        href: `/portfolios/${n(p.portfolioId)}/modifier`,
+      };
     case "battle_challenge":
       return { text: `${s(p.from)} te défie en duel.`, href: "/battle" };
     case "battle_result":
