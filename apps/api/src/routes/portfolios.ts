@@ -2,6 +2,7 @@ import {
   PORTFOLIO_ACCENT_KEYS,
   PORTFOLIO_CARDS_MAX,
   PORTFOLIO_DESCRIPTION_MAX,
+  PORTFOLIO_MEMBER_ROLES,
   PORTFOLIO_NAME_MAX,
   PORTFOLIO_PROFILE_SLOTS,
   PORTFOLIO_VISIBILITIES,
@@ -27,6 +28,7 @@ import {
   portfolioInvitations,
   profilePortfolios,
   removePortfolioMember,
+  setPortfolioMemberRole,
   savePortfolioBackground,
   setPortfolioCards,
   setProfilePortfolios,
@@ -118,8 +120,18 @@ export function portfolioRoutes(api: FastifyInstance, ctx: Ctx) {
   const memberParams = idParams.extend({ username: z.string().min(1).max(30) });
   api.post("/portfolios/:id/members", limited(30), async (req) => {
     const { id } = parse(idParams, req.params);
-    const { username } = parse(z.object({ username: z.string().min(1).max(30) }), req.body);
-    await invitePortfolioMember(ctx, req.user.id, id, (await findUserByName(ctx.db, username)).id);
+    const { username, role } = parse(
+      z.object({ username: z.string().min(1).max(30), role: z.enum(PORTFOLIO_MEMBER_ROLES).optional() }),
+      req.body,
+    );
+    await invitePortfolioMember(ctx, req.user.id, id, (await findUserByName(ctx.db, username)).id, role);
+    return getPortfolio(ctx, req.user.id, id);
+  });
+  // Droits d'un invité (contributeur ou éditeur), choisis par le propriétaire.
+  api.patch("/portfolios/:id/members/:username", limited(60), async (req) => {
+    const { id, username } = parse(memberParams, req.params);
+    const { role } = parse(z.object({ role: z.enum(PORTFOLIO_MEMBER_ROLES) }), req.body);
+    await setPortfolioMemberRole(ctx, req.user.id, id, (await findUserByName(ctx.db, username)).id, role);
     return getPortfolio(ctx, req.user.id, id);
   });
   api.delete("/portfolios/:id/members/:username", auth, async (req) => {

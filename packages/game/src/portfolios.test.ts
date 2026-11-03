@@ -65,27 +65,46 @@ describe("cartes d'un portfolio", () => {
 
 describe("portfolios partagés (suggestion n° 125)", () => {
   const before = [
-    { instanceId: 1, ownerId: "owner" },
-    { instanceId: 2, ownerId: "ami" },
-    { instanceId: 3, ownerId: "autre" },
+    { instanceId: 1, ownerId: "owner", featured: true },
+    { instanceId: 2, ownerId: "ami", featured: false },
+    { instanceId: 3, ownerId: "autre", featured: false },
   ];
+  const ids = (...list: number[]) => list.map((instanceId) => ({ instanceId, featured: false }));
 
-  it("laisse un invité ajouter, réordonner et retirer ses propres cartes", () => {
-    expect(portfolioCardsChange({ editorId: "ami", ownerId: "owner", before, after: [3, 1, 9] })).toEqual({
+  it("laisse un contributeur ajouter et retirer ses cartes, sans toucher à l'ordre ni à la vedette", () => {
+    expect(portfolioCardsChange({ editorId: "ami", rights: "contributor", before, after: ids(3, 1, 9) })).toEqual({
       added: [9],
       removed: [2],
+      cards: [
+        { instanceId: 1, featured: true },
+        { instanceId: 3, featured: false },
+        { instanceId: 9, featured: false },
+      ],
     });
   });
 
-  it("refuse qu'un invité retire la carte d'un autre", () => {
-    expect(portfolioCardsChange({ editorId: "ami", ownerId: "owner", before, after: [2, 3] })).toBeNull();
-    expect(portfolioCardsChange({ editorId: "ami", ownerId: "owner", before, after: [1, 2] })).toBeNull();
+  it("refuse qu'un contributeur retire la carte d'un autre", () => {
+    expect(portfolioCardsChange({ editorId: "ami", rights: "contributor", before, after: ids(2, 3) })).toBeNull();
+    expect(portfolioCardsChange({ editorId: "ami", rights: "contributor", before, after: ids(1, 2) })).toBeNull();
+  });
+
+  it("laisse un éditeur réordonner, changer la vedette et retirer les cartes des autres", () => {
+    const after = [
+      { instanceId: 3, featured: true },
+      { instanceId: 2, featured: false },
+    ];
+    expect(portfolioCardsChange({ editorId: "ami", rights: "editor", before, after })).toEqual({
+      added: [],
+      removed: [1],
+      cards: after,
+    });
   });
 
   it("laisse le propriétaire retirer n'importe quelle carte", () => {
-    expect(portfolioCardsChange({ editorId: "owner", ownerId: "owner", before, after: [] })).toEqual({
+    expect(portfolioCardsChange({ editorId: "owner", rights: "owner", before, after: [] })).toEqual({
       added: [],
       removed: [1, 2, 3],
+      cards: [],
     });
   });
 });

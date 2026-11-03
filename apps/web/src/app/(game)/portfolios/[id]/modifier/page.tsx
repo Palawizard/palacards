@@ -1,11 +1,15 @@
 "use client";
 
 import {
+  arrangesPortfolio,
   PORTFOLIO_ACCENTS,
   PORTFOLIO_CARDS_MAX,
   PORTFOLIO_DESCRIPTION_MAX,
   PORTFOLIO_NAME_MAX,
+  PORTFOLIO_MEMBER_ROLE_LABELS,
+  PORTFOLIO_MEMBER_ROLES,
   PORTFOLIO_SHARED_MAX_PLAYERS,
+  type PortfolioMemberRole,
 } from "@palacards/game";
 import type {
   CardDTO,
@@ -13,7 +17,7 @@ import type {
   PortfolioCardDTO,
   PortfolioDesignItemDTO,
   PortfolioDTO,
-  PortfolioOwnerDTO,
+  PortfolioMemberDTO,
 } from "@palacards/shared";
 import {
   ChevronLeft,
@@ -58,10 +62,12 @@ const errorText = (err: unknown, fallback: string) => (err instanceof ApiError ?
 
 function CardsEditor({ p, me, mutate }: { p: PortfolioDTO; me: string; mutate: KeyedMutator<PortfolioDTO> }) {
   const [order, setOrder] = useState<PortfolioCardDTO[]>(p.cards);
-  // Portfolio partagé : chacun retire ses cartes, le propriétaire celles de tous.
+  // Portfolio partagé : un contributeur ajoute et retire ses cartes ; le propriétaire et les éditeurs rangent tout.
   const shared = p.members.length > 0;
-  const canRemove = (c: PortfolioCardDTO) => p.mine || c.by === me;
+  const arranges = arrangesPortfolio(p.rights);
+  const canRemove = (c: PortfolioCardDTO) => arranges || c.by === me;
   const names = new Map([p.owner, ...p.members].map((m) => [m.username, m.displayName]));
+  const byLabel = (c: PortfolioCardDTO) => (c.by === me ? "À toi" : `À ${names.get(c.by) ?? c.by}`);
   const [synced, setSynced] = useState(p.cards);
   const [picking, setPicking] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -156,7 +162,11 @@ function CardsEditor({ p, me, mutate }: { p: PortfolioDTO; me: string; mutate: K
             {order.length} / {PORTFOLIO_CARDS_MAX}
           </span>
         </h2>
-        <p className="pf-muted text-sm">Poignée ou flèches pour l’ordre, étoile pour la vedette.</p>
+        <p className="pf-muted text-sm">
+          {arranges
+            ? "Poignée ou flèches pour l’ordre, étoile pour la vedette."
+            : `Tes cartes s’ajoutent à la fin ; ${p.owner.displayName} range l’ordre et la vedette.`}
+        </p>
       </div>
       <ol className="pf-grid">
         {order.map((card, i) => {
@@ -177,77 +187,100 @@ function CardsEditor({ p, me, mutate }: { p: PortfolioDTO; me: string; mutate: K
                 style={lifted && drag ? { transform: dragTransform(drag, i) } : undefined}
               >
                 <Card card={card} href={null} prefetch={false} />
-                <button
-                  type="button"
-                  className="pf-star"
-                  aria-pressed={card.featured}
-                  aria-label={card.featured ? `Retirer ${card.title} de la vedette` : `Mettre ${card.title} en vedette`}
-                  title={card.featured ? "En vedette" : "Mettre en vedette"}
-                  onClick={() => feature(card)}
-                >
-                  <Star aria-hidden className="size-4" strokeWidth={2.25} />
-                </button>
-              </div>
-              <div className="pc-arrange-bar" role="group" aria-label={`Place de ${card.title}`}>
-                <button
-                  type="button"
-                  className="pc-arrange-btn"
-                  aria-label={`Avancer ${card.title}`}
-                  disabled={i === 0}
-                  onClick={() => shift(i, -1)}
-                >
-                  <ChevronLeft aria-hidden className="size-4" />
-                </button>
-                <button
-                  type="button"
-                  ref={(el) => {
-                    if (el) handles.current.set(card.instanceId!, el);
-                    else handles.current.delete(card.instanceId!);
-                  }}
-                  className="pc-arrange-btn pc-grip"
-                  aria-label={`Déplacer ${card.title}, place ${i + 1} sur ${order.length} (flèches)`}
-                  onPointerDown={(e) => {
-                    setInstant(false);
-                    startDrag(e, card);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-                      e.preventDefault();
-                      shift(i, -1, true);
-                    } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-                      e.preventDefault();
-                      shift(i, 1, true);
-                    }
-                  }}
-                >
-                  <GripVertical aria-hidden className="size-4" />
-                  <span className="tnum text-xs font-bold">{i + 1}</span>
-                </button>
-                <button
-                  type="button"
-                  className="pc-arrange-btn"
-                  aria-label={`Reculer ${card.title}`}
-                  disabled={i === order.length - 1}
-                  onClick={() => shift(i, 1)}
-                >
-                  <ChevronRight aria-hidden className="size-4" />
-                </button>
-                {canRemove(card) && (
+                {arranges ? (
                   <button
                     type="button"
-                    className="pc-arrange-btn pc-arrange-remove ml-auto"
-                    aria-label={`Retirer ${card.title} du portfolio`}
-                    onClick={() => remove(card)}
+                    className="pf-star"
+                    aria-pressed={card.featured}
+                    aria-label={
+                      card.featured ? `Retirer ${card.title} de la vedette` : `Mettre ${card.title} en vedette`
+                    }
+                    title={card.featured ? "En vedette" : "Mettre en vedette"}
+                    onClick={() => feature(card)}
                   >
-                    <X aria-hidden className="size-4" />
+                    <Star aria-hidden className="size-4" strokeWidth={2.25} />
                   </button>
+                ) : (
+                  card.featured && (
+                    <span className="pf-star" data-on title="En vedette">
+                      <Star aria-hidden className="size-4" strokeWidth={2.25} />
+                      <span className="sr-only">En vedette</span>
+                    </span>
+                  )
                 )}
               </div>
-              {shared && (
-                <p className="pf-muted mt-1 truncate text-xs">
-                  {card.by === me ? "À toi" : `À ${names.get(card.by) ?? card.by}`}
-                </p>
+              {!arranges ? (
+                <div className="pc-arrange-bar" role="group" aria-label={`Carte ${card.title}`}>
+                  <span className="pc-arrange-label pf-muted">{byLabel(card)}</span>
+                  {canRemove(card) && (
+                    <button
+                      type="button"
+                      className="pc-arrange-btn pc-arrange-remove ml-auto"
+                      aria-label={`Retirer ${card.title} du portfolio`}
+                      onClick={() => remove(card)}
+                    >
+                      <X aria-hidden className="size-4" />
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="pc-arrange-bar" role="group" aria-label={`Place de ${card.title}`}>
+                  <button
+                    type="button"
+                    className="pc-arrange-btn"
+                    aria-label={`Avancer ${card.title}`}
+                    disabled={i === 0}
+                    onClick={() => shift(i, -1)}
+                  >
+                    <ChevronLeft aria-hidden className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    ref={(el) => {
+                      if (el) handles.current.set(card.instanceId!, el);
+                      else handles.current.delete(card.instanceId!);
+                    }}
+                    className="pc-arrange-btn pc-grip"
+                    aria-label={`Déplacer ${card.title}, place ${i + 1} sur ${order.length} (flèches)`}
+                    onPointerDown={(e) => {
+                      setInstant(false);
+                      startDrag(e, card);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+                        e.preventDefault();
+                        shift(i, -1, true);
+                      } else if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+                        e.preventDefault();
+                        shift(i, 1, true);
+                      }
+                    }}
+                  >
+                    <GripVertical aria-hidden className="size-4" />
+                    <span className="tnum text-xs font-bold">{i + 1}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="pc-arrange-btn"
+                    aria-label={`Reculer ${card.title}`}
+                    disabled={i === order.length - 1}
+                    onClick={() => shift(i, 1)}
+                  >
+                    <ChevronRight aria-hidden className="size-4" />
+                  </button>
+                  {canRemove(card) && (
+                    <button
+                      type="button"
+                      className="pc-arrange-btn pc-arrange-remove ml-auto"
+                      aria-label={`Retirer ${card.title} du portfolio`}
+                      onClick={() => remove(card)}
+                    >
+                      <X aria-hidden className="size-4" />
+                    </button>
+                  )}
+                </div>
               )}
+              {shared && arranges && <p className="pf-muted mt-1 truncate text-xs">{byLabel(card)}</p>}
             </motion.li>
           );
         })}
@@ -737,7 +770,7 @@ function SharePanel({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Portf
   const friends = useSWR<{ friends: Friend[] }>("/friends");
   const [picked, setPicked] = useState("");
   const [busy, setBusy] = useState(false);
-  const [removing, setRemoving] = useState<PortfolioOwnerDTO | null>(null);
+  const [removing, setRemoving] = useState<PortfolioMemberDTO | null>(null);
   const taken = new Set([...p.members, ...p.invited].map((m) => m.username));
   const candidates = (friends.data?.friends ?? []).filter((f) => !taken.has(f.username));
   const players = 1 + p.members.length + p.invited.length;
@@ -768,7 +801,15 @@ function SharePanel({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Portf
     );
   }
 
-  function revoke(m: PortfolioOwnerDTO) {
+  function setRole(m: PortfolioMemberDTO, role: PortfolioMemberRole) {
+    if (m.role === role) return;
+    void run(
+      () => api(`/portfolios/${p.id}/members/${encodeURIComponent(m.username)}`, { method: "PATCH", body: { role } }),
+      `${m.displayName} : ${PORTFOLIO_MEMBER_ROLE_LABELS[role].toLowerCase()}.`,
+    );
+  }
+
+  function revoke(m: PortfolioMemberDTO) {
     setRemoving(null);
     void run(
       () => api(`/portfolios/${p.id}/members/${encodeURIComponent(m.username)}`, { method: "DELETE" }),
@@ -776,12 +817,27 @@ function SharePanel({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Portf
     );
   }
 
-  const person = (m: PortfolioOwnerDTO, status: string) => (
-    <li key={m.username} className="flex items-center gap-2.5">
+  const person = (m: PortfolioMemberDTO, status: string) => (
+    <li key={m.username} className="flex items-start gap-2.5">
       <Avatar name={m.displayName} avatar={m.avatar} size="sm" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-semibold">{m.displayName}</span>
         <span className="block text-xs text-faint">{status}</span>
+        <span className="mt-1.5 flex flex-wrap gap-1" role="radiogroup" aria-label={`Droits de ${m.displayName}`}>
+          {PORTFOLIO_MEMBER_ROLES.map((r) => (
+            <button
+              key={r}
+              type="button"
+              role="radio"
+              aria-checked={m.role === r}
+              disabled={busy}
+              className="chip h-7 px-2.5 text-xs aria-checked:border-accent aria-checked:bg-accent aria-checked:text-accent-ink"
+              onClick={() => setRole(m, r)}
+            >
+              {PORTFOLIO_MEMBER_ROLE_LABELS[r]}
+            </button>
+          ))}
+        </span>
       </span>
       <button
         type="button"
@@ -805,7 +861,9 @@ function SharePanel({ p, mutate }: { p: PortfolioDTO; mutate: KeyedMutator<Portf
         </span>
       </h2>
       <p className="text-sm text-muted [text-wrap:pretty]">
-        Tes amis invités y ajoutent leurs propres cartes, qui restent à eux. Toi seul choisis le titre et le design.
+        Tes amis invités y ajoutent leurs propres cartes, qui restent à eux. Un contributeur ajoute et retire les
+        siennes ; un éditeur range aussi l’ordre, la vedette et peut retirer toutes les cartes. Toi seul choisis le
+        titre, le design et le partage.
       </p>
       {players > 1 && (
         <ul className="flex flex-col gap-2">
@@ -911,14 +969,18 @@ function MemberPanel({ p, me }: { p: PortfolioDTO; me: string }) {
         Partage
       </h2>
       <p className="text-sm text-muted [text-wrap:pretty]">
-        Portfolio de {p.owner.displayName} : ajoute tes cartes, change l’ordre ou la vedette. Tu ne retires que les
-        tiennes ; le titre et le design restent à son choix.
+        {p.rights === "editor"
+          ? `Portfolio de ${p.owner.displayName}, dont tu es éditeur : ajoute tes cartes, range l’ordre et la vedette, retire celles de tous.`
+          : `Portfolio de ${p.owner.displayName}, dont tu es contributeur : ajoute et retire tes propres cartes.`}{" "}
+        Le titre et le design restent à son choix.
+        {p.visibility === "public" && " Tu peux l’épingler sur ton profil, comme tes propres portfolios."}
       </p>
       <ul className="flex flex-col gap-2">
-        {[p.owner, ...p.members].map((m) => (
-          <li key={m.username} className="flex items-center gap-2.5 text-sm font-semibold">
+        {[{ ...p.owner, role: null }, ...p.members].map((m) => (
+          <li key={m.username} className="flex items-center gap-2.5 text-sm">
             <Avatar name={m.displayName} avatar={m.avatar} size="sm" />
-            <span className="truncate">{m.username === me ? "Toi" : m.displayName}</span>
+            <span className="min-w-0 flex-1 truncate font-semibold">{m.username === me ? "Toi" : m.displayName}</span>
+            <span className="text-xs text-faint">{m.role ? PORTFOLIO_MEMBER_ROLE_LABELS[m.role] : "Propriétaire"}</span>
           </li>
         ))}
       </ul>

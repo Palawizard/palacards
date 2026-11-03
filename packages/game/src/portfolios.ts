@@ -175,26 +175,58 @@ export function normalizePortfolioCards(
 // ---------------------------------------------------------------------------
 
 /** Joueurs au plus dans un portfolio partagé, propriétaire et invitations en attente compris. */
-export const PORTFOLIO_SHARED_MAX_PLAYERS = 5;
+export const PORTFOLIO_SHARED_MAX_PLAYERS = 10;
 
-/** Qui voit le portfolio : tout le monde (page Communauté, profil du propriétaire) ou ses participants seuls. */
+/** Qui voit le portfolio : tout le monde (page Communauté, profils) ou ses participants seuls. */
 export const PORTFOLIO_VISIBILITIES = ["public", "members"] as const;
 export type PortfolioVisibility = (typeof PORTFOLIO_VISIBILITIES)[number];
 
 /**
- * Nouvel ordre demandé par un participant : cartes ajoutées (à vérifier dans sa collection) et cartes retirées.
- * Un invité ne retire que ses propres cartes ; le propriétaire peut retirer celles de tout le monde (c'est sa page).
- * Renvoie null si un invité retire une carte qui n'est pas à lui.
+ * Droits d'un invité, choisis par le propriétaire (contributeur à l'invitation) :
+ * - `contributor` : ajoute et retire ses propres cartes, sans toucher à l'ordre ni à la vedette ;
+ * - `editor` : comme le propriétaire pour les cartes (ordre, vedette, retrait des cartes de tous).
+ * Titre, description, design, partage et visibilité restent au propriétaire.
+ */
+export const PORTFOLIO_MEMBER_ROLES = ["contributor", "editor"] as const;
+export type PortfolioMemberRole = (typeof PORTFOLIO_MEMBER_ROLES)[number];
+export const PORTFOLIO_MEMBER_ROLE_LABELS: Record<PortfolioMemberRole, string> = {
+  contributor: "Contributeur",
+  editor: "Éditeur",
+};
+
+/** Ce qu'un joueur peut faire des cartes d'un portfolio : propriétaire, éditeur ou contributeur. */
+export type PortfolioRights = "owner" | PortfolioMemberRole;
+
+/** Ordre, vedette et retrait des cartes de tous : propriétaire et éditeurs. */
+export const arrangesPortfolio = (rights: PortfolioRights | null) => rights === "owner" || rights === "editor";
+
+/**
+ * Nouvelles cartes demandées par un participant, appliquées selon ses droits.
+ * - Propriétaire et éditeur : la liste demandée telle quelle.
+ * - Contributeur : seules ses additions (à la fin, hors vedette) et ses retraits comptent ; l'ordre et la vedette
+ *   des cartes déjà là restent ceux du portfolio, même si sa page n'était plus à jour.
+ * Renvoie null si un contributeur retire une carte qui n'est pas à lui. `added` est à vérifier dans sa collection.
  */
 export function portfolioCardsChange(input: {
   editorId: string;
-  ownerId: string;
-  before: { instanceId: number; ownerId: string }[];
-  after: number[];
-}): { added: number[]; removed: number[] } | null {
-  const next = new Set(input.after);
+  rights: PortfolioRights;
+  before: { instanceId: number; ownerId: string; featured: boolean }[];
+  after: { instanceId: number; featured: boolean }[];
+}): { added: number[]; removed: number[]; cards: { instanceId: number; featured: boolean }[] } | null {
+  const next = new Set(input.after.map((c) => c.instanceId));
   const known = new Set(input.before.map((c) => c.instanceId));
   const removed = input.before.filter((c) => !next.has(c.instanceId));
-  if (input.editorId !== input.ownerId && removed.some((c) => c.ownerId !== input.editorId)) return null;
-  return { added: input.after.filter((id) => !known.has(id)), removed: removed.map((c) => c.instanceId) };
+  const added = input.after.filter((c) => !known.has(c.instanceId));
+  const out = { added: added.map((c) => c.instanceId), removed: removed.map((c) => c.instanceId) };
+  if (arrangesPortfolio(input.rights)) return { ...out, cards: input.after };
+  if (removed.some((c) => c.ownerId !== input.editorId)) return null;
+  return {
+    ...out,
+    cards: [
+      ...input.before
+        .filter((c) => next.has(c.instanceId))
+        .map((c) => ({ instanceId: c.instanceId, featured: c.featured })),
+      ...added.map((c) => ({ instanceId: c.instanceId, featured: false })),
+    ],
+  };
 }

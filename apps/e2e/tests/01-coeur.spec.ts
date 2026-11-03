@@ -80,6 +80,45 @@ test("la fiche d'une carte tirée s'ouvre sans quitter l'ouverture du paquet", a
   await expect(pack.locator("article.pc-card")).toHaveCount(10);
 });
 
+test("réglage « Confirmer avant de recycler » à l'ouverture d'un paquet", async ({ browser }) => {
+  const { page } = await newPlayer(browser, "prudent");
+  await instantPacks(page);
+  await page.goto("settings");
+  await page.getByRole("checkbox", { name: /Confirmer avant de recycler/ }).check();
+  await expect(page.getByText("Chaque recyclage te demandera confirmation.")).toBeVisible();
+
+  await page.goto("pulls");
+  await page.getByRole("button", { name: "Ouvrir un paquet" }).click();
+  const pack = page.getByRole("region", { name: "Ouverture de paquet" });
+  await expect(pack.locator("article.pc-card")).toHaveCount(10);
+  const recycle = pack.getByRole("button", { name: /^Recycler .+ pour \d+ PW$/ });
+  const before = await recycle.count();
+
+  // Annuler ne change rien.
+  await recycle.first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("heading", { name: "Recycler cette carte ?" })).toBeVisible();
+  await expect(dialog.getByText("Total")).toBeVisible();
+  await dialog.getByRole("button", { name: "Annuler" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(recycle).toHaveCount(before);
+
+  // Confirmer recycle la carte.
+  await recycle.first().click();
+  await dialog.getByRole("button", { name: /^Recycler \(\+\d+ PW\)$/ }).click();
+  await expect(recycle).toHaveCount(before - 1);
+
+  // Réglage coupé : un clic suffit de nouveau.
+  await apiCall(page, "PATCH", "/me/settings", { confirmRecycle: false });
+  await page.reload();
+  await page.getByRole("button", { name: "Ouvrir un paquet" }).click();
+  await expect(pack.locator("article.pc-card")).toHaveCount(10);
+  const count = await recycle.count();
+  await recycle.first().click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(recycle).toHaveCount(count - 1);
+});
+
 test("tout sélectionner les cartes du filtre pour les recycler", async ({ browser }) => {
   const { page } = await newPlayer(browser, "tri");
   await instantPacks(page);

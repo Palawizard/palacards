@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   autoRecyclePicks,
   collectionScore,
+  countByRarity,
   effectiveStats,
   isBetterCopy,
   MAX_LEVEL,
@@ -47,6 +48,21 @@ describe("isBetterCopy", () => {
     expect(isBetterCopy({ ...base, atk: 501, id: 9 }, base)).toBe(true);
     expect(isBetterCopy(base, { ...base, id: 2 })).toBe(true);
     expect(isBetterCopy({ ...base, id: 2 }, base)).toBe(false);
+  });
+});
+
+describe("countByRarity", () => {
+  it("compte par rareté, de la plus commune à la plus rare", () => {
+    expect(countByRarity(["SR", "C", "L", "C", "R", "C"])).toEqual([
+      { rarity: "C", count: 3 },
+      { rarity: "R", count: 1 },
+      { rarity: "SR", count: 1 },
+      { rarity: "L", count: 1 },
+    ]);
+  });
+
+  it("lot vide : aucune ligne", () => {
+    expect(countByRarity([])).toEqual([]);
   });
 });
 

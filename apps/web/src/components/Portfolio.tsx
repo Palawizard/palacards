@@ -293,7 +293,7 @@ export function PortfolioRow({ p }: { p: PortfolioSummaryDTO }) {
               ? "Vide"
               : "Vide, visible de toi seul"}{" "}
           · {likesLabel(p.likes)}
-          {p.mine && p.profileSlot !== null && " · sur ton profil"}
+          {participates(p) && p.profileSlot !== null && " · sur ton profil"}
         </p>
         {(!p.mine || p.members.length > 0) && (
           <p className="pf-muted mt-0.5 flex items-center gap-1 truncate text-sm">
@@ -345,8 +345,8 @@ export function MyProfilePortfolios() {
   const [adding, setAdding] = useState("");
   const [busy, setBusy] = useState(false);
   if (!data) return null;
-  // Seulement les siens (pas ceux d'amis auxquels on participe), publics pour en ajouter.
-  const own = data.filter((p) => p.mine);
+  // Les siens et les portfolios partagés d'amis qu'on a rejoints ; publics et non vides pour en ajouter.
+  const own = data.filter(participates);
   const shown = own.filter((p) => p.profileSlot !== null);
   const others = own.filter((p) => p.profileSlot === null && p.cardCount > 0 && p.visibility === "public");
 
@@ -462,7 +462,7 @@ export function MyProfilePortfolios() {
                   >
                     {others.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name}
+                        {p.mine ? p.name : `${p.name} (de ${p.owner.displayName})`}
                       </option>
                     ))}
                   </select>

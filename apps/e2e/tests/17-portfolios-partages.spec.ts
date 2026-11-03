@@ -24,7 +24,12 @@ test("inviter un ami dans un portfolio, qui y ajoute ses cartes, puis lui retire
   await share.getByLabel("Inviter un ami").selectOption(friend.name);
   await share.getByRole("button", { name: "Inviter" }).click();
   await expect(share.getByText("Invitation envoyée", { exact: true })).toBeVisible();
-  await expect(share.getByRole("heading", { name: /2 \/ 5/ })).toBeVisible();
+  await expect(share.getByRole("heading", { name: /2 \/ 10/ })).toBeVisible();
+  // Contributeur à l'invitation ; le propriétaire le passe éditeur.
+  const rights = share.getByRole("radiogroup", { name: `Droits de ${friend.name}` });
+  await expect(rights.getByRole("radio", { name: "Contributeur" })).toHaveAttribute("aria-checked", "true");
+  await rights.getByRole("radio", { name: "Éditeur" }).click();
+  await expect(rights.getByRole("radio", { name: "Éditeur" })).toHaveAttribute("aria-checked", "true");
 
   // L'ami accepte depuis la page Portfolios et ajoute deux de ses cartes.
   const f = friend.page;
@@ -44,6 +49,8 @@ test("inviter un ami dans un portfolio, qui y ajoute ses cartes, puis lui retire
   for (let i = 0; i < 2; i++) await free.first().click();
   await picker.getByRole("button", { name: "Ajouter (2)" }).click();
   await expect(f.getByRole("heading", { name: /Cartes\s*2 \/ 30/ })).toBeVisible();
+  // Éditeur : il range l'ordre et la vedette.
+  await expect(f.getByRole("button", { name: /^Mettre .+ en vedette$/ })).toHaveCount(2);
   const shared = await apiCall<PortfolioDTO>(f, "GET", `/portfolios/${id}`);
   expect(shared.cards.map((c) => c.by)).toEqual([friend.name, friend.name]);
 

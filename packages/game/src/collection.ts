@@ -97,6 +97,16 @@ export function collectionScore(owned: Iterable<{ cardId: number; rarity: Rarity
   return score;
 }
 
+/**
+ * Cartes d'un lot comptées par rareté, de la plus commune à la plus rare, raretés absentes omises
+ * (fenêtre de confirmation du recyclage).
+ */
+export function countByRarity(rarities: Iterable<Rarity>): { rarity: Rarity; count: number }[] {
+  const counts = new Map<Rarity, number>();
+  for (const r of rarities) counts.set(r, (counts.get(r) ?? 0) + 1);
+  return RARITIES.filter((r) => counts.has(r)).map((rarity) => ({ rarity, count: counts.get(rarity)! }));
+}
+
 /** Seuils proposés au recyclage automatique : jamais au-delà de Super rare (une UR ou une L se garde). */
 export const AUTO_RECYCLE_RARITIES = ["C", "PC", "R", "SR"] as const satisfies readonly Rarity[];
 export type AutoRecycleRarity = (typeof AUTO_RECYCLE_RARITIES)[number];

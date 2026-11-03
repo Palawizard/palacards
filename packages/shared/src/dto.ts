@@ -52,6 +52,8 @@ export interface MeDTO {
   hideNudity: boolean;
   /** Upgrader sans tour d'aiguille : le résultat s'affiche tout de suite. */
   quickUpgrade: boolean;
+  /** Fenêtre de confirmation avant chaque recyclage, même d'une carte seule. */
+  confirmRecycle: boolean;
   /** Ses tags servent de filtre aux autres joueurs sur sa collection. */
   publicTags: boolean;
   /** Recyclage automatique des cartes tirées (rareté maximale, null : désactivé). */
@@ -836,6 +838,11 @@ export interface PortfolioOwnerDTO {
   avatar: string | null;
 }
 
+/** Ami d'un portfolio partagé, avec les droits que lui donne le propriétaire. */
+export interface PortfolioMemberDTO extends PortfolioOwnerDTO {
+  role: "contributor" | "editor";
+}
+
 /** Portfolio en liste (page Communauté, profil, ses portfolios) : aperçu des premières cartes. */
 export interface PortfolioSummaryDTO {
   id: number;
@@ -857,8 +864,10 @@ export interface PortfolioSummaryDTO {
   visibility: "public" | "members";
   /** Place du visiteur : propriétaire, ami qui y participe, ami invité (pas encore répondu), ou simple visiteur. */
   role: "owner" | "member" | "invited" | null;
+  /** Ce que le visiteur peut faire des cartes : propriétaire, éditeur, contributeur (invité compris), ou rien. */
+  rights: "owner" | "editor" | "contributor" | null;
   /** Amis qui y participent (invitation acceptée), dans l'ordre d'arrivée. */
-  members: PortfolioOwnerDTO[];
+  members: PortfolioMemberDTO[];
   createdAt: string;
   updatedAt: string;
 }
@@ -870,7 +879,7 @@ export type PortfolioCardDTO = CardDTO & { featured: boolean; by: string };
 export interface PortfolioDTO extends PortfolioSummaryDTO {
   cards: PortfolioCardDTO[];
   /** Invitations en attente (le propriétaire seul les voit ; liste vide pour les autres). */
-  invited: PortfolioOwnerDTO[];
+  invited: PortfolioMemberDTO[];
 }
 
 /** Design du catalogue, avec ce qu'il faut pour l'obtenir et s'il est déjà au joueur. */

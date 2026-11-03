@@ -225,6 +225,8 @@ export const players = pgTable(
     hideNudity: boolean("hide_nudity").notNull().default(false),
     /** Upgrader sans tour d'aiguille : le résultat s'affiche dès la réponse du serveur. */
     quickUpgrade: boolean("quick_upgrade").notNull().default(false),
+    /** Fenêtre de confirmation avant chaque recyclage, même d'une carte seule (suggestion n° 127). */
+    confirmRecycle: boolean("confirm_recycle").notNull().default(false),
     /** Ses tags servent de filtre aux autres joueurs sur sa collection (profil, échanges). */
     publicTags: boolean("public_tags").notNull().default(false),
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
@@ -1576,8 +1578,18 @@ export const portfolioMembers = pgTable(
     userId: userRef("user_id").notNull(),
     invitedAt: tstz("invited_at").notNull().defaultNow(),
     joinedAt: tstz("joined_at"),
+    /** Droits choisis par le propriétaire : `contributor` (ses cartes) ou `editor` (ordre, vedette, toutes les cartes). */
+    role: text("role", { enum: ["contributor", "editor"] })
+      .notNull()
+      .default("contributor"),
+    /** Place sur le profil du participant (1 à 3), partagée avec ses propres portfolios ; null s'il n'y est pas. */
+    profileSlot: smallint("profile_slot"),
   },
-  (t) => [primaryKey({ columns: [t.portfolioId, t.userId] }), index("portfolio_members_user_idx").on(t.userId)],
+  (t) => [
+    primaryKey({ columns: [t.portfolioId, t.userId] }),
+    index("portfolio_members_user_idx").on(t.userId),
+    uniqueIndex("portfolio_members_profile_slot_idx").on(t.userId, t.profileSlot),
+  ],
 );
 
 /** Image envoyée par le joueur comme fond d'un portfolio (mêmes contrôles que les bannières). */
