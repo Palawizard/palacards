@@ -939,6 +939,24 @@ export const achievementsProgress = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.achievementKey] })],
 );
 
+/**
+ * Paliers de succès des saisons terminées : les succès repartent de zéro à chaque saison (bascule), leurs paliers
+ * débloqués sont gardés ici (classement « Succès » de la saison, historique, designs de portfolio déjà acquis).
+ */
+export const achievementArchives = pgTable(
+  "achievement_archives",
+  {
+    season: smallint("season").notNull(),
+    userId: userRef("user_id").notNull(),
+    achievementKey: text("achievement_key").notNull(),
+    unlockedAt: tstz("unlocked_at").notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.season, t.userId, t.achievementKey] }),
+    index("achievement_archives_user_idx").on(t.userId),
+  ],
+);
+
 /** Classements figés en fin de saison. */
 export const seasonArchives = pgTable(
   "season_archives",

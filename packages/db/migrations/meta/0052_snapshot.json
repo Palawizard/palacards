@@ -1,5 +1,5 @@
 {
-  "id": "f22e8160-3479-4a62-b779-4e74e5d5d531",
+  "id": "c80a4b15-08ad-4b92-a34c-f9cb91bf3598",
   "prevId": "5eec94c1-b111-41f7-9ddf-67ba27d27de5",
   "version": "7",
   "dialect": "postgresql",
@@ -121,6 +121,82 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.achievement_archives": {
+      "name": "achievement_archives",
+      "schema": "",
+      "columns": {
+        "season": {
+          "name": "season",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "achievement_key": {
+          "name": "achievement_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unlocked_at": {
+          "name": "unlocked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "achievement_archives_user_idx": {
+          "name": "achievement_archives_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "achievement_archives_user_id_user_id_fk": {
+          "name": "achievement_archives_user_id_user_id_fk",
+          "tableFrom": "achievement_archives",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "achievement_archives_season_user_id_achievement_key_pk": {
+          "name": "achievement_archives_season_user_id_achievement_key_pk",
+          "columns": [
+            "season",
+            "user_id",
+            "achievement_key"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -4814,13 +4890,6 @@
         },
         "quick_upgrade": {
           "name": "quick_upgrade",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "confirm_recycle": {
-          "name": "confirm_recycle",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
