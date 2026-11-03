@@ -215,7 +215,9 @@ describe("portfolios partagés (suggestion n° 125)", () => {
     expect(invited.status).toBe(200);
     expect(invited.body.invited.map((m: { username: string }) => m.username)).toEqual([friend.username]);
     expect((await owner.post(`/portfolios/${id}/members`, { username: friend.username })).status).toBe(409);
-    expect((await friend.get("/notifications")).body.items[0].type).toBe("portfolio_invite");
+    // L'invitation figure parmi les notifications (un succès débloqué peut arriver juste après).
+    const notes = (await friend.get("/notifications")).body.items as { type: string }[];
+    expect(notes.map((n) => n.type)).toContain("portfolio_invite");
     const invitations = await friend.get("/portfolios/invitations");
     expect(invitations.body.map((p: { id: number; role: string }) => [p.id, p.role])).toEqual([[id, "invited"]]);
 
