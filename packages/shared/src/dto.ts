@@ -52,6 +52,8 @@ export interface MeDTO {
   hideNudity: boolean;
   /** Upgrader sans tour d'aiguille : le résultat s'affiche tout de suite. */
   quickUpgrade: boolean;
+  /** Fenêtre de confirmation avant chaque recyclage, même d'une carte seule. */
+  confirmRecycle: boolean;
   /** Ses tags servent de filtre aux autres joueurs sur sa collection. */
   publicTags: boolean;
   /** Recyclage automatique des cartes tirées (rareté maximale, null : désactivé). */
