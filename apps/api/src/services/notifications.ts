@@ -15,6 +15,8 @@ export type NotificationType =
   | "trade_expired"
   | "friend_request"
   | "friend_accepted"
+  | "portfolio_invite"
+  | "portfolio_joined"
   | "wishlist_listed"
   | "battle_challenge"
   | "battle_result"
@@ -37,7 +39,7 @@ export type NotificationType =
 export const NOTIFICATION_GROUPS: Record<string, NotificationType[]> = {
   market: ["outbid", "auction_won", "auction_sold", "auction_expired", "wishlist_listed"],
   trades: ["trade_received", "trade_accepted", "trade_declined", "trade_countered", "trade_expired"],
-  social: ["friend_request", "friend_accepted", "guild_objective"],
+  social: ["friend_request", "friend_accepted", "portfolio_invite", "portfolio_joined", "guild_objective"],
   battles: ["battle_challenge", "battle_result"],
   packs: ["packs_full", "gift"],
   achievements: ["achievement", "achievement_backfill", "title_won"],
