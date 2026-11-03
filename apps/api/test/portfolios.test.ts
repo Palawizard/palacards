@@ -1,5 +1,5 @@
 import { eq, schema, sql } from "@palacards/db";
-import { ECONOMY, PORTFOLIO_MAX, PORTFOLIO_PRICES } from "@palacards/game";
+import { ECONOMY, PORTFOLIO_MAX, PORTFOLIO_PRICES, PORTFOLIO_SHARED_MAX_PLAYERS } from "@palacards/game";
 import { afterAll, describe, expect, it } from "vitest";
 import { makeApp, signUp, signUpAdmin, type Client } from "./helpers.js";
 
@@ -189,5 +189,221 @@ describe("portfolios (suggestions n° 3 et 116)", () => {
     const exported = (await p.get("/me/export")).body;
     expect(exported.portfolios[0]).toMatchObject({ id, name: "Mes favorites" });
     expect(exported.portfolioCards).toEqual([expect.objectContaining({ portfolioId: id, instanceId: card })]);
+  });
+});
+
+describe("portfolios partagés (suggestion n° 125)", () => {
+  async function befriend(a: Client, b: Client) {
+    await a.post("/friends", { username: b.username });
+    await b.post("/friends", { username: a.username });
+  }
+  const ids = (body: { cards: { instanceId: number }[] }) => body.cards.map((c) => c.instanceId);
+
+  it("invite un ami, qui y pose ses propres cartes sans qu'aucune change de main", async () => {
+    const owner = await signUp(app);
+    const friend = await signUp(app);
+    const stranger = await signUp(app);
+    await befriend(owner, friend);
+    const [o1] = await withCards(owner);
+    const [f1, f2] = await withCards(friend);
+    const id = await create(owner, "À deux");
+    await owner.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: o1 }] });
+
+    // Seuls les amis peuvent être invités ; l'invité est prévenu et voit l'invitation.
+    expect((await owner.post(`/portfolios/${id}/members`, { username: stranger.username })).status).toBe(403);
+    const invited = await owner.post(`/portfolios/${id}/members`, { username: friend.username });
+    expect(invited.status).toBe(200);
+    expect(invited.body.invited.map((m: { username: string }) => m.username)).toEqual([friend.username]);
+    expect((await owner.post(`/portfolios/${id}/members`, { username: friend.username })).status).toBe(409);
+    // L'invitation figure parmi les notifications (un succès débloqué peut arriver juste après).
+    const notes = (await friend.get("/notifications")).body.items as { type: string }[];
+    expect(notes.map((n) => n.type)).toContain("portfolio_invite");
+    const invitations = await friend.get("/portfolios/invitations");
+    expect(invitations.body.map((p: { id: number; role: string }) => [p.id, p.role])).toEqual([[id, "invited"]]);
+
+    // Pas encore participant : il ne peut rien y poser.
+    expect((await friend.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: o1 }] })).status).toBe(403);
+    const joined = await friend.post(`/portfolios/${id}/join`);
+    expect(joined.body.role).toBe("member");
+    expect(joined.body.invited).toEqual([]);
+    expect((await owner.get("/notifications")).body.items[0].type).toBe("portfolio_joined");
+    expect((await friend.get("/portfolios/mine")).body.map((p: { id: number }) => p.id)).toContain(id);
+
+    // L'ami (contributeur par défaut) ajoute ses cartes, à la fin et hors vedette ; celle d'un autre est refusée,
+    // comme le retrait d'une carte qui n'est pas à lui.
+    expect(joined.body.rights).toBe("contributor");
+    const added = await friend.put(`/portfolios/${id}/cards`, {
+      cards: [{ instanceId: f1 }, { instanceId: o1 }, { instanceId: f2, featured: true }],
+    });
+    expect(added.status).toBe(200);
+    expect(added.body.cards.map((c: { by: string }) => c.by)).toEqual([
+      owner.username,
+      friend.username,
+      friend.username,
+    ]);
+    expect(added.body.cards.some((c: { featured: boolean }) => c.featured)).toBe(false);
+    const [s1] = await withCards(stranger);
+    expect(
+      (await friend.put(`/portfolios/${id}/cards`, { cards: [...added.body.cards, { instanceId: s1 }] })).status,
+    ).toBe(404);
+    expect((await friend.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: f1 }] })).status).toBe(403);
+    // Il ne touche ni au nom ni au design, et n'aime pas un portfolio auquel il participe.
+    expect((await friend.patch(`/portfolios/${id}`, { name: "Volé" })).status).toBe(403);
+    expect((await friend.post(`/portfolios/${id}/like`)).status).toBe(403);
+    const [row] = await ctx.db.select().from(schema.cardInstances).where(eq(schema.cardInstances.id, f1!));
+    expect(row!.ownerId).toBe(friend.userId);
+
+    // Le propriétaire peut retirer la carte de son ami ; l'ami retire la sienne.
+    const trimmed = await owner.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: o1 }, { instanceId: f2 }] });
+    expect(ids(trimmed.body)).toEqual([o1, f2]);
+
+    // Révocation : l'ami perd l'accès et ses cartes quittent le portfolio (elles restent à lui).
+    expect((await owner.del(`/portfolios/${id}/members/${friend.username}`)).status).toBe(200);
+    expect(ids((await owner.get(`/portfolios/${id}`)).body)).toEqual([o1]);
+    expect((await friend.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: o1 }] })).status).toBe(403);
+    expect((await friend.get("/portfolios/mine")).body.map((p: { id: number }) => p.id)).not.toContain(id);
+  });
+
+  it("limite le nombre de joueurs, laisse partir un participant et retire les anciens amis", async () => {
+    const owner = await signUp(app);
+    const id = await create(owner);
+    const friends: Client[] = [];
+    for (let i = 0; i < PORTFOLIO_SHARED_MAX_PLAYERS; i++) {
+      const f = await signUp(app);
+      await befriend(owner, f);
+      friends.push(f);
+    }
+    for (const f of friends.slice(0, PORTFOLIO_SHARED_MAX_PLAYERS - 1))
+      expect((await owner.post(`/portfolios/${id}/members`, { username: f.username })).status).toBe(200);
+    const full = await owner.post(`/portfolios/${id}/members`, { username: friends.at(-1)!.username });
+    expect(full.body.error).toBe("portfolio_members_full");
+
+    // Un invité refuse (ou un participant part) : il se retire lui-même ; il ne retire pas les autres.
+    const [a, b, c] = friends;
+    expect((await a!.del(`/portfolios/${id}/members/${a!.username}`)).status).toBe(200);
+    expect((await b!.del(`/portfolios/${id}/members/${c!.username}`)).status).toBe(403);
+    await b!.post(`/portfolios/${id}/join`);
+    const [card] = await withCards(b!);
+    await b!.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: card }] });
+    expect((await owner.get(`/portfolios/${id}`)).body.cardCount).toBe(1);
+
+    // Plus amis : il quitte le portfolio, avec ses cartes.
+    expect((await owner.del(`/friends/${b!.userId}`)).status).toBe(200);
+    const after = await owner.get(`/portfolios/${id}`);
+    expect(after.body.members).toEqual([]);
+    expect(after.body.cardCount).toBe(0);
+  });
+
+  it("donne des droits par invité : le contributeur ajoute, l'éditeur range et retire comme le propriétaire", async () => {
+    const owner = await signUp(app);
+    const editor = await signUp(app);
+    const helper = await signUp(app);
+    await befriend(owner, editor);
+    await befriend(owner, helper);
+    const [o1, o2] = await withCards(owner);
+    const [e1] = await withCards(editor);
+    const [h1] = await withCards(helper);
+    const id = await create(owner, "À trois");
+    await owner.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: o1, featured: true }, { instanceId: o2 }] });
+    const invited = await owner.post(`/portfolios/${id}/members`, { username: editor.username, role: "editor" });
+    expect(invited.body.invited.map((m: { role: string }) => m.role)).toEqual(["editor"]);
+    await owner.post(`/portfolios/${id}/members`, { username: helper.username });
+    await editor.post(`/portfolios/${id}/join`);
+    await helper.post(`/portfolios/${id}/join`);
+
+    // Seul le propriétaire change les droits.
+    expect((await helper.patch(`/portfolios/${id}/members/${helper.username}`, { role: "editor" })).status).toBe(403);
+    expect((await owner.patch(`/portfolios/${id}/members/${helper.username}`, { role: "boss" })).status).toBe(400);
+
+    // Le contributeur ajoute sa carte ; son nouvel ordre et sa vedette sont ignorés.
+    const mixed = await helper.put(`/portfolios/${id}/cards`, {
+      cards: [{ instanceId: h1, featured: true }, { instanceId: o2 }, { instanceId: o1 }],
+    });
+    expect(ids(mixed.body)).toEqual([o1, o2, h1]);
+    expect(mixed.body.cards.map((c: { featured: boolean }) => c.featured)).toEqual([true, false, false]);
+
+    // L'éditeur range tout, change la vedette et retire la carte du propriétaire.
+    const arranged = await editor.put(`/portfolios/${id}/cards`, {
+      cards: [{ instanceId: h1 }, { instanceId: e1, featured: true }, { instanceId: o1 }],
+    });
+    expect(arranged.status).toBe(200);
+    expect(ids(arranged.body)).toEqual([h1, e1, o1]);
+    expect(arranged.body.rights).toBe("editor");
+    // Mais ni le titre, ni le partage.
+    expect((await editor.patch(`/portfolios/${id}`, { name: "À moi" })).status).toBe(403);
+    expect((await editor.del(`/portfolios/${id}/members/${helper.username}`)).status).toBe(403);
+
+    // Rétrogradé en contributeur, il ne retire plus que ses cartes ; elles restent dans le portfolio.
+    const demoted = await owner.patch(`/portfolios/${id}/members/${editor.username}`, { role: "contributor" });
+    expect(demoted.body.members.find((m: { username: string }) => m.username === editor.username).role).toBe(
+      "contributor",
+    );
+    expect((await editor.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: e1 }] })).status).toBe(403);
+    expect(ids((await owner.get(`/portfolios/${id}`)).body)).toEqual([h1, e1, o1]);
+  });
+
+  it("laisse un participant épingler le portfolio partagé sur son propre profil", async () => {
+    const owner = await signUp(app);
+    const friend = await signUp(app);
+    const visitor = await signUp(app);
+    await befriend(owner, friend);
+    const [o1] = await withCards(owner);
+    const [f1] = await withCards(friend);
+    const shared = await create(owner, "Ensemble");
+    const solo = await create(friend, "À moi");
+    await owner.put(`/portfolios/${shared}/cards`, { cards: [{ instanceId: o1 }] });
+    await friend.put(`/portfolios/${solo}/cards`, { cards: [{ instanceId: f1 }] });
+    await owner.put("/portfolios/profile", { ids: [shared] });
+
+    // Une invitation pas encore acceptée ne suffit pas.
+    await owner.post(`/portfolios/${shared}/members`, { username: friend.username });
+    expect((await friend.put("/portfolios/profile", { ids: [shared] })).status).toBe(404);
+    await friend.post(`/portfolios/${shared}/join`);
+
+    expect((await friend.put("/portfolios/profile", { ids: [shared, solo] })).status).toBe(200);
+    const onProfile = await visitor.get(`/players/${friend.username}/portfolios`);
+    expect(onProfile.body.map((p: { id: number }) => p.id)).toEqual([shared, solo]);
+    // Sa place ne touche pas celle du propriétaire.
+    const mine = await friend.get("/portfolios/mine");
+    expect(mine.body.find((p: { id: number }) => p.id === shared).profileSlot).toBe(1);
+    expect((await owner.get("/portfolios/mine")).body.find((p: { id: number }) => p.id === shared).profileSlot).toBe(1);
+    await friend.put("/portfolios/profile", { ids: [solo, shared] });
+    expect((await visitor.get(`/players/${friend.username}/portfolios`)).body.map((p: { id: number }) => p.id)).toEqual(
+      [solo, shared],
+    );
+
+    // Réservé aux participants : il quitte les deux profils.
+    await owner.patch(`/portfolios/${shared}`, { visibility: "members" });
+    expect((await visitor.get(`/players/${friend.username}/portfolios`)).body.map((p: { id: number }) => p.id)).toEqual(
+      [solo],
+    );
+    expect((await friend.get("/portfolios/mine")).body.find((p: { id: number }) => p.id === shared).profileSlot).toBe(
+      null,
+    );
+  });
+
+  it("cache aux autres un portfolio réservé à ses participants", async () => {
+    const owner = await signUp(app);
+    const friend = await signUp(app);
+    const visitor = await signUp(app);
+    await befriend(owner, friend);
+    const [card] = await withCards(owner);
+    const id = await create(owner, "Entre nous");
+    await owner.put(`/portfolios/${id}/cards`, { cards: [{ instanceId: card }] });
+    await owner.put("/portfolios/profile", { ids: [id] });
+    await owner.post(`/portfolios/${id}/members`, { username: friend.username });
+    expect((await visitor.get(`/portfolios/${id}`)).status).toBe(200);
+
+    const hidden = await owner.patch(`/portfolios/${id}`, { visibility: "members" });
+    expect(hidden.body.visibility).toBe("members");
+    expect(hidden.body.profileSlot).toBeNull();
+    expect((await visitor.get(`/portfolios/${id}`)).status).toBe(404);
+    expect((await visitor.post(`/portfolios/${id}/like`)).status).toBe(404);
+    expect((await visitor.get(`/players/${owner.username}/portfolios`)).body).toEqual([]);
+    const community = await visitor.get("/portfolios");
+    expect(community.body.items.map((p: { id: number }) => p.id)).not.toContain(id);
+    expect((await owner.put("/portfolios/profile", { ids: [id] })).status).toBe(404);
+    // L'invité le voit, pour décider.
+    expect((await friend.get(`/portfolios/${id}`)).status).toBe(200);
   });
 });
