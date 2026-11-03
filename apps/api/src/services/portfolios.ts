@@ -602,7 +602,7 @@ const DESIGN_ACHIEVEMENTS = PORTFOLIO_DESIGNS.flatMap((d) =>
  * maintenant sont enregistrés au passage (ils lui restent ensuite).
  */
 export async function designsOf(db: DbOrTx, userId: string): Promise<Set<string>> {
-  const [rows, unlocked, events] = await Promise.all([
+  const [rows, unlocked, archived, events] = await Promise.all([
     db
       .select({ key: schema.playerPortfolioDesigns.designKey })
       .from(schema.playerPortfolioDesigns)
@@ -617,12 +617,22 @@ export async function designsOf(db: DbOrTx, userId: string): Promise<Set<string>
           isNotNull(schema.achievementsProgress.unlockedAt),
         ),
       ),
+    // Succès des saisons terminées (remis à zéro à chaque saison) : un design déjà mérité reste acquis.
+    db
+      .select({ key: schema.achievementArchives.achievementKey })
+      .from(schema.achievementArchives)
+      .where(
+        and(
+          eq(schema.achievementArchives.userId, userId),
+          inArray(schema.achievementArchives.achievementKey, DESIGN_ACHIEVEMENTS),
+        ),
+      ),
     db.execute<{ day: string }>(sql`select distinct day::text as day from boss_assaults where user_id = ${userId}`),
   ]);
   const days = events.map((e) => e.day);
   const { have, earned } = eligibleDesigns({
     owned: rows.map((r) => r.key),
-    unlockedAchievements: new Set(unlocked.map((u) => u.key)),
+    unlockedAchievements: new Set([...unlocked, ...archived].map((u) => u.key)),
     eventPlayed: (from, to) => days.some((d) => d >= from && d <= to),
   });
   if (earned.length)

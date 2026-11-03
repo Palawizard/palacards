@@ -37,7 +37,7 @@ const DATA: { what: string; detail: string; kept: string }[] = [
   {
     what: "Partie",
     detail:
-      "Cartes, points wiki et leur historique, paquets, enchères, échanges, duels et réponses aux quiz, assauts du boss (heure d'envoi, d'affichage et de réponse de chaque question), succès, classements par saison.",
+      "Cartes, points wiki et leur historique, paquets, enchères, échanges, duels et réponses aux quiz, assauts du boss (heure d'envoi, d'affichage et de réponse de chaque question), succès (ceux des saisons passées compris), classements par saison.",
     kept: "Jusqu'à la suppression du compte",
   },
   {

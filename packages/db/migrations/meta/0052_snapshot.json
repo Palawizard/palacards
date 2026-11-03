@@ -1,5 +1,5 @@
 {
-  "id": "2937aaa7-a954-44f5-8617-c4305949d02a",
+  "id": "c80a4b15-08ad-4b92-a34c-f9cb91bf3598",
   "prevId": "5eec94c1-b111-41f7-9ddf-67ba27d27de5",
   "version": "7",
   "dialect": "postgresql",
@@ -121,6 +121,82 @@
         }
       },
       "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.achievement_archives": {
+      "name": "achievement_archives",
+      "schema": "",
+      "columns": {
+        "season": {
+          "name": "season",
+          "type": "smallint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "achievement_key": {
+          "name": "achievement_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unlocked_at": {
+          "name": "unlocked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "achievement_archives_user_idx": {
+          "name": "achievement_archives_user_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "achievement_archives_user_id_user_id_fk": {
+          "name": "achievement_archives_user_id_user_id_fk",
+          "tableFrom": "achievement_archives",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "achievement_archives_season_user_id_achievement_key_pk": {
+          "name": "achievement_archives_season_user_id_achievement_key_pk",
+          "columns": [
+            "season",
+            "user_id",
+            "achievement_key"
+          ]
+        }
+      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -5224,95 +5300,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.portfolio_members": {
-      "name": "portfolio_members",
-      "schema": "",
-      "columns": {
-        "portfolio_id": {
-          "name": "portfolio_id",
-          "type": "bigint",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "invited_at": {
-          "name": "invited_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "joined_at": {
-          "name": "joined_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "portfolio_members_user_idx": {
-          "name": "portfolio_members_user_idx",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "portfolio_members_portfolio_id_portfolios_id_fk": {
-          "name": "portfolio_members_portfolio_id_portfolios_id_fk",
-          "tableFrom": "portfolio_members",
-          "tableTo": "portfolios",
-          "columnsFrom": [
-            "portfolio_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "portfolio_members_user_id_user_id_fk": {
-          "name": "portfolio_members_user_id_user_id_fk",
-          "tableFrom": "portfolio_members",
-          "tableTo": "user",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "portfolio_members_portfolio_id_user_id_pk": {
-          "name": "portfolio_members_portfolio_id_user_id_pk",
-          "columns": [
-            "portfolio_id",
-            "user_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.portfolios": {
       "name": "portfolios",
       "schema": "",
@@ -5373,13 +5360,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'or'"
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'public'"
         },
         "profile_slot": {
           "name": "profile_slot",

@@ -51,7 +51,7 @@ export default function AchievementsPage() {
         <h1 className="page-title">Succès</h1>
         <p className="hatnote tnum mt-2">
           {data
-            ? `${unlocked.length} succès débloqués sur ${data.length}, ${fmt(earned)} PW gagnés. Chaque famille a plusieurs paliers, de bronze à diamant.`
+            ? `${unlocked.length} succès débloqués sur ${data.length}, ${fmt(earned)} PW gagnés. Chaque famille a plusieurs paliers, de bronze à diamant. Les succès repartent de zéro à chaque saison, et leurs récompenses se regagnent.`
             : "Chargement…"}
         </p>
       </div>

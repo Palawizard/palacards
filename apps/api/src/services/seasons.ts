@@ -34,7 +34,9 @@ export async function seasonStatus(ctx: Ctx) {
  * 1. les cartes de la saison suivante viennent de l'import (`load_cards.sql -v season=N+1`) ;
  *    à défaut, on reconduit les cartes de la saison en cours (nouvelles clés de tirage) ;
  * 2. archivage des classements de la saison (collection, Elo, richesse, guilde) et titres de leurs premiers ;
- * 3. remise à zéro de l'Elo de saison (le meilleur Elo historique est conservé) ;
+ * 3. remise à zéro de l'Elo de saison (le meilleur Elo historique est conservé) et des succès : leurs paliers
+ *    débloqués sont archivés (`achievement_archives`), statistiques et progression repartent de zéro, et chaque
+ *    palier se regagne avec sa récompense ;
  * 4. activation de la nouvelle saison jusqu'au 1er du mois suivant (heure de Paris).
  * Les exemplaires déjà possédés gardent leurs stats et leur tampon d'édition.
  * `onlyIfDue` (job mensuel, relancé en cas d'échec) : ne bascule que si la saison active est échue,
@@ -79,6 +81,14 @@ export async function rolloverSeason(ctx: Ctx, options: { onlyIfDue?: boolean; e
     // minuscules) ; sinon deux ordres opposés sur des ids à casse mixte peuvent s'interbloquer.
     await tx.execute(sql`select user_id from players order by ${PLAYER_LOCK_ORDER} for update`);
     await tx.update(schema.players).set({ elo: ELO_START });
+    // Succès de la saison archivés (après les titres : le classement « Succès » les lit encore), puis remis à zéro.
+    await tx.execute(sql`
+      insert into achievement_archives (season, user_id, achievement_key, unlocked_at)
+      select ${current.id}, user_id, achievement_key, unlocked_at from achievements_progress where unlocked_at is not null
+      on conflict do nothing
+    `);
+    await tx.delete(schema.achievementsProgress);
+    await tx.delete(schema.playerStats);
     await tx
       .update(schema.seasons)
       .set({ status: "archived", endsAt: ctx.now() })
