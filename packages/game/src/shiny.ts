@@ -17,7 +17,7 @@ export function rollShiny(randomInt: RandomInt, chance = SHINY_CHANCE): boolean 
 }
 
 /** Systèmes hors paquets qui donnent une carte : upgrader (réussite), roues du jour (lot carte), boutique (achat). */
-export type ShinySource = "upgrade" | "wheel" | "shop";
+export type ShinySource = "upgrade" | "wheel" | "shop" | "case";
 
 /**
  * Chance de brillance (sur `SHINY_TOTAL`) d'une carte donnée par chaque système hors paquets : 0 = jamais
@@ -27,6 +27,7 @@ export const SHINY_SOURCE_CHANCE: Record<ShinySource, number> = {
   upgrade: SHINY_CHANCE,
   wheel: SHINY_CHANCE,
   shop: SHINY_CHANCE,
+  case: SHINY_CHANCE,
 };
 
 /**
@@ -37,6 +38,7 @@ export const SHINY_SOURCE_COUNTS: Record<ShinySource, boolean> = {
   upgrade: true,
   wheel: true,
   shop: true,
+  case: true,
 };
 
 /** Tirage de brillance d'une carte donnée par un système hors paquets (aucun tirage si le système n'en donne pas). */

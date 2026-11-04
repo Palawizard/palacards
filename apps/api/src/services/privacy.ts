@@ -157,6 +157,9 @@ export async function exportData(ctx: Ctx, userId: string) {
       .from(s.playerPortfolioDesigns)
       .where(eq(s.playerPortfolioDesigns.userId, userId)),
     portfolioLikes: await db.select().from(s.portfolioLikes).where(eq(s.portfolioLikes.userId, userId)),
+    // Caisses (suggestion n° 126) : ouvertures et caisses gratuites en attente.
+    caseOpenings: await db.select().from(s.caseOpenings).where(eq(s.caseOpenings.userId, userId)),
+    freeCases: await db.select().from(s.playerFreeCases).where(eq(s.playerFreeCases.userId, userId)),
     // Portfolios partagés d'amis : invitations reçues et participations.
     portfolioMemberships: await db.select().from(s.portfolioMembers).where(eq(s.portfolioMembers.userId, userId)),
     // Admin : cartes ajoutées ou retirées à la main d'un filtre d'images.

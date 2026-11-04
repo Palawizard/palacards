@@ -89,6 +89,7 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "suggestions", until: "2026-12-01T00:00:00+01:00" },
   { key: "updates", until: "2026-12-01T00:00:00+01:00" },
   { key: "wheels", until: "2026-12-01T00:00:00+01:00" },
+  { key: "cases", until: "2026-12-15T00:00:00+01:00" },
   { key: "battle-decks", until: "2026-12-15T00:00:00+01:00" },
   { key: "boss-v2", until: "2026-12-31T00:00:00+01:00" },
   { key: "leaderboard-achievements", until: "2026-12-31T00:00:00+01:00" },

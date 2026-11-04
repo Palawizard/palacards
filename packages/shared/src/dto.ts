@@ -1,4 +1,4 @@
-import type { AutoRecycleRarity, DailyLoginRates, Rarity, WheelReward, WheelTier } from "@palacards/game";
+import type { AutoRecycleRarity, CaseTier, DailyLoginRates, Rarity, WheelReward, WheelTier } from "@palacards/game";
 import type { PackState, Wallet } from "./events.js";
 import type { SuggestionKind, SuggestionStatus } from "./schemas.js";
 
@@ -356,7 +356,7 @@ export interface QuestsDTO {
 
 export interface PassLevelDTO {
   level: number;
-  reward: { pw: number; packs: number };
+  reward: { pw: number; packs: number; case?: CaseTier };
 }
 
 export interface PassDTO {
@@ -892,4 +892,81 @@ export interface PortfolioDesignItemDTO {
   /** Condition à remplir (succès, évènement). */
   condition: string | null;
   owned: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Caisses (suggestion n° 126)
+// ---------------------------------------------------------------------------
+
+/** Carte du contenu d'une caisse, avec sa chance de sortir seule (sur 1, lots non compris). */
+export type CaseCardDTO = CardDTO & { chance: number };
+
+/** Issue possible : une carte de cette rareté, ou un lot de `lot` légendaires ; `chance` sur 1. */
+export interface CaseOutcomeDTO {
+  rarity: Rarity;
+  lot: number;
+  chance: number;
+}
+
+export interface CaseDTO {
+  id: number;
+  collection: string;
+  tier: CaseTier;
+  price: number;
+  startsAt: string;
+  endsAt: string;
+  cards: CaseCardDTO[];
+  outcomes: CaseOutcomeDTO[];
+  /** Valeur de recyclage moyenne d'une ouverture (PW). */
+  expectedValue: number;
+}
+
+/** Thème de la semaine et ses caisses, du Bronze à la Légendaire. */
+export interface CaseCollectionDTO {
+  name: string;
+  endsAt: string;
+  cases: CaseDTO[];
+}
+
+/** Gros tirage récent (une légendaire ou mieux), pour la page. */
+export interface CaseWinDTO {
+  id: number;
+  player: { username: string; displayName: string; avatar: string | null };
+  collection: string;
+  tier: CaseTier;
+  rarity: Rarity;
+  lot: number;
+  value: number;
+  /** Première carte sortie (la plus lue pour un lot). */
+  card: CardDTO | null;
+  createdAt: string;
+}
+
+export interface CasesDTO {
+  collections: CaseCollectionDTO[];
+  /** Caisses gratuites du joueur par niveau (roues, passe). */
+  free: Record<CaseTier, number>;
+  recent: CaseWinDTO[];
+}
+
+/** Case de la bande qui défile : une carte du contenu (par `cardId`) ou un lot de légendaires. */
+export type CaseTileDTO = { kind: "card"; cardId: number } | { kind: "lot"; lot: number };
+
+export interface CaseResultDTO {
+  tiles: CaseTileDTO[];
+  /** Position de la case gagnante dans `tiles`. */
+  winIndex: number;
+  rarity: Rarity;
+  lot: number;
+  /** Exemplaires gagnés (un, ou le lot). */
+  cards: CardDTO[];
+  value: number;
+}
+
+export interface CaseOpenDTO {
+  results: CaseResultDTO[];
+  free: Record<CaseTier, number>;
+  wallet: Wallet;
+  /** Gratuite utilisée plutôt que des PW. */
+  usedFree: boolean;
 }

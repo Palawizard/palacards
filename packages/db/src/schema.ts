@@ -326,7 +326,7 @@ export const cardInstances = pgTable(
     pinnedSlot: smallint("pinned_slot"),
     /** `upgrade` (upgrader) et `wheel` (roue quotidienne) comptent, comme `pack`, pour les succès de collection. */
     source: text("source", {
-      enum: ["pack", "market", "trade", "admin", "upgrade", "wheel", "boss", "shop"],
+      enum: ["pack", "market", "trade", "admin", "upgrade", "wheel", "boss", "shop", "case"],
     }).notNull(),
     obtainedAt: tstz("obtained_at").notNull().defaultNow(),
   },
@@ -406,7 +406,7 @@ export const ledger = pgTable(
   {
     id: id(),
     userId: userRef("user_id").notNull(),
-    kind: text("kind", { enum: ["pw", "bonus_pack", "pack", "card", "theme_pack"] })
+    kind: text("kind", { enum: ["pw", "bonus_pack", "pack", "card", "theme_pack", "free_case"] })
       .notNull()
       .default("pw"),
     delta: bigint("delta", { mode: "number" }).notNull(),
@@ -649,6 +649,84 @@ export const playerThemePacks = pgTable(
     index("player_theme_packs_theme_idx").on(t.themeId),
     check("player_theme_packs_count_ok", sql`${t.count} >= 0`),
     check("player_theme_packs_opened_ok", sql`${t.opened} >= 0`),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// Caisses (suggestion n° 126, « case opening » à la CS) : règles et chances dans packages/game/src/cases.ts
+// ---------------------------------------------------------------------------
+
+/**
+ * Caisse en vente : un thème de la semaine (`collection`, commun à ses quatre niveaux) à un niveau
+ * (bronze, silver, gold, legendary). Le prix et les chances viennent du niveau (code du jeu).
+ */
+export const caseBoxes = pgTable(
+  "cases",
+  {
+    id: id(),
+    collection: text("collection").notNull(),
+    tier: text("tier", { enum: ["bronze", "silver", "gold", "legendary"] }).notNull(),
+    /** Saison des cartes de la caisse : elle n'est plus en vente dans une autre saison. */
+    season: smallint("season").notNull(),
+    startsAt: tstz("starts_at").notNull(),
+    endsAt: tstz("ends_at").notNull(),
+    createdBy: text("created_by"),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("cases_ends_idx").on(t.endsAt),
+    check("cases_dates_ok", sql`${t.endsAt} > ${t.startsAt}`),
+  ],
+);
+
+/** Contenu visible d'une caisse : chaque carte et sa rareté (figée à la création), dans l'ordre d'affichage. */
+export const caseCards = pgTable(
+  "case_cards",
+  {
+    caseId: bigint("case_id", { mode: "number" })
+      .notNull()
+      .references(() => caseBoxes.id, { onDelete: "cascade" }),
+    cardId: bigint("card_id", { mode: "number" }).notNull(),
+    rarity: rarityEnum("rarity").notNull(),
+    pos: smallint("pos").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.caseId, t.cardId] })],
+);
+
+/** Caisses gratuites d'un joueur (roues, passe), à ouvrir dans n'importe quelle caisse en vente de ce niveau. */
+export const playerFreeCases = pgTable(
+  "player_free_cases",
+  {
+    userId: userRef("user_id").notNull(),
+    tier: text("tier", { enum: ["bronze", "silver", "gold", "legendary"] }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.tier] }), check("player_free_cases_count_ok", sql`${t.count} >= 0`)],
+);
+
+/** Ouvertures : ce qui est sorti, pour l'historique du joueur et les gros tirages de la page. */
+export const caseOpenings = pgTable(
+  "case_openings",
+  {
+    id: id(),
+    userId: userRef("user_id").notNull(),
+    caseId: bigint("case_id", { mode: "number" })
+      .notNull()
+      .references(() => caseBoxes.id, { onDelete: "cascade" }),
+    /** Caisse gratuite (roue, passe) plutôt que payée. */
+    free: boolean("free").notNull(),
+    price: integer("price").notNull(),
+    /** Issue tirée : rareté et taille du lot (1 : une seule carte). */
+    rarity: rarityEnum("rarity").notNull(),
+    lot: smallint("lot").notNull(),
+    /** Valeur de recyclage de ce qui est sorti (brillances comprises). */
+    value: integer("value").notNull(),
+    instanceIds: jsonb("instance_ids").$type<number[]>().notNull(),
+    createdAt: tstz("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("case_openings_user_idx").on(t.userId, t.createdAt),
+    index("case_openings_value_idx").on(t.value, t.createdAt),
   ],
 );
 
@@ -1264,7 +1342,7 @@ export const pulls = pgTable(
     rarity: rarityEnum("rarity").notNull(),
     shiny: boolean("shiny").notNull().default(false),
     /** `shop` : légendaire achetée en boutique (fil d'activité « achetée en boutique », jamais comptée comme un tirage). */
-    source: text("source", { enum: ["pack", "theme", "wheel", "upgrade", "boss", "shop"] }).notNull(),
+    source: text("source", { enum: ["pack", "theme", "wheel", "upgrade", "boss", "shop", "case"] }).notNull(),
     /** Genres « bizarres » repérés au tirage par les mots-clés du titre (les catégories sont lues à part). */
     genres: text("genres")
       .array()

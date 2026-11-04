@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CASE_PRICES } from "./cases.js";
 import {
   rollWheel,
   WHEEL_GAP_MS,
@@ -10,7 +11,7 @@ import {
   type WheelTier,
 } from "./wheel.js";
 
-/** Valeur indicative d'un lot (paquet 150 PW, booster 200, UR 250, légendaire 1 500). */
+/** Valeur indicative d'un lot (paquet 150 PW, booster 200, UR 250, légendaire 1 500, caisse = son prix). */
 const value = (r: WheelReward) =>
   r.kind === "pw"
     ? r.amount
@@ -18,9 +19,11 @@ const value = (r: WheelReward) =>
       ? r.amount * 150
       : r.kind === "theme"
         ? r.amount * 200
-        : r.rarity === "UR"
-          ? 250
-          : 1_500;
+        : r.kind === "case"
+          ? CASE_PRICES[r.tier]
+          : r.rarity === "UR"
+            ? 250
+            : 1_500;
 const expected = (tier: WheelTier) => WHEELS[tier].reduce((s, x) => s + (value(x.reward) * x.weight) / WHEEL_TOTAL, 0);
 
 describe("roues du jour", () => {
@@ -42,6 +45,16 @@ describe("roues du jour", () => {
     // Plus petit lot de chaque roue : au moins le gros lot de l'ancienne roue unique (100 PW).
     for (const tier of WHEEL_TIERS)
       expect(Math.min(...WHEELS[tier].map((s) => value(s.reward)))).toBeGreaterThanOrEqual(100);
+  });
+
+  it("donne une caisse gratuite par roue, de plus en plus chère, sans changer la valeur de la roue", () => {
+    const caseOf = (tier: WheelTier) => WHEELS[tier].find((s) => s.reward.kind === "case")!;
+    expect(caseOf("small").reward).toEqual({ kind: "case", tier: "bronze" });
+    expect(caseOf("medium").reward).toEqual({ kind: "case", tier: "silver" });
+    expect(caseOf("large").reward).toEqual({ kind: "case", tier: "gold" });
+    expect(expected("small")).toBeCloseTo(230, -1);
+    expect(expected("medium")).toBeGreaterThan(340);
+    expect(expected("large")).toBeGreaterThan(700);
   });
 
   it("tire chaque case selon son poids (bornes des intervalles)", () => {

@@ -16,6 +16,7 @@ import { conflict } from "../errors.js";
 import { instancesByIds, loadMediaInBackground } from "./cards.js";
 import { announcePulls, logPulls } from "./feed.js";
 import { afterCommit } from "./notifications.js";
+import { addFreeCases } from "./free-cases.js";
 import { drawCard } from "./packs.js";
 import {
   activeSeason,
@@ -133,6 +134,9 @@ export async function spinWheel(ctx: Ctx, userId: string): Promise<WheelSpinDTO>
       prize = reward;
     } else if (reward.kind === "packs") {
       await addBonusPacks(tx, p, reward.amount, ref);
+      prize = reward;
+    } else if (reward.kind === "case") {
+      await addFreeCases(tx, userId, reward.tier, 1, "wheel", ref);
       prize = reward;
     } else if (reward.kind === "theme") {
       const theme = await endingSoonestTheme(tx, now);
