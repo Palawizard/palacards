@@ -1520,6 +1520,13 @@
   --wheel-accent: #e0a526;
 }
 
+/* Cases « caisse » de la roue : la couleur du coffret (voir cases.css). */
+.pc-wheel-stage {
+  --wheel-case-bronze: #93552b;
+  --wheel-case-silver: #7d8699;
+  --wheel-case-gold: #b8870f;
+}
+
 /* La roue grandit avec son rang (la grande prend toute la place). */
 .pc-wheel-stage {
   position: relative;

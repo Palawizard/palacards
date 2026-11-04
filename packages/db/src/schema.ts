@@ -673,10 +673,7 @@ export const caseBoxes = pgTable(
     createdBy: text("created_by"),
     createdAt: tstz("created_at").notNull().defaultNow(),
   },
-  (t) => [
-    index("cases_ends_idx").on(t.endsAt),
-    check("cases_dates_ok", sql`${t.endsAt} > ${t.startsAt}`),
-  ],
+  (t) => [index("cases_ends_idx").on(t.endsAt), check("cases_dates_ok", sql`${t.endsAt} > ${t.startsAt}`)],
 );
 
 /** Contenu visible d'une caisse : chaque carte et sa rareté (figée à la création), dans l'ordre d'affichage. */
