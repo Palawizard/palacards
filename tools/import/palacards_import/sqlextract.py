@@ -13,14 +13,19 @@ import re
 from collections.abc import Iterable, Iterator
 from typing import BinaryIO
 
-_FIRST_ID = re.compile(rb"VALUES \((\d+),")
+_FIRST_ID = re.compile(rb"^\((\d+),")
 _STR = rb"'(?:[^'\\]|\\.)*'"
 
 
 def _lines(stream: BinaryIO, table: str, expected_columns: list[str]) -> Iterator[bytes]:
-    """Lignes INSERT de `table`, après avoir vérifié les colonnes du CREATE TABLE."""
-    prefix = f"INSERT INTO `{table}` VALUES ".encode()
+    """Lignes de valeurs des INSERT de `table`, après avoir vérifié les colonnes du CREATE TABLE.
+
+    Deux formats : l'ancien (`INSERT … VALUES (…),(…);` sur une seule ligne) et celui des dumps de
+    novembre 2026 (`INSERT … VALUES` seul sur sa ligne, puis un tuple par ligne jusqu'au `;`).
+    """
+    prefix = f"INSERT INTO `{table}` VALUES".encode()
     columns: list[str] = []
+    inside = False
     with gzip.open(stream, "rb") as f:
         for line in f:
             if line.startswith(b"  `"):
@@ -28,7 +33,16 @@ def _lines(stream: BinaryIO, table: str, expected_columns: list[str]) -> Iterato
             elif line.startswith(prefix):
                 if columns[: len(expected_columns)] != expected_columns:
                     raise SystemExit(f"Format inattendu pour `{table}` : {columns} (attendu {expected_columns})")
-                yield line
+                rest = line[len(prefix) :].strip()
+                inside = not rest.endswith(b";")
+                if rest:
+                    yield rest
+            elif inside:
+                if line.startswith(b"("):
+                    yield line
+                    inside = not line.rstrip().endswith(b";")
+                else:
+                    inside = False
 
 
 def _stop(line: bytes, max_page: int | None) -> bool:

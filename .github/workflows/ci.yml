@@ -125,7 +125,9 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: tools/import/pyproject.toml
+          cache-dependency-path: |
+            tools/import/pyproject.toml
+            tools/themes/pyproject.toml
 
       - name: Dépendances
         run: pip install -e ".[dev]"
@@ -134,4 +136,13 @@ jobs:
         # DATABASE_URL : vérifie aussi dans Postgres (numeric) la formule des paliers de finish_card_load.
         env:
           DATABASE_URL: postgres://palacards:change-me@localhost:5433/palacards
+        run: pytest -q
+
+      # Atelier des boosters à thème (tools/themes) : fiche YAML, sélection DuckDB, script de création.
+      - name: Atelier des thèmes (dépendances)
+        working-directory: tools/themes
+        run: pip install -e ".[dev]"
+
+      - name: Atelier des thèmes (tests)
+        working-directory: tools/themes
         run: pytest -q

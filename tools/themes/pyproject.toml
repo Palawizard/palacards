@@ -1,0 +1,26 @@
+[project]
+name = "palacards-themes"
+version = "0.1.0"
+description = "Atelier des boosters à thème de PalaCards : index local (catégories, Wikidata), fiche YAML, aperçu, création"
+requires-python = ">=3.11"
+dependencies = [
+  "duckdb>=1.2",
+  "pyyaml>=6",
+  "requests>=2.32",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.8"]
+
+[project.scripts]
+palacards-themes = "palacards_themes.cli:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["palacards_themes"]
+
+[tool.ruff]
+line-length = 110
