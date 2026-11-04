@@ -15,6 +15,7 @@ describe("menu : nouveautés et paquets à ouvrir", () => {
       "suggestions",
       "updates",
       "wheels",
+      "cases",
       "battle-decks",
       "boss-v2",
       "leaderboard-achievements",

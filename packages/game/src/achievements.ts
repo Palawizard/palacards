@@ -46,6 +46,8 @@ export type GameEvent =
   | { type: "daily_login" }
   | { type: "friends"; count: number }
   | { type: "wheel_spun" }
+  /** Caisses ouvertes d'un coup (suggestion n° 126). */
+  | { type: "case_opened"; count: number }
   | { type: "recycled"; rarities: Rarity[] }
   | { type: "upgrade"; success: boolean }
   /** Brillantes obtenues hors paquets (upgrader, roue, boutique) : succès « Ça brille ! » selon `SHINY_SOURCE_COUNTS`. */

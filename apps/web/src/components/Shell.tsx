@@ -76,7 +76,9 @@ function Portal({ onNavigate }: { onNavigate?: () => void }) {
                         ? me.quests.total - me.quests.done
                         : item.badge === "suggestions"
                           ? (me?.newSuggestions ?? 0)
-                          : 0;
+                          : item.badge === "cases"
+                            ? (me?.freeCases ?? 0)
+                            : 0;
                 // Joueurs dans la file de matchmaking : pastille verte, distincte des compteurs jaunes.
                 const queue = item.badge === "battle" ? (me?.battleQueue ?? 0) : 0;
                 const isNew = !!item.feature && !!me?.newFeatures.includes(item.feature);

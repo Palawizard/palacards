@@ -39,6 +39,7 @@ import {
   upgradeSeriesHistory,
   upgradeSeriesPreview,
 } from "../services/upgrade.js";
+import { casesState, openCase } from "../services/cases.js";
 import { spinWheel, wheelState } from "../services/wheel.js";
 
 const id = z.coerce.number().int().positive();
@@ -240,6 +241,16 @@ export function economyRoutes(api: FastifyInstance, ctx: Ctx) {
   api.get("/upgrade/series/history", auth, async (req) => upgradeSeriesHistory(ctx, req.user.id));
   api.get("/wheel", auth, async (req) => wheelState(ctx, req.user.id));
   api.post("/wheel/spin", limited(10), async (req) => spinWheel(ctx, req.user.id));
+  // Caisses (suggestion n° 126) : contenu visible, une issue par ouverture, ×5 d'un coup.
+  api.get("/cases", auth, async (req) => casesState(ctx, req.user.id));
+  api.post("/cases/:id/open", limited(60), async (req) => {
+    const { id } = parse(idParams, req.params);
+    const b = parse(
+      z.object({ count: z.union([z.literal(1), z.literal(5)]).default(1), free: z.boolean().default(false) }),
+      req.body ?? {},
+    );
+    return openCase(ctx, req.user.id, id, b.count, b.free);
+  });
   // Limite serrée : pas de devinette de codes à la chaîne.
   api.post("/codes/redeem", limited(10), async (req) => {
     const { code } = parse(z.object({ code: z.string().trim().min(1).max(40) }), req.body);

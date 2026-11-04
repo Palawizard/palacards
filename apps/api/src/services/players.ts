@@ -71,7 +71,9 @@ export type LedgerReason =
   | "community_goal"
   | "shop_purchase"
   | "higher_lower"
-  | "portfolio_design";
+  | "portfolio_design"
+  | "case_purchase"
+  | "case_open";
 
 /**
  * Change le solde de PW d'un joueur verrouillé et écrit la ligne de ledger correspondante.
@@ -162,7 +164,7 @@ export async function transferInstances(
 export async function logMovement(
   tx: Tx,
   userId: string,
-  kind: "card" | "pack" | "bonus_pack" | "theme_pack",
+  kind: "card" | "pack" | "bonus_pack" | "theme_pack" | "free_case",
   delta: number,
   balanceAfter: number,
   reason: LedgerReason,

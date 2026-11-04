@@ -56,6 +56,8 @@ const REASONS: Record<string, string> = {
   guild_objective: "Objectif de guilde",
   upgrade: "Upgrader",
   wheel: "Roues du jour",
+  case_purchase: "Caisse",
+  case_open: "Caisse gratuite",
   promo_code: "Code promo",
   theme_pack: "Booster à thème",
   quest: "Quête",

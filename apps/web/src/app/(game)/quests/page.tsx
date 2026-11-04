@@ -1,5 +1,6 @@
 "use client";
 
+import { CASE_TIER_LABELS, PASS_OVERFLOW_CASE_EVERY, passReward, type CaseTier } from "@palacards/game";
 import type { PassDTO, QuestDTO, QuestsDTO } from "@palacards/shared";
 import { ArrowRight, Check, Package, Shuffle } from "lucide-react";
 import Link from "next/link";
@@ -22,8 +23,12 @@ const TIER_LABEL: Record<QuestDTO["tier"], string> = {
   weekly: "Semaine",
 };
 
-const rewardText = (r: { pw: number; packs: number }) =>
-  [r.pw ? `${fmt(r.pw)} PW` : "", r.packs ? `${r.packs} paquet${r.packs > 1 ? "s" : ""}` : ""]
+const rewardText = (r: { pw: number; packs: number; case?: CaseTier }) =>
+  [
+    r.pw ? `${fmt(r.pw)} PW` : "",
+    r.packs ? `${r.packs} paquet${r.packs > 1 ? "s" : ""}` : "",
+    r.case ? `une caisse ${CASE_TIER_LABELS[r.case]}` : "",
+  ]
     .filter(Boolean)
     .join(" + ");
 
@@ -137,7 +142,7 @@ function LoyaltyCard({ pass }: { pass: PassDTO }) {
   const last = face === "recto" ? pass.halfLevel : pass.maxLevel;
   const full = pass.level >= pass.maxLevel;
   const extra = Math.max(0, pass.level - pass.maxLevel);
-  const nextReward = pass.levels[pass.level]?.reward ?? { pw: pass.overflowPw, packs: 0 };
+  const nextReward = pass.levels[pass.level]?.reward ?? passReward(pass.level + 1);
   const pct = pass.need ? Math.round((pass.into / pass.need) * 100) : 100;
 
   return (
@@ -152,7 +157,8 @@ function LoyaltyCard({ pass }: { pass: PassDTO }) {
           </h2>
           <p className="mt-1.5 max-w-prose text-sm text-cover-muted">
             Un tampon par niveau : cent cases au recto, cent au verso. Carte pleine, chaque niveau en plus rapporte{" "}
-            {fmt(pass.overflowPw)}&nbsp;PW. Tout repart à zéro à chaque nouvelle saison.
+            {fmt(pass.overflowPw)}&nbsp;PW, et une caisse Bronze tous les {PASS_OVERFLOW_CASE_EVERY} niveaux. Tout
+            repart à zéro à chaque nouvelle saison.
           </p>
         </div>
         <div className="text-right">

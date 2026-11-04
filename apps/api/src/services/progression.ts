@@ -33,6 +33,7 @@ import {
   type DbOrTx,
   type Player,
 } from "./players.js";
+import { addFreeCases } from "./free-cases.js";
 import { afterCommit, Effects } from "./notifications.js";
 import { bannersOf } from "./banners.js";
 import { battleRewarded, onBattleFinished } from "./battles.js";
@@ -131,13 +132,16 @@ async function grantXp(tx: Tx, player: Player, season: number, xp: number, fx: E
     const r = passReward(n);
     if (r.pw) await movePw(tx, player, r.pw, "season_pass", `s${season}:${n}`);
     await addBonusPacks(tx, player, r.packs, "season_pass", `s${season}:${n}`);
+    if (r.case) await addFreeCases(tx, player.userId, r.case, 1, "season_pass", `s${season}:${n}`);
   }
   if (gained.length) {
     const last = gained.at(-1)!;
-    const total = gained.map(passReward).reduce((a, r) => ({ pw: a.pw + r.pw, packs: a.packs + r.packs }), {
-      pw: 0,
-      packs: 0,
-    });
+    const total = gained
+      .map(passReward)
+      .reduce<{ pw: number; packs: number; cases: number }>(
+        (a, r) => ({ pw: a.pw + r.pw, packs: a.packs + r.packs, cases: a.cases + (r.case ? 1 : 0) }),
+        { pw: 0, packs: 0, cases: 0 },
+      );
     await fx.notify(tx, player.userId, "pass_level", { level: last, levels: gained.length, reward: total });
   }
   return gained;
@@ -337,7 +341,7 @@ export async function collectionEvent(db: DbOrTx, userId: string): Promise<GameE
   }>(sql`
     with pulled as (
       select i.card_id, i.rarity, i.season from card_instances i
-      where i.owner_id = ${userId} and i.source in ('pack', 'upgrade', 'wheel', 'boss') and i.season = ${season}
+      where i.owner_id = ${userId} and i.source in ('pack', 'upgrade', 'wheel', 'boss', 'case') and i.season = ${season}
     )
     select
       (select count(distinct card_id)::int from pulled) as unique_cards,
@@ -419,9 +423,9 @@ async function historicalStats(db: DbOrTx, userId: string): Promise<Map<StatKey,
       (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'card' and reason = 'pack_open') as packs_opened,
       (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'theme_pack' and reason = 'pack_open')
         + (select count(*) from ledger where user_id = ${userId} ${after("created_at")} and kind = 'pw' and reason = 'theme_pack' and delta < 0) as theme_packs_opened,
-      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade') and rarity = 'SR') as pulled_sr,
-      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade') and rarity = 'UR') as pulled_ur,
-      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade') and rarity = 'L') as pulled_l,
+      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade', 'case') and rarity = 'SR') as pulled_sr,
+      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade', 'case') and rarity = 'UR') as pulled_ur,
+      (select count(*) from card_instances where owner_id = ${userId} ${after("obtained_at")} and source in ('pack', 'wheel', 'upgrade', 'case') and rarity = 'L') as pulled_l,
       (select count(*) from auctions where seller_id = ${userId} and status = 'sold' ${after("closed_at")}) as sales,
       (select coalesce(max(current_bid), 0) from auctions where seller_id = ${userId} and status = 'sold' ${after("closed_at")}) as best_sale,
       (select count(*) from auctions a where a.seller_id = ${userId} and a.status = 'sold' ${after("a.closed_at")} and a.current_bid > 1000

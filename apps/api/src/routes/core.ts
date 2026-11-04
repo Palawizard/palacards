@@ -8,6 +8,7 @@ import { conflict, notFound, parse } from "../errors.js";
 import { deleteAvatarImage, getAvatarImage, saveAvatarImage } from "../services/avatars.js";
 import { clearBannerCard, deleteBanner, getBannerImage, saveBannerImage, setBannerCard } from "../services/banners.js";
 import { answeringQuestion, queueWaiting } from "../services/battles.js";
+import { freeCases } from "../services/free-cases.js";
 import { arthropodFlags, cardSheet, catalog, imageFlags } from "../services/cards.js";
 import {
   bulkTag,
@@ -89,6 +90,7 @@ export const FEATURE_ANNOUNCEMENTS: { key: string; until: string }[] = [
   { key: "suggestions", until: "2026-12-01T00:00:00+01:00" },
   { key: "updates", until: "2026-12-01T00:00:00+01:00" },
   { key: "wheels", until: "2026-12-01T00:00:00+01:00" },
+  { key: "cases", until: "2026-12-15T00:00:00+01:00" },
   { key: "battle-decks", until: "2026-12-15T00:00:00+01:00" },
   { key: "boss-v2", until: "2026-12-31T00:00:00+01:00" },
   { key: "leaderboard-achievements", until: "2026-12-31T00:00:00+01:00" },
@@ -150,6 +152,7 @@ export async function me(
     quests: { done: quests.filter((q) => q.completedAt).length, total: quests.length },
     hlTriesLeft: await hlTriesLeft(ctx, user.id),
     boss: await bossSummary(ctx, user.id),
+    freeCases: Object.values(await freeCases(ctx.db, user.id)).reduce((a, b) => a + b, 0),
   };
 }
 
