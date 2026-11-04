@@ -1,0 +1,62 @@
+# Fiche d'exemple : le booster « Jeux vidéo » (n° 15, octobre 2026) refait avec l'atelier.
+# Copier dans data/themes/<nom>.yaml, puis : ./run preview data/themes/<nom>.yaml
+#
+# Trouver les noms : ./run find-cat "jeu vidéo" · ./run find-class "console" · ./run card "Tetris"
+# Astuce : les catégories cachées « Portail:<sujet>/Articles liés » regroupent presque tout un sujet.
+
+name: Jeux vidéo
+description: Jeux, consoles, personnages, studios et créateurs.
+display_category: Jeux vidéo          # affichage seulement (colonne themes.category)
+price: 150                            # règle : assez de légendaires -> 200, sinon 150 ; jamais sous 150
+starts: now                           # ou une date ISO en UTC (2026-11-05T08:00Z)
+days: 7                               # ou ends: 2026-11-11T22:59Z
+
+families:
+  # Une carte compte dans la première famille qui la contient (l'ordre compte pour l'aperçu).
+  - name: Jeux
+    wikidata:
+      P31: [Q7889, Q7058673]          # jeu vidéo, série de jeux vidéo (+ toutes leurs sous-classes)
+    keep_desc: ['jeu', 'jeux', 'vidéo', 'console', 'franchise']   # garde si la description en parle
+    drop_desc: ['\bfilm\b', 'série télévisée', 'manga', 'roman', 'bande dessinée', 'comics']
+
+  - name: Personnages et univers
+    wikidata:
+      P31: [Q1569167]                 # personnage de jeu vidéo
+    categories:
+      - {name: Personnage de jeu vidéo, depth: 2}
+      - {name: Univers de jeu vidéo, depth: 1}
+    keep_desc: ['jeu', 'jeux', 'vidéo', 'personnage', 'univers', 'franchise']
+    drop_desc: ['manga', 'comics', 'bande dessinée']
+
+  - name: Consoles, studios et éditeurs
+    categories:
+      - {name: Console de jeux vidéo, depth: 2}
+      - {name: Matériel de jeu vidéo, depth: 1}
+      - {name: Développeur de jeux vidéo, depth: 2}
+      - {name: Éditeur de jeux vidéo, depth: 2}
+      - {name: Entreprise de jeux vidéo, depth: 1}
+      - {name: Genre de jeux vidéo, depth: 0}
+      - {name: Événement du jeu vidéo, depth: 1}
+
+  - name: Créateurs et e-sport
+    wikidata:
+      P106: [Q3630699, Q57414145, Q4379701]   # concepteur de jeux, streamer, joueur pro
+      P641: [Q300920]                         # sport électronique
+    categories:
+      - {name: Personnalité liée au secteur du jeu vidéo, depth: 2}
+      - {name: Esport, depth: 2}
+      - {name: Vidéaste web vidéoludique, depth: 1}
+    people: any
+    keep_desc: ['jeu', 'jeux', 'vidéo', 'stream', 'twitch', 'youtub', 'esport', 'e-sport', 'gam']
+    keep_no_desc: true
+
+exclude:
+  desc: ['acteur pornographique', 'actrice pornographique']
+  titles: []
+
+include:                              # titres forcés (légendaires ajoutées, cartes phares)
+  - Squeezie
+  - Gotaga
+  - ZeratoR
+  - Nintendo
+  - PlayStation 5

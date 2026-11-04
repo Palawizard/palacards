@@ -582,8 +582,8 @@ describe("boosters à thème", () => {
 
   it("réunit plusieurs catégories (et l'ancien champ `category`), avec un essai à blanc", async () => {
     const admin = await signUpAdmin(app, ctx);
-    const pool = await ctx.db.execute<{ id: string }>(sql`
-      select id from cards where season = (select id from seasons where status = 'active') order by id limit 12
+    const pool = await ctx.db.execute<{ id: string; title: string }>(sql`
+      select id, title from cards where season = (select id from seasons where status = 'active') order by id limit 12
     `);
     const ids = pool.map((r) => Number(r.id));
     const members: Record<string, number[]> = {
@@ -600,7 +600,8 @@ describe("boosters à thème", () => {
         name: "Essai",
         categories: ["Catégorie:Chanteur_français", "Chanteuse française"],
         depth: 1,
-        titles: [],
+        // Déjà dans une catégorie : compté une seule fois (rareté et rang posés à l'insertion).
+        titles: [pool[0]!.title],
         price: 250,
         startsAt: new Date(window.startsAt),
         endsAt: new Date(window.endsAt),
