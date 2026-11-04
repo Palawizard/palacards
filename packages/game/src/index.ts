@@ -24,3 +24,4 @@ export * from "./shop.js";
 export * from "./higher-lower.js";
 export * from "./image-filters.js";
 export * from "./portfolios.js";
+export * from "./cases.js";

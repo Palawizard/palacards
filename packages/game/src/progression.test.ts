@@ -32,27 +32,34 @@ describe("passe de saison", () => {
     expect(passProgress(xpToReach(200) + 1_250)).toEqual({ level: 202, into: 250, need: 500 });
     expect(passProgress(10_000_000).level).toBe(100 + Math.floor((10_000_000 - 40_100) / 500));
     expect(passReward(201)).toEqual({ pw: PASS_OVERFLOW_PW, packs: 0 });
-    expect(passReward(1_000)).toEqual({ pw: PASS_OVERFLOW_PW, packs: 0 });
+    expect(passReward(1_001)).toEqual({ pw: PASS_OVERFLOW_PW, packs: 0 });
+    // Une caisse Bronze tous les 10 niveaux au-delà de 200, à la place des PW.
+    expect(passReward(210)).toEqual({ pw: 0, packs: 0, case: "bronze" });
+    expect(passReward(1_000)).toEqual({ pw: 0, packs: 0, case: "bronze" });
   });
 
   it("alterne paquets et PW, gros paliers tous les 10 niveaux", () => {
     let packs = 0;
     let pw = 0;
+    const cases: Record<string, number> = {};
     for (let n = 1; n <= PASS_MAX_LEVEL; n++) {
       const r = passReward(n);
       expect(r.pw + r.packs).toBeGreaterThan(0);
       packs += r.packs;
       pw += r.pw;
+      if (r.case) cases[r.case] = (cases[r.case] ?? 0) + 1;
     }
     expect(packs).toBe(184);
-    expect(pw).toBe(12_700);
+    expect(pw).toBe(9_300);
+    expect(cases).toEqual({ bronze: 16, silver: 2, gold: 2 });
     expect(passReward(1)).toEqual({ pw: 0, packs: 1 });
     expect(passReward(2)).toEqual({ pw: 51, packs: 0 });
-    expect(passReward(10)).toEqual({ pw: 150, packs: 3 });
-    expect(passReward(100)).toEqual({ pw: 1_000, packs: 5 });
+    expect(passReward(10)).toEqual({ pw: 50, packs: 3, case: "bronze" });
+    expect(passReward(50)).toEqual({ pw: 0, packs: 3, case: "silver" });
+    expect(passReward(100)).toEqual({ pw: 250, packs: 5, case: "gold" });
     expect(passReward(102)).toEqual({ pw: 101, packs: 0 });
-    expect(passReward(110)).toEqual({ pw: 150, packs: 3 });
-    expect(passReward(200)).toEqual({ pw: 1_000, packs: 5 });
+    expect(passReward(110)).toEqual({ pw: 50, packs: 3, case: "bronze" });
+    expect(passReward(200)).toEqual({ pw: 250, packs: 5, case: "gold" });
   });
 
   it("donne de l'XP pour chaque paquet ouvert, plus pour un booster à thème", () => {
