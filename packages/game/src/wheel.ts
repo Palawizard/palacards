@@ -1,3 +1,4 @@
+import type { CaseTier } from "./cases.js";
 import type { RandomInt } from "./packs.js";
 
 /**
@@ -19,7 +20,9 @@ export type WheelReward =
   | { kind: "pw"; amount: number }
   | { kind: "packs"; amount: number }
   | { kind: "theme"; amount: number }
-  | { kind: "card"; rarity: "UR" | "L" };
+  | { kind: "card"; rarity: "UR" | "L" }
+  /** Caisse gratuite de ce niveau, à ouvrir dans n'importe quel thème en cours (suggestion n° 126). */
+  | { kind: "case"; tier: CaseTier };
 
 /** Paquets bonus donnés à la place d'un booster à thème quand aucun n'est en vente. */
 export const WHEEL_THEME_FALLBACK_PACKS = 2;
@@ -34,12 +37,15 @@ export const WHEEL_TOTAL = 10_000;
 
 /**
  * Cases de chaque roue, dans l'ordre d'affichage (petits et gros lots alternés). Valeur moyenne (paquet =
- * 150 PW, booster = 200 PW, UR = 250, légendaire = 1 500) : petite ≈ 230, moyenne ≈ 360, grande ≈ 730.
+ * 150 PW, booster = 200 PW, UR = 250, légendaire = 1 500, caisse = son prix) : petite ≈ 230, moyenne ≈ 350,
+ * grande ≈ 720. Les caisses gratuites (Bronze 10 %, Argent 8 %, Or 5 %) remplacent une partie des PW
+ * (choix de Palawi du 2026-11-04 : valeur constante).
  */
 export const WHEELS: Record<WheelTier, WheelSegment[]> = {
   small: [
-    { reward: { kind: "pw", amount: 100 }, weight: 2_500 },
+    { reward: { kind: "pw", amount: 100 }, weight: 1_500 },
     { reward: { kind: "packs", amount: 1 }, weight: 2_000 },
+    { reward: { kind: "case", tier: "bronze" }, weight: 1_000 },
     { reward: { kind: "pw", amount: 200 }, weight: 2_000 },
     { reward: { kind: "card", rarity: "UR" }, weight: 500 },
     { reward: { kind: "packs", amount: 2 }, weight: 2_000 },
@@ -49,7 +55,8 @@ export const WHEELS: Record<WheelTier, WheelSegment[]> = {
   medium: [
     { reward: { kind: "pw", amount: 200 }, weight: 2_500 },
     { reward: { kind: "packs", amount: 2 }, weight: 2_000 },
-    { reward: { kind: "pw", amount: 400 }, weight: 1_800 },
+    { reward: { kind: "pw", amount: 400 }, weight: 1_000 },
+    { reward: { kind: "case", tier: "silver" }, weight: 800 },
     { reward: { kind: "card", rarity: "UR" }, weight: 700 },
     { reward: { kind: "packs", amount: 4 }, weight: 1_500 },
     { reward: { kind: "theme", amount: 1 }, weight: 1_200 },
@@ -58,7 +65,8 @@ export const WHEELS: Record<WheelTier, WheelSegment[]> = {
   large: [
     { reward: { kind: "pw", amount: 500 }, weight: 2_200 },
     { reward: { kind: "packs", amount: 5 }, weight: 2_000 },
-    { reward: { kind: "pw", amount: 1_000 }, weight: 1_000 },
+    { reward: { kind: "pw", amount: 1_000 }, weight: 500 },
+    { reward: { kind: "case", tier: "gold" }, weight: 500 },
     { reward: { kind: "card", rarity: "UR" }, weight: 1_500 },
     { reward: { kind: "theme", amount: 2 }, weight: 1_500 },
     { reward: { kind: "packs", amount: 10 }, weight: 1_000 },
