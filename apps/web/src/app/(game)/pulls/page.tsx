@@ -591,6 +591,12 @@ export default function PullsPage() {
         ) : (
           <p className="hatnote">Chargement du stock…</p>
         )}
+        {/* Téléphone : l'ouvreur occupe l'écran, les réglages sont loin dessous. */}
+        {me && (
+          <a href="#pulls-settings" className="chip sm:hidden">
+            Ouverture : {SPEEDS.find((s) => s.value === me.animationSpeed)?.label.toLowerCase() ?? "animée"}
+          </a>
+        )}
       </header>
 
       {themes.data && (
@@ -651,7 +657,7 @@ export default function PullsPage() {
         </div>
 
         <aside className="grid items-start gap-4 md:grid-cols-[minmax(0,18.5rem)_minmax(0,24rem)] md:justify-center">
-          <div className="infobox">
+          <div id="pulls-settings" className="infobox scroll-mt-20">
             <h2 className="infobox-head">Ouverture</h2>
             <div className="flex flex-col gap-2 p-3" role="radiogroup" aria-label="Vitesse d'ouverture">
               {SPEEDS.map((s) => (
