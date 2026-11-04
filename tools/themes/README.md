@@ -28,4 +28,20 @@ cd /srv/nas/palacards-themes && nohup ./run index > data/index.log 2>&1 &
 4. `./run create data/themes/<nom>.yaml --go` : sauvegarde (`palacards-backup.service`), puis création en une
    transaction (thème, cartes avec rareté et rang, index de tirage), en quelques secondes.
 
+## Les caisses de la semaine
+
+Deux thèmes par semaine, chacun en quatre niveaux (Bronze, Argent, Or, Légendaire), renouvelés le lundi soir.
+Le contenu de chaque niveau = les cartes les plus lues du thème dans chaque rareté (`CASE_CONTENT` de
+`packages/game/src/cases.ts`, recopié dans `palacards_themes/cases.py`).
+
+```sh
+./run case --theme 24                    # essai à partir d'un booster en base (transaction annulée)
+./run case --theme 24 --go               # sauvegarde puis création, jusqu'au lundi 23 h 59 suivant
+./run case data/themes/<nom>.yaml --go   # ou à partir d'une fiche, sans créer de booster
+```
+
+`--name` change le nom affiché, `--starts` / `--ends` les dates (heure de Paris si sans fuseau). Refusé si une
+rareté manque à un niveau (une Bronze sans rare, une Or sans légendaire) ou si des caisses du même nom sont
+déjà en vente sur ces dates.
+
 Règles de prix (doc 22 du projet Infra Palawi) : 200 PW avec assez de légendaires, sinon 150 PW ; jamais sous 150.

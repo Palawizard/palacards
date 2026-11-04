@@ -3,6 +3,7 @@ import {
   ArrowBigUpDash,
   ChartNoAxesColumn,
   Award,
+  Boxes,
   CircleDot,
   Gavel,
   Heart,
@@ -33,7 +34,7 @@ export interface NavItem {
   label: string;
   icon: LucideIcon;
   /** Badge alimenté par /me : non-lus, roue prête, paquets à ouvrir, quêtes, article, boss, file des duels. */
-  badge?: "messages" | "wheel" | "packs" | "quests" | "hl" | "boss" | "suggestions" | "battle";
+  badge?: "messages" | "wheel" | "packs" | "quests" | "hl" | "boss" | "suggestions" | "battle" | "cases";
   /** Clé de nouveauté (`/me.newFeatures`) : pastille « Nouveau » jusqu'à la première visite. */
   feature?: string;
   admin?: boolean;
@@ -52,6 +53,7 @@ export const NAV: NavGroup[] = [
       { href: "/pulls", label: "Paquets", icon: Package, badge: "packs" },
       { href: "/quests", label: "Quêtes et passe", icon: Stamp, badge: "quests", feature: "quests" },
       { href: "/wheel", label: "Roues du jour", icon: CircleDot, badge: "wheel", feature: "wheels" },
+      { href: "/cases", label: "Caisses", icon: Boxes, badge: "cases", feature: "cases" },
       {
         href: "/plus-ou-moins",
         label: "Plus ou moins vu",

@@ -1,10 +1,12 @@
-"""palacards-themes : index | preview | create | find-cat | find-class | card.
+"""palacards-themes : index | preview | create | case | find-cat | find-class | card.
 
 Exemples (sur PalaServer, depuis /srv/nas/palacards-themes) :
   ./run index                         # une fois par saison, ~15 à 25 min, en arrière-plan
   ./run preview themes/jeux-video.yaml
   ./run create themes/jeux-video.yaml           # essai (transaction annulée)
   ./run create themes/jeux-video.yaml --go      # sauvegarde puis création
+  ./run case --theme 24                         # caisses de la semaine d'un booster existant (essai)
+  ./run case themes/jeux-video.yaml --go        # caisses d'une fiche, jusqu'au lundi soir suivant
   ./run find-cat "jeu vidéo"
   ./run find-class "console de jeux"
   ./run card "Tetris"
@@ -15,7 +17,9 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from datetime import UTC, datetime
 
+from . import cases as cases_mod
 from . import create as create_mod
 from . import index, paths, prod, report, spec
 from .select import select
@@ -71,6 +75,52 @@ def cmd_create(a) -> None:
     print(res.strip())
     print(f"{'Créé' if a.go else 'Essai annulé (rien d’écrit)'} en {time.time() - t:.1f} s : "
           f"{s.name}, {len(sel.ids):,} cartes, {price} PW, du {s.starts:%Y-%m-%d %H:%M} au {s.ends:%Y-%m-%d %H:%M} UTC")
+
+
+def _when(v: str | None, default: datetime) -> datetime:
+    if not v:
+        return default
+    d = datetime.fromisoformat(v)
+    return d if d.tzinfo else d.replace(tzinfo=cases_mod.PARIS)
+
+
+def cmd_case(a) -> None:
+    """Quatre caisses (Bronze à Légendaire) d'un thème, du `--starts` (maintenant) au lundi 23 h 59 suivant."""
+    starts = _when(a.starts, datetime.now(UTC)).astimezone(UTC)
+    ends = _when(a.ends, cases_mod.next_monday_evening(starts)).astimezone(UTC)
+    if ends <= starts:
+        raise SystemExit("Fin avant le début.")
+    if a.theme:
+        if a.spec:
+            raise SystemExit("Une fiche ou --theme, pas les deux.")
+        season = prod.active_season()
+        name = a.name or prod.psql(f"select name from themes where id = {int(a.theme)};").strip()
+        if not name:
+            raise SystemExit(f"Booster {a.theme} introuvable.")
+        sql = cases_mod.script(name, f"SELECT card_id FROM theme_cards WHERE theme_id = {int(a.theme)}", season,
+                               starts, ends, a.by, commit=a.go)
+        slug = f"caisses-theme-{a.theme}"
+    elif a.spec:
+        s, _con, meta, sel, _ = _run(a)
+        season = int(meta["season"])
+        name = a.name or s.name
+        sql = cases_mod.script(name, "", season, starts, ends, a.by, commit=a.go, copy_ids=sorted(sel.ids))
+        slug = f"caisses-{s.slug}"
+    else:
+        raise SystemExit("Donne une fiche YAML ou --theme <id>.")
+    out = paths.THEMES / slug
+    out.mkdir(parents=True, exist_ok=True)
+    (out / ("case.sql" if a.go else "case-dry-run.sql")).write_text(sql, encoding="utf-8")
+    if a.go:
+        print("Sauvegarde de la base…")
+        prod.backup()
+    t = time.time()
+    res = prod.psql(sql)
+    print("niveau · id · cartes · raretés")
+    for line in res.strip().splitlines():
+        print("  " + line.replace("|", " · ").removeprefix("case · "))
+    print(f"{'Créées' if a.go else 'Essai annulé (rien d’écrit)'} en {time.time() - t:.1f} s : caisses « {name} », "
+          f"du {starts:%Y-%m-%d %H:%M} au {ends:%Y-%m-%d %H:%M} UTC")
 
 
 def cmd_find_cat(a) -> None:
@@ -139,6 +189,15 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--price", type=int)
     s.add_argument("--by", default="palawi", help="pseudo de l'admin créateur")
     s.set_defaults(fn=cmd_create)
+    s = sub.add_parser("case", help="caisses de la semaine d'un thème (essai sans --go)")
+    s.add_argument("spec", nargs="?", help="fiche YAML de booster")
+    s.add_argument("--theme", type=int, help="booster déjà en base : ses cartes")
+    s.add_argument("--name", help="nom affiché (par défaut : celui du booster ou de la fiche)")
+    s.add_argument("--starts", help="début (ISO, heure de Paris si sans fuseau ; par défaut maintenant)")
+    s.add_argument("--ends", help="fin (par défaut le lundi 23 h 59 suivant, heure de Paris)")
+    s.add_argument("--go", action="store_true", help="sauvegarde puis création pour de vrai")
+    s.add_argument("--by", default="palawi", help="pseudo de l'admin créateur")
+    s.set_defaults(fn=cmd_case)
     for name, fn in [("find-cat", cmd_find_cat), ("find-class", cmd_find_class)]:
         s = sub.add_parser(name)
         s.add_argument("text")

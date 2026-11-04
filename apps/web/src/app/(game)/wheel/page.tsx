@@ -1,6 +1,6 @@
 "use client";
 
-import type { WheelTier } from "@palacards/game";
+import { CASE_TIER_LABELS, type WheelTier } from "@palacards/game";
 import type { WheelDTO, WheelFaceDTO, WheelPrizeDTO, WheelRewardDTO, WheelSpinDTO } from "@palacards/shared";
 import { Check, Clock, Lock, Moon } from "lucide-react";
 import { animate, AnimatePresence, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { RaritySigil } from "@/components/Card";
+import { CaseBox } from "@/components/CaseBox";
 import { FlipCard } from "@/components/PackOpener";
 import { ErrorBox } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
@@ -51,6 +52,12 @@ function label(
       long: name ? `${n} « ${name} »` : `${n} à thème`,
     };
   }
+  if (r.kind === "case")
+    return {
+      big: CASE_TIER_LABELS[r.tier],
+      small: "caisse",
+      long: `Une caisse ${CASE_TIER_LABELS[r.tier]} gratuite`,
+    };
   return {
     big: r.rarity,
     small: "carte",
@@ -101,12 +108,15 @@ function WheelFace({ tier, segments }: { tier: WheelTier; segments: WheelFaceDTO
         const card = reward.kind === "card";
         const fill = card
           ? `var(--color-rarity-${reward.rarity.toLowerCase()})`
-          : i % 2
-            ? "var(--wheel-b)"
-            : "var(--wheel-a)";
+          : reward.kind === "case"
+            ? `var(--wheel-case-${reward.tier})`
+            : i % 2
+              ? "var(--wheel-b)"
+              : "var(--wheel-a)";
         const mid = i * seg + seg / 2;
         const l = label(reward);
         const long = l.big.length > 3;
+        const box = reward.kind === "case";
         return (
           <g key={i}>
             <path d={wedge(i * seg, (i + 1) * seg)} fill={fill} stroke="rgb(255 255 255 / 0.55)" strokeWidth="1.5" />
@@ -116,9 +126,9 @@ function WheelFace({ tier, segments }: { tier: WheelTier; segments: WheelFaceDTO
                 y={C - R + 44}
                 textAnchor="middle"
                 className="font-display"
-                style={{ fontStretch: "62%", fontWeight: 800 }}
-                fontSize={card ? 34 : long ? 28 : 36}
-                fill={card ? (reward.rarity === "L" ? "#1f1600" : "#fff") : "var(--wheel-ink)"}
+                style={{ fontStretch: "62%", fontWeight: 800, textTransform: box ? "uppercase" : undefined }}
+                fontSize={card ? 34 : box ? 22 : long ? 28 : 36}
+                fill={card ? (reward.rarity === "L" ? "#1f1600" : "#fff") : box ? "#fff" : "var(--wheel-ink)"}
               >
                 {l.big}
               </text>
@@ -441,6 +451,17 @@ export default function WheelPage() {
                       )}
                     </p>
                   </div>
+                ) : shown.prize.kind === "case" ? (
+                  <div className="flex items-center gap-4" data-case={shown.prize.tier}>
+                    <CaseBox tier={shown.prize.tier} className="w-24 shrink-0 rotate-[-6deg]" />
+                    <p className="text-sm text-muted">
+                      <strong className="text-text">{label(shown.prize).long}</strong>, à ouvrir dans le thème de ton
+                      choix.{" "}
+                      <Link href="/cases" className="article-link">
+                        L&apos;ouvrir
+                      </Link>
+                    </p>
+                  </div>
                 ) : (
                   <div className="flex items-center gap-4">
                     <span className="relative grid size-24 shrink-0 rotate-[-10deg] place-items-center rounded-full bg-accent text-accent-ink shadow-[0_4px_10px_-4px_rgb(0_0_0/0.5)]">
@@ -474,10 +495,10 @@ export default function WheelPage() {
                     : face?.status === "missed"
                       ? "Elle ne serait prête qu’après minuit : reviens demain dès minuit pour recommencer par la petite."
                       : tier === "small"
-                        ? "Des points wiki, des paquets bonus, et parfois une ultra rare ou une légendaire."
+                        ? "Des points wiki, des paquets bonus, une caisse Bronze, et parfois une ultra rare ou une légendaire."
                         : tier === "medium"
-                          ? "Plus de points, plus de paquets, un booster à thème, et une chance de légendaire plus grande."
-                          : "Le gros lot de la journée : jusqu’à 1 000 PW, 10 paquets, deux boosters à thème ou une légendaire."}
+                          ? "Plus de points, plus de paquets, un booster à thème, une caisse Argent, et une chance de légendaire plus grande."
+                          : "Le gros lot de la journée : jusqu’à 1 000 PW, 10 paquets, deux boosters à thème, une caisse Or ou une légendaire."}
                 </p>
               )}
               {!data?.next && data && (
@@ -497,7 +518,12 @@ export default function WheelPage() {
                   .map((s, i) => (
                     <tr key={i} className="border-t border-line first:border-0">
                       <td className="px-4 py-1.5">
-                        {s.reward.kind === "card" ? (
+                        {s.reward.kind === "case" ? (
+                          <span className="inline-flex items-center gap-2" data-case={s.reward.tier}>
+                            <CaseBox tier={s.reward.tier} className="-my-1 w-5" />
+                            {label(s.reward).long}
+                          </span>
+                        ) : s.reward.kind === "card" ? (
                           <span className="inline-flex items-center gap-2">
                             <RaritySigil rarity={s.reward.rarity} />
                             {label(s.reward).long}
