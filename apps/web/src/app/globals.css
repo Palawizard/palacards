@@ -1693,3 +1693,15 @@ button:disabled .pc-pack-foil {
   mask-image: linear-gradient(to right, transparent, #000 75%);
   pointer-events: none;
 }
+
+/*
+ * iPhone : Safari zoome sur tout champ de moins de 16 px quand il prend le focus (recherche de la Collection,
+ * filtres, messages…). Hors couche, cette règle passe devant les utilitaires `text-sm` des champs.
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}
