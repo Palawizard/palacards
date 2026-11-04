@@ -2,7 +2,7 @@
 
 import { countByRarity, MAX_LEVEL, RARITIES, RARITY_LABELS, recycleValue, type Rarity } from "@palacards/game";
 import type { CardDTO, Page } from "@palacards/shared";
-import { ChevronsUp } from "lucide-react";
+import { ChevronDown, ChevronsUp } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useState } from "react";
@@ -28,6 +28,7 @@ import { RecycleBreakdown } from "@/components/RecycleBreakdown";
 import { CardSkeletons, ConfirmDialog, Empty, ErrorBox, LoadMore } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { fmt } from "@/lib/format";
+import { useStoredFlag } from "@/lib/use-stored-flag";
 
 interface Summary {
   season: number;
@@ -71,6 +72,49 @@ function Completion({ summary }: { summary: Summary }) {
         })}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * Encart de complétion. Grand écran : colonne de droite, toujours ouvert. Téléphone et tablette : au-dessus des
+ * filtres, replié par défaut (le pourcentage global reste visible) ; sous la grille, le chargement continu des
+ * cartes le repoussait sans fin.
+ */
+function CompletionBox({ summary }: { summary: Summary | undefined }) {
+  const [open, setOpen] = useStoredFlag("pc-collection-completion-open");
+  const owned = summary?.byRarity.reduce((s, r) => s + r.owned, 0) ?? 0;
+  const total = summary?.byRarity.reduce((s, r) => s + r.total, 0) ?? 0;
+  const ratio = total ? (owned / total) * 100 : 0;
+  // Une décimale sous 10 % : avec des milliers d'articles, un début de collection afficherait « 0 % ».
+  const pct = ratio.toLocaleString("fr-FR", { maximumFractionDigits: ratio < 10 ? 1 : 0 });
+  const title = `Complétion · saison ${summary?.season ?? "…"}`;
+  return (
+    <aside className="infobox max-lg:order-first lg:sticky lg:top-20" aria-label="Complétion">
+      <h2 className="infobox-head max-lg:hidden">{title}</h2>
+      <h2 className="lg:hidden">
+        <button
+          type="button"
+          className={`infobox-head flex w-full items-center gap-2 text-left ${open ? "" : "border-b-0"}`}
+          aria-expanded={open}
+          aria-controls="collection-completion"
+          onClick={() => setOpen(!open)}
+        >
+          <span className="min-w-0 flex-1 truncate">{title}</span>
+          {summary && (
+            <span className="tnum shrink-0 text-sm font-semibold normal-case tracking-normal text-muted [font-stretch:100%]">
+              {pct}&nbsp;%
+            </span>
+          )}
+          <ChevronDown
+            aria-hidden
+            className={`size-4 shrink-0 text-muted transition-transform duration-200 ease-[var(--ease-out)] ${open ? "rotate-180" : ""}`}
+          />
+        </button>
+      </h2>
+      <div id="collection-completion" className={`px-3 py-2 ${open ? "" : "max-lg:hidden"}`}>
+        {summary ? <Completion summary={summary} /> : <div className="h-48 animate-pulse" />}
+      </div>
+    </aside>
   );
 }
 
@@ -526,12 +570,7 @@ function Collection() {
           )}
         </div>
 
-        <aside className="infobox lg:sticky lg:top-20">
-          <h2 className="infobox-head">Complétion · saison {summary.data?.season ?? "…"}</h2>
-          <div className="px-3 py-2">
-            {summary.data ? <Completion summary={summary.data} /> : <div className="h-48 animate-pulse" />}
-          </div>
-        </aside>
+        <CompletionBox summary={summary.data} />
       </div>
 
       {selecting && (

@@ -166,6 +166,16 @@ function Upgrader() {
   const skipped = useRef(false);
   const lastTick = useRef(0);
   const dialRef = useRef<HTMLDivElement>(null);
+  /** Boutons de l'établi : hors de l'écran, une barre collée en bas les remplace pendant le choix des cartes. */
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const [actionsVisible, setActionsVisible] = useState(true);
+  useEffect(() => {
+    const el = actionsRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(([entry]) => setActionsVisible(!!entry?.isIntersecting));
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
 
   const target = nextRarity(rarity)!;
   const count = picked.length;
@@ -561,7 +571,10 @@ function Upgrader() {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t-2 border-dashed border-line px-4 py-3">
+        <div
+          ref={actionsRef}
+          className="flex flex-wrap items-center justify-end gap-2 border-t-2 border-dashed border-line px-4 py-3"
+        >
           {phase === "done" ? (
             <>
               {result?.success && revealed && (
@@ -734,6 +747,26 @@ function Upgrader() {
             </CardGrid>
             <LoadMore onVisible={loadMore} loading={list.isValidating} done={done} />
           </>
+        )}
+        {/* Téléphone et tablette : l'établi est loin au-dessus de la grille ; on tente sans remonter. */}
+        {phase === "idle" && !seriesAdding && count > 0 && !actionsVisible && (
+          <div className="pc-selbar lg:hidden" role="region" aria-label="Établi">
+            <div className="flex w-full items-center gap-3">
+              <p className="tnum shrink-0 text-sm font-semibold" aria-live="polite">
+                {fmt(count)}/{fmt(useful)} <span className="font-normal text-muted">cartes</span>
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary min-h-12 flex-1 text-base"
+                disabled={count < UPGRADE_MIN_CARDS}
+                onClick={attempt}
+              >
+                {chance !== null
+                  ? `Tenter · ${chanceText(chance)}${NBSP}%`
+                  : `Encore ${UPGRADE_MIN_CARDS - count} carte${UPGRADE_MIN_CARDS - count > 1 ? "s" : ""}`}
+              </button>
+            </div>
+          </div>
         )}
       </section>
     </div>
