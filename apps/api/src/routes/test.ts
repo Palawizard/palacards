@@ -1,5 +1,5 @@
 import { and, eq, schema, sql } from "@palacards/db";
-import { TITLE_BOARDS, TITLE_MAX_RANK } from "@palacards/game";
+import { CASE_CONTENT, CASE_TIERS, TITLE_BOARDS, TITLE_MAX_RANK } from "@palacards/game";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { requireUser, type Ctx } from "../context.js";
@@ -82,6 +82,63 @@ export function testRoutes(api: FastifyInstance, ctx: Ctx) {
     );
     pushWallet(ctx, p);
     return { balance: p.balance };
+  });
+
+  /**
+   * Caisses en E2E : les quatre niveaux d'un thème, remplis des cartes les plus lues de la saison (comme
+   * l'atelier), en vente une semaine, et des caisses gratuites pour le joueur connecté.
+   */
+  api.post("/test/case-seed", auth, async (req) => {
+    const body = parse(
+      z.object({ collection: z.string().min(1).max(60), free: z.number().int().min(0).max(20).default(0) }),
+      req.body,
+    );
+    const season = await activeSeason(ctx.db);
+    const ids: number[] = [];
+    for (const tier of CASE_TIERS) {
+      const [box] = await ctx.db
+        .insert(schema.caseBoxes)
+        .values({
+          collection: body.collection,
+          tier,
+          season,
+          startsAt: new Date(ctx.now().getTime() - 60_000),
+          endsAt: new Date(ctx.now().getTime() + 7 * 86_400_000),
+        })
+        .returning({ id: schema.caseBoxes.id });
+      let pos = 0;
+      for (const [rarity, n] of Object.entries(CASE_CONTENT[tier])) {
+        const rows = await ctx.db.execute<{ id: string }>(sql`
+          select id from cards where season = ${season} and rarity = ${rarity}::rarity
+          order by views_12m desc, id limit ${n}
+        `);
+        if (rows.length)
+          await ctx.db
+            .insert(schema.caseCards)
+            .values(rows.map((r) => ({ caseId: box!.id, cardId: Number(r.id), rarity: rarity as "UR", pos: pos++ })));
+      }
+      ids.push(box!.id);
+    }
+    if (body.free)
+      await ctx.db
+        .insert(schema.playerFreeCases)
+        .values(CASE_TIERS.map((tier) => ({ userId: req.user.id, tier, count: body.free })))
+        .onConflictDoUpdate({
+          target: [schema.playerFreeCases.userId, schema.playerFreeCases.tier],
+          set: { count: body.free },
+        });
+    return { ids };
+  });
+
+  /** Prochaine ouverture de caisse forcée sur la dernière issue (le plus gros lot) : captures et parcours E2E. */
+  api.post("/test/case-jackpot", auth, async () => {
+    const random = ctx.random;
+    ctx.random = (max) => {
+      if (max !== 10_000) return random(max);
+      ctx.random = random;
+      return 9_999;
+    };
+    return { ok: true };
   });
 
   /** Donne un titre de fin de saison au joueur connecté (sans l'afficher : c'est à lui de le choisir). */

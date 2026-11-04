@@ -1,4 +1,5 @@
 import type { GameEvent } from "./achievements.js";
+import type { CaseTier } from "./cases.js";
 import { GUILD_OBJECTIVE_REWARD } from "./guild.js";
 
 // ---------------------------------------------------------------------------
@@ -64,18 +65,28 @@ export function passProgress(xp: number): PassProgress {
 export interface PassReward {
   pw: number;
   packs: number;
+  /** Caisse gratuite (suggestion n° 126), à ouvrir dans n'importe quel thème en cours de ce niveau. */
+  case?: CaseTier;
 }
+
+/** Au-delà du niveau 200 : une caisse Bronze tous les `PASS_OVERFLOW_CASE_EVERY` niveaux (à la place des PW). */
+export const PASS_OVERFLOW_CASE_EVERY = 10;
 
 /**
  * Récompense d'un niveau : en alternance des paquets bonus (niveaux impairs) et des PW (niveaux pairs),
- * 2 paquets tous les 5 niveaux, 3 paquets et 150 PW tous les 10, les niveaux 100 et 200 donnent 5 paquets
- * et 1 000 PW. Total d'une carte complète : 184 paquets bonus et 12 700 PW. Au-delà du niveau 200,
- * chaque niveau donne `PASS_OVERFLOW_PW`.
+ * 2 paquets tous les 5 niveaux ; tous les 10, 3 paquets, 50 PW et une caisse Bronze ; aux niveaux 50 et 150,
+ * 3 paquets et une caisse Argent ; aux niveaux 100 et 200, 5 paquets, 250 PW et une caisse Or. Les caisses
+ * (2026-11-04) remplacent des PW à valeur à peu près égale (caisse = son prix). Au-delà du niveau 200, chaque
+ * niveau donne `PASS_OVERFLOW_PW`, et une caisse Bronze tous les `PASS_OVERFLOW_CASE_EVERY` niveaux.
  */
 export function passReward(level: number): PassReward {
-  if (level > PASS_MAX_LEVEL) return { pw: PASS_OVERFLOW_PW, packs: 0 };
-  if (level % PASS_HALF_LEVEL === 0) return { pw: 1_000, packs: 5 };
-  if (level % 10 === 0) return { pw: 150, packs: 3 };
+  if (level > PASS_MAX_LEVEL)
+    return level % PASS_OVERFLOW_CASE_EVERY === 0
+      ? { pw: 0, packs: 0, case: "bronze" }
+      : { pw: PASS_OVERFLOW_PW, packs: 0 };
+  if (level % PASS_HALF_LEVEL === 0) return { pw: 250, packs: 5, case: "gold" };
+  if (level % 50 === 0) return { pw: 0, packs: 3, case: "silver" };
+  if (level % 10 === 0) return { pw: 50, packs: 3, case: "bronze" };
   if (level % 5 === 0) return { pw: 0, packs: 2 };
   if (level % 2 === 0) return { pw: 50 + Math.floor(level / 2), packs: 0 };
   return { pw: 0, packs: 1 };
@@ -96,6 +107,8 @@ export const XP = {
   /** Par phase du boss dont on touche la récompense (deux phases : l'ancienne chute, 300 XP). */
   bossPhase: 150,
   upgrade: 10,
+  /** Par caisse ouverte. */
+  caseOpened: 15,
   trade: 20,
   sale: 20,
   guildObjective: GUILD_OBJECTIVE_REWARD.xp,
@@ -119,6 +132,8 @@ export function xpForEvent(e: GameEvent): number {
       return XP.bossPhase;
     case "upgrade":
       return XP.upgrade;
+    case "case_opened":
+      return XP.caseOpened * e.count;
     case "trade_done":
       return XP.trade;
     case "sale":

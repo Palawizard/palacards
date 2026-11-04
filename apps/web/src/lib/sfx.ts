@@ -12,6 +12,7 @@ import { useSyncExternalStore } from "react";
 export type Sfx =
   | "tear"
   | "deal"
+  | "tick"
   | "flip"
   | "sr"
   | "ur"
@@ -332,6 +333,12 @@ const RECIPES: Record<Sfx, Recipe> = {
   // Carte qui glisse sur la table.
   deal(c, out, t) {
     hiss(c, out, t, { a: 0.012, d: 0.13, peak: 0.7 }, { type: "bandpass", from: 3200, to: 900, q: 1.1 });
+  },
+  // Bande des caisses : le cliquet sec d'une case qui passe sous le repère (joué des dizaines de fois, très
+  // court et discret).
+  tick(c, out, t) {
+    hiss(c, out, t, { a: 0.001, d: 0.018, peak: 0.28 }, { type: "bandpass", from: 4200, q: 3 });
+    tone(c, out, t, 1450, { a: 0.001, d: 0.022, peak: 0.07 }, "triangle", 900);
   },
   // Retournement : claquement sec du carton, petit corps grave.
   flip(c, out, t) {

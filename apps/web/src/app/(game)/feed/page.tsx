@@ -33,12 +33,14 @@ const genreOf = (key: string) => GENRES.find((g) => g.key === key);
  */
 const FEED_REFRESH_MS = 60_000;
 
+/** Où la carte a été tirée, avec son article (« une roue », « un paquet »). */
 const SOURCE: Record<string, string> = {
-  pack: "paquet",
-  theme: "booster à thème",
-  wheel: "roue du jour",
-  upgrade: "upgrader",
-  boss: "boss du jour",
+  pack: "un paquet",
+  theme: "un booster à thème",
+  wheel: "une roue du jour",
+  upgrade: "l'upgrader",
+  boss: "le boss du jour",
+  case: "une caisse",
 };
 
 /** Un tirage du fil : la vignette, qui l'a tirée et quand, et les réactions de la bande. */
@@ -88,7 +90,7 @@ function FeedItem({ item, fresh, now }: { item: FeedItemDTO; fresh: boolean; now
         </Link>
         <span
           className="ml-auto shrink-0 text-faint"
-          title={item.source === "shop" ? "Achetée en boutique" : `Tiré dans un ${SOURCE[item.source] ?? "paquet"}`}
+          title={item.source === "shop" ? "Achetée en boutique" : `Tirée dans ${SOURCE[item.source] ?? "un paquet"}`}
         >
           {item.source === "shop" && <span className="font-semibold text-muted">Achetée en boutique · </span>}
           {relative(item.createdAt, now)}
