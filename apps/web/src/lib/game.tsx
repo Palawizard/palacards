@@ -34,6 +34,8 @@ interface GameContextValue {
   holdNews: () => () => void;
   /** Lance `fn` tout de suite, ou à la fin de la retenue en cours. */
   afterHold: (fn: () => void) => void;
+  /** Met en attente les toasts d'ambiance (voir `useQuietToasts`) ; renvoie la fonction qui les relâche. */
+  quietToasts: () => () => void;
 }
 
 /**
@@ -90,6 +92,16 @@ export function useHoldNews() {
     return once;
   }, [holdNews]);
   return hold;
+}
+
+/**
+ * Tant que `active` est vrai, les toasts d'ambiance (notifications, gros tirages des potes) attendent : sur
+ * téléphone, ils couvriraient la pile de cartes en cours d'ouverture. Ils s'affichent dès que `active`
+ * repasse à faux ou que le composant est démonté. Rien d'autre n'attend (solde, compteurs, duels).
+ */
+export function useQuietToasts(active: boolean) {
+  const { quietToasts } = useGame();
+  useEffect(() => (active ? quietToasts() : undefined), [active, quietToasts]);
 }
 
 /** Écoute un événement temps réel tant que le composant est monté. */
@@ -162,6 +174,26 @@ export function GameProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Toasts d'ambiance en attente (voir `useQuietToasts`).
+  const quiet = useRef(0);
+  const quieted = useRef<(() => void)[]>([]);
+  const afterQuiet = useCallback((fn: () => void) => {
+    if (quiet.current) quieted.current.push(fn);
+    else fn();
+  }, []);
+  const quietToasts = useCallback(() => {
+    quiet.current++;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      if (--quiet.current > 0) return;
+      const queue = quieted.current;
+      quieted.current = [];
+      for (const fn of queue) fn();
+    };
+  }, []);
+
   useEffect(() => {
     if (error instanceof ApiError && error.status === 401) router.replace("/login");
   }, [error, router]);
@@ -198,9 +230,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
       news((n) => {
         void mutateMe((m) => (m ? { ...m, unreadNotifications: n.unread } : m), { revalidate: false });
         const { text, href } = describe(n);
-        const sound = NOTIFICATION_SFX[n.type];
-        if (sound) play(sound);
-        toast(text, { action: { label: "Voir", onClick: () => router.push(href) } });
+        afterQuiet(() => {
+          const sound = NOTIFICATION_SFX[n.type];
+          if (sound) play(sound);
+          toast(text, { action: { label: "Voir", onClick: () => router.push(href) } });
+        });
       }),
     );
     s.on("message:new", refreshMe);
@@ -247,9 +281,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
         if (item.card.rarity !== "L" && !item.card.shiny) return;
         const what = `${RARITY_LABELS[item.card.rarity]}${item.card.shiny ? " brillante" : ""}`;
         const verb = item.source === "shop" ? "a acheté en boutique" : "a tiré";
-        toast(`${item.user.name} ${verb} ${item.card.title} (${what}) !`, {
-          action: { label: "Voir", onClick: () => router.push("/feed") },
-        });
+        afterQuiet(() =>
+          toast(`${item.user.name} ${verb} ${item.card.title} (${what}) !`, {
+            action: { label: "Voir", onClick: () => router.push("/feed") },
+          }),
+        );
       }),
     );
     // Exposé aux composants une fois connecté ; après une coupure, on relit l'état manqué.
@@ -262,7 +298,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (meTimer) clearTimeout(meTimer);
       s.disconnect();
     };
-  }, [mutateMe, router, afterHold]);
+  }, [mutateMe, router, afterHold, afterQuiet]);
 
   // Bonus de connexion du jour, réclamé une fois par chargement (le serveur l'accorde une fois par jour).
   // Aussi au retour sur l'onglet et après une reconnexion : un onglet ouvert passé minuit le touche.
@@ -286,7 +322,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   }, [loggedIn, connection]);
 
   return (
-    <GameContext.Provider value={{ socket, connection, me: frozenMe ?? me, mutateMe, holdNews, afterHold }}>
+    <GameContext.Provider
+      value={{ socket, connection, me: frozenMe ?? me, mutateMe, holdNews, afterHold, quietToasts }}
+    >
       {children}
     </GameContext.Provider>
   );
