@@ -86,6 +86,8 @@ export interface MeDTO {
   hlTriesLeft: number;
   /** Boss du jour : assauts restants pour le joueur, phase en cours. */
   boss: { assaultsLeft: number; phase: number };
+  /** Caisses gratuites pas encore ouvertes, tous niveaux confondus (pastille « Caisses » du menu). */
+  freeCases: number;
 }
 
 /** Booster à thème temporaire (page Paquets). */

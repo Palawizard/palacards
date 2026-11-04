@@ -45,11 +45,9 @@ import { freeCases } from "./free-cases.js";
 import { emit } from "./progression.js";
 import { articleUrl } from "./wiki.js";
 
-type Tx = Parameters<Parameters<Ctx["db"]["transaction"]>[0]>[0];
 type CaseRow = typeof schema.caseBoxes.$inferSelect;
 
 const cb = schema.caseBoxes;
-const cc = schema.caseCards;
 const fc = schema.playerFreeCases;
 
 /** Ouvertures montrées dans « Gros tirages » : une légendaire ou mieux. */
