@@ -87,13 +87,21 @@ async function buildTheme(ctx: Ctx, adminId: string, input: ThemeInput) {
       .returning();
     // Les titres du dump ont leur première lettre en majuscule : « jeu vidéo » retrouve « Jeu vidéo ».
     const byTitle = titles.map((t) => t.charAt(0).toUpperCase() + t.slice(1));
+    // Rareté et rang par rareté écrits dès l'insertion : un seul passage, au lieu d'insérer puis de tout
+    // mettre à jour (plus de 11 min pour 150 000 articles le 2026-11-03, lignes fraîches sans statistiques).
     const inserted = await tx.execute<{ card_id: string }>(sql`
-      insert into theme_cards (theme_id, card_id)
-      select ${theme!.id}, id from cards
-      where season = ${season}
-        and (id in (select jsonb_array_elements_text(${JSON.stringify([...pageIds])}::jsonb)::bigint)
-          or title in (select jsonb_array_elements_text(${JSON.stringify(byTitle)}::jsonb)))
-      on conflict do nothing
+      with wanted as (
+        select x::bigint as id from jsonb_array_elements_text(${JSON.stringify([...pageIds])}::jsonb) x
+        union
+        select c.id from cards c
+        where c.season = ${season}
+          and c.title in (select jsonb_array_elements_text(${JSON.stringify(byTitle)}::jsonb))
+      )
+      insert into theme_cards (theme_id, card_id, rarity, pos)
+      select ${theme!.id}, c.id, c.rarity,
+        (row_number() over (partition by c.rarity order by c.id) - 1)::int
+      from cards c join wanted w on w.id = c.id
+      where c.season = ${season}
       returning card_id
     `);
     if (inserted.length < THEME_MIN_CARDS)
@@ -106,7 +114,7 @@ async function buildTheme(ctx: Ctx, adminId: string, input: ThemeInput) {
       ...theme!,
       categories,
       cardCount: inserted.length,
-      byRarity: (await indexTheme(tx, theme!.id, season)).byRarity,
+      byRarity: (await summarizeIndex(tx, theme!.id, season)).byRarity,
       dryRun: !!input.dryRun,
     };
     if (input.dryRun) throw new DryRun(result);
@@ -207,6 +215,11 @@ async function indexTheme(tx: Tx, themeId: number, season: number): Promise<Them
     update theme_cards tc set rarity = r.rarity, pos = r.pos
     from ranked r where tc.theme_id = ${themeId} and tc.card_id = r.card_id
   `);
+  return summarizeIndex(tx, themeId, season);
+}
+
+/** Comptes par rareté et cartes phares d'un thème dont les rangs sont posés ; enregistrés pour la saison. */
+async function summarizeIndex(tx: Tx, themeId: number, season: number): Promise<ThemeIndex> {
   const counts = await tx.execute<{ rarity: Rarity; n: number }>(sql`
     select rarity, count(*)::int as n from theme_cards
     where theme_id = ${themeId} and rarity is not null group by rarity
