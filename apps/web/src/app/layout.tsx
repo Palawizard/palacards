@@ -39,6 +39,9 @@ export const viewport: Viewport = {
     { media: "(prefers-color-scheme: dark)", color: "#0c1027" },
   ],
   colorScheme: "light dark",
+  // Page jusqu'aux bords de l'écran : sans ça, env(safe-area-inset-*) vaut 0 et les barres collées en bas passent
+  // sous l'indicateur d'accueil de l'iPhone (application installée). Les marges latérales sont dans le Shell.
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

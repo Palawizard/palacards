@@ -1,9 +1,9 @@
 // Filtres de collection partagés, importés uniquement par des composants client.
 import type { Rarity } from "@palacards/game";
 import { CLASSIC_THEME } from "@palacards/shared";
-import { RotateCcw, Search } from "lucide-react";
+import { RotateCcw, Search, SlidersHorizontal } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { LevelFilter, RarityFilter, Select, StatsFilter, Toggle, TriToggle, type FilterMode } from "@/components/ui";
 import { useDebounced } from "@/lib/use-debounced";
 
@@ -276,6 +276,10 @@ export function CollectionFilterBar({
 }) {
   const searchLabel = f.inSummary ? "Chercher dans le titre et le résumé" : "Filtrer par titre";
   const count = activeFilterCount(f, base);
+  // Téléphone : les filtres secondaires (raretés, interrupteurs, menus) prenaient tout l'écran avant la première
+  // carte ; ils se replient derrière un bouton qui compte les filtres actifs.
+  const [more, setMore] = useState(false);
+  const moreId = useId();
   return (
     <div className={`flex flex-col gap-3 ${className}`}>
       <div className="flex flex-wrap items-center gap-2">
@@ -298,8 +302,19 @@ export function CollectionFilterBar({
           Résumé aussi
         </Toggle>
         <Select label="Trier" value={f.sort} onChange={(sort) => set({ sort })} options={owner ? SORTS : OTHER_SORTS} />
+        <button
+          type="button"
+          className={`chip sm:hidden ${count ? "border-accent text-text" : ""}`}
+          aria-expanded={more}
+          aria-controls={moreId}
+          onClick={() => setMore(!more)}
+        >
+          <SlidersHorizontal aria-hidden className="size-3.5" />
+          Filtres
+          {count > 0 && <span className="tnum">({count})</span>}
+        </button>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div id={moreId} className={`flex flex-wrap items-center gap-2 ${more ? "" : "max-sm:hidden"}`}>
         {rarities && (
           <>
             <RarityFilter value={f.rarity} onChange={(rarity) => set({ rarity })} />

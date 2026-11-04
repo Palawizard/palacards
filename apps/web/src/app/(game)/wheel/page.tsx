@@ -192,6 +192,8 @@ export default function WheelPage() {
   const [picked, setPicked] = useState<WheelTier | null>(null);
   const now = useNow(1000);
   const lastTick = useRef(0);
+  /** Encart du lot : sur téléphone il est sous la roue, souvent hors de l'écran à la fin du tour. */
+  const prizeRef = useRef<HTMLElement>(null);
 
   const data = wheel.data;
   // Le dernier lot s'efface quand la roue suivante est prête (on la montre) ou quand minuit est passé.
@@ -263,6 +265,11 @@ export default function WheelPage() {
         reduce ? { duration: 0.6, ease: [0.23, 1, 0.32, 1] } : { duration: 4.8, ease: [0.12, 0.72, 0.16, 1] },
       );
       setResult(res);
+      requestAnimationFrame(() => {
+        const box = prizeRef.current?.getBoundingClientRect();
+        if (box && box.bottom > window.innerHeight)
+          prizeRef.current?.scrollIntoView({ block: "nearest", behavior: reduce ? "auto" : "smooth" });
+      });
       setPicked(null);
       void mutateMe((m) => (m ? { ...m, wallet: res.wallet, packs: res.packs, wheelReady: res.wheel.ready } : m), {
         revalidate: false,
@@ -397,7 +404,7 @@ export default function WheelPage() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <section className="infobox" aria-live="polite">
+          <section ref={prizeRef} className="infobox scroll-mb-4" aria-live="polite">
             <h2 className="infobox-head">{shown ? "Gagné" : TIER[tier].name}</h2>
             <div className="p-4">
               {shown ? (
