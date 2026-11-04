@@ -125,7 +125,13 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start">
       <section>
-        <h2 className="section-title mt-0">Rejoindre une guilde</h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="section-title mt-0">Rejoindre une guilde</h2>
+          {/* Téléphone : le formulaire est sous la liste de toutes les guildes. */}
+          <a href="#guild-create" className="btn btn-sm shrink-0 lg:hidden">
+            Fonder la mienne
+          </a>
+        </div>
         {error ? (
           <ErrorBox error={error} retry={() => mutate()} />
         ) : !data ? (
@@ -168,7 +174,8 @@ function NoGuild({ onChanged }: { onChanged: () => void }) {
       </section>
 
       <form
-        className="infobox"
+        id="guild-create"
+        className="infobox scroll-mt-20"
         onSubmit={(e) => {
           e.preventDefault();
           run(() => api("/guilds", { body: { name, tag, emblem, description } }), "Guilde fondée !", onChanged);

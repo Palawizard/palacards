@@ -336,7 +336,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const [drawer, setDrawer] = useState(false);
 
   return (
-    <div className="min-h-dvh lg:grid lg:grid-cols-[15rem_1fr]">
+    // iPhone à l'horizontale : l'encoche et les bords arrondis ne mordent pas sur la barre ni le contenu.
+    <div className="min-h-dvh pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:grid lg:grid-cols-[15rem_1fr]">
       {/* Menu portail : colonne fixe sur grand écran, tiroir sur mobile. */}
       <aside className="cover-texture sticky top-0 hidden h-dvh flex-col gap-6 overflow-y-auto bg-cover px-4 py-5 lg:flex">
         <Wordmark className="ml-0.5" />
@@ -352,7 +353,7 @@ export function Shell({ children }: { children: ReactNode }) {
         aria-label="Menu"
         aria-hidden={!drawer}
         inert={!drawer}
-        className={`cover-texture fixed inset-y-0 left-0 z-50 flex w-[17rem] max-w-[85vw] flex-col gap-6 overflow-y-auto bg-cover px-4 py-5 transition-transform duration-300 ease-[var(--ease-drawer)] lg:hidden ${
+        className={`cover-texture fixed inset-y-0 left-0 z-50 flex w-[calc(17rem+env(safe-area-inset-left))] max-w-[85vw] flex-col gap-6 overflow-y-auto bg-cover py-5 pl-[calc(1rem+env(safe-area-inset-left))] pr-4 transition-transform duration-300 ease-[var(--ease-drawer)] lg:hidden ${
           drawer ? "translate-x-0" : "-translate-x-full"
         }`}
       >
