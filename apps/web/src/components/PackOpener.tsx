@@ -18,7 +18,7 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError, thumbSrc } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import { useMe } from "@/lib/game";
+import { useMe, useQuietToasts } from "@/lib/game";
 import { useCardMedia } from "@/lib/media";
 import { play } from "@/lib/sfx";
 import { PHONE_QUERY, useMediaQuery } from "@/lib/use-media-query";
@@ -777,6 +777,8 @@ export const PackOpener = memo(function PackOpener({
   const [cursor, setCursor] = useState(0);
   const [busy, setBusy] = useState(false);
   const [announce, setAnnounce] = useState("");
+  /** Ce que le serveur a fait du paquet (pity, recyclage auto, wishlist) : affiché sous les cartes, pas en toast. */
+  const [notes, setNotes] = useState<string[]>([]);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const region = useRef<HTMLElement>(null);
   const buying = !!theme && theme.owned === 0;
@@ -821,6 +823,7 @@ export const PackOpener = memo(function PackOpener({
     timers.current = [];
     setBusy(true);
     setAnnounce("");
+    setNotes([]);
     setRecycled({});
     if (speed !== "instant") {
       setPhase("tearing");
@@ -853,16 +856,18 @@ export const PackOpener = memo(function PackOpener({
         if (res.cards.some((c) => c.shiny)) play("shiny", 60);
         else if (isFxTier(best.rarity)) play(JINGLE[best.rarity], 60);
       }
-      if (res.pityTriggered) toast("Pity déclenchée : UR ou mieux garantie !");
       setWished(Object.fromEntries((res.wishlistKept ?? []).map((id) => [id, true])));
+      // Sur téléphone, un toast à chaque paquet couvrait la frise de rareté : ces infos restent sous les cartes.
       const kept = res.wishlistKept?.length ?? 0;
-      const keptNote = kept ? `${kept} carte${kept > 1 ? "s" : ""} de ta wishlist gardée${kept > 1 ? "s" : ""}` : "";
-      if (res.autoRecycled) {
-        const n = res.autoRecycled.instanceIds.length;
-        toast.success(
-          `Recyclage auto : ${n} carte${n > 1 ? "s" : ""}, +${fmt(res.autoRecycled.gain)} PW${kept ? ` · ${keptNote}` : ""}`,
-        );
-      } else if (kept) toast.success(`Recyclage auto : ${keptNote}`);
+      const recycledN = res.autoRecycled?.instanceIds.length ?? 0;
+      setNotes(
+        [
+          res.pityTriggered && "Pity déclenchée : UR ou mieux garantie",
+          res.autoRecycled &&
+            `Recyclage auto : ${recycledN} carte${recycledN > 1 ? "s" : ""}, +${fmt(res.autoRecycled.gain)} PW`,
+          kept > 0 && `${kept} carte${kept > 1 ? "s" : ""} de ta wishlist gardée${kept > 1 ? "s" : ""}`,
+        ].filter((x): x is string => !!x),
+      );
       if (buying) play("coin");
       if (res.theme) onOpened?.(res.theme);
       void mutateMe((m) => (m ? { ...m, packs: res.packs } : m), { revalidate: false });
@@ -878,9 +883,9 @@ export const PackOpener = memo(function PackOpener({
     if (!card.instanceId) return;
     setRecycled((d) => ({ ...d, [card.instanceId!]: true }));
     try {
-      const res = await api<{ gain: number }>("/collection/recycle", { body: { instanceIds: [card.instanceId] } });
+      await api<{ gain: number }>("/collection/recycle", { body: { instanceIds: [card.instanceId] } });
+      // Pas de toast : la case de la carte affiche déjà « Recyclée · +N PW ».
       play("coin");
-      toast.success(`+${res.gain} PW : ${card.title} recyclée.`);
     } catch (err) {
       setRecycled(({ [card.instanceId!]: _, ...rest }) => rest);
       toast.error(err instanceof ApiError ? err.message : "Recyclage impossible.");
@@ -894,6 +899,9 @@ export const PackOpener = memo(function PackOpener({
   const dealt = { cards, revealed, onReveal: reveal, recycled, onRecycle: askRecycle, speed };
   /** Téléphone, cartes encore en pile : la pile porte ses propres boutons. */
   const decking = phone && phase === "dealt" && cursor < cards.length;
+  // Pendant la pile, les notifications attendent : en haut de l'écran, elles cachaient la frise du paquet.
+  // Dès la requête : le serveur envoie les succès du paquet avant même de répondre.
+  useQuietToasts(phone && (busy || decking));
 
   return (
     <section
@@ -937,35 +945,46 @@ export const PackOpener = memo(function PackOpener({
       </AnimatePresence>
 
       {!decking && (
-        <div className="flex w-full flex-wrap items-center justify-center gap-2">
-          {phase === "dealt" && !allRevealed && (
-            <button type="button" className="btn" onClick={revealAll}>
-              Tout retourner
-            </button>
+        // Téléphone : barre collée en bas de l'écran, « Ouvrir le suivant » reste sous le pouce même après le
+        // récapitulatif (dix lignes, plus haut que l'écran) et sous la barre de Safari.
+        <div className={phone ? "pc-selbar w-full" : "flex w-full flex-col items-center gap-3"}>
+          {phase === "dealt" && notes.length > 0 && (
+            <p className="tnum text-center text-sm text-muted">{notes.join(" · ")}</p>
           )}
-          <button
-            type="button"
-            className={`btn btn-primary ${phone ? "min-h-12 w-full max-w-sm text-base" : "min-w-44"}`}
-            onClick={open}
-            disabled={busy || !canOpen}
+          <div
+            className={
+              phone ? "flex w-full items-center gap-2" : "flex w-full flex-wrap items-center justify-center gap-2"
+            }
           >
-            {busy
-              ? "Ouverture…"
-              : theme
-                ? buying
-                  ? `${phase === "dealt" ? "En racheter un" : "Acheter et ouvrir"} · ${fmt(theme.price)} PW`
+            {phase === "dealt" && !allRevealed && (
+              <button type="button" className="btn" onClick={revealAll}>
+                Tout retourner
+              </button>
+            )}
+            <button
+              type="button"
+              className={`btn btn-primary ${phone ? "min-h-12 flex-1 text-base" : "min-w-44"}`}
+              onClick={open}
+              disabled={busy || !canOpen}
+            >
+              {busy
+                ? "Ouverture…"
+                : theme
+                  ? buying
+                    ? `${phase === "dealt" ? "En racheter un" : "Acheter et ouvrir"} · ${fmt(theme.price)} PW`
+                    : phase === "dealt"
+                      ? "Ouvrir le suivant"
+                      : "Ouvrir le booster"
                   : phase === "dealt"
                     ? "Ouvrir le suivant"
-                    : "Ouvrir le booster"
-                : phase === "dealt"
-                  ? "Ouvrir le suivant"
-                  : "Ouvrir un paquet"}
-          </button>
-          {phase === "dealt" && allRevealed && (
-            <Link href="/collection" className="btn btn-ghost">
-              Voir ma collection
-            </Link>
-          )}
+                    : "Ouvrir un paquet"}
+            </button>
+            {phase === "dealt" && allRevealed && (
+              <Link href="/collection" className={`btn btn-ghost ${phone ? "order-first min-h-12 shrink-0" : ""}`}>
+                {phone ? "Collection" : "Voir ma collection"}
+              </Link>
+            )}
+          </div>
         </div>
       )}
 

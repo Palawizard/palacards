@@ -95,7 +95,11 @@ export function SuggestionBanner() {
   const [closing, setClosing] = useState(false);
 
   const hidden =
-    pathname.startsWith("/suggestions") || pathname.startsWith("/admin") || pathname.startsWith("/battle/");
+    pathname.startsWith("/suggestions") ||
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/battle/") ||
+    // La conversation occupe la hauteur de l'écran : le bandeau poussait le champ de saisie hors de vue.
+    pathname.startsWith("/messages");
   if (!me?.suggestionBanner || hidden) return null;
 
   function pause() {
