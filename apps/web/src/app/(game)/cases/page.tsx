@@ -452,7 +452,10 @@ export default function CasesPage() {
   const cardMap = useMemo(() => new Map((box?.cards ?? []).map((c) => [c.cardId, c])), [box]);
   const preview = useMemo(() => (box ? previewTiles(box) : []), [box]);
   const rolling = !!run && run.stopped < run.results.length;
-  const speed: Speed = me?.animationSpeed ?? "normal";
+  // La bande est tout l'intérêt d'une caisse : elle ne suit pas la vitesse d'ouverture des paquets (21 joueurs
+  // actifs sur 27 sont en « instantané », choix de Palawi). « Passer » l'arrête ; seul le mouvement réduit du
+  // système la raccourcit.
+  const speed: Speed = "normal";
   const available = me?.wallet.available ?? 0;
   const runBox = run?.box;
   const runCards = useMemo(() => new Map((runBox?.cards ?? []).map((c) => [c.cardId, c])), [runBox]);
@@ -478,7 +481,7 @@ export default function CasesPage() {
       setRun({
         results: res.results,
         box,
-        reduce: !!reduceMotion || speed === "instant",
+        reduce: !!reduceMotion,
         speed,
         skip: false,
         stopped: 0,
