@@ -858,13 +858,13 @@ export const PackOpener = memo(function PackOpener({
       }
       setWished(Object.fromEntries((res.wishlistKept ?? []).map((id) => [id, true])));
       // Sur téléphone, un toast à chaque paquet couvrait la frise de rareté : ces infos restent sous les cartes.
+      // Plus de ligne « Recyclage auto » (2026-11-09) : affichée à presque chaque paquet, elle disparaissait à
+      // chaque ouverture et faisait sauter le bouton « Ouvrir le suivant » quand on enchaîne les paquets. Les
+      // cartes recyclées restent marquées comme telles et le solde suit.
       const kept = res.wishlistKept?.length ?? 0;
-      const recycledN = res.autoRecycled?.instanceIds.length ?? 0;
       setNotes(
         [
           res.pityTriggered && "Pity déclenchée : UR ou mieux garantie",
-          res.autoRecycled &&
-            `Recyclage auto : ${recycledN} carte${recycledN > 1 ? "s" : ""}, +${fmt(res.autoRecycled.gain)} PW`,
           kept > 0 && `${kept} carte${kept > 1 ? "s" : ""} de ta wishlist gardée${kept > 1 ? "s" : ""}`,
         ].filter((x): x is string => !!x),
       );
@@ -948,7 +948,7 @@ export const PackOpener = memo(function PackOpener({
         // Téléphone : barre collée en bas de l'écran, « Ouvrir le suivant » reste sous le pouce même après le
         // récapitulatif (dix lignes, plus haut que l'écran) et sous la barre de Safari.
         <div className={phone ? "pc-selbar w-full" : "flex w-full flex-col items-center gap-3"}>
-          {phase === "dealt" && notes.length > 0 && (
+          {phone && phase === "dealt" && notes.length > 0 && (
             <p className="tnum text-center text-sm text-muted">{notes.join(" · ")}</p>
           )}
           <div
@@ -985,6 +985,10 @@ export const PackOpener = memo(function PackOpener({
               </Link>
             )}
           </div>
+          {/* Ordinateur : sous les boutons, pour qu'une note qui apparaît ne déplace jamais « Ouvrir le suivant ». */}
+          {!phone && phase === "dealt" && notes.length > 0 && (
+            <p className="tnum text-center text-sm text-muted">{notes.join(" · ")}</p>
+          )}
         </div>
       )}
 
