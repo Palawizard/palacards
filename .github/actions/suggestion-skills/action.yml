@@ -1,0 +1,32 @@
+name: Skills des suggestions
+description: Récupère les skills lus par Claude (build-suggestion et impeccable) dans .automation/skills/, hors du dépôt.
+inputs:
+  token:
+    description: Jeton en lecture seule sur le dépôt de configuration privé.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v5
+      with:
+        repository: Palawizard/claude-config
+        token: ${{ inputs.token }}
+        path: .automation/config
+        sparse-checkout: projets/palacards/.claude/skills/build-suggestion
+        persist-credentials: false
+    - uses: actions/checkout@v5
+      with:
+        repository: pbakaus/impeccable
+        ref: 508d7e8955de3b3caf2d8676e85206723d41a887
+        path: .automation/impeccable
+        sparse-checkout: .claude/skills/impeccable
+        persist-credentials: false
+    - name: Skills dans .automation/skills
+      shell: bash
+      run: |
+        mkdir -p .automation/skills
+        mv .automation/config/projets/palacards/.claude/skills/build-suggestion .automation/skills/
+        mv .automation/impeccable/.claude/skills/impeccable .automation/skills/
+        rm -rf .automation/config .automation/impeccable
+        test -f .automation/skills/build-suggestion/SKILL.md
+        test -f .automation/skills/impeccable/SKILL.md

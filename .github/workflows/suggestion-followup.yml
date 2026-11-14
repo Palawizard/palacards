@@ -102,6 +102,10 @@ jobs:
           token: ${{ secrets.AUTOMATION_TOKEN }}
 
       - uses: ./.github/actions/suggestion-setup
+
+      - uses: ./.github/actions/suggestion-skills
+        with:
+          token: ${{ secrets.CONFIG_REPO_TOKEN }}
         if: steps.meta.outputs.skip != 'true'
 
       - name: Journal de la CI en échec
@@ -130,12 +134,12 @@ jobs:
           allowed_bots: github-actions[bot]
           # Réparation automatique : consigne explicite (mode agent). Commentaire @claude : mode tag, sans consigne.
           prompt: >-
-            ${{ github.event_name == 'workflow_dispatch' && format('Réparation automatique, essai {0} sur 2. La CI de la branche {1} (pull request {2}) a échoué : la fin de son journal est dans .automation/ci-failure.txt. Lis puis suis le skill .claude/skills/build-suggestion/SKILL.md (mode « réparation », CI en échec). Trouve la cause, corrige-la, relance en local les vérifications qui échouaient, puis commite. Ne pousse rien, le workflow pousse lui-même.', inputs.attempt, steps.meta.outputs.branch, steps.meta.outputs.pr) || '' }}
+            ${{ github.event_name == 'workflow_dispatch' && format('Réparation automatique, essai {0} sur 2. La CI de la branche {1} (pull request {2}) a échoué : la fin de son journal est dans .automation/ci-failure.txt. Lis puis suis le skill .automation/skills/build-suggestion/SKILL.md (mode « réparation », CI en échec). Trouve la cause, corrige-la, relance en local les vérifications qui échouaient, puis commite. Ne pousse rien, le workflow pousse lui-même.', inputs.attempt, steps.meta.outputs.branch, steps.meta.outputs.pr) || '' }}
           claude_args: >-
             --model opus
             --max-turns 200
-            --append-system-prompt "Tu travailles sur une branche de suggestion de PalaCards : lis puis suis .claude/skills/build-suggestion/SKILL.md (mode « suite dans la pull request »)."
-            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(git rm:*),Bash(git mv:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(jq:*),Bash(diff:*),Bash(echo:*),Bash(test:*),Bash(touch:*),Bash(cp:*),Bash(mv:*),Bash(rm:*),Bash(timeout:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
+            --append-system-prompt "Tu travailles sur une branche de suggestion de PalaCards : lis puis suis .automation/skills/build-suggestion/SKILL.md (mode « suite dans la pull request »)."
+            --allowedTools "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(git rm:*),Bash(git mv:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(jq:*),Bash(diff:*),Bash(echo:*),Bash(test:*),Bash(touch:*),Bash(cp:*),Bash(mv:*),Bash(rm:*),Bash(timeout:*),Bash(.automation/skills/impeccable/scripts/impeccable:*)"
             --disallowedTools "Bash(curl:*),Bash(wget:*),Bash(gh:*),Bash(git push:*),Bash(/home/runner/work/_actions/anthropics/claude-code-action/v1/scripts/git-push.sh:*),WebFetch,WebSearch"
 
       - name: Journal de Claude
@@ -146,7 +150,7 @@ jobs:
         if: steps.meta.outputs.skip != 'true'
         run: |
           git fetch -q origin dev
-          bad=$(git diff --name-only origin/dev...HEAD | grep -E '^(\.github/|deploy/|docker/|\.githooks/|docker-compose[^/]*\.ya?ml$|\.env|\.claude/settings)' || true)
+          bad=$(git diff --name-only origin/dev...HEAD | grep -E '^(\.github/|deploy/|docker/|\.githooks/|docker-compose[^/]*\.ya?ml$|\.env|\.claude/)' || true)
           if [ -n "$bad" ]; then
             echo "::error::Fichiers interdits modifiés : $bad"
             exit 1
