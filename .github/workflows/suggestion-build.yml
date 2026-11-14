@@ -10,7 +10,7 @@ on:
 permissions: {}
 
 env:
-  CLAUDE_ALLOWED_TOOLS: "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(git rm:*),Bash(git mv:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(jq:*),Bash(diff:*),Bash(echo:*),Bash(test:*),Bash(touch:*),Bash(cp:*),Bash(mv:*),Bash(rm:*),Bash(timeout:*),Bash(.claude/skills/impeccable/scripts/impeccable:*)"
+  CLAUDE_ALLOWED_TOOLS: "Read,Write,Edit,MultiEdit,Glob,Grep,TodoWrite,Bash(pnpm:*),Bash(node:*),Bash(npx:*),Bash(git status:*),Bash(git diff:*),Bash(git add:*),Bash(git commit:*),Bash(git log:*),Bash(git show:*),Bash(git restore:*),Bash(git rm:*),Bash(git mv:*),Bash(ls:*),Bash(find:*),Bash(grep:*),Bash(rg:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(mkdir:*),Bash(sed:*),Bash(sort:*),Bash(uniq:*),Bash(cut:*),Bash(tr:*),Bash(jq:*),Bash(diff:*),Bash(echo:*),Bash(test:*),Bash(touch:*),Bash(cp:*),Bash(mv:*),Bash(rm:*),Bash(timeout:*),Bash(.automation/skills/impeccable/scripts/impeccable:*)"
   CLAUDE_DISALLOWED_TOOLS: "Bash(git push:*),Bash(git remote:*),Bash(curl:*),Bash(wget:*),Bash(gh:*),WebFetch,WebSearch"
 
 # Une branche à la fois (forfait Claude, minutes de calcul) ; les suivantes attendent leur tour.
@@ -78,6 +78,10 @@ jobs:
 
       - uses: ./.github/actions/suggestion-setup
 
+      - uses: ./.github/actions/suggestion-skills
+        with:
+          token: ${{ secrets.CONFIG_REPO_TOKEN }}
+
       - name: Branche et cahier des charges
         env:
           BRANCH: ${{ steps.meta.outputs.branch }}
@@ -103,7 +107,7 @@ jobs:
           bot_name: github-actions[bot]
           bot_id: "41898283"
           prompt: |
-            Lis puis suis à la lettre le skill du dépôt .claude/skills/build-suggestion/SKILL.md (mode « nouvelle branche »).
+            Lis puis suis à la lettre le skill .automation/skills/build-suggestion/SKILL.md (mode « nouvelle branche »).
             Cahier des charges : .automation/issue.md (issue n° ${{ github.event.issue.number }}, suggestion n° ${{ steps.meta.outputs.suggestion }}).
             Branche déjà créée et active : ${{ steps.meta.outputs.branch }}. Ne pousse rien : le workflow s'en charge.
           claude_args: >-
@@ -140,7 +144,7 @@ jobs:
           bot_id: "41898283"
           prompt: |
             Réparation automatique, essai 1 sur 2. La vérification de la branche ${{ steps.meta.outputs.branch }} a échoué : la raison est dans .automation/failure.txt.
-            Lis puis suis le skill du dépôt .claude/skills/build-suggestion/SKILL.md (mode « réparation », dans une nouvelle branche).
+            Lis puis suis le skill .automation/skills/build-suggestion/SKILL.md (mode « réparation », dans une nouvelle branche).
             Cahier des charges : .automation/issue.md (issue n° ${{ github.event.issue.number }}, suggestion n° ${{ steps.meta.outputs.suggestion }}).
             Ton travail précédent est déjà là : git log origin/dev..HEAD et git status. Termine ou corrige, vérifie, commite, puis écris .automation/result.json. Ne pousse rien : le workflow s'en charge.
           claude_args: >-
@@ -177,7 +181,7 @@ jobs:
           bot_id: "41898283"
           prompt: |
             Réparation automatique, essai 2 sur 2. La vérification de la branche ${{ steps.meta.outputs.branch }} a échoué : la raison est dans .automation/failure.txt.
-            Lis puis suis le skill du dépôt .claude/skills/build-suggestion/SKILL.md (mode « réparation », dans une nouvelle branche).
+            Lis puis suis le skill .automation/skills/build-suggestion/SKILL.md (mode « réparation », dans une nouvelle branche).
             Cahier des charges : .automation/issue.md (issue n° ${{ github.event.issue.number }}, suggestion n° ${{ steps.meta.outputs.suggestion }}).
             Ton travail précédent est déjà là : git log origin/dev..HEAD et git status. Termine ou corrige, vérifie, commite, puis écris .automation/result.json. Ne pousse rien : le workflow s'en charge.
           claude_args: >-
@@ -228,7 +232,7 @@ jobs:
           # Travail à conserver malgré l'échec : au moins un commit et rien d'interdit.
           pushable=false
           if [ "$ok" != true ] && [ "$limit" != true ] && [ "$(git rev-list --count origin/dev..HEAD 2>/dev/null || echo 0)" -gt 0 ]; then
-            bad=$(git diff --name-only origin/dev...HEAD | grep -E '^(\.github/|deploy/|docker/|\.githooks/|docker-compose[^/]*\.ya?ml$|\.env|\.claude/settings)' || true)
+            bad=$(git diff --name-only origin/dev...HEAD | grep -E '^(\.github/|deploy/|docker/|\.githooks/|docker-compose[^/]*\.ya?ml$|\.env|\.claude/)' || true)
             [ -z "$bad" ] && pushable=true
           fi
           error=""
