@@ -96,7 +96,7 @@ if (commits === 0) fail("aucun commit sur la branche");
 if (git("status", "--porcelain", "--untracked-files=no")) fail("des modifications ne sont pas commitées");
 const changed = git("diff", "--name-only", "origin/dev...HEAD").split("\n").filter(Boolean);
 const forbidden = changed.filter((f) =>
-  /^(\.github\/|deploy\/|docker\/|\.githooks\/|docker-compose[^/]*\.ya?ml$|\.env|\.claude\/settings)/.test(f),
+  /^(\.github\/|deploy\/|docker\/|\.githooks\/|docker-compose[^/]*\.ya?ml$|\.env|\.claude\/)/.test(f),
 );
 if (forbidden.length) fail(`fichiers interdits modifiés : ${forbidden.join(", ")}`);
 const migrations = changed.filter((f) => f.startsWith("packages/db/migrations/") && f.endsWith(".sql"));
