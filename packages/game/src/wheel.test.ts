@@ -57,6 +57,17 @@ describe("roues du jour", () => {
     expect(expected("large")).toBeGreaterThan(700);
   });
 
+  it("petite roue : hors cartes, plus le lot est gros, plus il est rare (suggestion n° 135)", () => {
+    const lots = WHEELS.small.filter((s) => s.reward.kind !== "card");
+    for (const a of lots)
+      for (const b of lots)
+        if (value(a.reward) < value(b.reward)) expect(a.weight, JSON.stringify(b.reward)).toBeGreaterThan(b.weight);
+    const pw = (amount: number) => WHEELS.small.find((s) => s.reward.kind === "pw" && s.reward.amount === amount)!;
+    expect(pw(100).weight).toBeGreaterThan(pw(200).weight);
+    // Valeur moyenne gardée proche de celle d'avant le rééquilibrage (233,5).
+    expect(Math.abs(expected("small") - 233.5)).toBeLessThan(5);
+  });
+
   it("tire chaque case selon son poids (bornes des intervalles)", () => {
     for (const tier of WHEEL_TIERS) {
       const segments = WHEELS[tier];
