@@ -38,18 +38,23 @@ export const WHEEL_TOTAL = 10_000;
 /**
  * Cases de chaque roue, dans l'ordre d'affichage (petits et gros lots alternés). Valeur moyenne (paquet =
  * 150 PW, booster = 200 PW, UR = 250, légendaire = 1 500, caisse = son prix) : petite ≈ 230, moyenne ≈ 350,
- * grande ≈ 720. Les caisses gratuites (Bronze 10 %, Argent 8 %, Or 5 %) remplacent une partie des PW
+ * grande ≈ 720. Les caisses gratuites (Bronze, Argent 8 %, Or 5 %) remplacent une partie des PW
  * (choix de Palawi du 2026-11-04 : valeur constante).
+ *
+ * Petite roue (suggestion n° 135) : l'ajout de la caisse Bronze avait pris 10 % au lot de 100 PW, qui
+ * tombait alors moins souvent (15 %) que celui de 200 PW (20 %). Les lots de PW, de paquets et la caisse
+ * sont désormais d'autant plus rares qu'ils sont gros ; les cartes gardent leurs chances (UR 5 %,
+ * légendaire 2 %). Valeur moyenne : 233,5 avant, 232 après.
  */
 export const WHEELS: Record<WheelTier, WheelSegment[]> = {
   small: [
-    { reward: { kind: "pw", amount: 100 }, weight: 1_500 },
-    { reward: { kind: "packs", amount: 1 }, weight: 2_000 },
-    { reward: { kind: "case", tier: "bronze" }, weight: 1_000 },
-    { reward: { kind: "pw", amount: 200 }, weight: 2_000 },
+    { reward: { kind: "pw", amount: 100 }, weight: 1_800 },
+    { reward: { kind: "packs", amount: 1 }, weight: 1_600 },
+    { reward: { kind: "case", tier: "bronze" }, weight: 1_700 },
+    { reward: { kind: "pw", amount: 200 }, weight: 1_500 },
     { reward: { kind: "card", rarity: "UR" }, weight: 500 },
-    { reward: { kind: "packs", amount: 2 }, weight: 2_000 },
-    { reward: { kind: "packs", amount: 3 }, weight: 800 },
+    { reward: { kind: "packs", amount: 2 }, weight: 1_400 },
+    { reward: { kind: "packs", amount: 3 }, weight: 1_300 },
     { reward: { kind: "card", rarity: "L" }, weight: 200 },
   ],
   medium: [
